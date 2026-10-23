@@ -97,8 +97,8 @@ fn why_not(worn: &[Entity], reach: &Reach) -> String {
 #[cfg(test)]
 mod tests {
     use atglyph::ecs::Ending;
-    use atglyph::ecs::testing::{KeyScriptPlugin, press};
     use atglyph::primitives::RunSeed;
+    use atglyph::testing::{KeyScriptPlugin, press};
 
     use super::*;
 

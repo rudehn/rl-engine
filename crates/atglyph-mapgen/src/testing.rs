@@ -2,7 +2,9 @@
 //!
 //! Public, so the engine's Bevy layer and a game's generation tests play
 //! their seeds the same way the generator's own tests do, rather than each
-//! keeping a copy.
+//! keeping a copy. Stable, as the rest of the crate's API is: a game that
+//! uses the generator as a toolkit, without `atglyph`, tests with it here,
+//! and a game on `atglyph` reads the same names from `atglyph::testing`.
 
 use std::any::Any;
 use std::ops::Range;

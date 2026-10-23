@@ -8,6 +8,9 @@
 //!
 //! What builds the app is [`atglyph_bevy::testing`]'s, and the headless game is
 //! the facade's, since it needs a save backend this crate does not know.
+//!
+//! Hidden, and outside semver: a game reads these from `atglyph::testing`,
+//! which lists the engine's stable testing names.
 
 use atglyph_render::Terminal;
 use bevy::prelude::*;

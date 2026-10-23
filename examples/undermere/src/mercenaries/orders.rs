@@ -271,7 +271,7 @@ mod tests {
     use std::sync::Arc;
 
     use atglyph::ecs::props::{Hidden, spawn_prop};
-    use atglyph::ecs::testing::{KeyScriptPlugin, press};
+    use atglyph::testing::{KeyScriptPlugin, press};
     use bevy::ecs::system::RunSystemOnce;
 
     use super::*;

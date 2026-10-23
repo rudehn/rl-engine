@@ -62,9 +62,9 @@ pub fn toggle_lamp(
 
 #[cfg(test)]
 mod tests {
-    use atglyph::ecs::testing::{KeyScript, KeyScriptPlugin};
     use atglyph::grid::Light;
     use atglyph::primitives::{Point, RunSeed};
+    use atglyph::testing::{KeyScript, KeyScriptPlugin};
 
     use super::*;
 

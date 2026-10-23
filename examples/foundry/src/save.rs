@@ -230,9 +230,9 @@ impl SaveableState for Deepest {
 
 #[cfg(test)]
 mod tests {
-    use atglyph::ecs::testing::{KeyScriptPlugin, press};
     use atglyph::primitives::RunSeed;
     use atglyph::save::{Saves, save_run};
+    use atglyph::testing::{KeyScriptPlugin, press};
 
     use super::*;
     use crate::heat::Heat;

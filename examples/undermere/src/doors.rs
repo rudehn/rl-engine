@@ -202,7 +202,7 @@ pub fn draw_door_marks(
 
 #[cfg(test)]
 mod tests {
-    use atglyph::ecs::testing::{KeyScriptPlugin, press};
+    use atglyph::testing::{KeyScriptPlugin, press};
 
     use super::*;
     use crate::testing::{arena_on, continued};

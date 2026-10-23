@@ -440,9 +440,9 @@ fn draw_cheats(screen: Res<CheatScreen>, modals: Res<Modals>, palette: Res<Palet
 
 #[cfg(test)]
 mod tests {
-    use atglyph::ecs::testing::{KeyScriptPlugin, press};
     use atglyph::primitives::RunSeed;
     use atglyph::rules::Hit;
+    use atglyph::testing::{KeyScriptPlugin, press};
 
     use super::*;
 

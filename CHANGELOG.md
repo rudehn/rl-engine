@@ -6,6 +6,9 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- `atglyph::testing` is the stable testing API, an explicit list of names, each changing only with a version: `windowless`, `headless` and `continued`; `KeyScriptPlugin`, `KeyScript`, `press`, `settle`, `pass_turns` and `let_time_pass`; `player`, `here`, `at`, `name_of` and `pack`; `stand_on`, `go_through`, `take_up`, `put_down`, `give`, `equip`, `unequip`, `kill`, `lay`, `lay_tile` and `wall_off`; `row`, `written` and `said`; `QUICK`, `seeds`, `first_seeds` and `par_seeds`; and the module `ambiguity`. `atglyph::ecs::testing` and `atglyph::ui::testing` are the engine crates' own fixtures, hidden and outside semver. `atglyph::mapgen::testing` stays public and stable, for a toolkit game's tests.
+  To change: breaking: a test that imported from `atglyph::ecs::testing` or `atglyph::ui::testing` imports the same name from `atglyph::testing`, `atglyph::testing::ambiguity` among them; `TEST_SEED`, `ground`, `ground_with`, `TwoSides`, `two_sides` and `headless_app` are no longer offered to games, and `windowless` stands an app up.
+
 - `atglyph::ecs::LaunchArgs::from_env()` gives a game its seed and the rest of its arguments, the recording's when replaying, the recording's seed winning over `--seed`, so a game's own flags replay with it: `seed` is the `--seed N` named, if any, `rest` every other argument, and `seed_or_fresh()` the `Seed` to insert. `LaunchArgs::parse` is the same reading without a process. `Seed::from_args()` is `LaunchArgs::from_env().seed_or_fresh()`, as before.
   To change: breaking: a `main` that read `atglyph::ecs::replay::seed()` and `atglyph::ecs::replay::args()` reads `let launch = LaunchArgs::from_env();`, matches its own flags on `launch.rest`, which no longer holds `--seed N`, takes the seed from `launch.seed`, and inserts `launch.seed_or_fresh()`; `replay::seed` is gone, and `replay::args` is what the recorder writes down.
 

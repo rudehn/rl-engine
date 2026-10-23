@@ -53,6 +53,7 @@ pub mod settings;
 pub mod state;
 pub mod status;
 pub mod stealth;
+#[doc(hidden)]
 pub mod testing;
 pub mod throwing;
 pub mod title;

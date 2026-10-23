@@ -3,16 +3,16 @@
 //! writing it, is either ordered or allowed here with its reason.
 //!
 //! The check itself is the engine's,
-//! [`atglyph::ecs::testing::ambiguity`](atglyph::ecs::testing::ambiguity);
+//! [`atglyph::testing::ambiguity`](atglyph::testing::ambiguity);
 //! what is Foundry's is the names a failure reads by and the pairs it
 //! leaves unordered on purpose, each with why.
 
 use std::any::TypeId;
 
-use atglyph::ecs::testing::ambiguity::{self, Allowed, system_type as id};
 use atglyph::ecs::turn::{Acting, ActionDone, ActionRefused, Turns};
 use atglyph::ecs::{Aware, DarkSight, Inventory, Noticed, Position, RangedAttack};
 use atglyph::primitives::RunSeed;
+use atglyph::testing::ambiguity::{self, Allowed, system_type as id};
 use atglyph::ui::{GearView, MessageLog, Modals};
 use bevy::ecs::component::ComponentId;
 use bevy::prelude::*;

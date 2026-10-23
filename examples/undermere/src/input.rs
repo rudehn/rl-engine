@@ -56,8 +56,8 @@ pub fn declare_controls(app: &mut App) {
 
 #[cfg(test)]
 mod tests {
-    use atglyph::ecs::testing::{KeyScriptPlugin, press};
     use atglyph::primitives::RunSeed;
+    use atglyph::testing::{KeyScriptPlugin, press};
 
     use super::*;
 

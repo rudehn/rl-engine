@@ -6,7 +6,12 @@
 //! a keyboard does. Each test module used to build its own, so the engine
 //! carried nine copies of one world and three of one key player, and a
 //! change to how a world is set up meant editing all of them. These are the
-//! one copy, public so a game's tests and the engine's crates share it.
+//! one copy, public so the engine's crates share it.
+//!
+//! Hidden, and outside semver: the engine's own fixtures, such as
+//! [`ground`], [`two_sides`] and [`headless_app`], change whenever the
+//! engine's tests want them to. A game's tests read the names they use
+//! from `atglyph::testing`, which lists the stable ones.
 //!
 //! [`headless_app`] is the app itself; this
 //! module is what goes into it, and what a test does with it once it runs:

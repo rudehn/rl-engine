@@ -138,7 +138,7 @@ mod tests {
     /// turns, however many turns go by.
     #[test]
     fn a_status_held_for_life_shows_no_count_of_turns() {
-        use atglyph::ecs::testing::{KeyScriptPlugin, press};
+        use atglyph::testing::{KeyScriptPlugin, press};
         // Tall enough for every stat the run registers, the rings' among
         // them, with the statuses below.
         let (width, height) = (60, 40);

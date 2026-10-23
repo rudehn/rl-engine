@@ -3,7 +3,7 @@
 //! one writing it, is either ordered or allowed here with its reason.
 //!
 //! The check is the engine's,
-//! [`atglyph::ecs::testing::ambiguity`](atglyph::ecs::testing::ambiguity),
+//! [`atglyph::testing::ambiguity`](atglyph::testing::ambiguity),
 //! and Undermere's systems are whatever
 //! [`UndermerePlugin`](crate::plugin::UndermerePlugin) adds beyond the
 //! engine's plugins it plays with, so one added later is covered without
@@ -17,9 +17,9 @@ use std::any::TypeId;
 
 use atglyph::ecs::minds::Thinking;
 use atglyph::ecs::plugin::TurnSet;
-use atglyph::ecs::testing::ambiguity::{self, Allowed, system_type as id};
 use atglyph::ecs::turn::{Acting, ActionDone, ActionRefused};
 use atglyph::primitives::RunSeed;
+use atglyph::testing::ambiguity::{self, Allowed, system_type as id};
 use bevy::ecs::component::ComponentId;
 use bevy::prelude::*;
 

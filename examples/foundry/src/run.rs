@@ -245,7 +245,7 @@ mod tests {
     /// it: no upgrade taken, and no deck reached but the first.
     #[test]
     fn a_run_begun_after_another_keeps_neither_its_upgrades_nor_its_depth() {
-        use atglyph::ecs::testing::{KeyScriptPlugin, press};
+        use atglyph::testing::{KeyScriptPlugin, press};
         let mut app = crate::testing::headless(RunSeed(2));
         app.add_plugins(KeyScriptPlugin);
         let me = crate::testing::beside_the_console(&mut app);

@@ -201,9 +201,9 @@ pub fn shout_alarm(
 
 #[cfg(test)]
 mod tests {
-    use atglyph::ecs::testing::KeyScriptPlugin;
     use atglyph::primitives::{Point, Rect, RunSeed};
     use atglyph::render::{MapViewPlugin, Particles, ParticlesPlugin, Terminal};
+    use atglyph::testing::KeyScriptPlugin;
 
     use super::*;
 
@@ -482,7 +482,7 @@ mod tests {
         assert!(held && app.world().resource::<Particles>().is_waited_on(), "the pulse holds the turns");
         let last = app.world().resource::<crate::testing::Alarms>().cues.last().cloned();
         assert!(matches!(last, Some(Cued { actor, cue: Cue::Burst { look: LookOf::Given(PULSE), .. } }) if actor == probe), "on the probe's pulse: {last:?}");
-        app.world_mut().resource_mut::<atglyph::ecs::testing::KeyScript>().press(KeyCode::F12);
+        app.world_mut().resource_mut::<atglyph::testing::KeyScript>().press(KeyCode::F12);
         app.update();
         assert!(!app.world().resource::<CueWait>().is_waiting(), "the key let the turns go");
         assert!(app.world().get::<MyTurn>(me).is_some(), "and the commando holds its turn");

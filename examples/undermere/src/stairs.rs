@@ -384,7 +384,7 @@ mod tests {
     /// one, at its way in.
     #[test]
     fn walking_through_the_gate_arrives_on_floor_one() {
-        use atglyph::ecs::testing::{KeyScriptPlugin, press};
+        use atglyph::testing::{KeyScriptPlugin, press};
         for s in 0..3 {
             let mut app = headless(RunSeed(s));
             app.add_plugins(KeyScriptPlugin);
