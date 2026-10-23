@@ -209,7 +209,7 @@ pub(crate) fn open_on_crowded_bump(mut bumped: MessageReader<Bumped>, view: Res<
 /// or, for a row that asks first, asks, and takes it up only on a yes; or,
 /// for one that chooses first, puts itself away and opens the bag
 /// choosing.
-pub fn offers_keys(
+pub(crate) fn offers_keys(
     mut commands: Commands,
     keys: ControlInput,
     view: Res<OffersView>,

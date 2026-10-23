@@ -94,7 +94,7 @@ pub(crate) fn finish(app: &mut App) {
 /// frame a native window's close button produces. When what it writes is
 /// the run's slot, [`SavedRun`] says the slot holds a run; a stash a game
 /// keeps for a slot of its own says nothing about the run's.
-pub fn flush_on_exit(mut exits: MessageReader<AppExit>, stash: Res<Stash>, saves: Res<Saves>, run: Res<SaveSlot>, mut saved: ResMut<SavedRun>) {
+pub(crate) fn flush_on_exit(mut exits: MessageReader<AppExit>, stash: Res<Stash>, saves: Res<Saves>, run: Res<SaveSlot>, mut saved: ResMut<SavedRun>) {
     if exits.read().next().is_none() {
         return;
     }
@@ -159,7 +159,7 @@ mod tests {
 
     #[test]
     fn the_stash_is_written_on_the_frame_the_app_exits() {
-        let mut app = rl_bevy::plugin::headless_app();
+        let mut app = rl_bevy::testing::headless_app();
         let backend: Arc<dyn SaveBackend + Send + Sync> = Arc::new(MemoryBackend::default());
         app.insert_resource(Saves(backend.clone())).add_plugins(crate::run::SavePlugin::new("run"));
         app.finish();
@@ -177,7 +177,7 @@ mod tests {
     #[test]
     fn the_runs_slot_written_on_exit_says_it_holds_a_run() {
         for (slot, holds) in [("run", SavedRun::Readable), ("notes", SavedRun::Empty)] {
-            let mut app = rl_bevy::plugin::headless_app();
+            let mut app = rl_bevy::testing::headless_app();
             app.insert_resource(Saves::new(MemoryBackend::default())).add_plugins(crate::run::SavePlugin::new("run"));
             app.finish();
             app.cleanup();

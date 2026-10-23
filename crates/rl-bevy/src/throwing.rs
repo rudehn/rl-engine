@@ -150,7 +150,7 @@ impl crate::cue::Lands for ThrowLanding {}
 /// A worn thing thrown comes off, so a [`Stuck`](crate::items::Stuck) one
 /// is refused, as any impossible throw is, and said as
 /// [`ItemEvent::WouldNotComeOff`].
-pub fn resolve_throws(
+pub(crate) fn resolve_throws(
     mut commands: Commands,
     mut intents: MessageReader<Intent<Throw>>,
     mut resolution: Resolution,
@@ -228,7 +228,7 @@ pub struct ThrowReports<'w> {
 /// Lands every throw in the air, on the first pass after its flight has
 /// been seen. Landing counts as progress, so the loop goes on to deal the
 /// next turn.
-pub fn land_throws(mut commands: Commands, launch: Launch, mut reports: ThrowReports, mut turns: ResMut<crate::turn::Turns>) {
+pub(crate) fn land_throws(mut commands: Commands, launch: Launch, mut reports: ThrowReports, mut turns: ResMut<crate::turn::Turns>) {
     let Launch { map, mut rng, alive, mut hold, mut airborne, .. } = launch;
     for landing in airborne.landing(&mut hold, &mut turns) {
         land(landing, map.current(), &mut commands, &mut rng, &alive, &mut reports);
@@ -301,8 +301,8 @@ mod tests {
     use crate::combat::{CombatPlugin, Faction};
     use crate::components::{Actor, Blocks, Player, RevealsMap, Viewshed};
     use crate::items::ItemsPlugin;
-    use crate::plugin::headless_app;
     use crate::state::EngineState;
+    use crate::testing::headless_app;
     use crate::turn::Turns;
     use rl_grid::TileId;
 

@@ -64,7 +64,7 @@ impl Plugin for ContainerViewPlugin {
 /// A container that was emptied is still shown, empty, until the screen
 /// is closed: what a player did is worth seeing, and a screen that
 /// vanished as the last thing came out would read as a bug.
-pub fn collect_container(
+pub(crate) fn collect_container(
     mut view: ResMut<ContainerView>,
     open: Res<OpenContainer>,
     containers: Query<(Option<&Name>, &Inventory), With<Container>>,

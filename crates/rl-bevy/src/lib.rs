@@ -70,13 +70,13 @@ pub use combat::{
     Invulnerable, Loadout, MeleeAttack, RangedAttack, Reach, Resists, Stowed, Strikes, Struck, line_of_fire, shot,
 };
 pub use components::{Actor, Blocks, MyTurn, Player, Position, RevealsMap, Speed, Viewshed};
-pub use consumable::{AddSpending, Attuned, Consumable, Recharge, SpendingMoments, Spent, WhenEmpty, bury_spent};
+pub use consumable::{AddSpending, Attuned, Consumable, Recharge, SpendingMoments, Spent, WhenEmpty};
 pub use cue::{AddAirborne, Airborne, Anchor, Cue, Cued, Lands, LookOf, TurnHold};
 pub use doors::{Close, DoorEvent, Open};
 pub use effects::{
     AddEffect, AddEngineEffects, AddMoment, Cleanse, Effect, EffectBonus, EffectKinds, EffectRng, EffectWorld, Effects, EffectsPlugin, Emit, Fired, FiredOn,
     FromArgs, Harm, Ignite, Inflict, KeepOnRemnant, Landing, LandsAsItself, Mend, Moment, MomentId, Moments, Noise, Pull, Remnant, RemnantKeeps, Shove, Source,
-    Trigger, Triggers, area_cells, land_triggers,
+    Trigger, Triggers, area_cells,
 };
 pub use events::{Counters, FactSet, FactsPlugin, Happened, QuestChange, Quests};
 pub use fields::SavedField;

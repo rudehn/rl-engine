@@ -131,7 +131,7 @@ pub fn container_modal(modals: &Modals) -> ModalId {
 ///
 /// The engine decides what `open` means and what it costs; this only
 /// shows what is inside once it has happened.
-pub fn open_on_interact(
+pub(crate) fn open_on_interact(
     mut opened: MessageReader<Interacted>,
     mut open: ResMut<OpenContainer>,
     mut menu: ResMut<ContainerMenu>,
@@ -174,7 +174,7 @@ pub struct Reaching<'w, 's> {
 /// Taking is only written while the player holds the turn, since an
 /// intent written for anyone else is dropped unread; the screen stays up
 /// either way.
-pub fn container_keys(keys: ControlInput, mut screen: ChestKeys, mut takes: MessageWriter<Intent<Take>>, who: Reaching) {
+pub(crate) fn container_keys(keys: ControlInput, mut screen: ChestKeys, mut takes: MessageWriter<Intent<Take>>, who: Reaching) {
     let ChestKeys { binds, view, menu, modals, open } = &mut screen;
     let Reaching { holding, reach } = &who;
     let modal = container_modal(modals);

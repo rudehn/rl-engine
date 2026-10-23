@@ -95,7 +95,7 @@ pub struct Purses<'w, 's> {
 }
 
 /// Fills [`OffersView`] from what the engine offered the player.
-pub fn collect_offers(
+pub(crate) fn collect_offers(
     mut view: ResMut<OffersView>,
     offered: Res<OfferedHere>,
     verbs: Res<Verbs>,

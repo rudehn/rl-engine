@@ -772,8 +772,8 @@ mod tests {
     use super::*;
     use crate::components::{MyTurn, RevealsMap};
     use crate::items::{DropItem, Inventory, Item, ItemEvent, PickUp};
-    use crate::plugin::headless_app;
     use crate::state::EngineState;
+    use crate::testing::headless_app;
     use crate::turn::Wait;
     use crate::turn::{ActionRefused, Turns};
     use rl_core::Rect;

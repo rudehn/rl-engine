@@ -133,7 +133,7 @@ pub(crate) fn collect_gear(mut view: ResMut<GearView>, registries: Res<Registrie
 /// rather than reading `GearView` as `Option<ResMut<_>>`: this system is
 /// only ever added by [`GearViewPlugin`] itself, which has already put the
 /// resource there.
-pub fn note_ammo(
+pub(crate) fn note_ammo(
     mut view: ResMut<GearView>,
     mut facets: ResMut<Facets>,
     bag: Query<&Inventory, With<Player>>,

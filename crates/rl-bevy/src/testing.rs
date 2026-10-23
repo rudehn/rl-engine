@@ -8,7 +8,7 @@
 //! change to how a world is set up meant editing all of them. These are the
 //! one copy, public so a game's tests and the engine's crates share it.
 //!
-//! [`headless_app`](crate::plugin::headless_app) is the app itself; this
+//! [`headless_app`] is the app itself; this
 //! module is what goes into it, and what a test does with it once it runs:
 //! [`settle`] and [`pass_turns`] move it on, [`let_time_pass`] jumps its
 //! clock where only the clock is the question, [`player`], [`here`] and
@@ -43,6 +43,15 @@ use crate::prelude::{
 use crate::registries::Registries;
 use crate::turn::Turns;
 use crate::world::WorldMap;
+
+/// A headless app with the engine's core and no window, for the engine's
+/// own tests and its crates' tests. A game's tests stand an app up with
+/// `rl_engine::testing::windowless` or `headless`.
+pub fn headless_app() -> App {
+    let mut app = App::new();
+    app.add_plugins((MinimalPlugins, bevy::state::app::StatesPlugin, crate::plugin::CorePlugin));
+    app
+}
 
 /// The seed range a generation test plays, and the cores it plays them on:
 /// the same helpers the generator's own tests use, for a game's.
@@ -411,8 +420,9 @@ mod tests {
     use super::*;
     use crate::components::{Actor, Blocks, MyTurn, Player, Position, RevealsMap, Viewshed};
     use crate::consumable::{Consumable, WhenEmpty};
-    use crate::plugin::{Turn, headless_app};
+    use crate::plugin::Turn;
     use crate::state::EngineState;
+    use crate::testing::headless_app;
     use crate::turn::TurnEnd;
 
     /// The start `ground` hands back is floor, with floor for seven tiles

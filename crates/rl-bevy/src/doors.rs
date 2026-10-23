@@ -160,8 +160,8 @@ pub(crate) fn resolve_closes(
 mod tests {
     use super::*;
     use crate::components::{Actor, Blocks, Player, RevealsMap, Viewshed};
-    use crate::plugin::headless_app;
     use crate::state::EngineState;
+    use crate::testing::headless_app;
     use crate::turn::{Step, Turns};
     use rl_grid::TileRegistry;
     use rl_rules::TagId;

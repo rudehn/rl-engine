@@ -158,8 +158,8 @@ mod tests {
     use crate::components::{Actor, Blocks, Position, RevealsMap};
     use crate::minds::{MindsPlugin, Perception};
     use crate::places::{PlaceBuild, PlaceRules, PlaceRulesRes, WarpRequest};
-    use crate::plugin::headless_app;
     use crate::state::EngineState;
+    use crate::testing::headless_app;
     use rl_grid::{Terrain, TileRegistry};
     use rl_rules::ai::Brain;
     use rl_rules::ai::tactics::Explore;

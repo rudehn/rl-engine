@@ -235,7 +235,7 @@ mod tests {
     /// it should have to know.
     #[test]
     fn a_plugin_that_declares_a_modal_may_come_before_the_ui_plugin() {
-        let mut app = rl_bevy::plugin::headless_app();
+        let mut app = rl_bevy::testing::headless_app();
         app.add_plugins((crate::view::inspect::InspectViewPlugin, crate::UiPlugin));
         app.finish();
         assert!(app.world().resource::<Modals>().get(crate::view::inspect::INSPECT_MODAL).is_some(), "the modal survived the stack's own plugin");

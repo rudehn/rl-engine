@@ -33,7 +33,7 @@ impl Stage {
     /// The same, with `setup` run before play begins, for a plugin that
     /// asserts on a resource the game is meant to have inserted by then.
     pub(crate) fn new_with<M>(plugins: impl bevy::app::Plugins<M>, setup: impl FnOnce(&mut App)) -> Stage {
-        let mut app = rl_bevy::plugin::headless_app();
+        let mut app = rl_bevy::testing::headless_app();
         app.add_plugins((FovPlugin, CombatPlugin, ItemsPlugin));
         app.add_plugins((rl_bevy::testing::KeyScriptPlugin, crate::UiPlugin));
         app.add_plugins(plugins);

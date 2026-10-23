@@ -112,7 +112,7 @@ type Piece = (Option<&'static Name>, Option<&'static Glyph>, Option<&'static Sta
 /// A row's refusal is what a deal for one would meet, since one is what a
 /// screen most often asks for; a deal for a whole stack the customer can
 /// afford only part of is refused by the engine when it is asked.
-pub fn collect_trade(
+pub(crate) fn collect_trade(
     mut view: ResMut<TradeView>,
     trading: Res<Trading>,
     currency: Option<Res<Currency>>,

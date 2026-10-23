@@ -142,9 +142,10 @@ mod tests {
     use super::*;
     use crate::components::{Actor, Blocks, Player, Position, RevealsMap, Viewshed};
     use crate::places::AddPlaces;
-    use crate::plugin::{EndRun, headless_app};
+    use crate::plugin::EndRun;
     use crate::seed::Seed;
     use crate::state::Restart;
+    use crate::testing::headless_app;
     use rl_core::RunSeed;
 
     /// How many runs the game's start has begun and its end has forgotten,

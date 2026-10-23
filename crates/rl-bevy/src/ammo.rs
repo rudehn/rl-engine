@@ -1,10 +1,10 @@
 //! What a shot spends, when it spends anything at all.
 //!
-//! [`Ammo`] names the tag a shot draws from; [`spend_ammo`] takes one off
+//! [`Ammo`] names the tag a shot draws from; `spend_ammo` takes one off
 //! the wielder's bag for every ranged [`Struck`](crate::combat::Struck) the
 //! item caused. Whether a weapon is loaded or [`Dry`] is not tracked by
 //! reacting to whichever events happen to touch it (equipping it, picking
-//! something up): [`sync_ammo`] derives it fresh, every pass, from the one
+//! something up): `sync_ammo` derives it fresh, every pass, from the one
 //! fact that actually decides it, the wielder's bag right now, so no way
 //! of changing that bag can leave a weapon's state stale. Going dry is the
 //! same shape as a worn item running hot or otherwise losing its attack:
@@ -27,7 +27,7 @@
 //! its row, since a magazine's count is a fact about an ammunition-fed
 //! weapon and not about every row a panel might show (`rl-ui/src/lib.rs`'s
 //! rules on a view versus a facet say why). What a game says in its own log when a weapon dries or reloads is
-//! the game's own words too: [`sync_ammo`] writes [`AmmoChanged`] for every
+//! the game's own words too: `sync_ammo` writes [`AmmoChanged`] for every
 //! item whose [`Dry`] it just set or cleared, so a game that wants to tell
 //! its player reacts to that message rather than detecting the transition
 //! itself.
@@ -53,7 +53,7 @@ pub struct Ammo {
     pub tag: TagId,
 }
 
-/// An ammunition-fed weapon [`sync_ammo`] most recently found nothing to
+/// An ammunition-fed weapon `sync_ammo` most recently found nothing to
 /// feed it: its [`RangedAttack`] is off, stowed in [`Stowed`], and stays
 /// that way until the same check finds its wielder carrying the tag again.
 ///
@@ -68,7 +68,7 @@ pub struct Ammo {
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Dry;
 
-/// An ammunition-fed weapon's loaded state just flipped: [`sync_ammo`]
+/// An ammunition-fed weapon's loaded state just flipped: `sync_ammo`
 /// dried it up for want of its tag, or loaded it again because its
 /// wielder's bag now holds some.
 ///
@@ -86,21 +86,21 @@ pub struct AmmoChanged {
 
 /// Where ammunition's own economy runs, inside [`TurnSet::React`].
 ///
-/// A named set rather than a game ordering itself after [`spend_ammo`] or
-/// [`sync_ammo`] directly, which the engine's own rule against ordering a
+/// A named set rather than a game ordering itself after `spend_ammo` or
+/// `sync_ammo` directly, which the engine's own rule against ordering a
 /// system after another crate's function forbids: a game that wants its
 /// own reaction to a shot or a bag changing settled first orders against
 /// this set, and the two functions stay free to split or reorder without
 /// breaking it.
 #[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum AmmoSet {
-    /// [`spend_ammo`] then [`sync_ammo`], chained: a shot's tag comes off
+    /// `spend_ammo` then `sync_ammo`, chained: a shot's tag comes off
     /// the bag it fired from before every [`Ammo`] item's wielder's bag is
     /// read fresh to decide dry or loaded.
     Resolve,
 }
 
-/// Everything [`spend_ammo`] and [`sync_ammo`] read or write about an
+/// Everything `spend_ammo` and `sync_ammo` read or write about an
 /// item's ammunition and its wielder's bag.
 ///
 /// One param struct rather than several loose queries on each system,
@@ -130,7 +130,7 @@ fn stack_of(inv: &Inventory, tag: TagId, tagged: &Query<&Tagged>, stacks: &Query
 /// Reacts to every ranged [`Struck`](crate::combat::Struck) whose weapon
 /// runs on [`Ammo`]: takes one off the first matching [`Stack`] in the
 /// attacker's bag, despawning it at zero. It does not need to dry the
-/// weapon itself; [`sync_ammo`], chained right after it, reads the bag this
+/// weapon itself; `sync_ammo`, chained right after it, reads the bag this
 /// left behind and dries whatever that bag can no longer feed, this weapon
 /// included.
 ///
@@ -139,7 +139,7 @@ fn stack_of(inv: &Inventory, tag: TagId, tagged: &Query<&Tagged>, stacks: &Query
 /// attacker with no bag, or a weapon that is not ammunition-fed are all
 /// skipped rather than treated as empty, since none of them is this
 /// system's business.
-pub fn spend_ammo(mut commands: Commands, mut struck: MessageReader<crate::combat::Struck>, mut world: AmmoWorld) {
+pub(crate) fn spend_ammo(mut commands: Commands, mut struck: MessageReader<crate::combat::Struck>, mut world: AmmoWorld) {
     for ev in struck.read() {
         if !ev.ranged {
             continue;
@@ -171,7 +171,7 @@ pub fn spend_ammo(mut commands: Commands, mut struck: MessageReader<crate::comba
 /// weapon behind because nothing had reacted to a drop either. Deriving
 /// the state from the bag directly has no such gap: whatever changed it,
 /// the very next pass reads the bag as it now stands.
-pub fn sync_ammo(mut commands: Commands, world: AmmoWorld, mut changed: MessageWriter<AmmoChanged>) {
+pub(crate) fn sync_ammo(mut commands: Commands, world: AmmoWorld, mut changed: MessageWriter<AmmoChanged>) {
     for inv in world.inventories.iter() {
         for &item in &inv.items {
             let Ok(ammo) = world.ammos.get(item) else { continue };
@@ -221,7 +221,7 @@ mod tests {
     use crate::combat::Loadout;
     use crate::components::Player;
     use crate::items::Equipped;
-    use crate::plugin::headless_app;
+    use crate::testing::headless_app;
 
     /// A unit of `tag`, stacked `count` high, carried by nobody yet.
     fn unit_of(app: &mut App, tag: TagId, count: u32) -> Entity {

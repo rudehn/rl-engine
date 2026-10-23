@@ -412,9 +412,9 @@ mod tests {
     use crate::components::{Blocks, Player, RevealsMap, Viewshed};
     use crate::gas::{GasPlugin, Release};
     use crate::lighting::LightingPlugin;
-    use crate::plugin::headless_app;
     use crate::state::EngineState;
     use crate::status::Afflicted;
+    use crate::testing::headless_app;
     use crate::turn::{Intent, Wait};
     use rl_grid::{TileProps, TileRegistry};
     use rl_rules::gas::GasDef;

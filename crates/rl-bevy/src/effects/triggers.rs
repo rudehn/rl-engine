@@ -5,7 +5,7 @@
 //! for a landing, combat for a shot made, a shot that struck and the one it
 //! struck, props for a cell stepped on and a prop broken, and this module
 //! for an actor's death, writes [`Fired`] and nothing else.
-//! [`land_triggers`] is the one system that answers: it finds the carrier's
+//! `land_triggers` is the one system that answers: it finds the carrier's
 //! [`Triggers`] for that moment, works out the cells its [`Area`] covers
 //! around where the moment happened, and lands the effects on everyone
 //! standing there. A use aimed somewhere is landed as an ability is, on
@@ -291,7 +291,7 @@ impl Triggers {
 /// Something happened to a carrier at a moment.
 ///
 /// The one thing a subsystem that owns a moment writes. What lands is
-/// [`land_triggers`]' business, and what a use costs is the consumables'.
+/// `land_triggers`' business, and what a use costs is the consumables'.
 #[derive(Message, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Fired {
     /// The carrier: a prop, a thing used or thrown, a weapon.
@@ -314,7 +314,7 @@ pub struct Fired {
 /// [`UseOn`](crate::items::UseOn). Its own message rather than a field of
 /// `Fired`, since every other moment of every subsystem, a shot made, a
 /// plate stepped on, would otherwise carry a field it never fills.
-/// [`land_triggers`] pairs it with the `Fired` of the same carrier and
+/// `land_triggers` pairs it with the `Fired` of the same carrier and
 /// moment and lands the trigger with it as [`Landing::on`].
 #[derive(Message, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FiredOn {
@@ -367,7 +367,7 @@ pub struct LandsAsItself;
 /// because it lands a pass later and a pass may be a long time coming:
 /// the loop holds while something is shown, and a message nobody reads for
 /// two frames is gone, where an entity stays. `report_remnants` reports
-/// it in the pass that lands it, and [`land_triggers`] takes its triggers
+/// it in the pass that lands it, and `land_triggers` takes its triggers
 /// once it has.
 ///
 /// It then stays, with nothing left to land, until `bury_remnants`
@@ -388,7 +388,7 @@ pub struct Remnant {
 /// Reports every [`Remnant`]'s moment, in the pass that lands it.
 ///
 /// In [`ResolveSet::Triggers`](crate::plugin::ResolveSet::Triggers) ahead
-/// of [`land_triggers`], so the report and the landing are one pass
+/// of `land_triggers`, so the report and the landing are one pass
 /// however long the remnant waited for it.
 pub(crate) fn report_remnants(remnants: Query<(Entity, &Remnant), With<Triggers>>, mut fired: MessageWriter<Fired>) {
     for (on, remnant) in &remnants {
@@ -488,7 +488,7 @@ impl KeepOnRemnant for App {
     }
 }
 
-/// What a carrier is, for [`land_triggers`]: its triggers, whether it is a
+/// What a carrier is, for `land_triggers`: its triggers, whether it is a
 /// remnant, lands as itself or is an actor, its
 /// [`EffectBonus`](super::EffectBonus) if it has one, and what it has left
 /// to spend if it counts charges.
@@ -585,7 +585,7 @@ impl AimedUses<'_, '_> {
 /// goes on to deal the next turn once the burst has been seen in turn.
 ///
 /// In [`ResolveSet::Triggers`](crate::plugin::ResolveSet::Triggers), where
-/// triggers land, ahead of [`land_triggers`]: no turn is dealt while
+/// triggers land, ahead of `land_triggers`: no turn is dealt while
 /// anything flies, so nothing new is used in the pass that lands it.
 pub(crate) fn land_aimed_uses(
     mut hold: ResMut<TurnHold>,
@@ -628,7 +628,7 @@ pub(crate) fn land_aimed_uses(
 /// is seen to fly. Only a thing not yet known is used empty, since a known
 /// one is refused before its turn is spent; one not yet known is used,
 /// because refusing it would say it was empty, and comes to nothing.
-pub fn land_triggers(
+pub(crate) fn land_triggers(
     mut commands: Commands,
     mut fired: MessageReader<Fired>,
     mut fired_on: MessageReader<FiredOn>,
@@ -711,9 +711,9 @@ mod tests {
     use crate::combat::{CombatPlugin, DamageDealt, Health};
     use crate::components::{Actor, Blocks, Position};
     use crate::effects::AddEngineEffects;
-    use crate::plugin::headless_app;
     use crate::registries::Registries;
     use crate::state::EngineState;
+    use crate::testing::headless_app;
 
     /// A world with combat and the engine's effects, open land to stand on,
     /// and one damage kind, `kinetic`, as combat's own tests build it.

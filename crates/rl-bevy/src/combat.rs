@@ -715,7 +715,7 @@ impl Loadout<'_, '_> {
     }
 
     /// Whether `item` has gone dry: an ammunition-fed weapon
-    /// [`ammo::sync_ammo`](crate::ammo::sync_ammo) most recently found
+    /// `ammo::sync_ammo` most recently found
     /// nothing in its wielder's bag to feed it, the same "empty, not gone"
     /// standing as `charged`, above. [`melee_with`](Self::melee_with)
     /// and [`ranged_with`](Self::ranged_with) already skip it, because its
@@ -981,7 +981,7 @@ struct Weapon {
 ///
 /// One turn, one strike: an attack by an actor that already acted this
 /// pass finds the turn spent, whatever spent it.
-pub fn resolve_attacks(
+pub(crate) fn resolve_attacks(
     mut intents: MessageReader<Intent<Attack>>,
     mut damage: MessageWriter<DamageEvent>,
     mut resolution: Resolution,
@@ -1159,9 +1159,9 @@ pub struct Arriving<'w, 's> {
 /// answering `hit` and not yet missed, while the shooter is still there to
 /// copy: what [`RemnantKeeps`](crate::effects::RemnantKeeps) lists, onto a
 /// [`Remnant`](crate::effects::Remnant) kept `Disabled` so no query sees
-/// it until [`land_shots`] needs it.
+/// it until `land_shots` needs it.
 ///
-/// Its own system, after [`resolve_attacks`] in the same chain, rather than
+/// Its own system, after `resolve_attacks` in the same chain, rather than
 /// a step inside it: the resolver is one of the busiest systems a game
 /// meets, and giving it `Commands` widened what a game had to order
 /// against it. Nothing in the air is taken for in a game without
@@ -1189,7 +1189,7 @@ pub(crate) fn keep_shooters(
 /// been seen, on a target still standing: one killed or taken out of the
 /// world while the shot flew is missed, not hurt twice or looked for.
 /// Landing counts as progress, so the loop goes on to deal the next turn.
-pub fn land_shots(
+pub(crate) fn land_shots(
     mut airborne: ResMut<Airborne<ShotLanding>>,
     mut hold: ResMut<TurnHold>,
     mut turns: ResMut<Turns>,
@@ -1393,7 +1393,7 @@ pub(crate) fn apply_healing(mut heals: MessageReader<Heal>, mut healed: MessageW
 pub struct Dead;
 
 /// Takes dead non-players out of the world, the queue and the index, and
-/// marks them [`Dead`] for [`bury_the_dead`].
+/// marks them [`Dead`] for `bury_the_dead`.
 pub(crate) fn process_deaths(
     mut commands: Commands,
     mut deaths: MessageReader<DeathEvent>,
@@ -1428,7 +1428,7 @@ pub(crate) fn end_run_on_player_death(mut deaths: MessageReader<DeathEvent>, rul
 }
 
 /// Despawns whoever died this frame, once every system has seen them go.
-pub fn bury_the_dead(mut commands: Commands, dead: Query<Entity, With<Dead>>) {
+pub(crate) fn bury_the_dead(mut commands: Commands, dead: Query<Entity, With<Dead>>) {
     for e in &dead {
         commands.entity(e).despawn();
     }
@@ -1452,7 +1452,7 @@ pub struct CombatPlugin;
 /// built with a gun needs no items to fire it. Reach asks no wits, since
 /// firing what is wielded takes none, so it is read for every mind,
 /// mindless or not.
-pub fn perceive_reach(mut thinking: ResMut<crate::minds::Thinking>, loadout: Loadout) {
+pub(crate) fn perceive_reach(mut thinking: ResMut<crate::minds::Thinking>, loadout: Loadout) {
     let Some(thinker) = thinking.actor() else { return };
     let reach = loadout.ranged(thinker).map(|r| r.range);
     if let Some(snapshot) = thinking.snapshot_mut() {
@@ -1506,8 +1506,8 @@ impl Plugin for CombatPlugin {
 mod tests {
     use super::*;
     use crate::components::Viewshed;
-    use crate::plugin::headless_app;
     use crate::state::EngineState;
+    use crate::testing::headless_app;
     use rl_grid::TileId;
     use rl_rules::Registry;
     use rl_rules::faction::FactionDef;

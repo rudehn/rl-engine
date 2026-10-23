@@ -100,8 +100,8 @@ impl Plugin for FovPlugin {
 mod tests {
     use super::*;
     use crate::components::Player;
-    use crate::plugin::headless_app;
     use crate::state::EngineState;
+    use crate::testing::headless_app;
 
     /// An onlooker's viewshed is every tile of the window, the walls and
     /// what is behind them included, and what it sees is remembered.

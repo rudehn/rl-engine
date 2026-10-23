@@ -55,7 +55,7 @@ fn fingerprint(app: &mut App) -> u64 {
 /// A player that strikes what stands beside it and waits otherwise, in a
 /// field of hunters that notice, flee, search and drift.
 fn run(seed: u64, turns: usize) -> u64 {
-    let mut app = rl_bevy::plugin::headless_app();
+    let mut app = rl_bevy::testing::headless_app();
     app.add_plugins((FovPlugin, CombatPlugin, MindsPlugin, StealthPlugin, ItemsPlugin));
     let start = ground(&mut app);
     let Sides { ours, theirs, kind } = two_sides(&mut app);

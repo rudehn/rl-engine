@@ -143,7 +143,7 @@ pub struct FellAsleep(Vec<Entity>);
 /// in [`FellAsleep`]. With no [`Registries`] there is no status to apply.
 /// `FellAsleep` is read as optional so the system can run on its own, in a
 /// game's test of what it afflicts, with nothing to wake anyone on harm.
-pub fn resolve_afflictions(
+pub(crate) fn resolve_afflictions(
     mut afflicts: MessageReader<Afflict>,
     mut cures: MessageReader<Cure>,
     mut events: MessageWriter<StatusEvent>,
@@ -622,9 +622,9 @@ mod tests {
     use crate::components::{Blocks, MyTurn, Player, Position, RevealsMap, Viewshed};
     use crate::minds::{Mind, Perception};
     use crate::noise::{Hearing, MakeNoise, NoisePlugin, NoiseRules, Sounds};
-    use crate::plugin::headless_app;
     use crate::state::EngineState;
     use crate::stealth::{Aware, Notice, Stealth, StealthPlugin};
+    use crate::testing::headless_app;
     use crate::turn::Wait;
     use crate::turn::{Intent, Turns};
     use crate::work::{AddWork, WorkKinds, Working};

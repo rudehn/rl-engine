@@ -163,8 +163,8 @@ impl Plugin for FactsPlugin {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::plugin::headless_app;
     use crate::state::EngineState;
+    use crate::testing::headless_app;
     use rl_rules::{FactDef, FactKind, Matcher, Objective, QuestId, QuestState};
 
     /// A game that tracks a quest of two kills and counts its kills, both

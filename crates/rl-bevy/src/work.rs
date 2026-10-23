@@ -572,8 +572,9 @@ mod tests {
     use crate::combat::Health;
     use crate::components::{Actor, Blocks, Player, Position, Speed, Viewshed};
     use crate::minds::{Mind, MindsPlugin, Perception, Thinking};
-    use crate::plugin::{PerceiveSet, Turn, TurnSet, headless_app};
+    use crate::plugin::{PerceiveSet, Turn, TurnSet};
     use crate::state::EngineState;
+    use crate::testing::headless_app;
     use crate::turn::{Intent, Turns, Wait};
     use rl_core::Point;
     use rl_rules::ai::{Brain, Decision, Tactic, TacticCtx};

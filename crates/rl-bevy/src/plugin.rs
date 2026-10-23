@@ -399,7 +399,7 @@ struct PendingRun {
 /// to [`EngineState::Idle`]. After a restart the next run is begun there,
 /// through the same door the first was; after leaving, [`HoldStart`] holds
 /// it back for the title to begin, on a fresh seed set here.
-pub fn restart_runs(world: &mut World) {
+pub(crate) fn restart_runs(world: &mut World) {
     let restart: Option<Restart> = world.resource_mut::<Messages<Restart>>().drain().last();
     // Leaving needs a run to leave. At a title already up there is none,
     // and a teardown would run a game's forgetting over the save the title
@@ -868,18 +868,11 @@ pub fn depends_on<P: Plugin>(app: &App, plugin: &'static str) {
     assert!(app.is_plugin_added::<P>(), "{plugin} needs {} added as well", std::any::type_name::<P>());
 }
 
-/// A headless app with the engine plugins and no window, for tests in the
-/// engine and in games.
-pub fn headless_app() -> App {
-    let mut app = App::new();
-    app.add_plugins((MinimalPlugins, bevy::state::app::StatesPlugin, CorePlugin));
-    app
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::components::{Actor, Blocks, MyTurn, Player, Position, RevealsMap, Speed, Viewshed};
+    use crate::testing::headless_app;
     use crate::turn::{Action, Intent, Step, Wait};
     use rl_core::{Direction, Point};
     use rl_grid::{TileId, TileProps, TileRegistry};

@@ -770,7 +770,7 @@ mod tests {
     /// the glyphs drawn at the wall, behind it and on the thing.
     fn drawn_for(sight: Viewshed) -> [char; 3] {
         use rl_bevy::components::RevealsMap;
-        let mut app = rl_bevy::plugin::headless_app();
+        let mut app = rl_bevy::testing::headless_app();
         app.add_plugins((FovPlugin, MapViewPlugin::new(Rect::new(0, 0, 40, 20))));
         app.insert_resource(Terminal::new(40, 20, Vec2::ONE));
         let start = rl_bevy::testing::ground(&mut app);
@@ -817,7 +817,7 @@ mod tests {
     /// and the player.
     fn open_ground() -> (App, Point, Entity) {
         use rl_bevy::components::RevealsMap;
-        let mut app = rl_bevy::plugin::headless_app();
+        let mut app = rl_bevy::testing::headless_app();
         app.add_plugins((FovPlugin, MapViewPlugin::new(Rect::new(0, 0, 60, 30))));
         app.insert_resource(Terminal::new(60, 30, Vec2::ONE));
         let start = rl_bevy::testing::ground(&mut app);

@@ -228,7 +228,7 @@ pub struct Floor<'w, 's, M: ItemMaker> {
 /// each kind of mark its rules name and a number more loose, at the band
 /// the game gives the place. A revisit is not a first arrival, so nothing
 /// is scattered twice.
-pub fn scatter_places<M: ItemMaker>(mut commands: Commands, mut entered: MessageReader<PlaceEntered>, floor: Floor<M>) {
+pub(crate) fn scatter_places<M: ItemMaker>(mut commands: Commands, mut entered: MessageReader<PlaceEntered>, floor: Floor<M>) {
     let Floor { maker, registries, map, seed, props } = &floor;
     for ev in entered.read().filter(|ev| ev.first) {
         let Some(place) = map.place(ev.map) else { continue };
@@ -252,7 +252,7 @@ pub fn scatter_places<M: ItemMaker>(mut commands: Commands, mut entered: Message
 ///
 /// Read off the dying entity while it is still there: the dead are buried
 /// at the end of the frame, after every reaction.
-pub fn drop_on_death<M: ItemMaker>(
+pub(crate) fn drop_on_death<M: ItemMaker>(
     mut commands: Commands,
     mut deaths: MessageReader<DeathEvent>,
     maker: Res<M>,
@@ -324,7 +324,7 @@ pub(crate) fn draw_stock<M: ItemMaker>(maker: &M, what: &Stock, count: u32, band
 /// Draws of the same thing are made together, so a row of ammunition that
 /// drew one kind six times is one stack of six rather than six stacks of
 /// one.
-pub fn fill_containers<M: ItemMaker>(mut commands: Commands, mut asks: MessageReader<FillContainer>, maker: Res<M>, stocking: Stocking) {
+pub(crate) fn fill_containers<M: ItemMaker>(mut commands: Commands, mut asks: MessageReader<FillContainer>, maker: Res<M>, stocking: Stocking) {
     let Stocking { registries, seed, places, mut bags } = stocking;
     for ask in asks.read() {
         let Ok((at, on)) = places.get(ask.prop) else { continue };
@@ -416,9 +416,10 @@ pub(crate) mod tests {
     use crate::combat::DeathEvent;
     use crate::items::{Item, Stack};
     use crate::places::PlaceBuild;
-    use crate::plugin::{Turn, headless_app};
+    use crate::plugin::Turn;
     use crate::props::{PropsPlugin, spawn_prop};
     use crate::state::EngineState;
+    use crate::testing::headless_app;
     use rl_grid::{Terrain, TileRegistry};
     use rl_rules::loot::{DropRow, LootRow};
     use rl_rules::{Named, Names, Registry, TagDef, TagId};

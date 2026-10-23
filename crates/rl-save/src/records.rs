@@ -90,7 +90,7 @@ mod tests {
     /// An app that keeps records and saves, with `backend` to remember
     /// records in, finished the way `App::run` finishes one.
     fn game(backend: &Arc<MemoryBackend>) -> App {
-        let mut app = rl_bevy::plugin::headless_app();
+        let mut app = rl_bevy::testing::headless_app();
         app.insert_resource(Saves(backend.clone()));
         app.add_plugins((crate::run::SavePlugin::new("run"), RecordsPlugin));
         app.finish();
@@ -159,7 +159,7 @@ mod tests {
     #[test]
     fn records_are_never_deleted_with_the_run() {
         let backend = Arc::new(MemoryBackend::default());
-        let mut app = rl_bevy::plugin::headless_app();
+        let mut app = rl_bevy::testing::headless_app();
         rl_bevy::testing::ground(&mut app);
         app.insert_resource(Saves(backend.clone()));
         app.insert_resource(Seed(RunSeed(3)));
@@ -191,12 +191,12 @@ mod tests {
     fn records_are_kept_between_launches_only_in_a_game_that_keeps_records_whichever_plugin_comes_first() {
         let backend = Arc::new(MemoryBackend::default());
         backend.persist(RECORDS_SLOT, r#"[(outcome: Won, summary: "kept", score: 1, seed: 1, turn: 1)]"#).unwrap();
-        let mut saving = rl_bevy::plugin::headless_app();
+        let mut saving = rl_bevy::testing::headless_app();
         saving.insert_resource(Saves(backend.clone())).add_plugins(crate::run::SavePlugin::new("run"));
         saving.finish();
         assert!(!saving.world().contains_resource::<RunRecords>(), "no records kept, so none recalled");
         for records_first in [false, true] {
-            let mut app = rl_bevy::plugin::headless_app();
+            let mut app = rl_bevy::testing::headless_app();
             app.insert_resource(Saves(backend.clone()));
             if records_first {
                 app.add_plugins((RecordsPlugin, crate::run::SavePlugin::new("run")));

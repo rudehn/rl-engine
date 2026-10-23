@@ -316,9 +316,9 @@ mod tests {
     use crate::combat::{CombatPlugin, MeleeAttack};
     use crate::components::{Actor, Blocks, Player, Viewshed};
     use crate::doors::DoorEvent;
-    use crate::plugin::headless_app;
     use crate::props::Interacted;
     use crate::state::EngineState;
+    use crate::testing::headless_app;
     use crate::turn::Turns;
     use rl_core::{DiceRoll, Point};
     use rl_grid::TileRegistry;

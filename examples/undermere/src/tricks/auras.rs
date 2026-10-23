@@ -75,8 +75,6 @@ pub struct Sung;
 
 #[cfg(test)]
 mod tests {
-    use rl_engine::rl_bevy::status::resolve_afflictions;
-
     use super::*;
 
     /// A wraith's `shrouded`, played on a real floor: stood on a cell the
@@ -115,11 +113,11 @@ mod tests {
     #[test]
     fn a_choirs_own_side_within_its_range_regenerates_quietly_and_loses_it_once_out_of_range() {
         let mut app = App::new();
-        app.add_message::<Afflict>().add_message::<Cure>().add_message::<rl_engine::rl_bevy::status::StatusEvent>();
+        app.add_message::<Afflict>().add_message::<Cure>();
         let registries = crate::content::registries();
         let undead = registries.factions.expect("undead");
         app.insert_resource(registries);
-        app.add_systems(Update, (sing_choir, resolve_afflictions).chain());
+        app.add_systems(Update, sing_choir);
         app.world_mut().spawn((Actor, Position(Point::ZERO), Faction(undead), Choir));
         let near = app.world_mut().spawn((Actor, Position(Point::new(3, 0)), Faction(undead), Afflicted(Statuses::new()), StatBlock(Stats::new()))).id();
         let far = app.world_mut().spawn((Actor, Position(Point::new(10, 0)), Faction(undead), Afflicted(Statuses::new()), StatBlock(Stats::new()))).id();
@@ -127,11 +125,13 @@ mod tests {
         let regenerating = app.world().resource::<Registries>().statuses.expect("regenerating");
         assert!(app.world().get::<Afflicted>(near).unwrap().0.has(regenerating), "within the choir's range, it regenerates");
         assert!(!app.world().get::<Afflicted>(far).unwrap().0.has(regenerating), "past it, nothing");
-        let said = app.world().resource::<Messages<rl_engine::rl_bevy::status::StatusEvent>>().iter_current_update_messages().count();
-        assert_eq!(said, 0, "given quietly, as a trait of the choir's known on sight");
+        let said = app.world().resource::<Messages<Afflict>>().iter_current_update_messages().count();
+        assert_eq!(said, 0, "given quietly, as a trait of the choir's known on sight, and never as an `Afflict` the narrator would say aloud");
         app.world_mut().entity_mut(near).insert(Position(Point::new(10, 0)));
         app.update();
         assert!(!app.world().get::<Afflicted>(near).unwrap().0.has(regenerating), "stepped past the range, the choir's own gift is lifted");
+        let cured = app.world().resource::<Messages<Cure>>().iter_current_update_messages().count();
+        assert_eq!(cured, 0, "and lifted quietly, never as a `Cure`");
     }
 
     /// A choir sings only to its own floor: a body of its side standing
@@ -140,11 +140,10 @@ mod tests {
     #[test]
     fn a_choir_sings_only_to_its_own_side_on_its_own_floor() {
         let mut app = App::new();
-        app.add_message::<Afflict>().add_message::<Cure>().add_message::<rl_engine::rl_bevy::status::StatusEvent>();
         let registries = crate::content::registries();
         let undead = registries.factions.expect("undead");
         app.insert_resource(registries);
-        app.add_systems(Update, (sing_choir, resolve_afflictions).chain());
+        app.add_systems(Update, sing_choir);
         let (here, below) = (MapId(1), MapId(2));
         app.world_mut().spawn((Actor, Position(Point::ZERO), OnMap(here), Faction(undead), Choir));
         let body = |at: MapId| (Actor, Position(Point::new(2, 0)), OnMap(at), Faction(undead), Afflicted(Statuses::new()), StatBlock(Stats::new()));

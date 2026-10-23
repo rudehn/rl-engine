@@ -708,7 +708,7 @@ mod tests {
     #[test]
     fn cues_become_one_animation_per_actor_that_holds_the_turns_until_it_has_played() {
         use rl_core::Rect;
-        let mut app = rl_bevy::plugin::headless_app();
+        let mut app = rl_bevy::testing::headless_app();
         app.add_plugins((crate::map_view::MapViewPlugin::new(Rect::new(0, 0, 40, 20)), ParticlesPlugin));
         app.insert_resource(Terminal::new(40, 20, Vec2::ONE));
         app.insert_resource(ParticleStyle { cell_secs: 0.01, burst_secs: 0.05, ..ParticleStyle::default() });
@@ -746,7 +746,7 @@ mod tests {
     #[test]
     fn a_key_pressed_while_the_turns_wait_skips_what_holds_them() {
         use rl_core::Rect;
-        let mut app = rl_bevy::plugin::headless_app();
+        let mut app = rl_bevy::testing::headless_app();
         app.add_plugins((crate::map_view::MapViewPlugin::new(Rect::new(0, 0, 40, 20)), ParticlesPlugin, rl_bevy::testing::KeyScriptPlugin));
         app.insert_resource(Terminal::new(40, 20, Vec2::ONE));
         app.insert_resource(ParticleStyle { cell_secs: 1.0, burst_secs: 1.0, ..ParticleStyle::default() });
@@ -771,7 +771,7 @@ mod tests {
     #[test]
     fn a_skip_asked_for_while_the_turns_wait_skips_what_holds_them_the_way_a_press_does() {
         use rl_core::Rect;
-        let mut app = rl_bevy::plugin::headless_app();
+        let mut app = rl_bevy::testing::headless_app();
         app.add_plugins((crate::map_view::MapViewPlugin::new(Rect::new(0, 0, 40, 20)), ParticlesPlugin));
         app.insert_resource(Terminal::new(40, 20, Vec2::ONE));
         app.insert_resource(ParticleStyle { cell_secs: 1.0, burst_secs: 1.0, ..ParticleStyle::default() });
@@ -810,7 +810,7 @@ mod tests {
     fn a_key_pressed_while_a_shot_at_the_player_flies_lands_it_before_the_player_moves() {
         use rl_core::{DiceRoll, Rect};
         use rl_rules::ai::{Brain, tactics::ShootAtRange};
-        let mut app = rl_bevy::plugin::headless_app();
+        let mut app = rl_bevy::testing::headless_app();
         app.add_plugins((crate::map_view::MapViewPlugin::new(Rect::new(0, 0, 40, 20)), ParticlesPlugin, rl_bevy::testing::KeyScriptPlugin));
         app.add_plugins((FovPlugin, CombatPlugin, MindsPlugin));
         app.insert_resource(Terminal::new(40, 20, Vec2::ONE));
@@ -875,7 +875,7 @@ mod tests {
         use rl_core::{Rect, RunSeed};
         let (mut reflected, mut landed) = (0, 0);
         for seed in 0..40 {
-            let mut app = rl_bevy::plugin::headless_app();
+            let mut app = rl_bevy::testing::headless_app();
             app.add_plugins((crate::map_view::MapViewPlugin::new(Rect::new(0, 0, 40, 20)), ParticlesPlugin));
             app.add_plugins((FovPlugin, CombatPlugin, MindsPlugin, AbilitiesPlugin));
             app.add_engine_effects();

@@ -85,8 +85,8 @@ mod tests {
     use crate::components::{Actor, Blocks, Player, Position, Viewshed};
     use crate::doors::Open;
     use crate::places::{MapId, OnMap, PlaceBuild};
-    use crate::plugin::headless_app;
     use crate::state::EngineState;
+    use crate::testing::headless_app;
     use crate::turn::Intent;
     use crate::world::WorldMap;
 

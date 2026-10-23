@@ -6,6 +6,9 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- Engine systems are no longer public: 57 system functions of `rl-bevy`, `rl-ui` and `rl-save` are crate-private, and `rl_bevy::bury_spent`, `rl_bevy::land_triggers`, `rl_save::forget_save` and `rl_save::save_on_arrival` are no longer exported. A game orders its systems by the engine's sets, never by an engine function. The run conditions (`modal_is`, `modal_open`, `no_modal`, `title_is_up`) and `rl_bevy::plugin::run_turns` stay public.
+  To change: a game that named an engine system function orders by the set it runs in, and an ambiguity allowance names its own system and the data with `Allowed::with_any`, or the engine's sets with `Allowed::among`; `rl_bevy::plugin::headless_app` is `rl_bevy::testing::headless_app`.
+
 - The engine checks its own systems' conflicts: every pair of two engine systems that touch the same data unordered is ordered or allowed in rl-bevy's own test, so a game's ordering test answers only for its own systems. Three pairs it found are ordered: a worn thing's pulse after a use aimed somewhere lands, the cures of things no longer worn before stealth's, and gear folded into the stats before a sleeper wakes.
   To change: nothing.
 

@@ -280,7 +280,7 @@ mod tests {
     #[test]
     fn a_record_is_filed_before_anything_draws() {
         fn draws(_: Res<RunRecords>) {}
-        let mut app = crate::plugin::headless_app();
+        let mut app = crate::testing::headless_app();
         app.add_plugins(RecordsPlugin).add_systems(Update, draws.in_set(EngineSet::Present));
         let (files, reads) = (IntoSystem::into_system(record_runs).system_type(), IntoSystem::into_system(draws).system_type());
         app.world_mut().schedule_scope(Update, |world, schedule| {
@@ -329,7 +329,7 @@ mod tests {
 
     #[test]
     fn a_record_run_written_before_the_ending_waits_for_it() {
-        let mut app = crate::plugin::headless_app();
+        let mut app = crate::testing::headless_app();
         app.add_plugins(RecordsPlugin);
         app.world_mut().write_message(RecordRun { score: 42, summary: "won".into(), sections: Vec::new() });
         app.update();
@@ -350,7 +350,7 @@ mod tests {
     /// ending files its own record and not the last run's under its name.
     #[test]
     fn a_record_still_waiting_when_its_run_is_torn_down_is_not_filed_against_the_next() {
-        let mut app = crate::plugin::headless_app();
+        let mut app = crate::testing::headless_app();
         app.add_plugins(RecordsPlugin);
         app.insert_resource(Seed(RunSeed(1)));
         app.world_mut().write_message(RecordRun { score: 1, summary: "the run torn down".into(), sections: Vec::new() });
@@ -373,7 +373,7 @@ mod tests {
     #[test]
     fn a_record_written_as_its_run_is_torn_down_is_filed_only_under_that_runs_ending() {
         for (ended, filed) in [(false, vec!["the next run"]), (true, vec!["the next run", "the run left"])] {
-            let mut app = crate::plugin::headless_app();
+            let mut app = crate::testing::headless_app();
             app.add_plugins(RecordsPlugin);
             app.insert_resource(Seed(RunSeed(1)));
             if ended {
@@ -401,7 +401,7 @@ mod tests {
 
     #[test]
     fn a_record_takes_its_outcome_seed_and_turn_from_the_ending() {
-        let mut app = crate::plugin::headless_app();
+        let mut app = crate::testing::headless_app();
         app.add_plugins(RecordsPlugin);
         app.insert_resource(Seed(RunSeed(77)));
         app.world_mut().insert_resource(Ending { outcome: Outcome::Died { by: None }, epitaph: String::new(), seed: RunSeed(999), turn: 123 });
@@ -415,7 +415,7 @@ mod tests {
 
     #[test]
     fn this_run_is_forgotten_when_a_new_run_begins() {
-        let mut app = crate::plugin::headless_app();
+        let mut app = crate::testing::headless_app();
         app.add_plugins(RecordsPlugin);
         app.insert_resource(Seed(RunSeed(1)));
         app.world_mut().insert_resource(Ending { outcome: Outcome::Won, epitaph: String::new(), seed: RunSeed(1), turn: 5 });

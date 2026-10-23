@@ -435,7 +435,7 @@ pub struct Offerers<'w, 's> {
 /// the world themselves. Asked of where everything stands at that moment,
 /// so an offer walks off with whoever makes it, and a price is weighed
 /// against what the actor carries now.
-pub fn offer_here(
+pub(crate) fn offer_here(
     mut offered: ResMut<OfferedHere>,
     registries: Res<Registries>,
     verbs: Res<Verbs>,
@@ -583,7 +583,7 @@ pub struct Answering<'w, 's> {
 }
 
 /// Resolves an interaction against what the gate offered.
-pub fn resolve_interactions(
+pub(crate) fn resolve_interactions(
     mut intents: MessageReader<Intent<Interact>>,
     mut done: MessageWriter<Interacted>,
     mut resolution: Resolution,
@@ -743,7 +743,7 @@ fn check_tagged_contents(registries: Option<Res<Registries>>, answered: Option<R
 /// derived from the run's seed and may not exist on the frame a place is
 /// built: a container waits a frame rather than being quietly left empty
 /// forever.
-pub fn stock_containers(
+pub(crate) fn stock_containers(
     mut commands: Commands,
     mut asks: MessageWriter<FillContainer>,
     rng: Option<ResMut<PropRng>>,
@@ -783,7 +783,7 @@ impl Action for Take {}
 /// Refused for free when the container is out of reach or holds nothing,
 /// which is what the screen already knows, so nothing is spent finding
 /// out.
-pub fn resolve_takes(
+pub(crate) fn resolve_takes(
     mut commands: Commands,
     mut intents: MessageReader<Intent<Take>>,
     mut events: MessageWriter<crate::items::ItemEvent>,
@@ -847,7 +847,7 @@ pub fn resolve_takes(
 ///
 /// What it looks like afterwards is the renderer's to apply, from the
 /// same definition, the way a full one's look is.
-pub fn close_emptied_containers(mut commands: Commands, registries: Res<Registries>, emptied: JustEmptied) {
+pub(crate) fn close_emptied_containers(mut commands: Commands, registries: Res<Registries>, emptied: JustEmptied) {
     for (prop, kind, contents) in &emptied {
         if !contents.items.is_empty() {
             continue;
@@ -859,7 +859,7 @@ pub fn close_emptied_containers(mut commands: Commands, registries: Res<Registri
 }
 
 /// Every prop's effects, built once from the registry: what each offer
-/// lands, and each kind's [`Triggers`], which [`arm_props`] copies onto
+/// lands, and each kind's [`Triggers`], which `arm_props` copies onto
 /// every prop of that kind.
 ///
 /// Built on the first frame rather than in the plugin, because a game
@@ -887,7 +887,7 @@ impl PropEffects {
 /// mistake that would otherwise be a trap that silently does nothing, which
 /// is the worst kind of trap. A trap whose triggers would not build is left
 /// unarmed rather than half armed.
-pub fn build_prop_effects(
+pub(crate) fn build_prop_effects(
     mut commands: Commands,
     built: Option<Res<PropEffects>>,
     registries: Res<Registries>,
@@ -941,7 +941,7 @@ pub fn build_prop_effects(
 ///
 /// A save brings a prop back before anything has built its kind's
 /// triggers, so what it had left to fire is kept here and put onto them by
-/// [`arm_props`] the moment it is armed.
+/// `arm_props` the moment it is armed.
 #[derive(Component, Debug, Clone, Default, PartialEq, Eq)]
 pub struct PendingFires(pub Vec<Option<u32>>);
 
@@ -957,7 +957,7 @@ type Armed<'w, 's> = Query<'w, 's, (Entity, &'static Position, Option<&'static O
 /// times left to fire, so springing one cable spends nothing of another.
 /// A kind with none is armed with an empty list, which answers nothing and
 /// keeps this from looking at the prop again.
-pub fn arm_props(mut commands: Commands, built: Option<Res<PropEffects>>, fresh: Unarmed) {
+pub(crate) fn arm_props(mut commands: Commands, built: Option<Res<PropEffects>>, fresh: Unarmed) {
     let Some(built) = built else { return };
     for (prop, kind, pending) in &fresh {
         let mut triggers = built.triggers.get(kind.0.index()).cloned().unwrap_or_default();
@@ -982,7 +982,7 @@ pub fn arm_props(mut commands: Commands, built: Option<Res<PropEffects>>, fresh:
 /// the cell it now stands on, since a swap is no step but both still come
 /// to stand on a plate: one that gave way to a passer-by is put onto
 /// whatever the passer-by stood on, and the passer-by onto what it did.
-pub fn report_entered(
+pub(crate) fn report_entered(
     mut steps: MessageReader<crate::turn::Stepped>,
     mut swaps: MessageReader<crate::bump::Swapped>,
     standing: Query<&Position>,
@@ -1012,7 +1012,7 @@ pub fn report_entered(
 /// names, is reported in its place, and is despawned at
 /// the end of the frame they land in. A prop with nothing to do when
 /// broken leaves none.
-pub fn report_destroyed(
+pub(crate) fn report_destroyed(
     mut commands: Commands,
     mut deaths: MessageReader<crate::combat::DeathEvent>,
     props: Query<&Triggers, With<Prop>>,
@@ -1041,7 +1041,11 @@ type Standing = (Entity, &'static Position, Option<&'static OnMap>, Option<&'sta
 /// may do about one is its game's business rather than a capability the
 /// engine has a word for. A prop nobody has spotted is left out, so a
 /// mind never walks to a plate the player cannot see either.
-pub fn perceive_props(mut thinking: ResMut<crate::minds::Thinking>, sight: crate::minds::Sight, standing: Query<Standing, (With<Prop>, Without<Hidden>)>) {
+pub(crate) fn perceive_props(
+    mut thinking: ResMut<crate::minds::Thinking>,
+    sight: crate::minds::Sight,
+    standing: Query<Standing, (With<Prop>, Without<Hidden>)>,
+) {
     if thinking.actor().is_none() {
         return;
     }
@@ -1170,7 +1174,7 @@ type Finder<'w, 's> = Query<
 /// system only reads the map and orders against nothing that does.
 ///
 /// [`Wait`]: crate::turn::Wait
-pub fn spot_hidden_props(
+pub(crate) fn spot_hidden_props(
     mut commands: Commands,
     mut spotted: MessageWriter<Spotted>,
     mut dice: SpotDice,
@@ -1304,7 +1308,7 @@ pub struct ToldPropsAreBare;
 /// a place is built, before play begins, and `Added` matches for one frame
 /// only: a report that waits for the run to start is a report that never
 /// happens.
-pub fn report_bare_props(mut commands: Commands, told: Option<Res<ToldPropsAreBare>>, bare: Query<Entity, (Added<Prop>, Without<Name>)>) {
+pub(crate) fn report_bare_props(mut commands: Commands, told: Option<Res<ToldPropsAreBare>>, bare: Query<Entity, (Added<Prop>, Without<Name>)>) {
     if told.is_some() || bare.is_empty() {
         return;
     }
@@ -1420,7 +1424,7 @@ impl Plugin for PropsPlugin {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::plugin::headless_app;
+    use crate::testing::headless_app;
     use crate::turn::Occupancy;
     use rl_rules::Names;
 
@@ -1524,8 +1528,8 @@ mod offers {
     use super::*;
     use crate::components::{Actor, Blocks, Player, Viewshed};
     use crate::items::{Inventory, Item, Tagged};
-    use crate::plugin::headless_app;
     use crate::state::EngineState;
+    use crate::testing::headless_app;
     use crate::turn::{Intent, Turns};
     use rl_rules::{Names, Registry, TagDef};
 
@@ -1778,8 +1782,8 @@ mod actor_offers {
     use super::*;
     use crate::components::{Actor, Blocks, Player, Viewshed};
     use crate::items::{Inventory, Item, Stack, Tagged};
-    use crate::plugin::headless_app;
     use crate::state::EngineState;
+    use crate::testing::headless_app;
     use crate::trade::Currency;
     use crate::turn::{Intent, Turns};
     use rl_rules::{Registry, TagDef};
@@ -2144,8 +2148,8 @@ mod containers {
     use super::*;
     use crate::components::{Actor, Blocks, Player, Viewshed};
     use crate::items::{Item, Stack};
-    use crate::plugin::headless_app;
     use crate::state::EngineState;
+    use crate::testing::headless_app;
     use crate::turn::{Intent, Turns};
     use rl_rules::Names;
 
@@ -2357,8 +2361,8 @@ mod traps {
     use crate::combat::{CombatPlugin, DamageEvent, Health};
     use crate::components::{Actor, Blocks, Player, Viewshed};
     use crate::effects::AddEngineEffects;
-    use crate::plugin::headless_app;
     use crate::state::EngineState;
+    use crate::testing::headless_app;
     use crate::turn::{Intent, Step};
 
     /// A plate that harms whoever steps on it, once; a leak that harms
@@ -2756,8 +2760,8 @@ mod spotting {
     use super::*;
     use crate::components::{Actor, Player, Viewshed};
     use crate::places::PlaceBuild;
-    use crate::plugin::headless_app;
     use crate::state::EngineState;
+    use crate::testing::headless_app;
     use crate::turn::{Intent, Step, Wait};
 
     const PLACE: MapId = MapId(1);

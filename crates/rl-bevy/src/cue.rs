@@ -334,7 +334,7 @@ mod tests {
     /// seen to arrive like any other.
     #[test]
     fn the_turns_wait_on_each_cue_in_turn_the_ones_at_the_player_included() {
-        let mut app = crate::plugin::headless_app();
+        let mut app = crate::testing::headless_app();
         app.add_plugins(crate::fov::FovPlugin);
         let start = crate::testing::ground(&mut app);
         app.add_systems(crate::plugin::Turn, cue_own_turn.in_set(crate::plugin::ResolveSet::Act));

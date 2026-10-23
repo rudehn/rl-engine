@@ -19,7 +19,7 @@ fn name() -> String {
 /// What a fresh app saving the game called `name` wrote `text` to its run
 /// slot through.
 fn saved_by_a_run(name: &str, text: &str) {
-    let mut app = rl_bevy::plugin::headless_app();
+    let mut app = rl_bevy::testing::headless_app();
     app.add_plugins(SavePlugin::new(name));
     app.world().resource::<Saves>().persist(name, text).expect("the backend takes it");
 }

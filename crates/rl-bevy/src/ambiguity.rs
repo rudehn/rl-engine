@@ -22,7 +22,7 @@ fn engine() -> App {
     use crate::loot::tests::Toys;
     use crate::noise::NoiseRules;
     use crate::prefabs::tests::Beasts;
-    let mut app = crate::plugin::headless_app();
+    let mut app = crate::testing::headless_app();
     app.add_plugins((
         crate::fov::FovPlugin,
         crate::combat::CombatPlugin,
@@ -200,7 +200,7 @@ fn every_conflicting_pair_of_the_engines_systems_is_ordered_or_allowed_for_a_sta
     let mut app = engine();
     // The engine's own: whatever its plugins add to the bare headless app,
     // whose `CorePlugin` systems each of them meets.
-    let ours = ambiguity::added(&mut app, &mut crate::plugin::headless_app());
+    let ours = ambiguity::added(&mut app, &mut crate::testing::headless_app());
     let world = app.world();
     ambiguity::assert_ordered(world, "the engine", &ours, &allowed(world), &names(), &ids(world));
 }

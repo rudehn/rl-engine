@@ -226,7 +226,7 @@ mod tests {
     }
 
     fn app() -> App {
-        let mut app = crate::plugin::headless_app();
+        let mut app = crate::testing::headless_app();
         app.add_stream::<Draws>("a test");
         app
     }

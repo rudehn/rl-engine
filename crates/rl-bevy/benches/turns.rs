@@ -30,7 +30,7 @@ use rl_core::DiceRoll;
 /// stepping rather than resolving blows, which is the part that scales
 /// with the crowd.
 fn awake(crowd: usize) -> (App, Entity) {
-    let mut app = rl_bevy::plugin::headless_app();
+    let mut app = rl_bevy::testing::headless_app();
     app.add_plugins((rl_bevy::fov::FovPlugin, rl_bevy::combat::CombatPlugin, rl_bevy::minds::MindsPlugin, rl_bevy::items::ItemsPlugin));
     let start = testing::ground(&mut app);
     let sides = testing::two_sides(&mut app);
@@ -164,7 +164,7 @@ fn smoke(c: &mut Criterion) {
 
     fn built(air: Air, lit: bool) -> (App, Entity) {
         let crowd = 32;
-        let mut app = rl_bevy::plugin::headless_app();
+        let mut app = rl_bevy::testing::headless_app();
         app.add_plugins((rl_bevy::fov::FovPlugin, rl_bevy::combat::CombatPlugin, rl_bevy::minds::MindsPlugin, rl_bevy::items::ItemsPlugin));
         if lit {
             app.add_plugins(rl_bevy::lighting::LightingPlugin);

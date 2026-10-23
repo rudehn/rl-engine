@@ -150,7 +150,7 @@ pub(crate) fn take_twin(world: &mut World, entity: Entity) {
 /// the death is written: before `TurnSet::React`, where a game answers a
 /// death and may take its own components off, and before
 /// `CleanupSet::Remove`, where the engine takes the actor out of the world.
-/// The same test as [`leave_remains`] decides who, so every body has a
+/// The same test as `leave_remains` decides who, so every body has a
 /// twin and nothing else does.
 pub(crate) fn keep_life(mut commands: Commands, mut deaths: MessageReader<DeathEvent>, leaves: Query<(), With<LeavesRemains>>) {
     for death in deaths.read() {
@@ -409,14 +409,14 @@ pub(crate) fn name_as_remains(world: &mut World, entity: Entity) {
 
 /// What an actor stops being when it becomes remains.
 ///
-/// One list, used twice: by [`leave_remains`] when it dies, and by the
+/// One list, used twice: by `leave_remains` when it dies, and by the
 /// save when a run is continued and a game has just spawned the thing
 /// alive again from its own record of it. A body holds no turn (no
 /// [`Actor`]), stands in nobody's way (no `Blocks`), thinks nothing (no
 /// mind, no sight) and has nothing left to lose (no [`Health`]), so
 /// nothing in the engine can deal it a turn or kill it twice. `Dead`
 /// comes off with them, which is what keeps
-/// [`bury_the_dead`](crate::combat::bury_the_dead) from despawning it at
+/// `bury_the_dead` from despawning it at
 /// the end of the frame.
 ///
 /// What it noticed and what it heard come off too, and that is not
@@ -430,7 +430,7 @@ pub(crate) fn name_as_remains(world: &mut World, entity: Entity) {
 /// and [`Triggers`](crate::effects::Triggers): both are read on anything
 /// that carries them, so a captive's "free" was still offered by its
 /// corpse, and a bite that poisons left on a body kept
-/// [`arm_props`](crate::props::arm_props) from giving it the triggers of a
+/// `arm_props` from giving it the triggers of a
 /// prop kind a game dresses it as. The twin keeps both, so a revival
 /// stands up offering and answering what the living actor did; a game
 /// that wants a body to offer something puts that on it at
@@ -460,7 +460,7 @@ pub(crate) type WasLiving = (
 /// position is put back here, at the cell it died on, because remains lie
 /// where the actor fell rather than where a game would have to remember
 /// it fell. Taking [`Dead`] off is what keeps
-/// [`bury_the_dead`](crate::combat::bury_the_dead) from despawning it at
+/// `bury_the_dead` from despawning it at
 /// the end of the frame.
 ///
 /// [`Health`] comes off rather than being left at zero: a body is not a
@@ -468,7 +468,7 @@ pub(crate) type WasLiving = (
 /// makes and could be killed twice. A game that wants a wreck something
 /// can shoot apart gives the wreck health of its own, which is a rule
 /// about that game's wrecks.
-pub fn leave_remains(
+pub(crate) fn leave_remains(
     mut commands: Commands,
     mut deaths: MessageReader<DeathEvent>,
     mut left: MessageWriter<RemainsLeft>,
@@ -540,8 +540,8 @@ mod tests {
     use super::*;
     use crate::combat::{CombatPlugin, DamageEvent, Faction, Health, Strikes};
     use crate::components::{Player, Viewshed};
-    use crate::plugin::headless_app;
     use crate::state::EngineState;
+    use crate::testing::headless_app;
     use crate::testing::{self, Sides};
     use bevy::ecs::entity_disabling::Disabled;
     use rl_core::DiceRoll;

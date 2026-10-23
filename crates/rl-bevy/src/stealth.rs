@@ -384,7 +384,7 @@ pub(crate) fn reveal_attackers(
 /// enemies, allies and others alike.
 ///
 /// In [`PerceiveSet::Filter`](crate::plugin::PerceiveSet::Filter) before
-/// [`filter_unnoticed`], so a mind that was alert to a subject that has
+/// `filter_unnoticed`, so a mind that was alert to a subject that has
 /// just vanished is offered the trail to where it last saw it, as for
 /// anything else out of sight. Every mind, noticing or not: a monster that
 /// sees on sight sees nothing here either.
@@ -402,7 +402,7 @@ pub(crate) fn filter_unseen(mut thinking: ResMut<Thinking>, unseen: Query<(), Wi
 /// [`PerceiveSet::Filter`](crate::plugin::PerceiveSet::Filter), after
 /// combat put everyone it could see in. A mind that keeps no [`Aware`] sees
 /// on sight and is left alone.
-pub fn filter_unnoticed(mut thinking: ResMut<Thinking>, aware: Query<&Aware>, hidden: Query<(), With<Stealth>>) {
+pub(crate) fn filter_unnoticed(mut thinking: ResMut<Thinking>, aware: Query<&Aware>, hidden: Query<(), With<Stealth>>) {
     let Some(thinker) = thinking.actor() else { return };
     let Ok(aware) = aware.get(thinker) else { return };
     let Some(snapshot) = thinking.snapshot_mut() else { return };
@@ -527,7 +527,7 @@ pub(crate) fn update_awareness(mut watch: Watch, mut noticed: MessageWriter<Noti
 /// so the [`DeathEvent`](crate::combat::DeathEvent) is what says the target is
 /// past noticing, and the log would otherwise read that the kill was
 /// noticed.
-pub fn wake_on_damage(
+pub(crate) fn wake_on_damage(
     mut dealt: MessageReader<DamageDealt>,
     mut deaths: MessageReader<crate::combat::DeathEvent>,
     mut missed: MessageReader<crate::accuracy::Missed>,
@@ -571,8 +571,8 @@ mod tests {
     use crate::components::{Actor, Blocks, RevealsMap};
     use crate::fov::FovPlugin;
     use crate::minds::MindsPlugin;
-    use crate::plugin::headless_app;
     use crate::state::EngineState;
+    use crate::testing::headless_app;
     use crate::turn::{Intent, Wait};
     use rl_core::DiceRoll;
     use rl_rules::ai::tactics::{Hunt, MeleeAdjacent, SearchLastKnown, Wander};

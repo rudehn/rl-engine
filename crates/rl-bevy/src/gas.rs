@@ -270,9 +270,9 @@ mod tests {
     use super::*;
     use crate::combat::{CombatPlugin, Health};
     use crate::components::{Blocks, Player, RevealsMap, Viewshed};
-    use crate::plugin::headless_app;
     use crate::state::EngineState;
     use crate::status::Afflicted;
+    use crate::testing::headless_app;
     use crate::turn::{Intent, Wait};
     use rl_grid::TileId;
     use rl_rules::gas::GasDef;

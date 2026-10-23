@@ -571,7 +571,7 @@ mod tests {
     /// no slot at all, as in a game that saves nothing, a small terminal to
     /// draw on, `setup` run before the first frame, and that frame run.
     fn titled(panel: TitlePanel, saved: Option<SavedRun>, setup: impl FnOnce(&mut App)) -> App {
-        let mut app = rl_bevy::plugin::headless_app();
+        let mut app = rl_bevy::testing::headless_app();
         app.add_plugins((rl_bevy::testing::KeyScriptPlugin, crate::UiPlugin, panel));
         app.insert_resource(Terminal::new(40, 12, Vec2::ONE));
         if let Some(saved) = saved {

@@ -239,7 +239,7 @@ mod tests {
     use rl_grid::TileId;
 
     fn fresh() -> (App, Point) {
-        let mut app = rl_bevy::plugin::headless_app();
+        let mut app = rl_bevy::testing::headless_app();
         app.add_plugins(rl_bevy::FovPlugin);
         let start = rl_bevy::testing::ground(&mut app);
         (app, start)

@@ -28,7 +28,7 @@ use rl_save::{MemoryBackend, SaveBackend, Saves};
 /// plugins, in the same order, so a test runs the systems the player does
 /// in the order the player's build added them.
 pub fn windowless(seed: RunSeed) -> App {
-    let mut app = rl_bevy::plugin::headless_app();
+    let mut app = rl_bevy::testing::headless_app();
     app.add_plugins(rl_bevy::FovPlugin);
     app.insert_resource(rl_bevy::Seed(seed)).insert_resource(Saves::new(MemoryBackend::default()));
     app

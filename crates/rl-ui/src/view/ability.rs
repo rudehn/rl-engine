@@ -110,7 +110,7 @@ impl Plugin for AbilityViewPlugin {
 }
 
 /// Fills [`AbilityView`] from what the turn-holder knows.
-pub fn collect_abilities(
+pub(crate) fn collect_abilities(
     mut view: ResMut<AbilityView>,
     abilities: Option<Res<Abilities>>,
     offered: Option<Res<Offered>>,

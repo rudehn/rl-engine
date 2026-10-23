@@ -54,7 +54,7 @@ fn drawing(crowd: usize, lit: bool, panels: Panels) -> (App, Entity) {
 /// spread is a level, where most actors are nowhere near it. What a bound
 /// on the light's invalidation can save is exactly the difference.
 fn drawing_spread(crowd: usize, lit: bool, panels: Panels, spread: bool) -> (App, Entity) {
-    let mut app = rl_bevy::plugin::headless_app();
+    let mut app = rl_bevy::testing::headless_app();
     app.add_plugins((rl_bevy::fov::FovPlugin, rl_bevy::combat::CombatPlugin, rl_bevy::minds::MindsPlugin, rl_bevy::items::ItemsPlugin));
     if lit {
         app.add_plugins(rl_bevy::lighting::LightingPlugin);

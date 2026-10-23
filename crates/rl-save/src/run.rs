@@ -28,7 +28,7 @@
 //! game's resources. [`SavePlugin`] owns the loop around it: the stash kept
 //! a turn behind the run so a closed window saves, and the slot deleted
 //! when the run ends, so nothing is resumed past its end, and, when asked
-//! with [`SavePlugin::on_arrival`], the slot written by [`save_on_arrival`]
+//! with [`SavePlugin::on_arrival`], the slot written by `save_on_arrival`
 //! every time the player arrives somewhere. A game's save key calls
 //! [`save_run`], and its start, when [`ContinueRun`](rl_bevy::ContinueRun)
 //! asks, calls [`load_run`] and [`RunSave::restore`]. The engine's own
@@ -1167,7 +1167,7 @@ fn forget_abandoned(_: On<AbandonRun>, saves: Res<Saves>, slot: Res<SaveSlot>, s
     forget_save(saves, slot, stash, saved);
 }
 
-/// Whether the frame held an arrival, for [`save_on_arrival`].
+/// Whether the frame held an arrival, for `save_on_arrival`.
 #[derive(Resource, Default)]
 struct ArrivedThisFrame(bool);
 
@@ -1186,7 +1186,7 @@ fn note_arrivals(mut entered: MessageReader<PlaceEntered>, mut arrived: ResMut<A
 /// deleted the save, and writing it back would let the run be continued
 /// past it. A save that fails is logged and the run goes on, as a stash
 /// that fails is.
-pub fn save_on_arrival(world: &mut World) {
+pub(crate) fn save_on_arrival(world: &mut World) {
     if !std::mem::take(&mut world.resource_mut::<ArrivedThisFrame>().0) {
         return;
     }
@@ -1233,7 +1233,7 @@ fn encode_run(world: &mut World) -> Result<String, SaveError> {
 ///
 /// Once a turn rather than once a frame: the run is only different after
 /// a turn, and encoding it is the whole of the cost.
-pub fn refresh_stash(world: &mut World, mut last: Local<Option<u32>>) {
+pub(crate) fn refresh_stash(world: &mut World, mut last: Local<Option<u32>>) {
     if *world.resource::<State<EngineState>>().get() != EngineState::Playing {
         return;
     }
@@ -1255,7 +1255,7 @@ pub fn refresh_stash(world: &mut World, mut last: Local<Option<u32>>) {
 /// and continuing it would be continuing past its end. [`SavedRun`] says
 /// the slot is empty once it is; a delete that failed leaves the slot, and
 /// what it says, as they were.
-pub fn forget_save(saves: Res<Saves>, slot: Res<SaveSlot>, stash: Res<Stash>, mut saved: ResMut<SavedRun>) {
+pub(crate) fn forget_save(saves: Res<Saves>, slot: Res<SaveSlot>, stash: Res<Stash>, mut saved: ResMut<SavedRun>) {
     stash.clear();
     match saves.delete(&slot.slot) {
         Ok(()) => *saved = SavedRun::Empty,
@@ -1340,7 +1340,7 @@ mod tests {
     }
 
     fn game_with(saves: Saves, plugin: SavePlugin) -> (App, Point) {
-        let mut app = rl_bevy::plugin::headless_app();
+        let mut app = rl_bevy::testing::headless_app();
         app.add_plugins((FovPlugin, CombatPlugin, ItemsPlugin, RemainsPlugin, rl_bevy::PropsPlugin));
         rl_bevy::AddWork::add_work(&mut app, "mending");
         let start = rl_bevy::testing::ground(&mut app);
@@ -2346,7 +2346,7 @@ mod tests {
     #[test]
     fn a_backend_the_game_inserted_is_the_one_its_runs_are_saved_through() {
         let backend = std::sync::Arc::new(MemoryBackend::default());
-        let mut app = rl_bevy::plugin::headless_app();
+        let mut app = rl_bevy::testing::headless_app();
         app.insert_resource(Saves(backend.clone())).add_plugins(SavePlugin::new("warren"));
         app.world().resource::<Saves>().persist("warren", "kept").unwrap();
         assert_eq!(backend.load("warren").unwrap().as_deref(), Some("kept"));

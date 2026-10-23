@@ -159,8 +159,8 @@ mod tests {
     use super::*;
     use crate::combat::{CombatPlugin, Health, MeleeAttack, RangedAttack};
     use crate::components::{Actor, Blocks, Position};
-    use crate::plugin::headless_app;
     use crate::state::EngineState;
+    use crate::testing::headless_app;
     use rl_core::DiceRoll;
     use rl_rules::accuracy::{Odds, Percent};
 

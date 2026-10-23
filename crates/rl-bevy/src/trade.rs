@@ -494,10 +494,10 @@ mod tests {
     use super::*;
     use crate::components::{Actor, Blocks, MyTurn, Viewshed};
     use crate::items::{Item, ItemsPlugin};
-    use crate::plugin::headless_app;
     use crate::props::{Interact, Offering, Offers, PropsPlugin};
     use crate::registries::Registries;
     use crate::state::EngineState;
+    use crate::testing::headless_app;
     use crate::turn::{Intent, Step, Turns};
     use rl_core::{Direction, Point};
     use rl_rules::{Registry, TagDef};

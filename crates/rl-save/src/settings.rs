@@ -88,7 +88,7 @@ mod tests {
     /// An app with two settings declared and `backend` to remember them
     /// in, finished the way `App::run` finishes one.
     fn game(backend: &Arc<MemoryBackend>) -> App {
-        let mut app = rl_bevy::plugin::headless_app();
+        let mut app = rl_bevy::testing::headless_app();
         app.insert_resource(Saves(backend.clone()));
         app.add_setting(Setting::new("glow", "Display", "Glow", ["Off", "On"]));
         app.add_setting(Setting::new("pace", "Play", "Pace", ["Slow", "Even", "Fast"]).default_choice(1));

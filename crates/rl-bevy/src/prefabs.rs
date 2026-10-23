@@ -314,10 +314,11 @@ pub(crate) mod tests {
     use crate::items::Item;
     use crate::loot::tests::{FoundAs, Toys, toys};
     use crate::places::{OnMap, PlaceBuild, PlaceEntered};
-    use crate::plugin::{Turn, headless_app};
+    use crate::plugin::Turn;
     use crate::props::PropKind;
     use crate::seed::Seed;
     use crate::state::EngineState;
+    use crate::testing::headless_app;
     use crate::world::WorldMap;
     use rl_core::{Point, RunSeed};
     use rl_grid::TileRegistry;

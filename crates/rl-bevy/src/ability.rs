@@ -57,7 +57,7 @@ impl Action for Use {}
 /// What an actor can use.
 ///
 /// A set rather than a list: an ability granted twice is known once.
-/// Rebuilt rather than edited by [`refresh_known`], from the actor's own
+/// Rebuilt rather than edited by `refresh_known`, from the actor's own
 /// [`Grants`], so a grant taken away takes its ability with it and nothing
 /// has to remember that it did.
 #[derive(Component, Debug, Clone, Default)]
@@ -642,7 +642,7 @@ impl crate::cue::Lands for Landing {}
 /// anyone else the turn, which is what stops a monster retrying an
 /// ability it cannot afford forever. A use that lands on nobody still
 /// costs the turn, the way a shot at nothing does.
-pub fn resolve_abilities(
+pub(crate) fn resolve_abilities(
     mut intents: MessageReader<Intent<Use>>,
     mut reports: Reports,
     mut resolution: Resolution,
@@ -718,7 +718,7 @@ pub fn resolve_abilities(
 /// so whatever is in the air when one runs has been seen to fly; landing
 /// counts as progress, so the loop goes on to deal the next turn once the
 /// burst has been seen in turn.
-pub fn land_abilities(
+pub(crate) fn land_abilities(
     abilities: Res<Abilities>,
     mut hold: ResMut<TurnHold>,
     mut airborne: ResMut<Airborne<Landing>>,
@@ -1007,7 +1007,7 @@ pub(crate) fn weigh_self_abilities(world: &mut World) {
 ///
 /// Rebuilt rather than edited, the way gear modifiers are: a grant taken
 /// away takes its ability with it and nothing has to remember that it did.
-pub fn refresh_known(mut actors: Query<(&mut Known, Option<&Grants>)>) {
+pub(crate) fn refresh_known(mut actors: Query<(&mut Known, Option<&Grants>)>) {
     for (mut known, grants) in &mut actors {
         known.clear();
         for ability in grants.map(|g| g.0.as_slice()).unwrap_or(&[]) {
@@ -1272,7 +1272,7 @@ mod tests {
     }
 
     fn app() -> (App, Point) {
-        let mut app = crate::plugin::headless_app();
+        let mut app = crate::testing::headless_app();
         app.add_plugins((crate::fov::FovPlugin, crate::combat::CombatPlugin, crate::minds::MindsPlugin, crate::items::ItemsPlugin, AbilitiesPlugin));
         app.add_engine_effects().add_effect::<Mark>().add_effect::<Probe>().add_effect::<Paint>();
 

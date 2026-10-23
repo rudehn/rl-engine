@@ -482,8 +482,8 @@ mod tests {
     use crate::effects::{AddEngineEffects, EffectKinds, Fired, Moments, Triggers};
     use crate::fov::FovPlugin;
     use crate::minds::{Mind, MindsPlugin, Perception};
-    use crate::plugin::headless_app;
     use crate::state::EngineState;
+    use crate::testing::headless_app;
     use crate::turn::{Intent, Wait};
     use rl_rules::Brain;
     use rl_rules::ai::tactics::{SearchLastKnown, Wander};

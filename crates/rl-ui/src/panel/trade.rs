@@ -230,7 +230,7 @@ pub fn trade_modal(modals: &Modals) -> ModalId {
 /// the trader out of reach or gone, takes it down; and a screen something
 /// else put away, such as a bag that closes every screen on a use, ends
 /// the trade, so no trade stays open with nothing showing it.
-pub fn follow_trade(mut trading: ResMut<Trading>, mut menu: ResMut<TradeMenu>, mut modals: ResMut<Modals>) {
+pub(crate) fn follow_trade(mut trading: ResMut<Trading>, mut menu: ResMut<TradeMenu>, mut modals: ResMut<Modals>) {
     let modal = trade_modal(&modals);
     let up = modals.is_open(modal);
     match trading.open() {
@@ -260,7 +260,7 @@ pub struct Counter<'w> {
 /// the engine's resolver stays the one judge of it: a refused one is
 /// answered with `TradeRefused`, for a game that wants a line saying
 /// why, over the row the screen already greys.
-pub fn trade_keys(keys: ControlInput, mut screen: Counter, mut buys: MessageWriter<Buy>, mut sells: MessageWriter<Sell>) {
+pub(crate) fn trade_keys(keys: ControlInput, mut screen: Counter, mut buys: MessageWriter<Buy>, mut sells: MessageWriter<Sell>) {
     let Counter { binds, view, menu, modals, trading } = &mut screen;
     let modal = trade_modal(modals);
     if !modals.is_top(modal) {

@@ -412,7 +412,7 @@ impl LightMoves<'_, '_> {
 /// every mind that acted in the same frame, and a lamp carried a step lit
 /// the cell it had left: one turn of sight by light that was gone. The
 /// viewsheds a change reaches are marked stale here exactly as there, and
-/// [`sense`](crate::minds::sense) recasts the one about to decide. A place
+/// `sense` recasts the one about to decide. A place
 /// arrived on in the pass before is lit by its own ambient here, so the
 /// first mind to decide on it sees by that light, not the last map's.
 pub(crate) fn relight(map: Res<WorldMap>, lighting: Option<ResMut<Lighting>>, mut moves: LightMoves, sources: Sources, mut viewsheds: Query<Lit>) {
@@ -705,8 +705,8 @@ mod tests {
     use crate::items::{DropItem, PickUp};
     use crate::knowledge::Knowledge;
     use crate::places::{PlaceBuild, PlaceRules, PlaceRulesRes, WarpRequest};
-    use crate::plugin::headless_app;
     use crate::state::EngineState;
+    use crate::testing::headless_app;
     use crate::turn::{Action, Intent};
     use crate::turn::{Step, Wait};
     use bevy::ecs::system::RunSystemOnce;

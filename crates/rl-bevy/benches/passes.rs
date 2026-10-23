@@ -56,7 +56,7 @@ fn wait_for_holder(mut waits: MessageWriter<Intent<Wait>>, holding: Query<Entity
 /// turn, and the pass being measured would be the frame's last rather than
 /// a typical one.
 fn passes(crowd: usize, build: Build) -> App {
-    let mut app = rl_bevy::plugin::headless_app();
+    let mut app = rl_bevy::testing::headless_app();
     if build != Build::Bare {
         app.add_plugins((rl_bevy::fov::FovPlugin, rl_bevy::combat::CombatPlugin, rl_bevy::minds::MindsPlugin, rl_bevy::items::ItemsPlugin));
     }
@@ -141,7 +141,7 @@ fn schedule_size(c: &mut Criterion) {
 /// a `gate` that walks that line and keeps what is lit. The lit frame's
 /// cost is one `cast` per actor; which half it is decides the fix.
 fn sight_cost(c: &mut Criterion) {
-    let mut app = rl_bevy::plugin::headless_app();
+    let mut app = rl_bevy::testing::headless_app();
     app.add_plugins((rl_bevy::fov::FovPlugin, rl_bevy::lighting::LightingPlugin));
     let start = testing::ground(&mut app);
     app.insert_resource(rl_bevy::seed::Seed(testing::TEST_SEED));

@@ -26,7 +26,7 @@
 //! apply. Its combat components are read straight off it by
 //! [`Loadout`](crate::combat::Loadout) whenever a blow is struck or met,
 //! and what it [`Bestows`] on the registered stats is folded into the
-//! wearer's [`StatBlock`] by [`fold_gear`] the moment its slots change.
+//! wearer's [`StatBlock`] by `fold_gear` the moment its slots change.
 //! Nothing is copied onto the wearer and nothing has to be remembered
 //! when it comes off. A status a worn thing's trigger put on its wearer
 //! may be held by the thing, and `end_unworn_holds` cures it in the pass
@@ -128,7 +128,7 @@ pub struct OwnBlowScore(pub i32);
 /// change to a stat, and this is where the item says so. It is written
 /// when the item is spawned, its level already applied, since a level is
 /// one thing's own, by the game or by
-/// [`insert_parts`](crate::parts::insert_parts); [`fold_gear`] puts every worn item's onto the
+/// [`insert_parts`](crate::parts::insert_parts); `fold_gear` puts every worn item's onto the
 /// wearer's [`StatBlock`] tagged with the item, and takes them off again
 /// with it. An item whose worth is a blow or armor carries a
 /// [`MeleeAttack`](crate::combat::MeleeAttack) or an
@@ -638,7 +638,7 @@ pub fn may_use_on(asks: &rl_rules::Asks, item: Entity, on: Entity, bag: &Invento
 /// A worn [`Stuck`] thing is not taken off, dropped, or pushed off by what
 /// is put on over it, each refused that way and reported as
 /// [`ItemEvent::WouldNotComeOff`].
-pub fn resolve_items(
+pub(crate) fn resolve_items(
     mut commands: Commands,
     mut intents: ItemIntents,
     mut resolution: Resolution,
@@ -759,7 +759,7 @@ fn resolve_one(commands: &mut Commands, world: &ItemWorld, carrier: Holding, act
 /// rebuilds its gear modifiers for nothing, and a save never has to write
 /// them down. A game that changes what a worn item bestows touches the
 /// wearer's `Equipped` to have it folded again.
-pub fn fold_gear(mut wearers: Query<(&Equipped, &mut StatBlock), Changed<Equipped>>, items: Query<&Bestows, With<Item>>) {
+pub(crate) fn fold_gear(mut wearers: Query<(&Equipped, &mut StatBlock), Changed<Equipped>>, items: Query<&Bestows, With<Item>>) {
     for (worn, mut stats) in &mut wearers {
         stats.0.retain_sources(|source| !source.is_item());
         for (_, item) in worn.0.worn() {
@@ -1120,9 +1120,9 @@ impl Belongings<'_, '_> {
 /// it stands on it can feel, and anything else it has to see. Only one
 /// with the wits to use things is told what it could use. How far its
 /// shot reaches is combat's to tell, in
-/// [`perceive_reach`](crate::combat::perceive_reach), since a gun a mind
+/// `perceive_reach`, since a gun a mind
 /// was built with needs no items at all.
-pub fn perceive_belongings(mut thinking: ResMut<Thinking>, sight: Sight, belongings: Belongings) {
+pub(crate) fn perceive_belongings(mut thinking: ResMut<Thinking>, sight: Sight, belongings: Belongings) {
     let Some(thinker) = thinking.actor() else { return };
     let missiles = belongings.missiles(thinker);
     let wits = thinking.snapshot().map(|s| s.wits).unwrap_or_default();
@@ -1220,8 +1220,8 @@ impl Plugin for ItemsPlugin {
 mod tests {
     use super::*;
     use crate::components::{Actor, Blocks, Player, RevealsMap, Viewshed};
-    use crate::plugin::headless_app;
     use crate::state::EngineState;
+    use crate::testing::headless_app;
     use crate::turn::Turns;
     use rl_rules::Registry;
     use rl_rules::SlotDef;
@@ -1584,10 +1584,10 @@ mod aimed {
     use crate::consumable::{Consumable, WhenEmpty};
     use crate::cue::{Anchor, Cue, Cued, LookOf, TurnHold};
     use crate::effects::{AddEngineEffects, EffectBonus, EffectKinds, Moments, Triggers};
-    use crate::plugin::headless_app;
     use crate::registries::Registries;
     use crate::state::EngineState;
     use crate::testing::Sides;
+    use crate::testing::headless_app;
 
     /// A rod that throws a bolt of four reaching six, at a foe.
     const BOLT: &str = r#"[(on: "use", targeting: (mode: Bolt(range: 6)), effects: [(kind: "Harm", args: (kind: "kinetic", roll: "4"))])]"#;
@@ -1943,9 +1943,9 @@ mod chosen {
     use crate::components::{Actor, Blocks, Player, RevealsMap};
     use crate::consumable::{Consumable, WhenEmpty};
     use crate::effects::{AddEffect, AddEngineEffects, Effect, EffectKinds, EffectWorld, FromArgs, Landing, Moments};
-    use crate::plugin::headless_app;
     use crate::registries::Registries;
     use crate::state::EngineState;
+    use crate::testing::headless_app;
 
     /// What a game's own effect leaves on the thing a use was made on.
     #[derive(Component)]

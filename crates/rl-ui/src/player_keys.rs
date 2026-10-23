@@ -306,7 +306,7 @@ pub struct Pack<'w, 's> {
 /// the turn, and nothing at all while a screen is up.
 ///
 /// At most one verb a press, checked walk first and throw last.
-pub fn player_keys(mut kb: Keyboard, loadout: Loadout, mut pack: Pack, mut asks: Asks) {
+pub(crate) fn player_keys(mut kb: Keyboard, loadout: Loadout, mut pack: Pack, mut asks: Asks) {
     if kb.modals.any_open() {
         return;
     }
@@ -395,7 +395,7 @@ mod tests {
     /// a pick-up for the keys to ask for.
     #[test]
     fn a_game_with_nothing_to_pick_up_walks_on_the_standard_keys() {
-        let mut app = rl_bevy::plugin::headless_app();
+        let mut app = rl_bevy::testing::headless_app();
         app.add_plugins((FovPlugin, rl_bevy::testing::KeyScriptPlugin, crate::UiPlugin))
             .add_plugins(PlayerKeysPlugin::new().walk("Move", "walk").wait("Act", "wait"));
         let at = rl_bevy::testing::ground(&mut app);

@@ -589,7 +589,7 @@ impl Thinking {
 /// Whether the mind holding the turn can see a cell, for a contributor
 /// deciding what goes into the snapshot.
 ///
-/// Read off the mind's own [`Viewshed`], cast by [`sense`] at the head of
+/// Read off the mind's own [`Viewshed`], cast by `sense` at the head of
 /// the pass, so a contributor, the notice roll and the panels all answer
 /// from the same grid and cannot disagree about who could be seen.
 #[derive(bevy::ecs::system::SystemParam)]
@@ -623,7 +623,7 @@ type Seeing = (&'static Position, &'static mut Viewshed, Option<&'static DarkSig
 /// minds move within one frame, so the one about to perceive casts here,
 /// through the same function, if it moved or what blocks sight changed.
 /// One that did not move pays nothing.
-pub fn sense(map: Res<WorldMap>, lighting: Option<Res<Lighting>>, mut viewers: Query<Seeing, MindsTurn>) {
+pub(crate) fn sense(map: Res<WorldMap>, lighting: Option<Res<Lighting>>, mut viewers: Query<Seeing, MindsTurn>) {
     let Ok((pos, mut viewshed, dark, perception)) = viewers.single_mut() else { return };
     if crate::fov::is_stale(&viewshed, &map) {
         crate::fov::cast(&map, lighting.as_deref(), pos.0, dark.map(|d| d.0).unwrap_or(0), perception.map(|p| p.0), &mut viewshed);
@@ -655,7 +655,7 @@ pub(crate) fn a_mind_holds_the_turn(minds: Query<(), MindsTurn>) -> bool {
 /// stands, what it can do and where it came from, and nothing it sees yet.
 /// Leaves it closed when a game has already decided for the actor, so no
 /// contributor works for a decision nobody will make.
-pub fn begin_thinking(mut thinking: ResMut<Thinking>, acting: Res<Acting>, map: Res<WorldMap>, minds: Query<Thinker, MindsTurn>) {
+pub(crate) fn begin_thinking(mut thinking: ResMut<Thinking>, acting: Res<Acting>, map: Res<WorldMap>, minds: Query<Thinker, MindsTurn>) {
     thinking.close();
     let Ok((actor, pos, health, faction, perception, intelligence, came_from)) = minds.single() else { return };
     if acting.has_decided(actor) {
@@ -686,7 +686,12 @@ type Seen = (Entity, &'static Position, Option<&'static Health>, Option<&'static
 /// friend, and a neutral, or anyone with no side, is one of the others;
 /// without one, in a game with no combat, everyone seen is one of the
 /// others, and a mind still steps round them.
-pub fn perceive_roster(mut thinking: ResMut<Thinking>, sight: Sight, rules: Option<Res<CombatRules>>, actors: Query<Seen, (With<Actor>, Without<Dead>)>) {
+pub(crate) fn perceive_roster(
+    mut thinking: ResMut<Thinking>,
+    sight: Sight,
+    rules: Option<Res<CombatRules>>,
+    actors: Query<Seen, (With<Actor>, Without<Dead>)>,
+) {
     let Some(thinker) = thinking.actor() else { return };
     let Some(mine) = thinking.snapshot().map(|s| s.me.faction) else { return };
     let factions = rules.as_deref().map(|r| &r.factions);
@@ -1093,8 +1098,8 @@ mod tests {
     use crate::components::{Actor, Blocks};
     use crate::consumable::{Consumable, WhenEmpty};
     use crate::items::{Equipped, GearScore, Inventory, Item, ItemEvent, Wearable};
-    use crate::plugin::headless_app;
     use crate::state::EngineState;
+    use crate::testing::headless_app;
     use crate::throwing::Throwable;
     use crate::turn::Resolution;
     use crate::turn::Turns;

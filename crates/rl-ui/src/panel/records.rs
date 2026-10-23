@@ -338,7 +338,7 @@ mod tests {
     /// An app with [`RecordsPanel`] added and its screen already open over
     /// `records`.
     fn opened(records: RunRecords) -> App {
-        let mut app = rl_bevy::plugin::headless_app();
+        let mut app = rl_bevy::testing::headless_app();
         app.add_plugins((rl_bevy::testing::KeyScriptPlugin, crate::UiPlugin, RecordsPanel::new(Rect::new(0, 0, 50, 10))));
         app.insert_resource(Terminal::new(50, 10, Vec2::ONE));
         app.insert_resource(records);
@@ -434,7 +434,7 @@ mod tests {
     #[test]
     fn the_title_offers_records_once_there_is_one() {
         let rect = Rect::new(0, 0, 40, 12);
-        let mut app = rl_bevy::plugin::headless_app();
+        let mut app = rl_bevy::testing::headless_app();
         app.add_plugins((rl_bevy::testing::KeyScriptPlugin, crate::UiPlugin, crate::TitlePanel::new(rect), RecordsPanel::new(rect)));
         app.insert_resource(Terminal::new(40, 12, Vec2::ONE));
         app.insert_resource(rl_bevy::SavedRun::Empty);

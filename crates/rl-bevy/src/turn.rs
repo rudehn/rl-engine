@@ -821,10 +821,11 @@ struct Swept<A: Action>(std::marker::PhantomData<A>);
 mod tests {
     use super::*;
     use crate::combat::Health;
-    use crate::plugin::{Turn, TurnSet, headless_app};
+    use crate::plugin::{Turn, TurnSet};
     use crate::registries::Registries;
     use crate::state::EngineState;
     use crate::status::Afflict;
+    use crate::testing::headless_app;
     use rl_rules::{Op, Registry, StatDef, StatusDef, StatusId, UNTIL_CURED};
 
     /// A world with statuses in it and a stat, `quickness`, that `hasted`

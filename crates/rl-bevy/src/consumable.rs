@@ -3,8 +3,8 @@
 //! A thing in the bag does what its triggers say, landed by the effects
 //! subsystem: a stim's `use` trigger mends, a grenade's `land` trigger
 //! bursts. This module is the other half, the thing's own economy:
-//! [`Consumable`] counts its charges, [`spend_charges`] takes one off at
-//! each moment that spends, and [`recharge_charges`] gives them back on the
+//! [`Consumable`] counts its charges, `spend_charges` takes one off at
+//! each moment that spends, and `recharge_charges` gives them back on the
 //! turn clock for a thing that refills.
 //!
 //! **Why charges live on the thing, not on an ability.** An item never
@@ -94,7 +94,7 @@ pub struct Attuned;
 
 /// The moments that spend a charge from whatever they happened to.
 ///
-/// A resource rather than a rule written into [`spend_charges`], so a game
+/// A resource rather than a rule written into `spend_charges`, so a game
 /// that reports a moment of its own can say whether it costs anything.
 #[derive(Resource, Debug, Clone)]
 pub struct SpendingMoments(Vec<MomentId>);
@@ -131,13 +131,13 @@ impl AddSpending for App {
 
 /// Spends one charge from every consumable whose moment spends.
 ///
-/// After [`land_triggers`](crate::effects::land_triggers), so what the
+/// After `land_triggers`, so what the
 /// last charge did has landed before the thing is gone. A moment with no
 /// triggers on the thing still spends, which is how a plain wand's ordinary
 /// shot costs a charge. A thing spent to nothing is marked [`Spent`]:
 /// `remove_spent` takes it out of play at the end of the pass and
-/// [`bury_spent`] despawns it at the end of the frame.
-pub fn spend_charges(
+/// `bury_spent` despawns it at the end of the frame.
+pub(crate) fn spend_charges(
     mut commands: Commands,
     mut fired: MessageReader<Fired>,
     spending: Res<SpendingMoments>,
@@ -190,8 +190,8 @@ pub(crate) fn remove_spent(mut commands: Commands, spent: Query<Entity, (With<Sp
 }
 
 /// Despawns everything [`Spent`], in `Last`, once the frame's log has been
-/// drawn, as [`bury_the_dead`](crate::combat::bury_the_dead) does the dead.
-pub fn bury_spent(mut commands: Commands, spent: Query<Entity, With<Spent>>) {
+/// drawn, as `bury_the_dead` does the dead.
+pub(crate) fn bury_spent(mut commands: Commands, spent: Query<Entity, With<Spent>>) {
     for e in &spent {
         commands.entity(e).despawn();
     }
@@ -204,7 +204,7 @@ pub fn bury_spent(mut commands: Commands, spent: Query<Entity, With<Spent>>) {
 /// actor's turn and the clock is what a refill is written in. A clock that
 /// went backwards, a new run, counts as no time. An [`Attuned`] thing that
 /// nobody is wearing counts nothing.
-pub fn recharge_charges(
+pub(crate) fn recharge_charges(
     turns: Res<Turns>,
     mut last: Local<Option<u32>>,
     mut things: Query<(Entity, &mut Consumable, Has<Attuned>)>,
@@ -232,7 +232,7 @@ pub fn recharge_charges(
 /// Empties an [`Attuned`] thing, charges and progress both, whenever it is
 /// put on.
 ///
-/// After [`recharge_charges`] in the same set, so the pass it went on in
+/// After `recharge_charges` in the same set, so the pass it went on in
 /// counts nothing towards it.
 pub(crate) fn attune(mut events: MessageReader<crate::items::ItemEvent>, mut things: Query<&mut Consumable, With<Attuned>>) {
     for ev in events.read() {
@@ -272,11 +272,11 @@ mod tests {
     use crate::components::{Actor, Blocks, MyTurn, Player, Position, RevealsMap, Viewshed};
     use crate::effects::{AddEngineEffects, EffectKinds, Moments, Triggers};
     use crate::items::{Inventory, Item, ItemsPlugin, UseItem};
-    use crate::plugin::headless_app;
     use crate::registries::Registries;
     use crate::seed::Seed;
     use crate::state::EngineState;
     use crate::testing::TEST_SEED;
+    use crate::testing::headless_app;
     use crate::turn::{ActionRefused, Intent, Turns, Wait};
     use rl_rules::{DamageKind, Registry};
 
