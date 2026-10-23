@@ -29,13 +29,13 @@
 //! wearer's [`StatBlock`] by `fold_gear` the moment its slots change.
 //! Nothing is copied onto the wearer and nothing has to be remembered
 //! when it comes off. A status a worn thing's trigger put on its wearer
-//! may be held by the thing, and `end_unworn_holds` cures it in the pass
+//! may be held by the thing, and `end_unworn_statuses` cures it in the pass
 //! the thing is no longer worn.
 //!
 //! What else a worn thing lends is kept in
 //! [`ReactSet::Lend`](crate::plugin::ReactSet::Lend), read every pass off
-//! what is worn now: the statuses its [`HeldWhileWorn`] holds on its wearer
-//! (`hold_worn_statuses`), the sight in the dark its
+//! what is worn now: the statuses its [`WornStatuses`] holds on its wearer
+//! (`put_on_worn_statuses`), the sight in the dark its
 //! [`WornDarkSight`] lends, folded with the wearer's own
 //! [`OwnDarkSight`] into its [`DarkSight`] unless a game has it
 //! [`DarkSightSuppressed`] (`lend_dark_sight`), and a light that shines
@@ -853,7 +853,7 @@ pub(crate) fn restart_pulses(mut events: MessageReader<ItemEvent>, mut pulses: Q
 /// wearing is this plugin's to know; statuses never learn what an item
 /// is. A game with items and no statuses has no [`Afflicted`] to look at
 /// and the queue it writes stays empty.
-pub(crate) fn end_unworn_holds(holders: Query<(Entity, &Afflicted, Option<&Equipped>)>, items: Query<(), With<Item>>, mut cure: MessageWriter<Cure>) {
+pub(crate) fn end_unworn_statuses(holders: Query<(Entity, &Afflicted, Option<&Equipped>)>, items: Query<(), With<Item>>, mut cure: MessageWriter<Cure>) {
     for (who, afflicted, worn) in &holders {
         for status in afflicted.iter() {
             let Some(bits) = status.held_by else { continue };
@@ -867,12 +867,12 @@ pub(crate) fn end_unworn_holds(holders: Query<(Entity, &Afflicted, Option<&Equip
 }
 
 /// On an item: the statuses it holds on whoever wears it, until cured,
-/// for as long as it is worn, which `hold_worn_statuses` puts on and
-/// `end_unworn_holds` takes off. Put on by
+/// for as long as it is worn, which `put_on_worn_statuses` puts on and
+/// `end_unworn_statuses` takes off. Put on by
 /// [`insert_parts`](crate::parts::insert_parts) from
 /// [`ItemParts::holds`](crate::parts::ItemParts::holds).
 #[derive(Component, Debug, Clone, Default, PartialEq, Eq)]
-pub struct HeldWhileWorn(pub Vec<StatusId>);
+pub struct WornStatuses(pub Vec<StatusId>);
 
 /// On an item: the light it sheds only while it is worn, which
 /// `light_worn_things` puts on it as its [`LightSource`] while it is and
@@ -900,22 +900,22 @@ fn worn_once(equipped: &Equipped) -> Vec<Entity> {
     worn
 }
 
-/// Puts each worn thing's [`HeldWhileWorn`] statuses on its wearer, held by
+/// Puts each worn thing's [`WornStatuses`] statuses on its wearer, held by
 /// the thing, [`UNTIL_CURED`](atglyph_rules::UNTIL_CURED), unless a thing it
 /// wears that holds them already does.
 ///
 /// Asked for through [`Afflict`](crate::status::Afflict) every pass rather
 /// than when the thing goes on, so a thing worn however it came to be, put
 /// on, handed over or put back by a save, is read as it stands; what takes
-/// the status off again is [`end_unworn_holds`], the pass the thing is no
+/// the status off again is [`end_unworn_statuses`], the pass the thing is no
 /// longer worn. A wearer that holds no statuses at all is lent none.
-pub(crate) fn hold_worn_statuses(
+pub(crate) fn put_on_worn_statuses(
     wearers: Query<(Entity, &Equipped, &Afflicted)>,
-    holders: Query<&HeldWhileWorn>,
+    holders: Query<&WornStatuses>,
     mut afflict: MessageWriter<crate::status::Afflict>,
 ) {
     for (wearer, equipped, afflicted) in &wearers {
-        let worn: Vec<(Entity, &HeldWhileWorn)> = worn_once(equipped).into_iter().filter_map(|item| Some((item, holders.get(item).ok()?))).collect();
+        let worn: Vec<(Entity, &WornStatuses)> = worn_once(equipped).into_iter().filter_map(|item| Some((item, holders.get(item).ok()?))).collect();
         let held_by_what_it_wears = |by: u64| worn.iter().any(|(holder, _)| holder.to_bits() == by);
         for (item, held) in &worn {
             for status in &held.0 {
@@ -1165,7 +1165,7 @@ pub(crate) fn perceive_belongings(mut thinking: ResMut<Thinking>, sight: Sight, 
 ///
 /// A worn [`Pulse`] reports its `pulse` moment on its own clock, and a
 /// status a worn thing holds ends when it is no longer worn, in
-/// `end_unworn_holds`. What a use costs the thing used, its
+/// `end_unworn_statuses`. What a use costs the thing used, its
 /// [`Consumable`](crate::consumable::Consumable) charges, is part of it
 /// too: see [`consumable`](crate::consumable).
 pub struct ItemsPlugin;
@@ -1205,17 +1205,20 @@ impl Plugin for ItemsPlugin {
             // statuses, and then nobody is afflicted and nothing is written.
             .add_message::<Cure>()
             // Before the statuses resolve, so a held status ends in the pass
-            // its thing came off; see `end_unworn_holds`.
+            // its thing came off; see `end_unworn_statuses`.
             // Before the stealth plugin's own cures, so the cures of one
             // pass are written, and their `Cured` lines told, in one order.
-            .add_systems(Turn, end_unworn_holds.in_set(ResolveSet::Effects).before(crate::status::resolve_afflictions).before(crate::stealth::reveal_attackers))
+            .add_systems(
+                Turn,
+                end_unworn_statuses.in_set(ResolveSet::Effects).before(crate::status::resolve_afflictions).before(crate::stealth::reveal_attackers),
+            )
             // In the pass the slots changed in, so gear counts from the
             // moment it is worn. Before a sleeper wakes, which edits the
             // same stats, so their modifiers stand in one order every run.
             .add_systems(Turn, fold_gear.in_set(crate::plugin::ReactSet::Settle).before(crate::status::wake_on_harm))
             // What else a worn thing lends, as what is worn stands once the
             // pass's slots have settled.
-            .add_systems(Turn, (hold_worn_statuses, lend_dark_sight, light_worn_things).chain().in_set(crate::plugin::ReactSet::Lend))
+            .add_systems(Turn, (put_on_worn_statuses, lend_dark_sight, light_worn_things).chain().in_set(crate::plugin::ReactSet::Lend))
             .add_systems(Turn, restart_pulses.in_set(TurnSet::React))
             .add_systems(Turn, drop_what_the_dead_carried.in_set(CleanupSet::Remove))
             .add_systems(Turn, forget_removed_items.in_set(CleanupSet::Requeue));
@@ -1555,7 +1558,7 @@ mod tests {
         let statuses = Registry::from_defs(vec![atglyph_rules::StatusDef::new("warded")]).unwrap();
         let warded = statuses.expect("warded");
         r.app.insert_resource(crate::registries::Registries { statuses, ..Default::default() });
-        let charm = carried(&mut r, HeldWhileWorn(vec![warded]));
+        let charm = carried(&mut r, WornStatuses(vec![warded]));
         let held = |r: &Rig| r.app.world().get::<Afflicted>(r.player).unwrap().iter().find(|s| s.id == warded).map(|s| (s.turns, s.held_by));
         wait(&mut r);
         assert_eq!(held(&r), None, "carried, it holds nothing");
@@ -1593,7 +1596,7 @@ mod aimed {
     use crate::combat::{CombatPlugin, Faction, Health};
     use crate::components::{Actor, Blocks, Player, RevealsMap, Viewshed};
     use crate::consumable::{Consumable, WhenEmpty};
-    use crate::cue::{Anchor, Cue, Cued, LookOf, TurnHold};
+    use crate::cue::{Anchor, Cue, CueWait, Cued, LookOf};
     use crate::effects::{AddEngineEffects, EffectBonus, EffectKinds, Moments, Triggers};
     use crate::registries::Registries;
     use crate::state::EngineState;
@@ -1779,29 +1782,29 @@ mod aimed {
         let foe = rig.foe(3, 0);
         let at = rig.start.offset(3, 0);
         rig.cues();
-        rig.app.world_mut().resource_mut::<TurnHold>().watch();
+        rig.app.world_mut().resource_mut::<CueWait>().watch();
 
         rig.act(UseItemAt { item: rod, at });
         assert_eq!(rig.hp(foe), 20, "in the air");
         let flight = Cue::Flight { from: Anchor::on(rig.player, rig.start), to: Anchor::on(foe, at), look: LookOf::Given(look) };
         assert_eq!(rig.cues(), vec![flight], "the flight, in the trigger's look, and nothing else yet");
-        let hold = *rig.app.world().resource::<TurnHold>();
-        assert!(hold.is_held() && hold.in_flight(), "held for the flight, with one in the air");
+        let cue_wait = *rig.app.world().resource::<CueWait>();
+        assert!(cue_wait.is_waiting() && cue_wait.in_flight(), "held for the flight, with one in the air");
         assert_eq!(rig.charges(rod), 2, "spent on the use");
         rig.app.update();
         assert_eq!(rig.hp(foe), 20, "still, while held");
 
-        rig.app.world_mut().resource_mut::<TurnHold>().release();
+        rig.app.world_mut().resource_mut::<CueWait>().release();
         rig.app.update();
         assert_eq!(rig.hp(foe), 16, "seen to fly, it lands");
         let burst = rig.cues();
         let [Cue::Burst { from, look: shown, .. }] = burst.as_slice() else { panic!("and bursts where it did: {burst:?}") };
         assert_eq!((*from, *shown), (Some(Anchor::on(foe, at)), LookOf::Given(look)), "on whoever it landed on, in the same look");
-        let hold = *rig.app.world().resource::<TurnHold>();
-        assert!(hold.is_held() && !hold.in_flight(), "held again for the burst, nothing in the air");
+        let cue_wait = *rig.app.world().resource::<CueWait>();
+        assert!(cue_wait.is_waiting() && !cue_wait.in_flight(), "held again for the burst, nothing in the air");
         assert!(rig.app.world().get::<MyTurn>(rig.player).is_none(), "no turn dealt while the burst is seen");
 
-        rig.app.world_mut().resource_mut::<TurnHold>().release();
+        rig.app.world_mut().resource_mut::<CueWait>().release();
         rig.app.update();
         assert!(rig.app.world().get::<MyTurn>(rig.player).is_some(), "then the turn comes round");
     }
@@ -1823,7 +1826,7 @@ mod aimed {
             let foe = rig.foe(3, 0);
             rig.app.world_mut().entity_mut(foe).insert(reflects);
             rig.cues();
-            rig.app.world_mut().resource_mut::<TurnHold>().watch();
+            rig.app.world_mut().resource_mut::<CueWait>().watch();
 
             rig.act(UseItemAt { item: rod, at });
             let (user, body) = (Anchor::on(rig.player, rig.start), Anchor::on(foe, at));
@@ -1845,10 +1848,10 @@ mod aimed {
         let mut rig = Rig::new();
         let rod = rig.carry(BOLT);
         let foe = rig.foe(3, 0);
-        rig.app.world_mut().resource_mut::<TurnHold>().watch();
+        rig.app.world_mut().resource_mut::<CueWait>().watch();
         rig.act(UseItemAt { item: rod, at: rig.start.offset(3, 0) });
         assert_eq!(rig.hp(foe), 16, "landed as it was made");
-        assert!(!rig.app.world().resource::<TurnHold>().in_flight(), "with nothing in the air");
+        assert!(!rig.app.world().resource::<CueWait>().in_flight(), "with nothing in the air");
     }
 
     /// A burst on the ground reaching six, landing three on all round it.

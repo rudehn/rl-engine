@@ -9,7 +9,7 @@
 //! them and a pulse on someone who steps aside goes with them.
 //!
 //! While something that holds the turns plays, the turns wait: the plugin
-//! watches the [`TurnHold`] and lets go when the last of it has played, so
+//! watches the [`CueWait`] and lets go when the last of it has played, so
 //! the eel is seen to spit before the crab moves, and two casters are two
 //! flights one after the other. A key pressed while the turns wait is a
 //! player who has seen enough: everything that holds them is dropped, the
@@ -34,7 +34,7 @@
 //! no more than the cells it paints.
 
 use atglyph_bevy::prelude::*;
-use atglyph_bevy::{Anchor, Cue, Cued, LookOf, TurnHold};
+use atglyph_bevy::{Anchor, Cue, CueWait, Cued, LookOf};
 use atglyph_core::Point;
 use atglyph_core::geometry::line;
 use atglyph_core::seed::position_hash;
@@ -261,7 +261,7 @@ pub(crate) struct Animation {
     /// The steps, in order.
     pub steps: Vec<Beat>,
     /// Whether the turns wait for it.
-    pub holds: bool,
+    pub waits: bool,
 }
 
 impl Animation {
@@ -292,7 +292,7 @@ pub struct Particles {
 
 impl Particles {
     /// Plays `animation` from the next frame drawn. One that would take no
-    /// time is not played, and holds nothing.
+    /// time is not played, and nothing waits on it.
     pub(crate) fn play(&mut self, animation: Animation) {
         if animation.duration() > 0.0 {
             self.playing.push((animation, None));
@@ -304,14 +304,14 @@ impl Particles {
         !self.playing.is_empty()
     }
 
-    /// Whether anything playing holds the turns.
-    pub fn is_holding(&self) -> bool {
-        self.playing.iter().any(|(a, _)| a.holds)
+    /// Whether the turns wait on anything playing.
+    pub fn is_waited_on(&self) -> bool {
+        self.playing.iter().any(|(a, _)| a.waits)
     }
 
-    /// Drops whatever holds the turns, leaving the rest to play out.
-    pub(crate) fn skip_held(&mut self) {
-        self.playing.retain(|(a, _)| !a.holds);
+    /// Drops whatever the turns wait on, leaving the rest to play out.
+    pub(crate) fn skip_waited(&mut self) {
+        self.playing.retain(|(a, _)| !a.waits);
     }
 
     /// Every blast playing or still to play on `map`, as the front the
@@ -395,13 +395,13 @@ pub struct ParticlesPlugin;
 
 impl Plugin for ParticlesPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<Particles>().init_resource::<ParticleStyle>().init_resource::<TurnHold>();
+        app.init_resource::<Particles>().init_resource::<ParticleStyle>().init_resource::<CueWait>();
         app.add_message::<Cued>().add_message::<MapChanged>();
         app.add_systems(atglyph_bevy::EndRun, |mut particles: ResMut<Particles>| *particles = Particles::default())
             .add_systems(OnEnter(EngineState::Playing), watch_unless_instant)
             .add_systems(Update, skip_on_key.before(EngineSet::Input).run_if(in_state(EngineState::Playing)))
             .add_systems(Update, (play_cues, publish_wavefronts).chain().in_set(PresentSet::Narrate))
-            .add_systems(Update, (draw_particles, hold_turns).chain().in_set(PresentSet::Map).after(draw_map));
+            .add_systems(Update, (draw_particles, wait_on_particles).chain().in_set(PresentSet::Map).after(draw_map));
     }
 
     fn finish(&self, app: &mut App) {
@@ -412,9 +412,9 @@ impl Plugin for ParticlesPlugin {
 /// Takes the turns' hold, unless the style plays nothing worth waiting
 /// for. Decided when play begins, so a game's style, inserted after the
 /// plugin, is the one read.
-pub(crate) fn watch_unless_instant(style: Res<ParticleStyle>, mut hold: ResMut<TurnHold>) {
+pub(crate) fn watch_unless_instant(style: Res<ParticleStyle>, mut cue_wait: ResMut<CueWait>) {
     if style.takes_time() {
-        hold.watch();
+        cue_wait.watch();
     }
 }
 
@@ -466,7 +466,7 @@ pub(crate) fn play_cues(mut particles: ResMut<Particles>, mut cues: Cues) {
         let beat = cues.beat(cue);
         match per_actor.iter_mut().find(|(a, _)| a == actor) {
             Some((_, animation)) => animation.steps.push(beat),
-            None => per_actor.push((*actor, Animation { map: here, steps: vec![beat], holds: true })),
+            None => per_actor.push((*actor, Animation { map: here, steps: vec![beat], waits: true })),
         }
     }
     for (_, animation) in per_actor {
@@ -513,14 +513,14 @@ pub(crate) fn draw_particles(
 /// player holding the turn it was pressed for rather than being dropped
 /// on a frame nobody held one.
 pub fn skip_on_key(world: &mut World) {
-    if !world.resource::<TurnHold>().is_held() {
+    if !world.resource::<CueWait>().is_waiting() {
         return;
     }
     // A key pressed, or a key held: a repeat is paced by `atglyph-ui`, which
     // this crate is below, so it arrives as an ask rather than as a
     // `just_pressed` this would see. Taken either way, so an ask that
     // arrives while nothing holds does not bank a skip for later.
-    let asked = world.resource_mut::<TurnHold>().take_skip_asked();
+    let asked = world.resource_mut::<CueWait>().take_skip_asked();
     let pressed = world.get_resource::<ButtonInput<KeyCode>>().is_some_and(|keys| keys.get_just_pressed().next().is_some());
     if !pressed && !asked {
         return;
@@ -529,10 +529,10 @@ pub fn skip_on_key(world: &mut World) {
     // burst would hold again, and a second caster's flight after that.
     // Bounded, since the turn loop's own bound is per call.
     for _ in 0..MAX_SKIPS {
-        world.resource_mut::<Particles>().skip_held();
-        world.resource_mut::<TurnHold>().release();
+        world.resource_mut::<Particles>().skip_waited();
+        world.resource_mut::<CueWait>().release();
         atglyph_bevy::plugin::run_turns(world);
-        if !world.resource::<TurnHold>().is_held() {
+        if !world.resource::<CueWait>().is_waiting() {
             return;
         }
     }
@@ -541,16 +541,16 @@ pub fn skip_on_key(world: &mut World) {
 /// Holds the loop skips through at most on one key.
 const MAX_SKIPS: usize = 64;
 
-/// Keeps the turns held exactly while something that holds them plays and
+/// Keeps the turns waiting exactly while something they wait on plays and
 /// there is a turn to wait for, after the frame that would have dropped
 /// what finished. With the player holding a turn nothing is waited for:
-/// the loop would not run anyway, and holding it would only keep the
+/// the loop would not run anyway, and waiting would only keep the
 /// player's next key from being read.
-pub(crate) fn hold_turns(particles: Res<Particles>, mut hold: ResMut<TurnHold>, player: Query<(), (With<Player>, With<MyTurn>)>) {
-    if particles.is_holding() && player.is_empty() {
-        hold.hold();
+pub(crate) fn wait_on_particles(particles: Res<Particles>, mut cue_wait: ResMut<CueWait>, player: Query<(), (With<Player>, With<MyTurn>)>) {
+    if particles.is_waited_on() && player.is_empty() {
+        cue_wait.wait();
     } else {
-        hold.release();
+        cue_wait.release();
     }
 }
 
@@ -666,7 +666,7 @@ mod tests {
         let mut particles = Particles::default();
         let (flight, burst) = (Beat::Trail(trail()), Beat::Burst(blast(2)));
         let (flown, burned) = (flight.duration(), burst.duration());
-        particles.play(Animation { map: MapId::ZERO, steps: vec![flight, burst], holds: true });
+        particles.play(Animation { map: MapId::ZERO, steps: vec![flight, burst], waits: true });
         let fronts = particles.wavefronts(2.0, MapId::ZERO, &fixed);
         assert_eq!(fronts.len(), 1);
         let front = fronts[0];
@@ -679,7 +679,7 @@ mod tests {
     #[test]
     fn steps_play_one_after_another_and_a_finished_animation_is_dropped() {
         let burst = Burst { on: vec![Anchor::cell(Point::new(4, 0))], glyphs: vec!['*'], color: Color::WHITE, secs: 0.2, from: None, ring_secs: 0.0 };
-        let animation = Animation { map: MapId::ZERO, steps: vec![Beat::Trail(trail()), Beat::Burst(burst)], holds: true };
+        let animation = Animation { map: MapId::ZERO, steps: vec![Beat::Trail(trail()), Beat::Burst(burst)], waits: true };
         assert_eq!(animation.duration(), 0.6);
         assert_eq!(animation.frame(0.35, &fixed)[0].glyph, '*');
         assert_eq!(animation.frame(0.45, &fixed).len(), 1, "the burst, once the trail has flown");
@@ -687,17 +687,17 @@ mod tests {
 
         let mut particles = Particles::default();
         particles.play(animation);
-        assert!(particles.is_playing() && particles.is_holding());
+        assert!(particles.is_playing() && particles.is_waited_on());
         assert_eq!(particles.frame(10.0, MapId::ZERO, &fixed).len(), 1, "began on the first frame drawn");
         assert_eq!(particles.frame(10.45, MapId::ZERO, &fixed).len(), 1, "the burst");
         assert!(particles.frame(10.7, MapId::ZERO, &fixed).is_empty());
-        assert!(!particles.is_playing() && !particles.is_holding(), "and it is gone, and holds nothing");
+        assert!(!particles.is_playing() && !particles.is_waited_on(), "and it is gone, and holds nothing");
     }
 
     #[test]
     fn an_animation_is_left_behind_on_the_map_it_played_on() {
         let mut particles = Particles::default();
-        particles.play(Animation { map: MapId(3), steps: vec![Beat::Trail(trail())], holds: true });
+        particles.play(Animation { map: MapId(3), steps: vec![Beat::Trail(trail())], waits: true });
         assert!(particles.frame(0.0, MapId(4), &fixed).is_empty());
         assert!(!particles.is_playing(), "dropped with the map");
     }
@@ -729,16 +729,16 @@ mod tests {
         let particles = app.world().resource::<Particles>();
         assert_eq!(particles.playing.len(), 2, "one per actor");
         let (eels, crabs) = (&particles.playing[0].0, &particles.playing[1].0);
-        assert!(matches!(eels.steps.as_slice(), [Beat::Trail(_), Beat::Burst(_)]) && eels.holds, "the flight, then the burst, and the turns wait");
-        assert!(matches!(crabs.steps.as_slice(), [Beat::Trail(_)]) && crabs.holds, "at the player, and seen to arrive like any other");
-        assert!(app.world().resource::<TurnHold>().is_held());
+        assert!(matches!(eels.steps.as_slice(), [Beat::Trail(_), Beat::Burst(_)]) && eels.waits, "the flight, then the burst, and the turns wait");
+        assert!(matches!(crabs.steps.as_slice(), [Beat::Trail(_)]) && crabs.waits, "at the player, and seen to arrive like any other");
+        assert!(app.world().resource::<CueWait>().is_waiting());
 
         let began = app.world().resource::<Time>().elapsed_secs();
         while app.world().resource::<Time>().elapsed_secs() - began < 0.2 {
             app.update();
         }
         assert!(!app.world().resource::<Particles>().is_playing(), "played out");
-        assert!(!app.world().resource::<TurnHold>().is_held(), "and let go");
+        assert!(!app.world().resource::<CueWait>().is_waiting(), "and let go");
     }
 
     /// A key pressed while the turns wait drops what holds them and lets
@@ -757,17 +757,17 @@ mod tests {
         app.update();
         app.world_mut().write_message(Cued { actor: eel, cue: Cue::Burst { on: vec![Anchor::on(eel, start.offset(3, 0))], look: LookOf::Plain, from: None } });
         app.update();
-        assert!(app.world().resource::<TurnHold>().is_held() && app.world().resource::<Particles>().is_holding());
+        assert!(app.world().resource::<CueWait>().is_waiting() && app.world().resource::<Particles>().is_waited_on());
         app.world_mut().resource_mut::<atglyph_bevy::testing::KeyScript>().press(KeyCode::KeyH);
         app.update();
-        assert!(!app.world().resource::<Particles>().is_holding(), "dropped");
-        assert!(!app.world().resource::<TurnHold>().is_held(), "and let go, without waiting for the frame's end");
+        assert!(!app.world().resource::<Particles>().is_waited_on(), "dropped");
+        assert!(!app.world().resource::<CueWait>().is_waiting(), "and let go, without waiting for the frame's end");
     }
 
     /// The same, for a key the player is *holding*: a repeat is paced by
     /// `atglyph-ui` and never arrives as a `just_pressed`, so walking with a
     /// direction key down waited out every cue in sight. It asks through
-    /// `TurnHold::ask_skip`, and this is the answering half.
+    /// `CueWait::ask_skip`, and this is the answering half.
     #[test]
     fn a_skip_asked_for_while_the_turns_wait_skips_what_holds_them_the_way_a_press_does() {
         use atglyph_core::Rect;
@@ -782,22 +782,22 @@ mod tests {
         app.update();
         app.world_mut().write_message(Cued { actor: eel, cue: Cue::Burst { on: vec![Anchor::on(eel, start.offset(3, 0))], look: LookOf::Plain, from: None } });
         app.update();
-        assert!(app.world().resource::<TurnHold>().is_held(), "the burst holds the turns");
+        assert!(app.world().resource::<CueWait>().is_waiting(), "the burst holds the turns");
 
         // No key is pressed at all: this is the repeat's own path.
-        app.world_mut().resource_mut::<TurnHold>().ask_skip();
+        app.world_mut().resource_mut::<CueWait>().ask_skip();
         app.update();
-        assert!(!app.world().resource::<Particles>().is_holding(), "dropped");
-        assert!(!app.world().resource::<TurnHold>().is_held(), "and let go");
+        assert!(!app.world().resource::<Particles>().is_waited_on(), "dropped");
+        assert!(!app.world().resource::<CueWait>().is_waiting(), "and let go");
     }
 
     #[test]
     fn an_ask_is_taken_once_so_one_repeat_skips_one_hold() {
-        let mut hold = TurnHold::default();
-        assert!(!hold.take_skip_asked(), "nothing asked");
-        hold.ask_skip();
-        assert!(hold.take_skip_asked(), "asked");
-        assert!(!hold.take_skip_asked(), "and not still asking, or a key down would skip everything after it");
+        let mut cue_wait = CueWait::default();
+        assert!(!cue_wait.take_skip_asked(), "nothing asked");
+        cue_wait.ask_skip();
+        assert!(cue_wait.take_skip_asked(), "asked");
+        assert!(!cue_wait.take_skip_asked(), "and not still asking, or a key down would skip everything after it");
     }
 
     /// The player cancels an animation and takes the hit: a shot fired at
@@ -838,15 +838,15 @@ mod tests {
         app.update();
         app.update();
         let hp = |app: &App| app.world().get::<Health>(me).unwrap().current;
-        assert!(app.world().resource::<TurnHold>().in_flight(), "the shot is in the air");
-        assert!(app.world().resource::<TurnHold>().is_held() && app.world().resource::<Particles>().is_holding(), "and the turns wait on it");
+        assert!(app.world().resource::<CueWait>().in_flight(), "the shot is in the air");
+        assert!(app.world().resource::<CueWait>().is_waiting() && app.world().resource::<Particles>().is_waited_on(), "and the turns wait on it");
         assert_eq!(hp(&app), 30, "it has not arrived");
         assert!(app.world().get::<MyTurn>(me).is_none());
 
         app.world_mut().resource_mut::<atglyph_bevy::testing::KeyScript>().press(KeyCode::KeyH);
         app.update();
         assert_eq!(hp(&app), 27, "the key landed the shot");
-        assert!(!app.world().resource::<TurnHold>().in_flight());
+        assert!(!app.world().resource::<CueWait>().in_flight());
         assert!(app.world().get::<MyTurn>(me).is_some(), "and the player holds its turn, hurt, in the frame the key was read");
     }
 

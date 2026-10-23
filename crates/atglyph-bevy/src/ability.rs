@@ -30,7 +30,7 @@ use rand::Rng;
 
 use crate::combat::{CombatRules, Dead, Faction, Health};
 use crate::components::MyTurn;
-use crate::cue::{AddAirborne, Airborne, Cued, LookOf, TurnHold};
+use crate::cue::{AddAirborne, Airborne, CueWait, Cued, LookOf};
 use crate::effects::{EffectBonus, EffectKinds, EffectWorld, Landing, Source};
 use crate::items::{Equipped, Inventory, Stack, Tagged};
 use crate::plugin::{ResolveSet, Turn, TurnSet};
@@ -630,7 +630,7 @@ impl Bystanders<'_, '_> {
 pub struct Catalog<'w> {
     abilities: Res<'w, Abilities>,
     turns: Res<'w, Turns>,
-    hold: ResMut<'w, TurnHold>,
+    cue_wait: ResMut<'w, CueWait>,
     airborne: ResMut<'w, Airborne<Landing>>,
 }
 
@@ -651,7 +651,7 @@ pub(crate) fn resolve_abilities(
     mut bystanders: Bystanders,
     mut world: EffectWorld,
 ) {
-    let Catalog { abilities, turns, mut hold, mut airborne } = catalog;
+    let Catalog { abilities, turns, mut cue_wait, mut airborne } = catalog;
     let now = turns.now();
     for intent in intents.read() {
         let user = intent.actor;
@@ -701,7 +701,7 @@ pub(crate) fn resolve_abilities(
             for flight in flights {
                 world.cues.write(Cued { actor: user, cue: flight });
             }
-            match airborne.launched(&mut hold, landing) {
+            match airborne.launched(&mut cue_wait, landing) {
                 None => {
                     resolution.done(user, def.time);
                     continue;
@@ -720,13 +720,13 @@ pub(crate) fn resolve_abilities(
 /// burst has been seen in turn.
 pub(crate) fn land_abilities(
     abilities: Res<Abilities>,
-    mut hold: ResMut<TurnHold>,
+    mut cue_wait: ResMut<CueWait>,
     mut airborne: ResMut<Airborne<Landing>>,
     mut turns: ResMut<Turns>,
     mut world: EffectWorld,
     mut reports: Reports,
 ) {
-    for landing in airborne.landing(&mut hold, &mut turns) {
+    for landing in airborne.landing(&mut cue_wait, &mut turns) {
         land(landing, &abilities, &mut world, &mut reports);
     }
 }
@@ -1352,29 +1352,29 @@ mod tests {
         let me = caster(&mut app, start, 20, &[bolt]);
         let them = foe(&mut app, start.offset(3, 0));
         settle(&mut app);
-        app.world_mut().resource_mut::<TurnHold>().watch();
+        app.world_mut().resource_mut::<CueWait>().watch();
 
         app.world_mut().write_message(Intent::new(me, Use { ability: bolt, aim: start.offset(3, 0) }));
         app.update();
         assert_eq!(hp(&app, them), 20, "in the air");
         assert!(matches!(cues(&mut app).as_slice(), [Cue::Flight { .. }]), "the flight, and nothing else yet");
-        let hold = *app.world().resource::<TurnHold>();
-        assert!(hold.is_held() && hold.in_flight(), "held for the flight, with one in the air");
+        let cue_wait = *app.world().resource::<CueWait>();
+        assert!(cue_wait.is_waiting() && cue_wait.in_flight(), "held for the flight, with one in the air");
         assert_eq!(app.world().get::<Pools>(me).unwrap().get(StatId::from_raw(0)), 15, "paid on the cast");
         app.update();
         assert_eq!(hp(&app, them), 20, "still, while held");
 
-        app.world_mut().resource_mut::<TurnHold>().release();
+        app.world_mut().resource_mut::<CueWait>().release();
         app.update();
         assert_eq!(hp(&app, them), 16, "seen to fly, it lands");
         let burst = cues(&mut app);
         let [Cue::Burst { from, .. }] = burst.as_slice() else { panic!("and bursts where it did: {burst:?}") };
         assert_eq!(*from, Some(Anchor::on(them, start.offset(3, 0))), "spreading out from where it landed, on whoever it landed on");
-        let hold = *app.world().resource::<TurnHold>();
-        assert!(hold.is_held() && !hold.in_flight(), "held again for the burst, nothing in the air");
+        let cue_wait = *app.world().resource::<CueWait>();
+        assert!(cue_wait.is_waiting() && !cue_wait.in_flight(), "held again for the burst, nothing in the air");
         assert!(app.world().get::<MyTurn>(me).is_none(), "no turn dealt while the burst is seen");
 
-        app.world_mut().resource_mut::<TurnHold>().release();
+        app.world_mut().resource_mut::<CueWait>().release();
         app.update();
         assert!(app.world().get::<MyTurn>(me).is_some(), "then the turn comes round");
     }
@@ -1475,7 +1475,7 @@ mod tests {
             let them = foe(&mut app, there);
             app.world_mut().entity_mut(them).insert(reflects);
             settle(&mut app);
-            app.world_mut().resource_mut::<TurnHold>().watch();
+            app.world_mut().resource_mut::<CueWait>().watch();
             cues(&mut app);
 
             app.world_mut().write_message(Intent::new(me, Use { ability: bolt, aim: there }));
@@ -1492,7 +1492,7 @@ mod tests {
                 assert_eq!(flown, vec![out], "one flight, to the body it lands on");
             }
 
-            app.world_mut().resource_mut::<TurnHold>().release();
+            app.world_mut().resource_mut::<CueWait>().release();
             app.update();
             let burst = cues(&mut app);
             let [Cue::Burst { from, .. }] = burst.as_slice() else { panic!("{reflects:?}: a burst where it landed: {burst:?}") };

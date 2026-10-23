@@ -2685,9 +2685,9 @@ mod traps {
         deck.app.update();
         assert_eq!(health(&deck), 20, "broken, and not yet burst");
         {
-            let mut hold = deck.app.world_mut().resource_mut::<crate::cue::TurnHold>();
-            hold.watch();
-            hold.hold();
+            let mut cue_wait = deck.app.world_mut().resource_mut::<crate::cue::CueWait>();
+            cue_wait.watch();
+            cue_wait.wait();
         }
         for _ in 0..4 {
             deck.app.update();
@@ -2697,7 +2697,7 @@ mod traps {
             deck.app.world_mut().resource_mut::<Messages<crate::effects::Fired>>().update();
         }
         assert_eq!(health(&deck), 20, "nothing moves while the loop is held");
-        deck.app.world_mut().resource_mut::<crate::cue::TurnHold>().release();
+        deck.app.world_mut().resource_mut::<crate::cue::CueWait>().release();
         deck.app.update();
         assert_eq!(health(&deck), 15, "and the burst lands as soon as it runs");
         let remnants = deck.app.world_mut().query::<&crate::effects::Remnant>().iter(deck.app.world()).count();

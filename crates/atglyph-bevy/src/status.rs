@@ -69,7 +69,7 @@ pub struct Afflict {
     ///
     /// Held, it ends through the ordinary [`Cure`] in the pass its holder
     /// is not wearing that thing, however that came about; see
-    /// `end_unworn_holds`. One landed on
+    /// `end_unworn_statuses`. One landed on
     /// somebody who is not wearing the thing, as an area use reaching a
     /// bystander, ends in the pass after it goes on. A refresh or an
     /// extension by a held request is held by the new thing, and one by an
@@ -247,7 +247,7 @@ pub(crate) fn pass_held_turns(
 ) {
     let Some(registries) = registries.as_deref() else { return };
     for (actor, statuses) in &holders {
-        if statuses.holding(&registries.statuses).is_none() {
+        if statuses.taking_turns(&registries.statuses).is_none() {
             continue;
         }
         acting.claim_decision(actor);
@@ -793,7 +793,7 @@ mod tests {
         extra(&mut app);
         let start = crate::testing::ground(&mut app);
         crate::testing::two_sides(&mut app);
-        let statuses = Registry::from_defs(vec![StatusDef::new("snared").holds()]).unwrap();
+        let statuses = Registry::from_defs(vec![StatusDef::new("snared").skips_turns()]).unwrap();
         let snared = statuses.expect("snared");
         app.world_mut().resource_mut::<Registries>().statuses = statuses;
         app.init_resource::<Spent>().add_systems(crate::plugin::Turn, record_spent.in_set(crate::plugin::TurnSet::Record));
@@ -949,7 +949,7 @@ mod tests {
         let start = crate::testing::ground(&mut app);
         let sides = crate::testing::two_sides(&mut app);
         app.world_mut().resource_mut::<CombatRules>().unaware = Some(300);
-        let defs = vec![StatusDef::new("asleep").sleeps(), StatusDef::new("snared").holds(), StatusDef::new("drowsing").sleeps().ticks(sides.kind, 1)];
+        let defs = vec![StatusDef::new("asleep").sleeps(), StatusDef::new("snared").skips_turns(), StatusDef::new("drowsing").sleeps().ticks(sides.kind, 1)];
         let statuses = Registry::from_defs(defs).unwrap();
         let (asleep, snared, drowsing) = (statuses.expect("asleep"), statuses.expect("snared"), statuses.expect("drowsing"));
         app.world_mut().resource_mut::<Registries>().statuses = statuses;

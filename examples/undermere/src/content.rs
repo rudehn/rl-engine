@@ -262,10 +262,10 @@ pub fn registries() -> Registries {
         StatusDef { badge: Some('h'), ..StatusDef::new(HASTED).modifies(stats.expect(SPEED), Op::Add(100)).boon() },
         StatusDef { badge: Some('f'), ..StatusDef::new(FIREPROOF).resists(fire, FIREPROOF_PCT).boon() },
         StatusDef { badge: Some('d'), ..StatusDef::new(SHROUDED).modifies(stats.expect(STEALTH), Op::Add(30)).boon() },
-        StatusDef { badge: Some('P'), ..StatusDef::new(PARALYSED).holds() },
+        StatusDef { badge: Some('P'), ..StatusDef::new(PARALYSED).skips_turns() },
         StatusDef { badge: Some('?'), ..StatusDef::new(CONFUSED).stumbles(STUMBLES_PCT) },
         StatusDef { badge: Some('!'), ..StatusDef::new(DISCORDANT).sides_with(factions.expect(DISCORDANT)) },
-        StatusDef { badge: Some('b'), ..StatusDef::new(WEBBED).holds() },
+        StatusDef { badge: Some('b'), ..StatusDef::new(WEBBED).skips_turns() },
         StatusDef { badge: Some('w'), ..StatusDef::new(WARDED).modifies(stats.expect(ARMOR), Op::Add(3)).boon() },
         StatusDef {
             badge: Some('-'),

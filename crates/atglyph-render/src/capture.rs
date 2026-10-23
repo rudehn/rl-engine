@@ -258,7 +258,7 @@ fn press_keys(mut state: ResMut<Capture>, mut keys: ResMut<ButtonInput<KeyCode>>
     state.held = chord;
 }
 
-fn shoot(mut commands: Commands, mut state: ResMut<Capture>, time: Res<Time<Real>>, hold: Option<Res<atglyph_bevy::TurnHold>>) {
+fn shoot(mut commands: Commands, mut state: ResMut<Capture>, time: Res<Time<Real>>, cue_wait: Option<Res<atglyph_bevy::CueWait>>) {
     if state.shot || time.elapsed_secs() < WARM_UP_SECS {
         return;
     }
@@ -267,7 +267,7 @@ fn shoot(mut commands: Commands, mut state: ResMut<Capture>, time: Res<Time<Real
         At::Settled => state.frame >= state.shoot_on,
         At::Hold(into) => {
             let all_pressed = state.frame >= FIRST_KEY + KEY_GAP * state.keys.len() as u32;
-            let held = all_pressed && hold.as_deref().is_some_and(atglyph_bevy::TurnHold::is_held);
+            let held = all_pressed && cue_wait.as_deref().is_some_and(atglyph_bevy::CueWait::is_waiting);
             if held && state.held_since.is_none() {
                 state.held_since = Some(now);
             }

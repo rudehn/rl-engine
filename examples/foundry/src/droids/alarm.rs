@@ -474,17 +474,17 @@ mod tests {
                 app.world_mut().write_message(Intent::new(me, Wait));
             }
             app.update();
-            if app.world().resource::<TurnHold>().is_held() {
+            if app.world().resource::<CueWait>().is_waiting() {
                 held = true;
                 break;
             }
         }
-        assert!(held && app.world().resource::<Particles>().is_holding(), "the pulse holds the turns");
+        assert!(held && app.world().resource::<Particles>().is_waited_on(), "the pulse holds the turns");
         let last = app.world().resource::<crate::testing::Alarms>().cues.last().cloned();
         assert!(matches!(last, Some(Cued { actor, cue: Cue::Burst { look: LookOf::Given(PULSE), .. } }) if actor == probe), "on the probe's pulse: {last:?}");
         app.world_mut().resource_mut::<atglyph::ecs::testing::KeyScript>().press(KeyCode::F12);
         app.update();
-        assert!(!app.world().resource::<TurnHold>().is_held(), "the key let the turns go");
+        assert!(!app.world().resource::<CueWait>().is_waiting(), "the key let the turns go");
         assert!(app.world().get::<MyTurn>(me).is_some(), "and the commando holds its turn");
     }
 }

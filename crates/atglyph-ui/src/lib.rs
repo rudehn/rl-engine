@@ -232,7 +232,7 @@ impl Plugin for UiPlugin {
             .init_resource::<MessageLog>()
             .configure_sets(Update, (ViewSet::Sight, ViewSet::Collect, ViewSet::Annotate, ViewSet::Speak).chain().in_set(atglyph_bevy::PresentSet::Narrate))
             .add_systems(First, |mut modals: ResMut<Modals>| modals.begin_frame())
-            // Before anything reads a key, and before the hold advances:
+            // Before anything reads a key, and before key repeat advances:
             // a window that lost focus never saw what was released while
             // it was away. The message is Bevy's own, and a headless game
             // has no window to lose focus, so it is read as optional.

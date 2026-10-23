@@ -1157,15 +1157,15 @@ mod tests {
         let knife = field.app.world_mut().spawn((crate::items::Item, crate::throwing::Throwable::new(6, Some((kind, DiceRoll::flat(1)))))).id();
         field.app.world_mut().get_mut::<crate::items::Inventory>(player).unwrap().items.push(knife);
         hide(&mut field, hidden);
-        field.app.world_mut().resource_mut::<crate::cue::TurnHold>().watch();
+        field.app.world_mut().resource_mut::<crate::cue::CueWait>().watch();
 
         let there = field.at(watcher);
         field.app.world_mut().write_message(Intent::new(player, crate::throwing::Throw { item: knife, at: there }));
         field.app.update();
-        assert!(field.app.world().resource::<crate::cue::TurnHold>().in_flight(), "the knife is in the air");
+        assert!(field.app.world().resource::<crate::cue::CueWait>().in_flight(), "the knife is in the air");
         assert!(unseen(&field), "and its thrower is still unseen while it flies");
 
-        field.app.world_mut().resource_mut::<crate::cue::TurnHold>().release();
+        field.app.world_mut().resource_mut::<crate::cue::CueWait>().release();
         field.app.update();
         assert!(!unseen(&field), "it landed, and the throw ended it");
         assert!(field.aware().knows(player), "and the one it hit knows where from");

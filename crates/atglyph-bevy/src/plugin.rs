@@ -5,7 +5,7 @@ use bevy::ecs::schedule::ScheduleLabel;
 use bevy::prelude::*;
 
 use crate::components::{Actor, MyTurn, Player, Position};
-use crate::cue::TurnHold;
+use crate::cue::CueWait;
 use crate::knowledge::Knowledge;
 use crate::state::{EngineState, Restart, RunOver};
 use crate::title::{HoldStart, LeaveRun, begin_run};
@@ -179,7 +179,7 @@ pub(crate) fn earn_pace(time: Res<Time>, mut pace: ResMut<Pace>) {
 /// frame; a pass that neither dealt, advanced nor requeued means the queue
 /// is idle. Both leave at least one pass run, so an [`Intent`](crate::turn::Intent) written in
 /// [`EngineSet::Input`] is always resolved in the same frame. A
-/// [`TurnHold`] stops the loop after the pass that raised it and runs no
+/// [`CueWait`] stops the loop after the pass that raised it and runs no
 /// pass at all until it is let go: nobody holds a turn while it is up,
 /// since the act that raised it was the last one dealt, so nothing a
 /// player presses meanwhile could have been resolved anyway.
@@ -191,7 +191,7 @@ pub(crate) fn earn_pace(time: Res<Time>, mut pace: ResMut<Pace>) {
 /// answered in its own frame at any pace, and a warp or a reaction asked
 /// for while the turns are stopped is still answered.
 pub fn run_turns(world: &mut World) {
-    if world.resource::<TurnHold>().is_held() {
+    if world.resource::<CueWait>().is_waiting() {
         return;
     }
     for pass in 0..MAX_PASSES {
@@ -201,7 +201,7 @@ pub fn run_turns(world: &mut World) {
         let advanced = world.resource::<Turns>().now().saturating_sub(before);
         world.resource_mut::<Pace>().spend(advanced);
         let player_holds = world.query_filtered::<(), (With<Player>, With<MyTurn>)>().iter(world).next().is_some();
-        if player_holds || !world.resource::<Turns>().progress || world.resource::<TurnHold>().is_held() {
+        if player_holds || !world.resource::<Turns>().progress || world.resource::<CueWait>().is_waiting() {
             return;
         }
         if pass + 1 == MAX_PASSES {
@@ -234,7 +234,7 @@ impl Plugin for CorePlugin {
             .init_resource::<Knowledge>()
             .init_resource::<crate::minds::FlowFields>()
             .init_resource::<crate::minds::Thinking>()
-            .init_resource::<TurnHold>()
+            .init_resource::<CueWait>()
             .add_message::<crate::cue::Cued>()
             .add_message::<ActionDone>()
             .add_message::<ActionRefused>()
@@ -338,7 +338,7 @@ impl Plugin for CorePlugin {
                     .in_set(ResolveSet::Travel),
             )
             .add_systems(Turn, (turn::cleanup_turns, turn::forget_removed_blockers).chain().in_set(CleanupSet::Requeue))
-            .add_systems(Turn, crate::cue::hold_for_cues.in_set(TurnSet::Cleanup))
+            .add_systems(Turn, crate::cue::wait_for_cues.in_set(TurnSet::Cleanup))
             .needs::<WorldMap>("CorePlugin", "`WorldMap::new(tiles.tables())`, the map every engine system reads")
             .add_systems(OnEnter(EngineState::Playing), check_requirements)
             // Ambiguous with everything on purpose: it reads the state and
@@ -480,7 +480,7 @@ pub fn clear_run(world: &mut World) {
     world.insert_resource(Occupancy::default());
     world.insert_resource(Acting::default());
     world.insert_resource(Knowledge::default());
-    world.resource_mut::<TurnHold>().reset();
+    world.resource_mut::<CueWait>().reset();
     world.resource_mut::<crate::minds::FlowFields>().invalidate();
     world.remove_resource::<WorldMap>();
     world.remove_resource::<crate::state::Ending>();

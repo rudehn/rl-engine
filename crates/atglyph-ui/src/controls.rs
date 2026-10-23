@@ -372,7 +372,7 @@ impl Default for ControlsKeys {
 }
 
 /// Forgets every key that was down when the window lost or regained
-/// focus, and the hold with it.
+/// focus, and its key repeat with it.
 ///
 /// A key that went down while the window had focus and came up while it
 /// did not is a key the window never saw released: it stays down as far
@@ -881,7 +881,7 @@ pub(crate) fn advance_repeats(
     pace: Res<RepeatPace>,
     time: Res<Time>,
     mut repeats: ResMut<Repeats>,
-    mut hold: ResMut<atglyph_bevy::TurnHold>,
+    mut cue_wait: ResMut<atglyph_bevy::CueWait>,
 ) {
     let held = directions.0.iter().find(|(key, _)| input.pressed(*key));
     let fresh = held.is_some_and(|(key, _)| input.just_pressed(*key));
@@ -892,7 +892,7 @@ pub(crate) fn advance_repeats(
     // with a direction key down waits out every cue in sight: the skipper
     // reads `just_pressed`, which a repeat is not.
     if repeats.firing_any().is_some() {
-        hold.ask_skip();
+        cue_wait.ask_skip();
     }
 }
 

@@ -658,7 +658,7 @@ mod tests {
             }
         });
         let defs = atglyph_rules::Registry::from_defs(vec![
-            atglyph_rules::StatusDef { badge: Some('P'), ..atglyph_rules::StatusDef::new("held fast").holds() },
+            atglyph_rules::StatusDef { badge: Some('P'), ..atglyph_rules::StatusDef::new("held fast").skips_turns() },
             atglyph_rules::StatusDef::new("knitting").mends(1),
             atglyph_rules::StatusDef::new("dozing").sleeps(),
         ])

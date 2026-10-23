@@ -35,7 +35,7 @@ use bevy::input::InputSystems;
 use bevy::prelude::*;
 
 use crate::combat::{CombatRules, DamageStages};
-use crate::cue::TurnHold;
+use crate::cue::CueWait;
 use crate::prelude::{
     Arrive, DamageEvent, Destination, DropItem, Equip, GoThrough, Intent, Inventory, MapId, OnMap, PickUp, PlaceBuild, Player, Position, Stack, Unequip, Wait,
     WarpRequest,
@@ -261,10 +261,10 @@ pub fn pass_turns(app: &mut App, n: u32) {
 /// deals at the new reading as it would at any.
 ///
 /// # Panics
-/// Panics when a [`TurnHold`] is up: no pass runs while it is, so the one
+/// Panics when a [`CueWait`] is up: no pass runs while it is, so the one
 /// frame would show the jump to nothing that reads the clock.
 pub fn let_time_pass(app: &mut App, turns: u32) {
-    assert!(!app.world().resource::<TurnHold>().is_held(), "a turn hold is up, so no pass would run to see the time let pass");
+    assert!(!app.world().resource::<CueWait>().is_waiting(), "a turn hold is up, so no pass would run to see the time let pass");
     let span = turns * BASE_ACTION_COST;
     let mut clock = app.world_mut().resource_mut::<Turns>();
     let later: Vec<(Entity, u32)> = in_schedule_order(&clock).into_iter().map(|(who, due)| (who, due + span)).collect();
@@ -525,9 +525,9 @@ mod tests {
     #[should_panic(expected = "a turn hold is up")]
     fn letting_time_pass_while_a_turn_hold_is_up_is_refused() {
         let (mut app, _) = holding_the_turn(());
-        let mut hold = app.world_mut().resource_mut::<TurnHold>();
-        hold.watch();
-        hold.hold();
+        let mut cue_wait = app.world_mut().resource_mut::<CueWait>();
+        cue_wait.watch();
+        cue_wait.wait();
         let_time_pass(&mut app, 1);
     }
 

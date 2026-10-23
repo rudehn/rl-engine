@@ -85,9 +85,9 @@ pub struct StatusDef {
     /// should break early is [`sleeps`](Self::sleeps). Not
     /// [`ActiveStatus::held_by`], the worn thing an instance lasts only
     /// while.
-    pub holds: bool,
-    /// Whether it is sleep: it holds its holder's turns as
-    /// [`holds`](Self::holds) does, whether or not that is set, and it ends
+    pub skips_turns: bool,
+    /// Whether it is sleep: it takes its holder's turns as
+    /// [`skips_turns`](Self::skips_turns) does, whether or not that is set, and it ends
     /// the moment the holder is woken, by a noise it hears, by harm landing
     /// on it, or by a foe it notices within [`SLEEPER_REACH`]. Harm that is
     /// the sleep's own tick wakes nobody, nor does harm landing in the pass
@@ -135,7 +135,7 @@ impl StatusDef {
             badge: None,
             unseen: false,
             boon: false,
-            holds: false,
+            skips_turns: false,
             sleeps: false,
             max: None,
             resists: Resistances::new(),
@@ -182,8 +182,8 @@ impl StatusDef {
     }
 
     /// Makes whoever carries it lose its turns while it lasts.
-    pub fn holds(mut self) -> Self {
-        self.holds = true;
+    pub fn skips_turns(mut self) -> Self {
+        self.skips_turns = true;
         self
     }
 
@@ -367,7 +367,7 @@ pub fn load(text: &str, names: &Names<'_>) -> Result<Registry<StatusDef>, Conten
             badge: a.badge,
             unseen: a.unseen,
             boon: a.boon,
-            holds: a.holds,
+            skips_turns: a.holds,
             sleeps: a.sleeps,
             max: a.max,
             resists,
@@ -537,13 +537,13 @@ impl Statuses {
         self.active.iter()
     }
 
-    /// The first active status that [`holds`](StatusDef::holds) or
+    /// The first active status that [`skips_turns`](StatusDef::skips_turns) or
     /// [`sleeps`](StatusDef::sleeps), if any: what takes the actor's turns
     /// while it is on.
-    pub fn holding(&self, defs: &Registry<StatusDef>) -> Option<StatusId> {
+    pub fn taking_turns(&self, defs: &Registry<StatusDef>) -> Option<StatusId> {
         self.active.iter().map(|s| s.id).find(|id| {
             let def = defs.get(*id);
-            def.holds || def.sleeps
+            def.skips_turns || def.sleeps
         })
     }
 
@@ -900,9 +900,9 @@ mod tests {
     fn a_status_can_be_written_to_hold_its_holder_and_holds_nobody_unless_it_says_so() {
         let names = Names::new();
         let loaded = load(r#"[(name: "snared", holds: true), (name: "dazed")]"#, &names).expect("it loads");
-        assert!(loaded.get(loaded.expect("snared")).holds);
-        assert!(!loaded.get(loaded.expect("dazed")).holds);
-        assert!(StatusDef::new("snared").holds().holds);
+        assert!(loaded.get(loaded.expect("snared")).skips_turns);
+        assert!(!loaded.get(loaded.expect("dazed")).skips_turns);
+        assert!(StatusDef::new("snared").skips_turns().skips_turns);
     }
 
     /// Held is asked of what is on the actor now, so it ends the turn the
@@ -910,21 +910,21 @@ mod tests {
     /// that does not hold never holds anyone however long it lasts.
     #[test]
     fn an_actor_is_held_while_a_status_that_holds_is_on_it_and_free_once_it_runs_out_or_is_cured() {
-        let defs = Registry::from_defs(vec![StatusDef::new("snared").holds(), StatusDef::new("dazed")]).unwrap();
+        let defs = Registry::from_defs(vec![StatusDef::new("snared").skips_turns(), StatusDef::new("dazed")]).unwrap();
         let (snared, dazed) = (defs.expect("snared"), defs.expect("dazed"));
         let (mut statuses, mut stats) = (Statuses::new(), Stats::new());
         statuses.apply(dazed, UNTIL_CURED, None, &defs, &mut stats);
-        assert_eq!(statuses.holding(&defs), None, "a status that does not hold leaves its holder free");
+        assert_eq!(statuses.taking_turns(&defs), None, "a status that does not hold leaves its holder free");
         statuses.apply(snared, 2, None, &defs, &mut stats);
-        assert_eq!(statuses.holding(&defs), Some(snared));
+        assert_eq!(statuses.taking_turns(&defs), Some(snared));
         statuses.tick(&defs, &mut stats);
-        assert_eq!(statuses.holding(&defs), Some(snared), "a turn left");
+        assert_eq!(statuses.taking_turns(&defs), Some(snared), "a turn left");
         statuses.tick(&defs, &mut stats);
-        assert_eq!(statuses.holding(&defs), None, "run out");
+        assert_eq!(statuses.taking_turns(&defs), None, "run out");
         statuses.apply(snared, UNTIL_CURED, None, &defs, &mut stats);
-        assert_eq!(statuses.holding(&defs), Some(snared), "put on until cured");
+        assert_eq!(statuses.taking_turns(&defs), Some(snared), "put on until cured");
         assert!(statuses.cure(snared, &mut stats));
-        assert_eq!(statuses.holding(&defs), None, "and cured");
+        assert_eq!(statuses.taking_turns(&defs), None, "and cured");
     }
 
     #[test]
@@ -945,7 +945,7 @@ mod tests {
         let asleep = loaded.expect("asleep");
         let (mut statuses, mut stats) = (Statuses::new(), Stats::new());
         statuses.apply(asleep, UNTIL_CURED, None, &loaded, &mut stats);
-        assert_eq!(statuses.holding(&loaded), Some(asleep));
+        assert_eq!(statuses.taking_turns(&loaded), Some(asleep));
         assert_eq!(statuses.sleeping(&loaded), Some(asleep));
     }
 
@@ -958,7 +958,7 @@ mod tests {
         let defs = Registry::from_defs(vec![
             StatusDef::new("asleep").sleeps().modifies(speed, Op::Add(-50)),
             StatusDef::new("dozing").sleeps(),
-            StatusDef::new("snared").holds(),
+            StatusDef::new("snared").skips_turns(),
         ])
         .unwrap();
         let (asleep, dozing, snared) = (defs.expect("asleep"), defs.expect("dozing"), defs.expect("snared"));
@@ -970,7 +970,7 @@ mod tests {
         assert_eq!(stats.value(speed, &stat_defs), 50);
         assert_eq!(statuses.wake(&defs, &mut stats), vec![asleep, dozing]);
         assert_eq!(statuses.sleeping(&defs), None, "awake");
-        assert_eq!(statuses.holding(&defs), Some(snared), "and still snared");
+        assert_eq!(statuses.taking_turns(&defs), Some(snared), "and still snared");
         assert_eq!(stats.value(speed, &stat_defs), 100, "the sleep's modifier left with it");
     }
 

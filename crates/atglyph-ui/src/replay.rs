@@ -25,7 +25,7 @@ use std::path::PathBuf;
 
 use atglyph_bevy::prelude::{MyTurn, Player};
 use atglyph_bevy::replay::{Pressed, RECORD_VAR, Recording};
-use atglyph_bevy::{EngineSet, Seed, TurnHold, Turns};
+use atglyph_bevy::{CueWait, EngineSet, Seed, Turns};
 use bevy::input::InputSystems;
 use bevy::prelude::*;
 
@@ -164,14 +164,14 @@ pub(crate) fn play_back(
     mut replay: ResMut<Replay>,
     mut input: ResMut<ButtonInput<KeyCode>>,
     turns: Res<Turns>,
-    hold: Option<Res<TurnHold>>,
+    cue_wait: Option<Res<CueWait>>,
     player: Query<(), (With<Player>, With<MyTurn>)>,
 ) {
     for key in std::mem::take(&mut replay.held) {
         input.release(key);
     }
     let Some(next) = replay.keys.front() else { return };
-    if player.is_empty() || hold.as_deref().is_some_and(TurnHold::is_held) {
+    if player.is_empty() || cue_wait.as_deref().is_some_and(CueWait::is_waiting) {
         return;
     }
     let now = turns.now();

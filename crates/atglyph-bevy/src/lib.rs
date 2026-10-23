@@ -74,7 +74,7 @@ pub use combat::{
 };
 pub use components::{Actor, Blocks, MyTurn, Player, Position, RevealsMap, Speed, Viewshed};
 pub use consumable::{AddSpending, Attuned, Consumable, Recharge, SpendingMoments, Spent, WhenEmpty};
-pub use cue::{AddAirborne, Airborne, Anchor, Cue, Cued, Lands, LookOf, TurnHold};
+pub use cue::{AddAirborne, Airborne, Anchor, Cue, CueWait, Cued, Lands, LookOf};
 pub use doors::{Close, DoorEvent, Open};
 pub use effects::{
     AddEffect, AddEngineEffects, AddMoment, Cleanse, Effect, EffectBonus, EffectKinds, EffectRng, EffectWorld, Effects, EffectsPlugin, Emit, Fired, FiredOn,
@@ -87,8 +87,8 @@ pub use fire::{Burning, Fire, FireEvent, FirePlugin, FireRules, Flammable, Kindl
 pub use fov::FovPlugin;
 pub use gas::{Breathed, GasPlugin, Gases, Release, Vents};
 pub use items::{
-    Bestows, DropItem, Equip, EquipFromGround, Equipped, GearScore, HeldWhileWorn, Inventory, Item, ItemEvent, ItemRules, ItemsPlugin, LitWhenWorn,
-    OwnBlowScore, PickUp, Pulse, Stack, Stuck, Tagged, Unequip, Unknown, UseItem, UseItemAt, UseOn, Wearable, may_use, may_use_on,
+    Bestows, DropItem, Equip, EquipFromGround, Equipped, GearScore, Inventory, Item, ItemEvent, ItemRules, ItemsPlugin, LitWhenWorn, OwnBlowScore, PickUp,
+    Pulse, Stack, Stuck, Tagged, Unequip, Unknown, UseItem, UseItemAt, UseOn, Wearable, WornStatuses, may_use, may_use_on,
 };
 pub use knowledge::{Knowledge, KnowledgeSave, Recalled};
 pub use lighting::{
@@ -100,7 +100,7 @@ pub use minds::{
     Sight, Thinking,
 };
 pub use noise::{AddSound, Footfall, Heard, Hearing, MakeNoise, NoiseHeard, NoisePlugin, NoiseRules, NoiseRunning, Sound, SoundId, SoundNames, Sounds};
-pub use parts::{ActorParts, Attacks, ItemLevel, ItemParts, LightWhen, held_for_life, insert_parts};
+pub use parts::{ActorParts, Attacks, ItemLevel, ItemParts, LightWhen, innate_statuses, insert_parts};
 pub use places::{
     AddPlaces, Arrive, Climb, Destination, GoThrough, Ladder, LadderEnd, Lock, MapChanged, MapId, OnMap, PlaceBuild, PlaceEntered, PlaceRules, PlaceRulesRes,
     SpawnPlayer, Spot, Stair, StairLook, Transition, Travelled, WarpRequest,
@@ -151,7 +151,7 @@ pub mod prelude {
     };
     pub use crate::components::{Actor, Blocks, MyTurn, Player, Position, RevealsMap, Speed, Viewshed};
     pub use crate::consumable::{AddSpending, Attuned, Consumable, WhenEmpty};
-    pub use crate::cue::{AddAirborne, Airborne, Anchor, Cue, Cued, Lands, LookOf, TurnHold};
+    pub use crate::cue::{AddAirborne, Airborne, Anchor, Cue, CueWait, Cued, Lands, LookOf};
     pub use crate::doors::{Close, DoorEvent, Open};
 
     pub use crate::effects::{
@@ -165,8 +165,8 @@ pub mod prelude {
     pub use crate::gas::{Breathed, GasPlugin, Gases, Release, Vents};
 
     pub use crate::items::{
-        Bestows, DropItem, Equip, EquipFromGround, Equipped, GearScore, HeldWhileWorn, Inventory, Item, ItemEvent, ItemRules, ItemsPlugin, LitWhenWorn,
-        OwnBlowScore, PickUp, Pulse, Stack, Stuck, Tagged, Unequip, Unknown, UseItem, UseItemAt, UseOn, Wearable,
+        Bestows, DropItem, Equip, EquipFromGround, Equipped, GearScore, Inventory, Item, ItemEvent, ItemRules, ItemsPlugin, LitWhenWorn, OwnBlowScore, PickUp,
+        Pulse, Stack, Stuck, Tagged, Unequip, Unknown, UseItem, UseItemAt, UseOn, Wearable, WornStatuses,
     };
 
     pub use crate::knowledge::Knowledge;
@@ -178,7 +178,7 @@ pub mod prelude {
     pub use crate::minds::{AddChoice, Doing, Intelligence, JoinStamp, Leader, Mind, MindChose, MindsPlugin, Perception, Post, Profile, Thinking};
 
     pub use crate::noise::{AddSound, Footfall, Heard, Hearing, MakeNoise, NoiseHeard, NoisePlugin, NoiseRules, SoundId, SoundNames, Sounds};
-    pub use crate::parts::{ActorParts, Attacks, ItemLevel, ItemParts, LightWhen, held_for_life, insert_parts};
+    pub use crate::parts::{ActorParts, Attacks, ItemLevel, ItemParts, LightWhen, innate_statuses, insert_parts};
 
     pub use crate::places::{
         AddPlaces, Arrive, Climb, Destination, GoThrough, Ladder, LadderEnd, Lock, MapChanged, MapId, OnMap, PlaceBuild, PlaceEntered, PlaceRules,

@@ -388,15 +388,15 @@ fn a_zap_seen_to_fly_is_known_by_what_it_showed_when_it_lands() {
             held(&mut app, "goblin", cell, 10);
         }
         let thing = carried(&mut app, me, name, 2);
-        app.world_mut().resource_mut::<TurnHold>().watch();
+        app.world_mut().resource_mut::<CueWait>().watch();
         zap(&mut app, me, thing, cell);
-        assert!(app.world().resource::<TurnHold>().in_flight(), "{name}: in the air");
+        assert!(app.world().resource::<CueWait>().in_flight(), "{name}: in the air");
         assert!(!app.world().resource::<Lore>().knows(name), "{name}: not known while it flies");
         for _ in 0..4 {
-            app.world_mut().resource_mut::<TurnHold>().release();
+            app.world_mut().resource_mut::<CueWait>().release();
             app.update();
         }
-        assert!(!app.world().resource::<TurnHold>().in_flight(), "{name}: landed");
+        assert!(!app.world().resource::<CueWait>().in_flight(), "{name}: landed");
         assert_eq!(learned(&app, name), (plain, !plain), "{name}: {:#?}", said(&app));
     }
 }

@@ -1,5 +1,5 @@
 //! Cues: what a turn did that is worth seeing, told to whoever draws, and
-//! the hold on the turns while it is shown.
+//! the wait on the turns while it is shown.
 //!
 //! The turn loop is instant: a bolt is cast, flies, lands and kills in
 //! one frame, and a player sees a crab die of nothing. A resolver that did
@@ -11,21 +11,21 @@
 //! the floor they left.
 //!
 //! Nothing is drawn here. A plugin that plays cues, `ParticlesPlugin` in
-//! `atglyph-render`, says so with [`TurnHold::watch`], and from then on the
+//! `atglyph-render`, says so with [`CueWait::watch`], and from then on the
 //! loop stops after any pass that cued something and runs no pass until
 //! the plugin lets go. That is what makes a fight legible: the crab's spit
 //! is seen to fly before the eel moves, and two monsters casting are two
-//! flights, one after the other. A cue at the player holds like any
-//! other, so the spit is seen to arrive before it hurts; what keeps the
+//! flights, one after the other. A cue at the player is waited on like
+//! any other, so the spit is seen to arrive before it hurts; what keeps the
 //! player from waiting on it is the plugin, which lets a key pressed
 //! while the turns wait skip through to the player's turn. Without a
 //! watcher the cues are written and forgotten, and the loop runs as if
 //! there were none, which is what a headless game gets.
 //!
 //! A flight lands when it has been seen. A resolver that cued one, with
-//! something watching, puts what the flight does aside and tells the hold
-//! it has `launched`; no turn is dealt while anything
-//! is in the air, and the first pass after the hold lets go lands it,
+//! something watching, puts what the flight does aside and tells the
+//! [`CueWait`] it has `launched`; no turn is dealt while anything
+//! is in the air, and the first pass after the wait lets go lands it,
 //! which is when the fire starts and the blow falls, and cues the burst
 //! that is then waited on in turn. Without a watcher nothing is put
 //! aside and a use lands the moment it is cast, as it always did.
@@ -108,26 +108,26 @@ pub struct Cued {
 
 /// Whether the turn loop is waiting for something to be seen.
 ///
-/// Held only while something watches: a plugin that plays cues calls
+/// Waits only while something watches: a plugin that plays cues calls
 /// [`watch`](Self::watch) once, and the loop is then stopped by
-/// `hold_for_cues` after a pass that cued something and freed by the
+/// `wait_for_cues` after a pass that cued something and freed by the
 /// plugin when the last of it has played. A game with no such plugin never
 /// waits.
 #[derive(Resource, Debug, Default, Clone, Copy)]
-pub struct TurnHold {
+pub struct CueWait {
     watched: bool,
-    held: bool,
+    waiting: bool,
     /// Flights cued and not yet landed.
     in_flight: u32,
     /// Whether something below the skipper asked for a skip this frame.
     skip_asked: bool,
 }
 
-impl TurnHold {
+impl CueWait {
     /// Lets go of everything for a new run, keeping whether anything
     /// watches: what was in the air belonged to the run that ended.
     pub(crate) fn reset(&mut self) {
-        self.held = false;
+        self.waiting = false;
         self.in_flight = 0;
         self.skip_asked = false;
     }
@@ -143,18 +143,18 @@ impl TurnHold {
     }
 
     /// Stops the loop, if anything watches to start it again.
-    pub fn hold(&mut self) {
-        self.held = self.watched;
+    pub fn wait(&mut self) {
+        self.waiting = self.watched;
     }
 
     /// Lets the loop run on.
     pub fn release(&mut self) {
-        self.held = false;
+        self.waiting = false;
     }
 
     /// Whether the loop is stopped.
-    pub fn is_held(&self) -> bool {
-        self.held
+    pub fn is_waiting(&self) -> bool {
+        self.waiting
     }
 
     /// Something has been cued to fly whose landing waits on being seen.
@@ -172,7 +172,7 @@ impl TurnHold {
         self.in_flight > 0
     }
 
-    /// Asks that whatever is holding the turns be skipped, as a key press
+    /// Asks that whatever the turns are waiting on be skipped, as a key press
     /// does.
     ///
     /// For input a plugin below the one that skips cannot see. A key
@@ -188,7 +188,7 @@ impl TurnHold {
 
     /// Whether a skip was asked for since this was last read, clearing it.
     ///
-    /// Taken rather than read, so one repeat skips one hold: a flag left
+    /// Taken rather than read, so one repeat skips one wait: a flag left
     /// standing would skip everything until the key came up.
     pub fn take_skip_asked(&mut self) -> bool {
         std::mem::take(&mut self.skip_asked)
@@ -232,24 +232,24 @@ impl<L: Lands> Airborne<L> {
     /// wrote the two halves itself had to remember the `launch` as well
     /// as the push.
     #[must_use = "a landing handed back has not flown, and the caller lands it now"]
-    pub(crate) fn launched(&mut self, hold: &mut TurnHold, landing: L) -> Option<L> {
-        if !hold.is_watched() {
+    pub(crate) fn launched(&mut self, cue_wait: &mut CueWait, landing: L) -> Option<L> {
+        if !cue_wait.is_watched() {
             return Some(landing);
         }
-        hold.launch();
+        cue_wait.launch();
         self.0.push(landing);
         None
     }
 
     /// Everything whose flight has now been seen, taken out of the air.
     ///
-    /// Frees the hold for each and marks the pass as having done
+    /// Frees the wait for each and marks the pass as having done
     /// something, so the loop goes on to deal the next turn rather than
     /// reading a landing pass as an idle one.
-    pub(crate) fn landing(&mut self, hold: &mut TurnHold, turns: &mut crate::turn::Turns) -> Vec<L> {
+    pub(crate) fn landing(&mut self, cue_wait: &mut CueWait, turns: &mut crate::turn::Turns) -> Vec<L> {
         let landing = std::mem::take(&mut self.0);
         for _ in &landing {
-            hold.land();
+            cue_wait.land();
             turns.made_progress();
         }
         landing
@@ -284,9 +284,9 @@ impl AddAirborne for App {
 /// Stops the turns after a pass that cued something, so the next actor
 /// waits until it has been seen. Runs in the pass's cleanup, and does
 /// nothing unless something watches.
-pub(crate) fn hold_for_cues(mut cues: MessageReader<Cued>, mut hold: ResMut<TurnHold>) {
-    if cues.read().next().is_some() && hold.is_watched() {
-        hold.hold();
+pub(crate) fn wait_for_cues(mut cues: MessageReader<Cued>, mut cue_wait: ResMut<CueWait>) {
+    if cues.read().next().is_some() && cue_wait.is_watched() {
+        cue_wait.wait();
     }
 }
 
@@ -298,14 +298,14 @@ mod tests {
 
     #[test]
     fn a_hold_only_takes_while_something_watches() {
-        let mut hold = TurnHold::default();
-        hold.hold();
-        assert!(!hold.is_held(), "nobody would let go");
-        hold.watch();
-        hold.hold();
-        assert!(hold.is_held());
-        hold.release();
-        assert!(!hold.is_held());
+        let mut cue_wait = CueWait::default();
+        cue_wait.wait();
+        assert!(!cue_wait.is_waiting(), "nobody would let go");
+        cue_wait.watch();
+        cue_wait.wait();
+        assert!(cue_wait.is_waiting());
+        cue_wait.release();
+        assert!(!cue_wait.is_waiting());
     }
 
     type Holding<'w, 's> = Query<'w, 's, (Entity, &'static Position), (With<MyTurn>, Without<Player>)>;
@@ -343,7 +343,7 @@ mod tests {
         let far = app.world_mut().spawn((Actor, Blocks, Position(start.offset(3, 0)))).id();
         let farther = app.world_mut().spawn((Actor, Blocks, Position(start.offset(5, 0)))).id();
         app.world_mut().resource_mut::<NextState<crate::state::EngineState>>().set(crate::state::EngineState::Playing);
-        app.world_mut().resource_mut::<TurnHold>().watch();
+        app.world_mut().resource_mut::<CueWait>().watch();
         app.update();
         app.update();
         assert!(app.world().get::<MyTurn>(me).is_some(), "the player goes first");
@@ -351,17 +351,17 @@ mod tests {
         app.world_mut().write_message(Intent::new(me, Wait));
         app.update();
         assert_eq!(cued_by(&mut app), vec![near], "the one beside the player cued the player, and that held the loop");
-        assert!(app.world().resource::<TurnHold>().is_held());
+        assert!(app.world().resource::<CueWait>().is_waiting());
         app.update();
         assert!(cued_by(&mut app).is_empty(), "nothing acts while it is held");
-        app.world_mut().resource_mut::<TurnHold>().release();
+        app.world_mut().resource_mut::<CueWait>().release();
         app.update();
         assert_eq!(cued_by(&mut app), vec![far], "let go, the next one acts, and is waited on in turn");
-        assert!(app.world().resource::<TurnHold>().is_held());
-        app.world_mut().resource_mut::<TurnHold>().release();
+        assert!(app.world().resource::<CueWait>().is_waiting());
+        app.world_mut().resource_mut::<CueWait>().release();
         app.update();
         assert_eq!(cued_by(&mut app), vec![farther]);
-        app.world_mut().resource_mut::<TurnHold>().release();
+        app.world_mut().resource_mut::<CueWait>().release();
         app.update();
         assert!(app.world().get::<MyTurn>(me).is_some(), "and the turn comes back round");
     }

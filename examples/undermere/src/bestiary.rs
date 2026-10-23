@@ -770,7 +770,7 @@ pub fn spawn_monster(commands: &mut Commands, def: &MonsterDef, at: Point, map: 
         if asleep {
             held.push(registries.statuses.expect(crate::content::ASLEEP));
         }
-        e.insert(held_for_life(&held, &registries.statuses));
+        e.insert(innate_statuses(&held, &registries.statuses));
     }
     // Unseen out of the light, the engine's own rule for what the
     // adventurer sees, decided again every frame: a wraith's `shrouded`.

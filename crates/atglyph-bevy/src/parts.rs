@@ -23,7 +23,7 @@
 //! puts every one written on a spawned actor; one not written puts
 //! nothing, and a game's defaults are its own, laid under each kind with
 //! [`ActorParts::over`]. [`ActorParts::repertoire`] is what a kind can do,
-//! which `atglyph_rules::ai::Standard` builds its brain from. [`held_for_life`]
+//! which `atglyph_rules::ai::Standard` builds its brain from. [`innate_statuses`]
 //! is the statuses an actor holds from its first turn, for a game that
 //! holds one more of its own.
 
@@ -45,7 +45,7 @@ use crate::combat::{Armor, Faction, Health, MeleeAttack, RangedAttack, Resists, 
 use crate::components::Speed;
 use crate::consumable::{Attuned, Consumable};
 use crate::effects::{EffectBonus, MomentId, Moments, Triggers};
-use crate::items::{Bestows, Equipped, HeldWhileWorn, Item, LitWhenWorn, Pulse, Stack, Tagged, Wearable};
+use crate::items::{Bestows, Equipped, Item, LitWhenWorn, Pulse, Stack, Tagged, Wearable, WornStatuses};
 use crate::lighting::{DarkSight, LightSource, OwnDarkSight, WornDarkSight};
 use crate::loot::Drops;
 use crate::minds::{Intelligence, Mind, Perception};
@@ -138,7 +138,7 @@ pub struct ItemParts {
     pub light_when: LightWhen,
     /// Statuses held on the wearer, until cured, while this is worn. Empty
     /// holds none.
-    pub holds: Vec<StatusId>,
+    pub worn_statuses: Vec<StatusId>,
     /// Tiles the wearer sees without light while this is worn, at level
     /// nought. `None` lends none.
     pub dark_sight: Option<i32>,
@@ -195,7 +195,7 @@ impl ItemParts {
         if moment(Moments::PULSE) && self.wear.is_none() {
             wrong.push("a pulse trigger on a thing that is never worn never comes round".to_string());
         }
-        if self.wear.is_none() && (!self.holds.is_empty() || self.dark_sight.is_some() || self.light_when == LightWhen::Worn) {
+        if self.wear.is_none() && (!self.worn_statuses.is_empty() || self.dark_sight.is_some() || self.light_when == LightWhen::Worn) {
             wrong.push("lends its wearer a status, sight in the dark or a light, on a thing that is never worn".to_string());
         }
         if self.light_when == LightWhen::Worn && self.light.is_none() {
@@ -316,7 +316,7 @@ pub struct ItemLevel(pub i32);
 /// [`Tagged`], [`Triggers`], [`Pulse`], [`Consumable`] and [`Attuned`],
 /// [`Wearable`], [`Ammo`], [`Armor`], [`Resists`], the attacks,
 /// [`Bestows`], [`EffectBonus`], [`LightSource`], or [`LitWhenWorn`] for a
-/// light that shines only while worn, [`HeldWhileWorn`], [`WornDarkSight`]
+/// light that shines only while worn, [`WornStatuses`], [`WornDarkSight`]
 /// and a [`Stack`] of one.
 /// A name, a look and anything else the game keeps are the game's to add
 /// beside these.
@@ -360,8 +360,8 @@ pub fn insert_parts(e: &mut EntityCommands, parts: &Arc<ItemParts>, level: i32) 
         (Some(light), LightWhen::Worn) => drop(e.insert(LitWhenWorn(LightSource(light)))),
         (None, _) => {}
     }
-    if !parts.holds.is_empty() {
-        e.insert(HeldWhileWorn(parts.holds.clone()));
+    if !parts.worn_statuses.is_empty() {
+        e.insert(WornStatuses(parts.worn_statuses.clone()));
     }
     if let Some(tiles) = parts.dark_sight_at(level) {
         e.insert(WornDarkSight(tiles));
@@ -769,7 +769,7 @@ impl<I: Send + Sync + 'static> ActorParts<I> {
             e.insert(Grants(self.abilities.clone()));
         }
         if !self.statuses.is_empty() {
-            e.insert(held_for_life(&self.statuses, &registries.statuses));
+            e.insert(innate_statuses(&self.statuses, &registries.statuses));
         }
         if !self.while_holding.is_empty() {
             e.insert(WhileHolding(self.while_holding.clone()));
@@ -798,7 +798,7 @@ impl<I: Send + Sync + 'static> ActorParts<I> {
 /// Public for a game that holds one more at a spawn of its own choosing,
 /// a sleeper among a floor's people, and so builds the pair itself from
 /// the parts' statuses and its own.
-pub fn held_for_life(statuses: &[StatusId], registry: &Registry<StatusDef>) -> (Afflicted, StatBlock) {
+pub fn innate_statuses(statuses: &[StatusId], registry: &Registry<StatusDef>) -> (Afflicted, StatBlock) {
     let (mut held, mut stats) = (Statuses::new(), Stats::new());
     for status in statuses {
         held.apply(*status, UNTIL_CURED, None, registry, &mut stats);
@@ -1015,7 +1015,7 @@ mod tests {
         Arc::new(ItemParts {
             wear: Some(EquipShape::in_slot(atglyph_rules::SlotId::from_raw(0))),
             dark_sight: Some(6),
-            holds: vec![StatusId::from_raw(0)],
+            worn_statuses: vec![StatusId::from_raw(0)],
             light: Some(Glow::new(100, 3, atglyph_grid::Rgb::WHITE)),
             light_when: LightWhen::Worn,
             level: Some(Level { max: Some(3), dark_sight: Some(1), ..Level::default() }),
@@ -1032,7 +1032,7 @@ mod tests {
         let (e, level) = spawned(&mut world, &helmet(), 2);
         assert_eq!(level, 2);
         assert_eq!(world.get::<WornDarkSight>(e), Some(&WornDarkSight(8)), "six and two levels' one each");
-        assert_eq!(world.get::<HeldWhileWorn>(e).map(|h| h.0.clone()), Some(vec![StatusId::from_raw(0)]));
+        assert_eq!(world.get::<WornStatuses>(e).map(|h| h.0.clone()), Some(vec![StatusId::from_raw(0)]));
         assert!(world.get::<LightSource>(e).is_none() && world.get::<LitWhenWorn>(e).is_some(), "lit only once worn");
         level_up(&mut world, e, 1);
         assert_eq!(world.get::<WornDarkSight>(e), Some(&WornDarkSight(9)), "fitted again from the parts");

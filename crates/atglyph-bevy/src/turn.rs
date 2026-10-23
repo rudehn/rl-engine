@@ -19,7 +19,7 @@ use atglyph_rules::StatId;
 use bevy::prelude::*;
 
 use crate::components::{Actor, Blocks, MyTurn, Player, Position, Speed, Viewshed};
-use crate::cue::TurnHold;
+use crate::cue::CueWait;
 use crate::places::{MapId, OnMap};
 use crate::registries::Registries;
 use crate::status::StatBlock;
@@ -444,7 +444,7 @@ fn where_play_is(map: &WorldMap, pos: Point, on: Option<&OnMap>) -> bool {
 /// What stops a turn being dealt though the queue has one due.
 #[derive(bevy::ecs::system::SystemParam)]
 pub(crate) struct Brakes<'w> {
-    hold: Res<'w, TurnHold>,
+    cue_wait: Res<'w, CueWait>,
     pace: Res<'w, Pace>,
 }
 
@@ -457,7 +457,7 @@ impl Brakes<'_> {
     /// asked for is answered, but nobody new is given a turn and the clock
     /// stays where it is.
     fn on(&self) -> bool {
-        self.hold.in_flight() || self.pace.is_spent()
+        self.cue_wait.in_flight() || self.pace.is_spent()
     }
 }
 

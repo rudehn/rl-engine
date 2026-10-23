@@ -39,7 +39,7 @@ use atglyph_rules::{DamageStage, FactionId, Factions, Hit, Relation, Resistances
 use bevy::prelude::*;
 
 use crate::components::{Actor, Blocks, MyTurn, Player, Position};
-use crate::cue::{AddAirborne, Airborne, Anchor, Cue, Cued, LookOf, TurnHold};
+use crate::cue::{AddAirborne, Airborne, Anchor, Cue, CueWait, Cued, LookOf};
 use crate::items::{Equipped, Item};
 use crate::places::{MapId, OnMap};
 use crate::registries::Registries;
@@ -890,7 +890,7 @@ pub struct Arena<'w, 's> {
 #[derive(bevy::ecs::system::SystemParam)]
 pub struct Shown<'w> {
     cues: MessageWriter<'w, Cued>,
-    hold: ResMut<'w, TurnHold>,
+    cue_wait: ResMut<'w, CueWait>,
     airborne: ResMut<'w, Airborne<ShotLanding>>,
 }
 
@@ -990,7 +990,7 @@ pub(crate) fn resolve_attacks(
     shown: Shown,
 ) {
     let Arena { map, occupancy, attackers, targets, loadout, struck, fired, carried, marks, missed, alive, sides, rules, watchers } = &mut arena;
-    let Shown { mut cues, mut hold, mut airborne } = shown;
+    let Shown { mut cues, mut cue_wait, mut airborne } = shown;
     let house = rules.as_deref().and_then(|r| r.unaware);
     for intent in intents.read() {
         let (actor, target) = (intent.actor, intent.action.0);
@@ -1085,7 +1085,7 @@ pub(crate) fn resolve_attacks(
                 };
                 cues.write(Cued { actor, cue: Cue::Flight { from: Anchor::on(actor, pos.0), to: Anchor::on(to, to_at), look: LookOf::Given(look) } });
                 for (shot, at) in landings {
-                    if let Some(shot) = airborne.launched(&mut hold, shot) {
+                    if let Some(shot) = airborne.launched(&mut cue_wait, shot) {
                         land(shot, at, &mut damage, fired, missed);
                     }
                 }
@@ -1191,12 +1191,12 @@ pub(crate) fn keep_shooters(
 /// Landing counts as progress, so the loop goes on to deal the next turn.
 pub(crate) fn land_shots(
     mut airborne: ResMut<Airborne<ShotLanding>>,
-    mut hold: ResMut<TurnHold>,
+    mut cue_wait: ResMut<CueWait>,
     mut turns: ResMut<Turns>,
     alive: Query<&Position, (With<Health>, Without<Dead>)>,
     mut arriving: Arriving,
 ) {
-    for mut shot in airborne.landing(&mut hold, &mut turns) {
+    for mut shot in airborne.landing(&mut cue_wait, &mut turns) {
         let stand_in = shot.stand_in.take();
         let Ok(at) = alive.get(shot.target) else {
             if let Some(unused) = stand_in {
@@ -1691,7 +1691,7 @@ mod tests {
             .id();
         let target = app.world_mut().spawn((Actor, Blocks, Position(start.offset(dx, 0)), Health::full(20), Faction(FactionId::from_raw(1)))).id();
         if watched {
-            app.world_mut().resource_mut::<TurnHold>().watch();
+            app.world_mut().resource_mut::<CueWait>().watch();
         }
         app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
         app.update();
@@ -1721,7 +1721,7 @@ mod tests {
         app.update();
         assert!(app.world().resource::<Seen>().cues.is_empty());
         assert_eq!(hp(&app, target), 17);
-        assert!(!app.world().resource::<TurnHold>().in_flight());
+        assert!(!app.world().resource::<CueWait>().in_flight());
     }
 
     /// With something watching, the shot and its extra strikes wait in
@@ -1736,15 +1736,15 @@ mod tests {
         app.update();
         assert_eq!(hp(&app, target), 20, "in the air");
         assert_eq!(app.world().resource::<Seen>().struck.len(), 1, "but fired");
-        assert!(app.world().resource::<TurnHold>().in_flight());
+        assert!(app.world().resource::<CueWait>().in_flight());
         assert_eq!(app.world().resource::<Turns>().now(), 0, "no turn is dealt while it flies");
         app.update();
         assert_eq!(hp(&app, target), 20, "nor does it land while the turns are held");
 
-        app.world_mut().resource_mut::<TurnHold>().release();
+        app.world_mut().resource_mut::<CueWait>().release();
         app.update();
         assert_eq!(hp(&app, target), 20 - 3 - 2, "the shot and its strike, landed");
-        assert!(!app.world().resource::<TurnHold>().in_flight());
+        assert!(!app.world().resource::<CueWait>().in_flight());
         assert_eq!(app.world().resource::<Seen>().struck.len(), 1, "and fired once");
         assert!(app.world().get::<MyTurn>(player).is_some(), "and the turn comes round");
 
@@ -1765,11 +1765,11 @@ mod tests {
         app.world_mut().write_message(Intent::new(player, Attack(target)));
         app.update();
         app.world_mut().write_message(DamageEvent::new(target, Hit::by(other, kind, 99)));
-        app.world_mut().resource_mut::<TurnHold>().release();
+        app.world_mut().resource_mut::<CueWait>().release();
         app.update();
         let dealt: Vec<(Option<Entity>, i32)> = app.world().resource::<Seen>().dealt.iter().map(|d| (d.hit.credit, d.dealt)).collect();
         assert_eq!(dealt, vec![(Some(other), 99)], "the other's blow killed it, and the shot found it dead");
-        assert!(!app.world().resource::<TurnHold>().in_flight());
+        assert!(!app.world().resource::<CueWait>().in_flight());
 
         let (mut app, _, player, target) = duel(4, true, |kind| RangedAttack::new(kind, DiceRoll::flat(3), 6).looking(LOOK));
         app.world_mut().write_message(Intent::new(player, Attack(target)));
@@ -1777,10 +1777,10 @@ mod tests {
         app.world_mut().resource_mut::<Turns>().remove(target);
         app.world_mut().resource_mut::<Occupancy>().remove(start.offset(4, 0), target);
         app.world_mut().despawn(target);
-        app.world_mut().resource_mut::<TurnHold>().release();
+        app.world_mut().resource_mut::<CueWait>().release();
         app.update();
         assert!(app.world().resource::<Seen>().dealt.is_empty(), "gone, it takes nothing");
-        assert!(!app.world().resource::<TurnHold>().in_flight());
+        assert!(!app.world().resource::<CueWait>().in_flight());
         assert!(app.world().get::<MyTurn>(player).is_some(), "and the turn comes round");
     }
 
@@ -1807,24 +1807,24 @@ mod tests {
                 crate::minds::Mind(std::sync::Arc::new(Brain::new().then(ShootAtRange::default()))),
             ))
             .id();
-        app.world_mut().resource_mut::<TurnHold>().watch();
+        app.world_mut().resource_mut::<CueWait>().watch();
         app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
         app.update();
         app.update();
         app.world_mut().write_message(Intent::new(me, crate::turn::Wait));
         app.update();
-        assert!(app.world().resource::<TurnHold>().in_flight(), "it fired");
+        assert!(app.world().resource::<CueWait>().in_flight(), "it fired");
         assert_eq!(hp(&app, me), 30);
 
         app.world_mut().resource_mut::<Turns>().remove(shooter);
         app.world_mut().resource_mut::<Occupancy>().remove(start.offset(4, 0), shooter);
         app.world_mut().despawn(shooter);
-        app.world_mut().resource_mut::<TurnHold>().release();
+        app.world_mut().resource_mut::<CueWait>().release();
         app.update();
         assert_eq!(hp(&app, me), 27, "the shot arrived all the same");
         let credit: Vec<Option<Entity>> = app.world().resource::<Seen>().dealt.iter().map(|d| d.hit.credit).collect();
         assert_eq!(credit, vec![Some(shooter)], "credited to a shooter who is no longer anywhere");
-        assert!(!app.world().resource::<TurnHold>().in_flight());
+        assert!(!app.world().resource::<CueWait>().in_flight());
         assert!(app.world().get::<MyTurn>(me).is_some(), "and the turn comes round");
     }
 
@@ -2256,12 +2256,12 @@ mod tests {
         let (mut app, player, gun, target) = gunman(0, Some(once), Some(r#"[(on: "hit", effects: [(kind: "Harm", args: (kind: "kinetic", roll: "3"))])]"#));
         let kind = app.world().get::<RangedAttack>(gun).unwrap().kind;
         app.world_mut().entity_mut(gun).insert(RangedAttack::new(kind, DiceRoll::flat(0), 6).looking(LOOK));
-        app.world_mut().resource_mut::<TurnHold>().watch();
+        app.world_mut().resource_mut::<CueWait>().watch();
         app.world_mut().write_message(Intent::new(player, Attack(target)));
         app.update();
-        assert!(app.world().resource::<TurnHold>().in_flight(), "the shot is in the air");
+        assert!(app.world().resource::<CueWait>().in_flight(), "the shot is in the air");
         assert!(app.world().get_entity(gun).is_err(), "and the gun, its one charge spent, is gone");
-        app.world_mut().resource_mut::<TurnHold>().release();
+        app.world_mut().resource_mut::<CueWait>().release();
         app.update();
         app.update();
         assert_eq!(app.world().get::<Health>(target).unwrap().current, 17, "what its hit carried landed all the same");
@@ -2586,15 +2586,15 @@ mod tests {
     fn a_watched_piercing_shot_flies_to_the_farthest_foe_it_strikes_and_lands_on_each_once_seen() {
         let gun = |kind| RangedAttack::new(kind, DiceRoll::flat(4), 8).shaped(AttackShape::Pierce(1)).looking(LOOK);
         let (mut app, start, player, others) = crowd(0, gun, &[((3, 0), THEIRS), ((4, 0), THEIRS)]);
-        app.world_mut().resource_mut::<TurnHold>().watch();
+        app.world_mut().resource_mut::<CueWait>().watch();
         attack(&mut app, player, others[0]);
         assert_eq!(taken(&app, &others), [0, 0], "in the air");
         let flight = Cue::Flight { from: Anchor::on(player, start), to: Anchor::on(others[1], start.offset(4, 0)), look: LookOf::Given(LOOK) };
         assert_eq!(app.world().resource::<Seen>().cues, vec![Cued { actor: player, cue: flight }]);
-        app.world_mut().resource_mut::<TurnHold>().release();
+        app.world_mut().resource_mut::<CueWait>().release();
         app.update();
         assert_eq!(taken(&app, &others), [4, 4], "both, once the flight was seen");
-        assert!(!app.world().resource::<TurnHold>().in_flight());
+        assert!(!app.world().resource::<CueWait>().in_flight());
     }
 
     /// How often a worn weapon's `fire` moment went off, and where each of
@@ -2950,14 +2950,14 @@ mod tests {
             .id();
         answers(&mut app, shooter, &harming("hit", "Here", 3));
         app.init_resource::<Credited>().add_systems(PostUpdate, credited);
-        app.world_mut().resource_mut::<TurnHold>().watch();
+        app.world_mut().resource_mut::<CueWait>().watch();
         wait(&mut app, player, 1);
-        assert!(app.world().resource::<TurnHold>().in_flight(), "it fired");
+        assert!(app.world().resource::<CueWait>().in_flight(), "it fired");
         assert_eq!(hp(&app, player), 30);
         app.world_mut().resource_mut::<Turns>().remove(shooter);
         app.world_mut().resource_mut::<Occupancy>().remove(start.offset(4, 0), shooter);
         app.world_mut().despawn(shooter);
-        app.world_mut().resource_mut::<TurnHold>().release();
+        app.world_mut().resource_mut::<CueWait>().release();
         app.update();
         app.update();
         assert_eq!(hp(&app, player), 27, "its bite arrived with the shot");
@@ -2992,10 +2992,10 @@ mod tests {
             ))
             .id();
         answers(&mut app, shooter, &harming("hit", "Here", 3));
-        app.world_mut().resource_mut::<TurnHold>().watch();
+        app.world_mut().resource_mut::<CueWait>().watch();
         wait(&mut app, player, 1);
-        assert!(app.world().resource::<TurnHold>().in_flight(), "it fired");
-        app.world_mut().resource_mut::<TurnHold>().release();
+        assert!(app.world().resource::<CueWait>().in_flight(), "it fired");
+        app.world_mut().resource_mut::<CueWait>().release();
         app.update();
         app.update();
         assert_eq!(hp(&app, player), 27, "its bite arrived with the shot");

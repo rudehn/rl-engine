@@ -25,7 +25,7 @@ use bevy::prelude::*;
 
 use super::{EffectKinds, EffectWorld, Effects, Landing, Source};
 use crate::ability::{Aimed, Bystanders, LandedOn};
-use crate::cue::{Airborne, Cued, LookOf, TurnHold};
+use crate::cue::{Airborne, CueWait, Cued, LookOf};
 use crate::turn::Turns;
 use crate::world::WorldMap;
 
@@ -543,7 +543,7 @@ impl UseLanding {
 #[derive(bevy::ecs::system::SystemParam)]
 pub struct AimedUses<'w, 's> {
     bystanders: Bystanders<'w, 's>,
-    hold: ResMut<'w, TurnHold>,
+    cue_wait: ResMut<'w, CueWait>,
     airborne: ResMut<'w, Airborne<UseLanding>>,
     /// Whom each came down on.
     landed: MessageWriter<'w, LandedOn>,
@@ -574,7 +574,7 @@ impl AimedUses<'_, '_> {
         for flight in flights {
             world.cues.write(Cued { actor: aimed.user, cue: flight });
         }
-        if let Some(shot) = self.airborne.launched(&mut self.hold, shot) {
+        if let Some(shot) = self.airborne.launched(&mut self.cue_wait, shot) {
             shot.land(world, &mut self.landed);
         }
     }
@@ -588,13 +588,13 @@ impl AimedUses<'_, '_> {
 /// triggers land, ahead of `land_triggers`: no turn is dealt while
 /// anything flies, so nothing new is used in the pass that lands it.
 pub(crate) fn land_aimed_uses(
-    mut hold: ResMut<TurnHold>,
+    mut cue_wait: ResMut<CueWait>,
     mut airborne: ResMut<Airborne<UseLanding>>,
     mut turns: ResMut<Turns>,
     mut world: EffectWorld,
     mut landed: MessageWriter<LandedOn>,
 ) {
-    for shot in airborne.landing(&mut hold, &mut turns) {
+    for shot in airborne.landing(&mut cue_wait, &mut turns) {
         shot.land(&mut world, &mut landed);
     }
 }

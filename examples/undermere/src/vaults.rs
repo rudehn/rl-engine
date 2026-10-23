@@ -8,7 +8,7 @@
 //! lock its own floor's key, drops that key and a sealed vault's lever on
 //! cells walked to from the way in without passing a lock, and hides a
 //! drowned reliquary's causeway as the deep water round it, an engine
-//! [`Secret`] spotted as any hidden door is.
+//! [`SecretCell`] spotted as any hidden door is.
 //!
 //! When a floor is first entered, [`spawn_vault_marks`] fills each piece's
 //! `Mark`s by one vocabulary, whichever piece drew them: [`SLEEPER`] a
@@ -86,7 +86,7 @@ pub const CAUSEWAY_TILE: &str = "sunken causeway";
 /// floor's hidden plates.
 pub const CAUSEWAY_SPOT: u8 = 10;
 
-/// The areas a causeway's [`SecretCell`](atglyph::mapgen::SecretCell)
+/// The areas a causeway's [`SecretCell`]
 /// joins: none a reader can look up. The causeway is hidden once the
 /// build's areas have been flattened into its spots, so there is no area
 /// index left to name, and an index past any a floor grows says so where

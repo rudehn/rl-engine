@@ -21,7 +21,7 @@ use bevy::prelude::*;
 
 use crate::combat::{CombatRng, DamageEvent, Dead, Health};
 use crate::components::{MyTurn, Position};
-use crate::cue::{AddAirborne, Airborne, Anchor, Cue, Cued, LookOf, TurnHold};
+use crate::cue::{AddAirborne, Airborne, Anchor, Cue, CueWait, Cued, LookOf};
 use crate::effects::{Fired, Moments};
 use crate::items::{Equipped, Inventory, Item, ItemEvent, Stack};
 use crate::places::{MapId, OnMap};
@@ -122,7 +122,7 @@ pub struct Launch<'w, 's> {
     missiles: Query<'w, 's, (&'static Throwable, Option<&'static mut Stack>), With<Item>>,
     alive: Query<'w, 's, (), (With<Health>, Without<Dead>)>,
     cues: MessageWriter<'w, Cued>,
-    hold: ResMut<'w, TurnHold>,
+    cue_wait: ResMut<'w, CueWait>,
     airborne: ResMut<'w, Airborne<ThrowLanding>>,
     /// The odds of striking whoever the flight meets.
     marks: crate::accuracy::Marksmanship<'w, 's>,
@@ -158,7 +158,7 @@ pub(crate) fn resolve_throws(
     mut reports: ThrowReports,
     stuck: Query<(), With<crate::items::Stuck>>,
 ) {
-    let Launch { map, occupancy, mut rng, mut throwers, mut missiles, alive, mut cues, mut hold, mut airborne, marks } = launch;
+    let Launch { map, occupancy, mut rng, mut throwers, mut missiles, alive, mut cues, mut cue_wait, mut airborne, marks } = launch;
     for intent in intents.read() {
         let (actor, Throw { item, at }) = (intent.actor, intent.action);
         if !resolution.claim(actor) {
@@ -210,7 +210,7 @@ pub(crate) fn resolve_throws(
         // The turn is spent on the throw. With something watching, the
         // knife is in the air until its flight has been seen, and lies
         // nowhere until it comes down.
-        let Some(landing) = airborne.launched(&mut hold, landing) else { continue };
+        let Some(landing) = airborne.launched(&mut cue_wait, landing) else { continue };
         land(landing, map.current(), &mut commands, &mut rng, &alive, &mut reports);
     }
 }
@@ -229,8 +229,8 @@ pub struct ThrowReports<'w> {
 /// been seen. Landing counts as progress, so the loop goes on to deal the
 /// next turn.
 pub(crate) fn land_throws(mut commands: Commands, launch: Launch, mut reports: ThrowReports, mut turns: ResMut<crate::turn::Turns>) {
-    let Launch { map, mut rng, alive, mut hold, mut airborne, .. } = launch;
-    for landing in airborne.landing(&mut hold, &mut turns) {
+    let Launch { map, mut rng, alive, mut cue_wait, mut airborne, .. } = launch;
+    for landing in airborne.landing(&mut cue_wait, &mut turns) {
         land(landing, map.current(), &mut commands, &mut rng, &alive, &mut reports);
     }
 }
@@ -489,7 +489,7 @@ mod tests {
         let mut rig = Rig::new();
         let knife = rig.knives(1);
         let near = rig.mark(2);
-        rig.app.world_mut().resource_mut::<TurnHold>().watch();
+        rig.app.world_mut().resource_mut::<CueWait>().watch();
 
         let events = rig.throw(knife, 4);
         assert!(events.is_empty(), "nothing has landed");
@@ -497,15 +497,15 @@ mod tests {
         assert!(rig.app.world().get::<Position>(knife).is_none(), "and lies nowhere");
         assert_eq!(rig.hp(near), 20);
         assert_eq!(rig.now(), 0, "no turn is dealt while it flies, so the clock waits with it");
-        assert!(rig.app.world().resource::<TurnHold>().in_flight());
+        assert!(rig.app.world().resource::<CueWait>().in_flight());
 
-        rig.app.world_mut().resource_mut::<TurnHold>().release();
+        rig.app.world_mut().resource_mut::<CueWait>().release();
         rig.app.update();
         let events: Vec<ItemEvent> = rig.app.world_mut().resource_mut::<Messages<ItemEvent>>().drain().collect();
         assert!(matches!(events.as_slice(), [ItemEvent::Thrown { struck: Some(who), .. }] if *who == near), "{events:?}");
         assert_eq!(rig.app.world().get::<Position>(knife).map(|p| p.0), Some(rig.start.offset(2, 0)), "at their feet");
         assert_eq!(rig.hp(near), 17, "and it hurt");
-        assert!(!rig.app.world().resource::<TurnHold>().in_flight());
+        assert!(!rig.app.world().resource::<CueWait>().in_flight());
         assert_eq!(rig.now(), 100, "and the turn the throw spent goes by");
     }
 

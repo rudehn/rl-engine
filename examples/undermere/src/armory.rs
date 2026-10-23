@@ -618,7 +618,7 @@ fn parts_of(
         stack: d.stack.then_some(id.index() as u64),
         light: d.light.or(lent.light.map(|light| light.0)),
         light_when: if lent.light.is_some() { LightWhen::Worn } else { LightWhen::Carried },
-        holds: lent.statuses.clone(),
+        worn_statuses: lent.statuses.clone(),
         dark_sight: lent.dark_sight,
         level,
     })
@@ -1600,7 +1600,7 @@ mod tests {
         assert_eq!(world.get::<Armor>(made).map(|a| a.0), Some(5), "its own one and the four `armored` lends");
         let resists = &world.get::<Resists>(made).expect("resistances").0;
         assert_eq!((resists.get(kind("fire")), resists.get(kind("cold"))), (100, -40), "fire-blooded beside its own ten against cold");
-        let held = world.get::<HeldWhileWorn>(made).map(|h| h.0.clone());
+        let held = world.get::<WornStatuses>(made).map(|h| h.0.clone());
         let (sight, lit) = (world.get::<WornDarkSight>(made).map(|d| d.0), world.get::<LitWhenWorn>(made).is_some());
         assert_eq!((held, sight, lit), (Some(vec![registries.statuses.expect("regenerating")]), Some(6), false), "what it lends a wearer, and no light");
     }
