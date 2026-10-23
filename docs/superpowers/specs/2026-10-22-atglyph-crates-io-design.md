@@ -13,7 +13,7 @@ Success is that the game they just generated shows a dungeon, a player, enemies,
 ## Goals
 
 - Every engine crate is published on crates.io under the `atglyph` name, from the release workflow, at each `v*` tag.
-- A game depends on one crate, `atglyph`, and never names Bevy's version itself.
+- A game depends on `atglyph`, plus a `bevy` line at exactly the version `atglyph` re-exports, and nothing else of the engine's.
 - `cargo generate` on the starter template produces a game that depends on `atglyph` by crates.io version and plays the five things above on its first run.
 - The Bevy-free crates are usable on their own by a game that is not built on Bevy.
 - Accidental breaking changes are caught before they are published.
@@ -21,7 +21,7 @@ Success is that the game they just generated shows a dungeon, a player, enemies,
 
 ## Where this project ends
 
-This project ends when pushing a `v*` tag would publish every crate cleanly: the rename is done, the template has its items, Bevy and `rand` are re-exported, the semver check and the dry-run package of every crate pass in CI, and the release workflow publishes (Nate's call).
+This project ends when pushing a `v*` tag would publish every crate cleanly: the rename is done, the template has its items, Bevy and `rand` are re-exported, the dry-run package of every crate passes in CI, and the release workflow runs the semver check and publishes (Nate's call).
 
 The `0.4.0` release is the next project: the documentation pass over everything since `v0.3.0` (824 commits on 2026-10-22, with `scripts/check-systems.py` already failing), the version bump, the tag, and the listings and announcements.
 
@@ -80,7 +80,7 @@ Three limits on the rename (Claude's calls):
 ### Paths through the facade
 
 `atglyph` re-exports each sub-crate under its short name, `atglyph::grid` rather than `atglyph::atglyph_grid` (Claude's call).
-Where a short name would clash, as `atglyph-bevy` would with the re-exported `atglyph::bevy`, the builder picks another plain word for it.
+Two short names would clash and take another plain word: `atglyph-core` is `atglyph::base`, since `core` is Rust's own crate, and `atglyph-bevy` is `atglyph::play`, the loops the engine runs, since `atglyph::bevy` is Bevy itself (Claude's call, while planning).
 Games reach sub-crates through the facade about 760 times today as `rl_engine::rl_rules::...`, and these paths are public API every game and the `0.4.0` migration note carry, so they are settled once here.
 Short names are also what makes a later merge of two sub-crates invisible to games.
 
@@ -104,17 +104,23 @@ On `0.x` a breaking change bumps the minor version.
 The first release under the new name is `0.4.0`.
 Its CHANGELOG entry tells a game on `rl-engine 0.3` exactly what to change: the dependency line, the `use` paths, and dropping its own `bevy` line.
 
-`cargo-semver-checks` runs in CI against the last published version of every published crate, so a patch release that breaks the public API fails before it is tagged.
+`cargo-semver-checks` runs against the last published version of every published crate, so a patch release that breaks the public API is refused before anything is published.
+It runs in the release workflow, ahead of publishing, and by hand before tagging, not on every pull request: between releases `main` keeps the last release's version while it gathers the next one's breaking changes, so on a pull request it would fail every breaking change the next minor release is meant to carry (found while planning).
+A crate with no published version yet, as every crate has at `0.4.0`, is skipped with a notice.
 
 Each Bevy upgrade is a breaking release of `atglyph`.
 
-### Bevy is re-exported
+### Bevy is re-exported, and a game still names it
 
-`atglyph` re-exports Bevy (`pub use bevy;`), and the template and examples use `atglyph::bevy` rather than depending on `bevy` themselves.
-A game that names its own Bevy version can end up with two copies of Bevy, whose `App`, `Plugin` and `Component` are different types, and the errors that follow ("expected `App`, found `App`") are baffling to someone new.
-A game that wants extra Bevy features adds a `bevy` line at the same version, and Cargo merges the features into the one copy.
+`atglyph` re-exports Bevy (`pub use bevy;`), so a game can see which Bevy the engine is built on and reach it as `atglyph::bevy`.
+A game must still list `bevy` in its own Cargo.toml, at the same version (found while planning, 2026-10-22, and replacing the design's first answer that a game would not list it).
+Bevy's derive macros (`#[derive(Component)]`, `Resource`, `SystemParam` and the rest) find Bevy by reading the game's own Cargo.toml for a `bevy` dependency (`BevyManifest::maybe_get_path` in `bevy_macro_utils` 0.19), and with none they emit paths to `bevy_ecs` that do not resolve.
 
-`rand` is re-exported the same way, because the engine's public API takes `&mut impl Rng` and hands out `rand` types, so a game on another `rand` hits the same two-copies error (Claude's call).
+So the risk the re-export was meant to remove is held another way.
+A game that names a different Bevy version than the engine ends up with two copies of Bevy, whose `App`, `Plugin` and `Component` are different types, and the errors that follow ("expected `App`, found `App`") are baffling to someone new.
+The template pins its `bevy` line to the engine's Bevy version, CI fails when the two differ, the `bevy` line's comment says it must match, and every CHANGELOG entry for a Bevy upgrade says to change both lines.
+
+`rand` is re-exported too, and since it has no derive macros a game can reach it through `atglyph` alone: the template and the games use `atglyph::rand` and list no `rand` of their own, because the engine's public API takes `&mut impl Rng` and hands out `rand` types, so a game on another `rand` hits the same two-copies error (Claude's call).
 A `rand` upgrade is therefore a breaking release of `atglyph`.
 `serde` is not re-exported: `serde` 1 has no competing major version to split on, and re-exporting it would put `#[serde(crate = "atglyph::serde")]` on every content type in the guide and the games.
 
