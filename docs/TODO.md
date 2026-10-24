@@ -410,7 +410,8 @@ Left over from the terminal front end, usability branch 08, on 2026-10-22.
 - **The helpers a game copies because they are private.**
   `walk_through_doors`, the cut check, `Opening::joins`, `Spot::glyph`, `ApplyStatus::new`, `Stack::of`, `Places::new`.
 - **One root-and-prelude rule per crate.**
-  The root re-exports every type a game names and the prelude is a subset; Undermere still writes `atglyph_ui::view::inspect::inspect_modal`, and atglyph-save's prelude still carries `EngineSave`, `SaveId` and `Stash`.
+  The facade's prelude is sized by use since usability branch 17: a core of what a first game names, topic modules for the rest, and `scripts/check-prelude.py` holding each name to one module, so no game globs a crate's prelude any more.
+  Left: the per-crate preludes, which only a crate used alone reads; each root should re-export every type a game names with its prelude a curated subset, where atglyph-save's prelude still carries `EngineSave`, `SaveId` and `Stash`, and Undermere still writes `atglyph_ui::view::inspect::inspect_modal`.
 - **The rule numbers, closed lists and English the engine still holds.**
   A third of range, `SLEEPER_REACH`, the notice and hearing defaults; `WasLiving`; `MenuItem`'s labels and the inspect and sheet lines; `CorePlugin`'s minds and intents, and the effects Fire, Gas and Noise register by themselves.
 - **The API review's renames.**

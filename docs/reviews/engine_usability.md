@@ -428,3 +428,11 @@ Re-checked 2026-10-21; no further review needed.
 - `rl_engine::testing` and `rl_bevy::testing` as public modules.
 - The fingerprint's four delves (54 to 59 s): a tripwire is not sped up by changing what it plays.
 - Named random streams.
+
+## Re-measured at the end of the plan
+
+Measured 2026-10-23 on usability branch 17, the last before 0.4.0; code lines are those outside comments and the test module.
+
+- Core prelude: 722 names before; 77 after, with `combat` 98, `items` 59, `minds` 51, `world` 183, `mapgen` 33, `ui` 145, `save` 16 and `extras` 45 beside it.
+- Tutorial step 1: 74 code lines (83 as the review counted them), 35 engine names and no path imports at the review's commit; 36 code lines, 21 engine names and no path imports after, counted the same way.
+- `scripts/check-names.sh`: 26 type names declared more than once before; none after.
