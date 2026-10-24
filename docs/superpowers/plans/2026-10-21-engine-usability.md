@@ -25,8 +25,11 @@ Branches 14 to 18 land before the 0.4.0 tag, so a game on 0.3 migrates once (aut
 - 11 `one-user-generics`: done.
 - 12 `rules-out-of-systems`: done.
 - 13 `ambiguity`: done.
-- 14 `toolkit-fight`: in progress, rebasing onto the rename.
-- 15 to 18: not started.
+- 14 `toolkit-fight`: done.
+- 15 `names`: done.
+- 16 `place-model`: done.
+- 18 `game-seams`: done.
+- 17 `prelude`: done.
 
 ## Rules for every branch
 
