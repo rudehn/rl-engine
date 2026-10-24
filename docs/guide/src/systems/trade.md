@@ -50,29 +50,9 @@ A deal is written whether or not its row is greyed, so the resolver stays the on
 
 ## Using it
 
-A trader is a component on an actor the game spawns, and Undermere's keepers are each a `Trader` buying what their shop's file says, at a quarter of its worth.
+A trader is a component on an actor the game spawns: a shopkeeper is spawned with `Trader { buys, pays_pct }`, the tags its shop buys and the share of a thing's worth it pays, a quarter say, and the engine does not save it, so the game gives it again to a keeper a continued run puts back.
 
-<!-- include: ../../../../examples/undermere/src/shops.rs:keeper -->
-```rust,no_run
-/// What a keeper is besides one of Mereholt's people: its [`Post`] and the
-/// [`Trader`] that buys what `wares.ron` says, which the engine does not
-/// save, so a keeper stood on the first arrival and one a continued run
-/// puts back are the same.
-pub fn keeper(post: Post, wares: &Wares, armory: &Armory) -> impl Bundle {
-    let keeper = wares.keeper(post.keeper).expect("every post's keeper is in wares.ron");
-    (Shopkeeper(post), Trader { buys: trader_tags(keeper, armory), pays_pct: PAYS_PCT })
-}
-```
-
-The step turning it on takes beyond the plugins is the currency, a tag of the game's content.
-
-<!-- include: ../../../../examples/undermere/src/plugin.rs:currency -->
-```rust,no_run
-        // Trading, paid in the one tag every piece of gold carries, so the
-        // engine counts a purse and a price without knowing a coin from
-        // anything else Undermere calls an item.
-        app.insert_resource(Currency(library.registries.tags.expect("gold")));
-```
+The step turning it on takes beyond the plugins is the currency, a tag of the game's content, inserted as `Currency(tags.expect("gold"))` so the engine counts a purse and a price without knowing a coin from anything else the game calls an item.
 
 ## The line
 

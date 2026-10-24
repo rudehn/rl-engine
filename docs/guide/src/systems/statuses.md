@@ -19,7 +19,7 @@
             crates/atglyph-rules/src/events/quest.rs
             crates/atglyph-ui/src/facet.rs
             crates/atglyph-ui/src/narrate.rs
-     fingerprint: 153f0def -->
+     fingerprint: 5b6e13ff -->
 
 # Statuses
 
@@ -82,34 +82,9 @@ A `QuestDef` opens when every quest in its `after` is done and is done when ever
 
 ## Using it
 
-A status is a registry entry, and these are the four statuses Foundry's decks have.
+A status is a registry entry, `StatusDef::new(name)` and a builder for each thing it does: `.ticks(kind, 1)` burns its holder a point of `kind` a turn, `.mends(n).boon()` heals one that is glad of it, `.unseen().boon()` hides one until it strikes, and a `badge` is the glyph a health bar shows for it.
 
-<!-- include: ../../../../examples/foundry/src/content.rs:statuses -->
-```rust,no_run
-    let thermal = damage_kinds.expect("thermal");
-    let statuses = Registry::from_defs(vec![
-        StatusDef { badge: Some('~'), ..StatusDef::new("sensors down") },
-        StatusDef { badge: Some('+'), ..StatusDef::new("mending").mends(MEND_PER_TURN).boon() },
-        StatusDef { badge: Some('^'), ..StatusDef::new("scorched").ticks(thermal, 1) },
-        // What a cloak plate's charge puts on its wearer: nothing sees them
-        // until it runs out or they strike.
-        StatusDef { badge: Some('%'), ..StatusDef::new("cloaked").unseen().boon() },
-    ])
-    .unwrap();
-```
-
-A fact is the game's reading of an engine message, which is the only translation quests and counters need.
-
-<!-- include: ../../../../examples/undermere/src/quest.rs:slain -->
-```rust,no_run
-    for death in deaths.read() {
-        let Ok(kind) = kinds.get(death.entity) else { continue };
-        if !bestiary.defs.get(kind.0).boss {
-            continue;
-        }
-        happened.write(Happened(Fact::new(facts.boss_slain).about(u64::from(kind.0.raw()))));
-    }
-```
+A fact is the game's reading of an engine message, which is the only translation quests and counters need: a system reading each `DeathEvent` writes `Happened(Fact::new(boss_slain).about(kind))` for one whose kind the game calls a boss, and passes the rest over.
 
 ## The line
 

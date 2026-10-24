@@ -56,26 +56,7 @@ A body with something standing on it stands up on the nearest free cell within `
 
 ## Using it
 
-A game answers `RemainsLeft` with whatever a body of its own is, on the entity the engine kept.
-
-<!-- include: ../../../../examples/foundry/src/props.rs:wreck -->
-```rust,no_run
-/// Makes a droid's remains a wreck: something to go through.
-///
-/// The engine kept the dead droid and named it from the remains
-/// template, so it is already a prop lying where it fell. What it cannot
-/// know is what a Foundry wreck looks like or that it is worth opening,
-/// which is one kind in `props.ron` and one component here.
-pub fn wreck_the_dead(mut commands: Commands, mut left: MessageReader<RemainsLeft>, registries: Res<Registries>) {
-    let Some(id) = registries.props.id("wreckage") else { return };
-    for ev in left.read() {
-        // The glyph comes off with it, so the renderer dresses the wreck
-        // from `props.ron` rather than leaving it drawn as the droid that
-        // walked: a `%` on the deck reads as something broken.
-        commands.entity(ev.entity).remove::<Glyph>().insert(PropKind(id));
-    }
-}
-```
+A game answers `RemainsLeft` with whatever a body of its own is, on the entity the engine kept: a machine's wreck to go through is that `entity` given a `PropKind` of the game's with its `Glyph` taken off, so the renderer draws it from the prop's definition rather than as the actor that walked.
 
 ## The line
 

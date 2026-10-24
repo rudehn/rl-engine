@@ -2,7 +2,7 @@
 """Reads the times of the last nextest run, and holds it to the suite's budget.
 
     scripts/test-times.py [--profile default|full|ci] [--top 30]
-    scripts/test-times.py --check full|fast|undermere|tests [--profile ...]
+    scripts/test-times.py --check full|fast|tests [--profile ...]
 
 nextest writes every test's wall time to target/nextest/<profile>/junit.xml
 (.config/nextest.toml asks it to), and scripts/slot, which every test runs
@@ -32,10 +32,9 @@ over the cores. So:
 
 `--check full` is for a run of the whole workspace with both tiers, which
 `scripts/gate.sh --all` runs with `--profile full`; `--check fast` for the
-whole workspace's fast tier; `--check undermere` for Undermere's fast tier
-alone, which is what a gate on an Undermere branch runs; and `--check
-tests` holds any other run to the per-test numbers only. Under ATGLYPH_FULL_SEEDS every seed is played, so only
-the report is given. `--profile ci` reads CI's run against CI's own
+whole workspace's fast tier; and `--check tests` holds any other run to the
+per-test numbers only. Under ATGLYPH_FULL_SEEDS every seed is played, so
+only the report is given. `--profile ci` reads CI's run against CI's own
 numbers: the runner is another machine and CI plays every seed, so there
 the check only ever warns. AGENTS.md, "Writing fast tests", says what to do
 when the check speaks.
@@ -49,34 +48,32 @@ from datetime import datetime, timezone
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-# Processor and wall seconds for a run, by what it ran. The processor
-# budgets are what the branch that set them measured on the 8-core
-# development machine on 2026-10-16, once content was validated from its
-# files rather than played over seeds: both tiers 686 s, the fast tier 377 s
-# and Undermere's fast tier alone 238 s, with three tenths more for the
-# processor time a heavily loaded machine adds and for the suite to grow
-# into. The wall budgets warn only, and are the last quiet measure, 178 s
-# for both tiers at 950 s of processor time, scaled to the processor time
-# now and given the same three tenths. Raise one only on purpose, saying
-# why in the commit, as a fingerprint is re-baselined.
+# Processor and wall seconds for a run, by what it ran. The budgets were
+# drawn again on 2026-10-24, when the games moved to repositories of their
+# own and took with them nearly three quarters of the suite's processor
+# time: on the 8-core development machine both tiers took 64.5 s of
+# processor time and 22 s of wall time, and the fast tier 41 s and 20 s,
+# each given three tenths more for the processor time a heavily loaded
+# machine adds and for the suite to grow into. The wall budgets warn only.
+# Raise one only on purpose, saying why in the commit, as a fingerprint is
+# re-baselined.
 BUDGETS = {
-    "full": {"cpu": 900, "wall": 170},
-    "fast": {"cpu": 490, "wall": 110},
-    "undermere": {"cpu": 310, "wall": 60},
+    "full": {"cpu": 85, "wall": 30},
+    "fast": {"cpu": 55, "wall": 26},
 }
-# CI's runner, playing every seed of both tiers: about 2,000 s of processor
-# time on the development machine, doubled for a slower runner. Unmeasured
-# on the runner itself when set, so a warning only; the first CI runs are
-# the baseline to tighten them to.
+# CI's runner, playing every seed of both tiers: 155 s of processor time
+# and 36 s of wall time on the development machine on 2026-10-24, doubled
+# for a slower runner, and a warning only, since the runner is another
+# machine.
 CI_BUDGETS = {
-    "full": {"cpu": 4000, "wall": 1200},
+    "full": {"cpu": 320, "wall": 100},
 }
 # Any one test past either threshold is named; one past the limit fails.
-# The limit is twice the most any test took when it was set, the Undermere
-# fingerprint's four scripted delves at about 60 s.
-TEST_CPU = 20.0
-TEST_WALL = 30.0
-TEST_CPU_LIMIT = 120.0
+# The limit is twice the most any test took when it was set, a lake
+# generation property at 8 s, rounded up.
+TEST_CPU = 10.0
+TEST_WALL = 15.0
+TEST_CPU_LIMIT = 20.0
 # What a test in the fast tier, nextest's default profile, may take before
 # it is named as one for the slow tier; the fingerprints stay fast at any
 # cost, as the early warning that a change moved play.
@@ -161,7 +158,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--profile", default="default")
     parser.add_argument("--top", type=int, default=30)
-    parser.add_argument("--check", choices=["full", "fast", "undermere", "tests"])
+    parser.add_argument("--check", choices=["full", "fast", "tests"])
     args = parser.parse_args()
     target = Path(os.environ.get("CARGO_TARGET_DIR", ROOT / "target"))
     junit = target / "nextest" / args.profile / "junit.xml"

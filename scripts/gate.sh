@@ -31,9 +31,8 @@
 #
 # After the tests, scripts/test-times.py names the slowest and holds the run
 # to its budget: the whole workspace's with both tiers for `--all`, the fast
-# tier's for a commit that touched every package, Undermere's fast tier's for
-# one that touched only Undermere, and the per-test limits for any other set
-# (AGENTS.md, "Writing fast tests").
+# tier's for a commit that touched every package, and the per-test limits for
+# any other set (AGENTS.md, "Writing fast tests").
 #
 # ATGLYPH_FULL_SEEDS=1 is passed through, for the generation tests' full range.
 set -euo pipefail
@@ -118,7 +117,6 @@ echo "gate: testing $packages"
 filter=$(printf ' | package(%s)' $packages)
 step cargo nextest run --workspace -E "${filter# | }"
 scope=tests
-[ "$packages" = undermere ] && scope=undermere
 [ "$packages" = "$(cargo metadata --format-version 1 --no-deps | python3 -c 'import json, sys; print(" ".join(sorted(p["name"] for p in json.load(sys.stdin)["packages"])))')" ] && scope=fast
 step scripts/test-times.py --check "$scope" --top 10
 # Only a library has doc-tests, and `cargo test --doc` refuses a package

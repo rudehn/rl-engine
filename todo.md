@@ -2,7 +2,7 @@ Mercenary too cheap
 corpses need a special icon
 Read "You kill the kobold; the kobold notices you!" in the gamelog
 Nearby enemy/ally should see their inventory displayed
-Do a review - any duplicated systems from undermere & the engine?
+Do a review - any duplicated systems between the sister games and the engine?
 Do a new release of the engine
 Any better way to organize the engine crates? What is a crate supposed to mean? 
 Any way to better establish engine plugins? Should they all be independent?

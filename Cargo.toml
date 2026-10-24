@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/*", "examples/foundry", "examples/terminal", "examples/tutorial", "examples/undermere"]
+members = ["crates/*", "examples/terminal", "examples/tutorial"]
 # A template renders into a game of its own; scripts/check-template.sh builds it.
 exclude = ["templates"]
 
@@ -71,11 +71,6 @@ bevy = { version = "0.19", default-features = false, features = [
 crossterm = "0.29"
 unicode-width = "0.2"
 criterion = { version = "0.5", features = ["html_reports"] }
-# Reads a typeface's character map, for a test that holds every glyph a game
-# draws to the face it ships. Only `std`, which it cannot build without: the
-# map needs none of the defaults, and on Linux the windowing's own copy,
-# through `ab_glyph`, turns on what it wants.
-ttf-parser = { version = "0.25", default-features = false, features = ["std"] }
 
 # Worldgen and pathfinding are math-heavy; an unoptimised debug run takes
 # seconds per map. Dependencies get full optimisation, workspace crates a

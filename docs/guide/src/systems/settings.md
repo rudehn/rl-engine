@@ -7,7 +7,7 @@
             crates/atglyph-ui/src/panel/title.rs
             crates/atglyph-save/src/settings.rs
             crates/atglyph/src/lib.rs
-     fingerprint: e157c4b3 -->
+     fingerprint: da0dd493 -->
 
 # Settings
 
@@ -41,25 +41,9 @@ The game menu offers a `Settings` row above `Quit` when the panel was added and 
 
 ## Using it
 
-A game adds the screen as it adds any panel, and the menu finds it.
+A game adds the screen as it adds any panel, `app.add_plugins(SettingsPanel::new(rect))`, and the menu and the title find it; fullscreen is already on it, declared by `RoguelikePlugins`.
 
-<!-- include: ../../../../examples/foundry/src/main.rs:settings -->
-```rust,no_run
-    // What the player may set, opened from the menu and from the title
-    // screen: fullscreen is the engine's, declared by `RoguelikePlugins`.
-    app.add_plugins(SettingsPanel::new(screen.settings));
-```
-
-Remembering comes with the plugin a run is saved with, which names the backend.
-
-<!-- include: ../../../../examples/foundry/src/save.rs:remember -->
-```rust,no_run
-    // Saved in the player's saves under the game's name, and in memory for
-    // a scripted run, so a capture or a replay starts on the defaults
-    // whatever the player chose; the settings are remembered beside the
-    // run and apart from it.
-    app.add_plugins(SavePlugin::new(SLOT).version(VERSION).on_arrival())
-```
+Remembering comes with the `SavePlugin` a run is saved with, which names the backend: the player's saves under the game's name, or memory for a scripted run, so a capture or a replay starts on the defaults whatever the player chose.
 
 ## The line
 

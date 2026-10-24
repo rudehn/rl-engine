@@ -10,7 +10,7 @@ The reference page is `docs/guide/src/systems/settings.md`; this is why it is sh
 
 A game opened in a window sized to its grid and could not fill the screen from inside the game.
 Making the window bigger worked, because the camera scaled the grid to fit, but it scaled a picture drawn for the small size.
-Measured in Foundry at borderless fullscreen on a 2880 by 1800 display: glyphs rasterized at 14 pixels were stretched about 1.44 times with nearest-pixel sampling, and the stems of `T` and `e` came out uneven.
+Measured in [Foundry](https://github.com/rudehn/foundry) at borderless fullscreen on a 2880 by 1800 display: glyphs rasterized at 14 pixels were stretched about 1.44 times with nearest-pixel sampling, and the stems of `T` and `e` came out uneven.
 Nothing a player chose was remembered; `atglyph-save` stored a run and nothing else.
 
 ## The layout
@@ -73,7 +73,7 @@ The grid is laid out for the window it is in, by one pure function, `atglyph_ren
   The screen reads nothing in the frame it opened, and a screen under it reads nothing in a frame where one closed, so neither order of the two systems double-reads a key.
 - **Nothing drawn under it.**
   It and the menu are each as tall as their rows and seldom the same height, so the menu steps aside while it is up.
-  A game's own screen under it does the same; Foundry's title stops drawing its menu rows and moves the settings screen to stand where they were.
+  A game's own screen under it does the same; [Foundry](https://github.com/rudehn/foundry)'s title stops drawing its menu rows and moves the settings screen to stand where they were.
 
 ## Not on the web
 

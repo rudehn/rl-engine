@@ -11,7 +11,7 @@
             crates/atglyph-ui/src/panel/inspect.rs
             crates/atglyph-save/src/run.rs
             crates/atglyph-ui/src/controls.rs
-     fingerprint: 62bc8f78 -->
+     fingerprint: a4ff7482 -->
 
 # Work
 
@@ -48,58 +48,9 @@ The nearby rail writes the word where it would write the alert, and inspect adds
 
 ## Using it
 
-A game's tactic begins work once its actor is within reach of what it wants to work on, and walks there otherwise.
+A game's tactic begins work once its actor is within reach of what it wants to work on, deciding `Decision::Work(Work::new(kind, turns).on(target))`, and walks there otherwise with `ctx.step_toward`.
 
-<!-- include: ../../../../examples/foundry/src/droids/repair.rs:tactic -->
-```rust,no_run
-/// Rebuild a wreck: set to work on it if it is within reach, and walk
-/// toward the nearest otherwise.
-pub struct RepairWrecks;
-
-impl Tactic<Entity> for RepairWrecks {
-    fn name(&self) -> &'static str {
-        "repair_wrecks"
-    }
-
-    fn evaluate(&self, ctx: &mut TacticCtx<'_, Entity>) -> Option<Decision<Entity>> {
-        let me = ctx.snapshot.me.pos;
-        let wrecks = ctx.snapshot.sense::<Wrecks>()?.clone();
-        if let Some((wreck, _, turns)) = wrecks.found.iter().find(|(_, at, _)| in_reach(me, *at)) {
-            return Some(Decision::Work(Work::new(wrecks.kind, *turns).on(*wreck)));
-        }
-        let cells: Vec<Point> = wrecks.found.iter().map(|(_, at, _)| *at).collect();
-        ctx.step_toward(&cells).map(Decision::Step)
-    }
-}
-```
-
-What finishing means is the game's, answered from `WorkDone` in `TurnSet::React`.
-
-<!-- include: ../../../../examples/foundry/src/droids/repair.rs:rebuild -->
-```rust,no_run
-/// A finished repair stands the wreck up as the droid it was, at half its
-/// health, and says so when the commando can see it happen.
-pub fn rebuild_wrecks(
-    mut commands: Commands,
-    mut done: MessageReader<WorkDone>,
-    kinds: Res<WorkKinds>,
-    roster: Res<Roster>,
-    wrecks: Query<(&Kind, &Position), With<Remains>>,
-    eyes: Query<&Viewshed, With<Player>>,
-    mut tell: MessageWriter<Tell>,
-) {
-    let Some(repairing) = kinds.get(REPAIRING) else { return };
-    for finished in done.read().filter(|d| d.kind == repairing) {
-        let Some(wreck) = finished.target else { continue };
-        let Ok((kind, pos)) = wrecks.get(wreck) else { continue };
-        let def = roster.defs.get(kind.0);
-        commands.revive(wreck, (def.hp + 1) / 2);
-        if eyes.iter().any(|v| v.can_see(pos.0)) {
-            tell.write(Tell::new(format!("The {} whirs back to life.", def.name), Tones::NOTICE));
-        }
-    }
-}
-```
+What finishing means is the game's, answered from `WorkDone` in `TurnSet::React`: a repair finished on a wreck is that `target` stood up again with `commands.revive(target, health)`, and a `Tell` when the player can see it.
 
 ## The line
 

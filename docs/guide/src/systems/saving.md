@@ -15,7 +15,7 @@
             crates/atglyph-bevy/src/minds.rs
             crates/atglyph-bevy/src/title.rs
             crates/atglyph-save/src/lib.rs
-     fingerprint: 04669d6f -->
+     fingerprint: 2b07ed69 -->
 
 # Saving and the ending screen
 
@@ -75,97 +75,13 @@ The game menu reads both: the epitaph and the summary wrapped, each only when th
 
 ## Using it
 
-A kind is a component and its account of itself, and Undermere's gate is the smallest one there is: the engine knows where it leads, so the game writes down that it is the gate and nothing more.
+A kind is a component and its account of itself, and the smallest is a marker on something the engine already keeps: a gate whose cell and destination the engine saves is `impl Saveable for Gate` with `type Saved = ()`, a `capture` that writes nothing and a `restore` that spawns the marker and its name again.
 
-<!-- include: ../../../../examples/undermere/src/save.rs:way -->
-```rust,no_run
-/// The gate, as the save writes it: that it is the gate, and nothing
-/// more. The engine keeps where it stands and where it leads, and the
-/// stairs between the floors are the engine's own, saved by the engine.
-impl Saveable for Gate {
-    type Saved = ();
+Registering is the step an implementation does not show, and it is the whole of a game's setup: the plugin at its version, `SavePlugin::new(slot).version(version)` with `.on_arrival()` for a save on every arrival, then `save_items`, `save_actors` and `save_kind` for every kind and `save_state` for every resource of the run.
 
-    fn capture(_: &World, _: Entity) {}
+A game that saves splits its start across the three schedules a run begins in: what every run stands on in `PrepareRun`, a fresh run's start in `NewRun`, and what a continued run gives back after the engine restored it in `RunResumed`, such as an upgrade's effect put back on the player it was taken by.
 
-    fn restore(world: &mut World, _: &()) -> Entity {
-        world.spawn((Gate, Name::new(Gate::NAME))).id()
-    }
-}
-```
-
-Registering is the step an implementation does not show, and it is the whole of a game's setup: the plugin at its version, then every kind and every resource.
-
-<!-- include: ../../../../examples/undermere/src/save.rs:register -->
-```rust,no_run
-/// What the save is made of: the engine's plugin, which keeps the records
-/// in their own slot beside it, the five kinds, and the ten resources.
-pub fn register(app: &mut App) {
-    app.add_plugins(SavePlugin::new(SLOT).version(VERSION).on_arrival())
-        .save_items::<ItemKind>()
-        .save_actors::<Kind>()
-        .save_kind::<Adventurer>()
-        .save_kind::<Gate>()
-        .save_kind::<Townsperson>()
-        .save_state::<Tally>()
-        .save_state::<Lore>()
-        .save_state::<MonsterLore>()
-        .save_state::<Shelves>()
-        .save_state::<Folk>()
-        .save_state::<GivenNames>()
-        .save_state::<Tavern>()
-        .save_state::<crate::vaults::lifts::RisingFloods>()
-        .save_state::<Quests>()
-        .save_state::<WritingsProgress>()
-        .save_state::<crate::doors::Passed>();
-}
-```
-
-A game that saves splits its start across the three schedules a run begins in, and Foundry's is the shape: what every run stands on in `PrepareRun`, a fresh run's start in `NewRun`, and what a continued run gives back after the engine restored it in `RunResumed`.
-
-<!-- include: ../../../../examples/foundry/src/plugin.rs:run_schedules -->
-```rust,no_run
-        // What every run stands on, the run's start, and what a continued
-        // run gives back and says once the engine has restored it: the
-        // upgrades first, so a pick offered again is offered to the
-        // commando the upgrades made.
-        app.add_systems(PrepareRun, crate::run::prepare);
-        app.add_systems(NewRun, crate::run::start);
-        app.add_systems(RunResumed, (crate::run::give_upgrades_again, crate::run::offer_the_waiting_pick, crate::run::say_where_it_goes_on).chain());
-        // What a run is saved as, and when: on the way out and on every
-        // deck arrival.
-        crate::save::register(app);
-```
-
-What a run was about is a section on the end screen, and Undermere's are the sections of the record it files once the run is over, which the screen shows ahead of anything a game pushes.
-
-<!-- include: ../../../../examples/undermere/src/tally.rs:record -->
-```rust,no_run
-/// Writes the run down once it is over: one [`RecordRun`] with its
-/// score, its summary and its two sections, which the engine completes
-/// with the outcome, the seed and the clock, files, and shows on the end
-/// screen.
-///
-/// On entering `EngineState::Over`, the one door every ending comes
-/// through, the boss's death and the adventurer's alike, and the frame the
-/// engine's `Ending` is first there to read. Nothing in the run moves once
-/// it is over, so the tally read here is the run's last word, and the
-/// adventurer still stands where it ended.
-pub fn record(ending: Option<Res<Ending>>, tally: Res<Tally>, map: Option<Res<WorldMap>>, credit: Credit, mut records: MessageWriter<RecordRun>) {
-    let (Some(ending), Some(map)) = (ending, map) else { return };
-    let by = match ending.outcome {
-        // As noted at the death, since what did may be gone by now; asked
-        // again only of an ending no death came through.
-        Outcome::Died { by } => tally.slain_by.clone().or_else(|| credit.of(by)),
-        _ => None,
-    };
-    let lines = score(&tally, ending.outcome == Outcome::Won);
-    records.write(RecordRun {
-        score: total(&lines),
-        summary: summary(ending.outcome, by.as_deref(), map.current(), &tally),
-        sections: sections(&lines, &tally, ending.turn),
-    });
-}
-```
+What a run was about is a section on the end screen, and a game with `RecordsPlugin` gets it from the `RecordRun { score, summary, sections }` it writes once the run is over, whose sections the screen shows ahead of anything a game pushes.
 
 ## The line
 

@@ -57,9 +57,9 @@ use crate::facet::Facet;
 /// meets, and has no idea of a thing whose numbers the player does not
 /// know: whether a thing is known, and what it seems to be until it is, is
 /// a game's. A game that hides some of a thing's numbers keeps this on an
-/// actor before [`ViewSet::Collect`](crate::ViewSet::Collect), as
-/// Undermere keeps on each wearer what the level of every worn thing not
-/// yet known adds past its kind's plain numbers. Absent, or all nought, the
+/// actor before [`ViewSet::Collect`](crate::ViewSet::Collect), keeping on
+/// each wearer, say, what the level of every worn thing not yet known adds
+/// past its kind's plain numbers. Absent, or all nought, the
 /// panels show the true numbers, which is every game without the idea.
 ///
 /// Each figure is taken off the true one: `armor` off the vitals' armor

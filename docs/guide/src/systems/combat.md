@@ -17,7 +17,7 @@
             crates/atglyph-bevy/src/ammo.rs
             crates/atglyph-bevy/src/effects/mod.rs
             crates/atglyph-bevy/src/effects/engine.rs
-     fingerprint: 21ea402a -->
+     fingerprint: ab088697 -->
 
 # Combat and loadout
 
@@ -92,16 +92,7 @@ What a game hands combat is two registries and its rules, which is the whole of 
     commands.insert_resource(Registries { damage_kinds: kinds.clone(), factions: sides, ..default() });
 ```
 
-Turning accuracy on is one resource, and Foundry's is the whole of it.
-
-<!-- include: ../../../../examples/foundry/src/run.rs:accuracy -->
-```rust,no_run
-    // A shot goes wide past its weapon's effective range and in poor light:
-    // five points a tile past it, sixteen for a target in dim light, thirty
-    // for one seen only by the helmet in the dark. Foundry has no stats, so
-    // accuracy is the model's hundred and nobody evades.
-    commands.insert_resource(HitRules(Box::new(Percent::new(5, 16, 30))));
-```
+Turning accuracy on is one resource, and a game with no stats of its own needs no more than `HitRules(Box::new(Percent::new(5, 16, 30)))`: five points lost a tile past the weapon's effective range, sixteen at a target in dim light and thirty at one in the dark.
 
 ## The line
 

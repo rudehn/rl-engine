@@ -11,7 +11,7 @@
             crates/atglyph-bevy/src/plugin.rs
             crates/atglyph-bevy/src/knowledge.rs
             crates/atglyph-bevy/src/minds.rs
-     fingerprint: 1defee28 -->
+     fingerprint: 09cec312 -->
 
 # Places
 
@@ -51,18 +51,16 @@ The player's warp also switches the per-map indexes with the map: `Occupancy` sw
 
 ## Using it
 
-A game reaches a place by spawning a `Transition` on a cell, and where those cells are is the game's to decide; a game whose places are floors one under another describes them as a `Ladder` from `PlaceRules::ladder` instead, and the engine lays a stair up on each floor's entry and down on its exit when the floor is built, as it does Foundry's lifts.
+A game reaches a place by spawning a `Transition` on a cell, and where those cells are is the game's to decide; a game whose places are floors one under another describes them as a `Ladder` from `PlaceRules::ladder` instead, and the engine lays a stair up on each floor's entry and down on its exit when the floor is built, as it does Warren's stairs.
 
-<!-- include: ../../../../examples/foundry/src/decks.rs:ladder -->
+<!-- include: ../../../../examples/tutorial/src/bin/step09_panels.rs:ladder -->
 ```rust,no_run
-    /// The decks, one under another, with a lift between each two: up at
-    /// a deck's entry, down at the farthest exit the deck was built with,
-    /// so the way on is as far from where the commando arrived as the
-    /// deck allows. Deck one's way up is the lift out, which the game
-    /// lays, and the core has nothing below it.
+    /// The floors, top first, and how their stairs look: the engine lays
+    /// them when each floor is built. Nothing below the last floor.
     fn ladder(&self) -> Option<Ladder> {
-        let (up, down) = (StairLook::new('<', crate::lifts::LIFT, "lift up"), StairLook::new('>', crate::lifts::LIFT, "lift down"));
-        Some(Ladder::new((1..=DECKS).map(map_of), up, down).top(LadderEnd::Game))
+        let stone = Rgb::new(219, 219, 179);
+        let (up, down) = (StairLook::new('<', stone, "stairs up"), StairLook::new('>', stone, "stairs down"));
+        Some(Ladder::new((1..=FLOORS).map(map_of), up, down))
     }
 ```
 

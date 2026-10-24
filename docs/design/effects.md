@@ -161,7 +161,7 @@ The game writes `EffectBonus { turns, amount }` on the thing when it spawns it, 
 
 The bonus rides on the landing rather than being baked into the effects at spawn because the effects are built once per definition and shared by every copy behind an `Arc`, and because the arguments are text the engine does not understand: rewriting them per level would silently skip a field that is not a number.
 It is a number the game already worked out, rather than a level the effects multiply, because what a level does is a rule, and a rule belongs in one place the game chooses.
-Foundry's is an item's `enchant` block, where `turns: 2` says what a level adds to every status the thing inflicts; a game whose shrines bless gear writes its rule wherever blessings live, and neither teaches the engine a word.
+[Foundry](https://github.com/rudehn/foundry)'s is an item's `enchant` block, where `turns: 2` says what a level adds to every status the thing inflicts; a game whose shrines bless gear writes its rule wherever blessings live, and neither teaches the engine a word.
 What is a number on the thing rather than in an effect, a pulse's period or a plate's armor, is written by the game at spawn with the level applied, as `Bestows` already is; a pulse's base period is its trigger's `every`, which `Triggers::pulse_every` reads back so the game keeps no second copy.
 A carrier has one bonus, so turns and amount reach every effect of their kind it lands, and a thing that wanted two statuses to grow at different rates could not say so; none does, and that is the day to give the bonus a second shape.
 

@@ -8,7 +8,7 @@
             crates/atglyph-bevy/src/world.rs
             crates/atglyph-bevy/src/title.rs
             crates/atglyph-ui/src/player_keys.rs
-     fingerprint: 362d09b9 -->
+     fingerprint: 61b5044f -->
 
 # The turn loop
 

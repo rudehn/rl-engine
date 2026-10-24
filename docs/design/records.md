@@ -1,7 +1,7 @@
 # Run records
 
 What a run came to, kept once it is over, and the list of every run that has ended.
-Built for Undermere, whose records screen needs its runs kept between launches, and in the engine because no game kept its runs and the second one to want it would have copied the first.
+Built for [Undermere](https://github.com/rudehn/undermere), whose records screen needs its runs kept between launches, and in the engine because no game kept its runs and the second one to want it would have copied the first.
 
 The reference page is `docs/guide/src/systems/records.md`; this is why it is shaped that way.
 
@@ -9,7 +9,7 @@ The reference page is `docs/guide/src/systems/records.md`; this is why it is sha
 
 The screen a run ends on drew the engine's `Ending`, the outcome, the seed and the turn, and under it whatever sections a game pushed onto `EndingView` every frame.
 Nothing outlived that screen: a new run cleared the view, and a closed window took the run's account with it.
-Heist pushed the coin carried out and no other game pushed anything; Undermere wanted an itemized score on the end screen and the same score in a list of runs a title opens, kept between launches.
+Heist pushed the coin carried out and no other game pushed anything; [Undermere](https://github.com/rudehn/undermere) wanted an itemized score on the end screen and the same score in a list of runs a title opens, kept between launches.
 
 ## A record is the game's words
 
@@ -17,7 +17,7 @@ Heist pushed the coin carried out and no other game pushed anything; Undermere w
 
 - **Not the engine's counters.**
   The engine could have kept a record of its own: kills from `DeathEvent`, depth from `PlaceEntered`, turns from the clock, all in `Counters` or a table of its own.
-  It was rejected because what a run is worth is a game's design, not a tally: Undermere scores depth, the threat of what was slain, treasure, mini-bosses and victory, a heist the coin carried out, and a game of decks cleared would score neither.
+  It was rejected because what a run is worth is a game's design, not a tally: [Undermere](https://github.com/rudehn/undermere) scores depth, the threat of what was slain, treasure, mini-bosses and victory, a heist the coin carried out, and a game of decks cleared would score neither.
   A record built from counters would make every game's records the same table, and a game would register counters it never reads only so its records said something.
 - **Not an opaque blob.**
   A record could have been bytes the game serializes and draws itself, which would let a game keep anything.
@@ -63,7 +63,7 @@ Kept as the filing system's own state, a record whose run was torn down before i
 - **Kept until the teardown.**
   `this_run` is cleared in `EndRun`, not with the whole resource and not in `NewRun`, so the record stands through every frame the ended run's screen reads it and is gone before the next run begins, while the list itself is never cleared by a run.
 - **A game with no records is unchanged.**
-  `collect_ending` reads `RunRecords` as optional, so Foundry, which records nothing, draws the end screen it always drew.
+  `collect_ending` reads `RunRecords` as optional, so [Foundry](https://github.com/rudehn/foundry), which records nothing, draws the end screen it always drew.
 
 ## The list
 

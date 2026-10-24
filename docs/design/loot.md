@@ -6,8 +6,8 @@ The reasoning is here; `docs/OVERVIEW.md` lists what exists, and `docs/guide/src
 ## 0. Summary
 
 Two games put items into the world, and both wrote the same loop by hand.
-Foundry and Corsair each had an item file with its own definition type, a spawn table banded by depth or distance, a hand-kept generator for what the dead drop so a kill would not shift combat's dice, a scatter that ran when a place or a region first appeared, and a function that turned an id into an entity.
-Foundry also answered the engine's request to fill a container.
+[Foundry](https://github.com/rudehn/foundry) and Corsair each had an item file with its own definition type, a spawn table banded by depth or distance, a hand-kept generator for what the dead drop so a kill would not shift combat's dice, a scatter that ran when a place or a region first appeared, and a function that turned an id into an entity.
+[Foundry](https://github.com/rudehn/foundry) also answered the engine's request to fill a container.
 The rule the engine was written against is to own the loop or leave it out, and two games copying the same loop is the sign it belongs in the engine.
 
 The engine now owns when, where, how many and from which stream.
@@ -40,12 +40,12 @@ Both games had these rules already, written separately, and one of them had draw
 `LootTable` is a banded, weighted table like the engine's `BandedTable`, with three differences.
 
 **Its rows are sorted by item name when it is built.**
-A banded draw walks the rows in order, so before this, moving a row in a spawn file changed what every seed built, and Foundry's file carried a warning saying so.
+A banded draw walks the rows in order, so before this, moving a row in a spawn file changed what every seed built, and [Foundry](https://github.com/rudehn/foundry)'s file carried a warning saying so.
 Sorting makes the file's order meaningless, which is what an author expects of a list.
 Adding or removing a row still changes seeds, as it must.
 
 **A row may give a group.**
-The spawn table's group sizes were never used for items: both games picked a single row, so a slug on Foundry's floor was always one slug, and Corsair rolled its own stack size in code.
+The spawn table's group sizes were never used for items: both games picked a single row, so a slug on [Foundry](https://github.com/rudehn/foundry)'s floor was always one slug, and Corsair rolled its own stack size in code.
 A group is now the row's, and a floor find of slugs is a handful.
 
 **A draw may ask for a tag.**
@@ -74,9 +74,9 @@ A row with one level draws nothing, so the shallow decks of a game whose early f
 
 ## 6. What was tried and not kept
 
-- **The engine owning item definitions.** Every game's item has fields no other game's does: Foundry's heat and ammunition, Corsair's affixes and enchant levels. An engine item type would be either too small for any real game or an extension mechanism larger than the trait, and `docs/design/items.md` already settled that the engine reads components off whatever the game spawned.
+- **The engine owning item definitions.** Every game's item has fields no other game's does: [Foundry](https://github.com/rudehn/foundry)'s heat and ammunition, Corsair's affixes and enchant levels. An engine item type would be either too small for any real game or an extension mechanism larger than the trait, and `docs/design/items.md` already settled that the engine reads components off whatever the game spawned.
 - **Names on every request.** See section 1.
-- **A rarity or quality system in the engine.** Corsair rolls quality and Foundry does not; `Provenance` tells the game why a thing is made and at what band, and hands it a stream, which is all either needs.
+- **A rarity or quality system in the engine.** Corsair rolls quality and [Foundry](https://github.com/rudehn/foundry) does not; `Provenance` tells the game why a thing is made and at what band, and hands it a stream, which is all either needs.
 - **Floor scatter on every place for every game.** Corsair's caves are stocked by hand at a vault's marks and must not also scatter loose finds; `ItemMaker::loose` lets a game say an area gets none, rather than the engine growing a switch per place kind.
 
 ## 7. Not here

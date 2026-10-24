@@ -13,7 +13,7 @@
             crates/atglyph-bevy/src/replay.rs
             crates/atglyph-bevy/src/seed.rs
             crates/atglyph-bevy/src/testing.rs
-     fingerprint: a4bb3e88 -->
+     fingerprint: 81a60f86 -->
 
 # Controls, modals and cursors
 
@@ -137,7 +137,7 @@ What is recorded is what the game reads, after the repeat has been turned into p
 A replay never presses while the turns are held for something to be seen, because a key then would skip it and what it skipped decides which clock the next key is read at.
 A recording whose clock the game has already passed is a run that drifted, and the replay stops and says which key it reached rather than pressing on into a world that is not the one recorded; that is determinism reporting itself, not enforcing itself.
 The half the plugin does not do is the seed: it presses keys and nothing else, so a game that sets `ATGLYPH_REPLAY` and leaves its own seed alone replays a recorded run against a fresh world and drifts on the first key.
-Restoring it is the game's, because the seed is inserted before play begins and the plugin has no say in when that happens: `LaunchArgs::from_env` reads the recording's seed and flags while one is being played, and `--seed` and the command line otherwise, which is what Foundry and Undermere insert from, and `Seed::from_args` is the one line that wraps it for a game with no flags of its own, falling back to a fresh seed.
+Restoring it is the game's, because the seed is inserted before play begins and the plugin has no say in when that happens: `LaunchArgs::from_env` reads the recording's seed and flags while one is being played, and `--seed` and the command line otherwise, which is what a game with flags of its own inserts from, and `Seed::from_args` is the one line that wraps it for a game with no flags of its own, falling back to a fresh seed.
 `KeyScriptPlugin` is the same idea at the other end: a key pressed on `ButtonInput` from outside the schedule is wiped before any system sees it, so a test that wants to press one needs a plugin, and a test's keys then run the same path a player's do.
 What the engine does not get is a rebinding screen or text entry, because those belong to an application rather than to a roguelike, and nothing here reads a click: what one means is the game's.
 

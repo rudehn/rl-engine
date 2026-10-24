@@ -55,66 +55,8 @@ For the place it holds `loops`, openings less areas plus one, `open_pct`, and `r
 
 ## Using it
 
-A game's place builder is a chain with the recipe's passes at either end of it, run until an attempt meets the recipe.
-
-<!-- include: ../../../../examples/foundry/src/decks.rs:grow -->
-```rust,no_run
-    /// Runs the deck's chain and hands back the context still open, so a
-    /// test can read a [`Stamped`](atglyph::mapgen::prefab::Stamped)
-    /// pass emitted before [`PlaceBuild::from_context`] flattens every
-    /// mark into a [`Spot`] and drops the stamp's own bounds.
-    ///
-    /// Grown from `seed`, the deck's own, so building deck 2 first does not
-    /// change deck 1.
-    fn generate(&self, map: MapId, seed: PlaceSeed) -> Result<BaseContext, BuildError> {
-        let deck = deck_of(map);
-        // Foundry grows no locked or sealed piece, so its hatch stands for both.
-        let tiles = LayoutTiles { floor: self.deck, door: self.hatch, locked: self.hatch, sealed: self.hatch };
-        let grown = atglyph::rules::grow::passes(&self.layout, recipe_of(deck), &tiles)?;
-        let (width, height) = grown.size;
-        let mut chain = Chain::new()
-            .then(grown.accrete)
-            .then(grown.loops)
-            .then(StampOneOf { name: "armory", choices: self.armories()?, at: Placement::AnyRoom, orient: Orient::TurnedOrMirrored })
-            .then(StampOneOf { name: "store", choices: self.stores()?, at: Placement::AnyRoom, orient: Orient::TurnedOrMirrored });
-        // Decks two, four, five, seven and eight hold a guard post: a locker
-        // and a weapon held by what the deck has. Not deck one, which
-        // teaches the lamp and the droids, and not the charge decks, which
-        // already fit a third piece in their rooms.
-        if matches!(deck, 2 | 4 | 5 | 7 | 8) {
-            chain = chain.then(StampPrefab {
-                name: "guard post",
-                prefab: self.prefabs.piece("guard post")?,
-                at: Placement::AnyRoom,
-                orient: Orient::TurnedOrMirrored,
-            });
-        }
-        // Decks three, six and nine each feed a section of the plant, and
-        // deck ten is the core: one reactor chamber on each, so the four
-        // charges have somewhere to be set. The core is its own shape and
-        // marks `R` like the others, so one system plants all four
-        // consoles. Both are stamped fixed, since nothing about either
-        // chamber reads better turned.
-        chain = match deck {
-            3 | 6 | 9 => chain.then(StampPrefab { name: "reactor", prefab: self.prefabs.piece("reactor")?, at: Placement::AnyRoom, orient: Orient::Fixed }),
-            DECKS => chain.then(StampPrefab { name: "core", prefab: self.prefabs.piece("core")?, at: Placement::AnyRoom, orient: Orient::Fixed }),
-            _ => chain,
-        };
-        // The start keeps the population's own distance from every piece,
-        // so no guard at a post stands beside the arrival.
-        let start = RandomStart.clear_of_stamps(crate::droids::MIN_DISTANCE_FROM_ENTRY);
-        // Last, once the ways in and out are known so no room piece lands
-        // on either: every room nothing was stamped in is furnished.
-        let rooms = StampEachRoom { name: "furnish", choices: self.rooms()?, orient: Orient::TurnedOrMirrored };
-        // The survey once the ways in and out are known, and what the
-        // recipe requires last: a deck that falls short is built again.
-        // The phases put the survey before the furnishing, so the open
-        // share it is held to is the deck's before its machinery; a room
-        // piece keeps floor all round it, so the route is the same after.
-        let make = || BaseContext::blank(width, height, self.tiles.clone(), self.hull);
-        chain.then(start).then(FarthestExit).then(Survey).then(rooms).then(grown.require).run_retrying(make, seed, ATTEMPTS)
-    }
-```
+A game's place builder is the chain laid out above, the recipe's passes at either end of it, run until an attempt meets the recipe.
+It is grown from the place's own `PlaceSeed`, so building one place before another changes neither, and a game that grows no locked or sealed piece names its door for both in `LayoutTiles`.
 
 ## The line
 

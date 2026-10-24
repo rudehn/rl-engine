@@ -59,10 +59,10 @@ URLS = (
 
 # Paths that record what the engine was, and keep its name.
 HISTORY_DIRS = ("docs/superpowers/", "docs/reviews/", ".planning/")
-HISTORY_FILES = ("docs/PLAN.md", "examples/undermere/SOAK.md")
+HISTORY_FILES = ("docs/PLAN.md",)
 # This script and its test hold the old names as patterns.
 SELF = ("scripts/rename-to-atglyph.py", "scripts/test_rename_to_atglyph.py")
-FACADE_USERS = ("examples/foundry/", "examples/undermere/", "examples/tutorial/", "templates/", "docs/guide/")
+FACADE_USERS = ("examples/tutorial/", "templates/", "docs/guide/")
 
 FACADE_LIB = "crates/atglyph/src/lib.rs"
 CHANGELOG = "CHANGELOG.md"

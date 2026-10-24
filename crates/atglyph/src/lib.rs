@@ -33,7 +33,7 @@
 //! through this crate.
 //!
 //! The repository README walks through a headless example, and the
-//! `foundry` and `undermere` example games show the Bevy side end to end.
+//! `tutorial` example shows the Bevy side end to end, one step a chapter.
 //!
 //! A game starts from [`RoguelikePlugins`], the window, the terminal and
 //! the plugins every game adds, and then names the subsystems it wants; or

@@ -223,6 +223,7 @@ impl PlaceRules for Warren {
         self.tiles.tables()
     }
 
+    // ANCHOR: ladder
     /// The floors, top first, and how their stairs look: the engine lays
     /// them when each floor is built. Nothing below the last floor.
     fn ladder(&self) -> Option<Ladder> {
@@ -230,6 +231,7 @@ impl PlaceRules for Warren {
         let (up, down) = (StairLook::new('<', stone, "stairs up"), StairLook::new('>', stone, "stairs down"));
         Some(Ladder::new((1..=FLOORS).map(map_of), up, down))
     }
+    // ANCHOR_END: ladder
 }
 // ANCHOR_END: rules
 
@@ -299,6 +301,7 @@ impl Bestiary {
             if weight > 0 {
                 table.push(BandedEntry::new(id).bands(first, last).weight(weight).group(group_min, group_max));
             }
+            // ANCHOR: brain
             // A shover leads with its shove; the shove is a choice of Warren's
             // own, which the engine routes to Warren's own action.
             let can = Repertoire { flee_at: def.flee_at, melee: true, ..Repertoire::default() };
@@ -307,6 +310,7 @@ impl Bestiary {
                 brain = brain.first(ShoveAdjacent);
             }
             minds.push(Arc::new(brain.build()));
+            // ANCHOR_END: brain
         }
         Self { defs, table, minds, faction }
     }

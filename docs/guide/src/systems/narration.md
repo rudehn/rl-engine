@@ -13,7 +13,7 @@
             crates/atglyph-rules/src/status.rs
             crates/atglyph-bevy/src/ability.rs
             crates/atglyph-bevy/src/lighting.rs
-     fingerprint: 0e4670d0 -->
+     fingerprint: 788823c2 -->
 
 # Narration
 
@@ -75,31 +75,7 @@ The engine's words are one plugin, and changing any of them is one call on it.
         .add_plugins(NarratorPlugin::default().phrase(Phrase::HitsYou, "{Who} bites you for {n}.", Tones::BAD))
 ```
 
-A line the engine has no phrase for is a `Tell`, written from inside the pass it answers.
-
-<!-- include: ../../../../examples/foundry/src/droids/alarm.rs:tell -->
-```rust,no_run
-/// Answers a probe's signalling: says in the log that it has started,
-/// which is the commando's warning, and when it finishes raises the alarm
-/// and says so, once, and not on every shout after.
-pub fn sound_alarm(
-    mut commands: Commands,
-    mut began: MessageReader<WorkBegan>,
-    mut done: MessageReader<WorkDone>,
-    kinds: Res<WorkKinds>,
-    alarmed: Query<(), With<Alarm>>,
-    mut tell: MessageWriter<Tell>,
-) {
-    let Some(signalling) = kinds.get(SIGNALLING) else { return };
-    for ev in began.read().filter(|ev| ev.kind == signalling && alarmed.contains(ev.actor)) {
-        tell.write(Tell::new("{Who} starts signalling.", Tones::NOTICE).by(ev.actor));
-    }
-    for ev in done.read().filter(|ev| ev.kind == signalling && alarmed.contains(ev.actor)) {
-        commands.entity(ev.actor).insert(Raised);
-        tell.write(Tell::new("{Who} sounds an alarm.", Tones::BAD).by(ev.actor));
-    }
-}
-```
+A line the engine has no phrase for is a `Tell`, written from inside the pass it answers: a system reading `WorkBegan` for a kind of work of the game's writes `Tell::new("{Who} starts signalling.", Tones::NOTICE).by(actor)`, and the narrator says it, with the actor's name in its colours, after what it answers and before whatever the next actor does.
 
 ## The line
 

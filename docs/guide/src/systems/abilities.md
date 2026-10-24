@@ -78,40 +78,46 @@ A thrown knife and a bolt stop at the same first wall or body, and each hangs in
 
 ## Using it
 
-A verb the engine does not ship is a type with two impls and one registration line, which is Undermere's `Steal`.
+An ability is a line of RON naming its aim, its shape, what it costs, how long it cools and what lands, and Warren's two are a screech that bursts where it lands and a crust eaten to mend.
 
-<!-- include: ../../../../examples/undermere/src/tricks/minds.rs:steal -->
-```rust,no_run
-/// Takes a random thing its target carries but does not wear, then marks
-/// the taker [`Stole`] so its brain flees with it: a monkey's `stealing`.
-/// Takes no arguments.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct Steal;
-
-impl Effect for Steal {
-    fn apply(&self, landing: &Landing, world: &mut EffectWorld<'_, '_>) {
-        let (thief, targets, landing) = (landing.user, landing.targets.clone(), landing.clone());
-        world.commands.queue(move |world: &mut World| {
-            let took = targets.iter().any(|victim| steal(world, thief, *victim));
-            if !took {
-                crate::effects::showed_nothing(world, &landing);
-            }
-        });
-    }
-
-    fn describe(&self, _: &Registries, _: EffectBonus) -> String {
-        "takes something it is not wearing, then runs".to_string()
-    }
-}
-
-impl FromArgs for Steal {
-    const KIND: &'static str = "Steal";
-
-    fn from_args(args: &RawValue, _: &Names<'_>) -> Result<Self, String> {
-        crate::effects::moving::no_args(args, Self::KIND).map(|_| Self)
-    }
-}
+<!-- include: ../../../../examples/tutorial/assets/knacks.ron -->
+```ron
+// The one knack the warren gives you.
+//
+// Every field (the ones marked "optional" may be left out):
+//   name:        unique; what the game looks it up by
+//   description: optional; what it is, in a sentence, for the knack list
+//   look:        optional; (glyph:, color: (r:, g:, b:)), what flies and bursts
+//   aim:         Foe (default) | Ally | SelfOnly | Ground | Anyone
+//   mode:        Own | Adjacent | Bolt(range:) | Ball(range:, radius:) |
+//                Beam(range:) | Cone(length:)
+//   costs:       optional; this one costs no pool, only the wait
+//   cooldown:    optional; hundredths of a step before it may be used again
+//   effects:     each (kind:, chance:, args:); "Harm" takes a damage kind
+//                this game registered and a dice roll
+#![enable(implicit_some)]
+[
+    (
+        name: "screech",
+        description: "A shriek that goes through a rat like a nail. It carries, and it hurts.",
+        look: (glyph: '*', color: (r: 220, g: 220, b: 255)),
+        aim: Foe,
+        mode: Ball(range: 6, radius: 1),
+        cooldown: 300,
+        effects: [(kind: "Harm", args: (kind: "din", roll: "1d6"))],
+    ),
+    (
+        name: "gnaw",
+        description: "Eat the crust you are carrying. A ratling knows to do this; a rat does not.",
+        aim: SelfOnly,
+        mode: Own,
+        costs: [Item("bread", 1)],
+        effects: [(kind: "Mend", args: (roll: "1d6"))],
+    ),
+]
 ```
+
+A verb the engine does not ship is a type with two impls, `Effect` and `FromArgs`, and one registration line, `app.add_effect::<E>()`, after which a file names it by its `KIND` as these name `Harm` and `Mend`.
 
 ## The line
 

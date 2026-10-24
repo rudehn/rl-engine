@@ -149,8 +149,8 @@ pub(crate) const RESTART: SeedDomain = SeedDomain::engine(b"restart");
 /// loot and a piece's contents, the salts fire and gas hash a turn from,
 /// the next run's seed on the web, and a place's own seed.
 ///
-/// So a game can check none of its own domains is one of these, as
-/// Undermere's and Foundry's `seeds` modules do; [`SeedDomain::new`] already
+/// So a game can check none of its own domains is one of these, in a test
+/// beside the module that declares them; [`SeedDomain::new`] already
 /// refuses every name under `atglyph.`, and this list is what that leaves to
 /// check.
 pub const ENGINE_DOMAINS: &[(&str, SeedDomain)] = &[

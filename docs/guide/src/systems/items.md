@@ -22,7 +22,7 @@
             crates/atglyph-ui/src/panel/inventory.rs
             crates/atglyph-ui/src/panel/container.rs
             crates/atglyph-ui/src/narrate.rs
-     fingerprint: ef418e52 -->
+     fingerprint: 609169bc -->
 
 # Items and equipment
 
@@ -74,7 +74,7 @@ Every number on a row is the item's own component, the one `Loadout` reads, so a
 The footer offers only the keys that do something to the opened row, none that would take off a worn thing that is stuck, and a game opens the bag on one thing with `InventoryMenu::open(row)`.
 The use key uses a thing the way its use is written, which [Uses and charges](uses.md) describes; aiming a throw is the throw key's, which opens the targeting cursor, and firing is combat's.
 A bag taller than its rectangle counts the rows it has no room for, `▲ 2 more` on the frame over its list and `▼ 3 more` on the rule under it, in the muted tone, and its list moves only as far as keeps the row picked out in view.
-The screen does not read a key in the frame it opened, so a game that opens the bag on one of the bag's own keys, as Foundry's `t` does, opens it and no more.
+The screen does not read a key in the frame it opened, so a game that opens the bag on one of the bag's own keys, a throw key say, opens it and no more.
 Every action closes every screen, since it spends a turn and the turn loop assumes nothing is up while it runs.
 `ContainerView` is what the open container holds, as the shared `Row`, and which one is open is `OpenContainer`, the screen's own state rather than the world's: a container is not open, it is being looked into.
 `ContainerPanel` opens itself on an `Interacted` whose verb is `open` on a `Container`, walks the rows, writes `Take { from, item }` for one or for all of it, and closes when the container goes out of reach.
@@ -102,15 +102,7 @@ fn litter(commands: &mut Commands, rats: &Rats, p: Point, bread: bool) {
 }
 ```
 
-The two screens are added the way every other panel is, each with its own rectangle and the words the engine has none for.
-
-<!-- include: ../../../../examples/foundry/src/main.rs:bags -->
-```rust,no_run
-        InventoryPanel::new(screen.pack).title("Pack").called("pack").empty("Nothing but dust."),
-        // What is inside a crate or a wreck, opened by walking into it or
-        // by the key that does what is here.
-        ContainerPanel::new(screen.chest).empty("Stripped already."),
-```
+The two screens are added the way every other panel is, each with its own rectangle and the words the engine has none for: `InventoryPanel::new(rect).title("Pack").called("pack").empty("Nothing but dust.")` for the bag and `ContainerPanel::new(rect).empty("Stripped already.")` for what a crate holds.
 
 ## The line
 
@@ -120,7 +112,7 @@ Every one of those ids points into a registry the game filled, so slots, tags, s
 The engine never names anything either, which is why `InventoryLayout` carries a title, a word for the bag and a line for when it is empty; the engine has no word for a sea chest and will not invent one.
 A level folds down to the vocabulary the rest of the rules already speak, armor, dice of a registered damage kind, registered stats, charges and a pulse's period, so an enchanted blade needs no new machinery on the way to a blow.
 The engine applies a level once, as the thing is made, and never reads it in play: `insert_parts` writes its `Armor`, its dice, its `Bestows`, its `WornTimer` and its `EffectBonus` with the level applied, `Level` adding the same for each level and nothing else.
-What one level adds is still the game's content, written once where the game chooses; Foundry's is a `level` block on each item beside numbers that stay what the thing is at `+0`, Undermere's a default per tag that each line writes over, and another game's may be a table, a curse or nothing.
+What one level adds is still the game's content, written once where the game chooses: a `level` block on each item beside numbers that stay what the thing is at `+0`, a default per tag that each line writes over, a table, a curse or nothing.
 Whether a thing is known and whether it stays on are the engine's to honour and the game's to decide: what `Unknown` withholds is withheld on every panel alike, and what `Stuck` refuses is every path that would take a thing off, so a game writing identification or a curse writes when its marker goes on and comes off, not a redaction of every panel and a check on every key.
 Neither marker is put on, taken off or saved by the engine, since what makes a thing known, a use, a reading or a long wear, and what frees it are the game's, and a game keeps both in its own save.
 `Unknown` hides what a thing is worth and never what it does, because a game whose unknown draught did nothing until named would have to mirror every effect, and the armor total still counts an unknown worn thing, marked as uncertain, because the total is what a blow meets, until a game that knows what the thing seems to be counts it so in `ViewSet::Annotate`, and clears the mark there for an unknown thing it knows cannot move the figure.

@@ -57,38 +57,15 @@ An `Attuned` thing refills only while worn and is emptied each time it is put on
 
 ## Using it
 
-A use is a trigger and what it costs is its charges, and Undermere's staffs are both: a bolt aimed in an ability's words, and charges that come back with time.
+A use is a trigger and what it costs is its charges, and a staff is both: a `use` trigger carrying a `targeting` of `(mode: Bolt(range: 8))` in an ability's words, with a list that harms and ignites, and a `Consumable` that is `Kept` at nought and gives a charge back each period of its `Recharge`.
 
-<!-- include: ../../../../examples/undermere/assets/items.ron:staff -->
-```ron
-    // The staffs, zapped from the pack: a staff's level is its power and its
-    // charges both, found at two and better deeper, and a spent charge comes
-    // back over the time its line says, divided by its level. Each level
-    // adds two to a bolt's roll, which keeps a firebolt near the content
-    // sheet's (L+1)d4 on average with less to it by luck, five turns of
-    // poison, two of slowness and a blade to a conjuring. Every bolt is seen to fly.
-    (name: "staff of firebolt", glyph: '/', color: (0.85, 0.45, 0.25), price: 250, tags: ["staff"], level: (amount: 2),
-     consumable: (charges: 0, when_empty: Kept, recharge: 50000),
-     triggers: [(on: "use", targeting: (mode: Bolt(range: 8)), look: (glyph: '*', color: (r: 255, g: 120, b: 40)),
-                 effects: [(kind: "Harm", args: (kind: "fire", roll: "1d4+1")), (kind: "Ignite", args: (turns: 3))])]),
-```
-
-A game hangs both on what it spawns from a definition, and Foundry's armory does it for every item whose definition has them, marking `Attuned` the one whose charge comes back only while worn.
-
-<!-- include: ../../../../examples/foundry/src/gear.rs:use -->
-```rust,no_run
-    // Everything the engine plays, a stim's use and a grenade's landing,
-    // what doing either costs the thing, its wear, its armor and its
-    // attacks, from the parts the armory built once and shares with every
-    // copy; the engine lands and spends them.
-    insert_parts(&mut e, parts, level);
-```
+A game hangs both on what it spawns from a definition, the `Triggers` it built once when it read the file and a fresh `Consumable` on every copy, and marks `Attuned` the one whose charge comes back only while worn.
 
 ## The line
 
 What a thing does is its triggers, and an item never lends an ability: an ability is something an actor knows, and `Known` is only ever what the actor itself learned.
 A use aimed at somewhere is still the thing's own trigger: it is written in an ability's words and pointed, previewed and refused by an ability's rule, so the two cannot drift, while what it lands and what it spends stay the thing's and it takes no row on the abilities screen.
-Foundry drew the line the hard way: its stims were abilities for a day, which put two consumables on the abilities screen beside the one thing the commando knew, and its grenades were abilities whose cost destroyed the item that lent them.
+A game drew the line the hard way: its stims were abilities for a day, which put two consumables on the abilities screen beside the one thing its hero knew, and its grenades were abilities whose cost destroyed the item that lent them.
 A use made on a thing carries the thing to its effects and no further, since the engine's own effects never read it: what makes a thing better, known or free is the game's, written as an effect of its own.
 A trigger with no list of its own lands the item's shared `effects`, so a draught drunk and a draught thrown are one list delivered two ways, and the bag says them once.
 A thing not yet known is used, aimed and refused by nothing only what it is would explain, since a refusal for nothing or a footprint drawn before it is used tells the player its kind as surely as its name would; what is refused still is what does not depend on it, not carried and worn to be used and not worn, and a game that tells a use that came to nothing says so of one made empty as of one that caught nobody.

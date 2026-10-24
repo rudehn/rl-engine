@@ -8,7 +8,7 @@ The reasoning is here; `docs/OVERVIEW.md` lists what exists.
 The engine has no word for a thing on the map that is not an actor and not an item.
 Two games have now built one by hand, and built it differently.
 
-Foundry's reactor console is a marker component, an action, a resolver, a key and a refusal message.
+[Foundry](https://github.com/rudehn/foundry)'s reactor console is a marker component, an action, a resolver, a key and a refusal message.
 The heist's wall lamps are a marker component, two actions, two resolvers, a key, a `Sense` so the watch can see a dark lamp, and a `Tactic` to go and relight it.
 Neither can reuse a line of the other, and a third game wanting a chest would write the same shape a third time.
 
@@ -51,7 +51,7 @@ The engine collects the offers in reach of the actor holding the turn, the way t
 Its resolver claims the turn, spends the offer's `time`, lands any effects the offer carried, and writes `Interacted { actor, target, verb }`.
 
 **That message is the whole extension mechanism.**
-Foundry's console is not a trait impl and not a registered interaction: it is a system in `TurnSet::React` reading `Interacted`, keeping the ones whose verb is `charge`, and doing what it already does.
+[Foundry](https://github.com/rudehn/foundry)'s console is not a trait impl and not a registered interaction: it is a system in `TurnSet::React` reading `Interacted`, keeping the ones whose verb is `charge`, and doing what it already does.
 The engine needs no registry of behaviours because it already has messages, and a game already knows how to answer one.
 
 Verbs are interned, `open` and `search` by the engine and the rest through `add_verb`, for the same reason sounds are: so two games spell `open` the same way, and so the engine can say "there is nothing here to open" in its own words.
@@ -76,7 +76,7 @@ The minds register `Intent<Attack>` the same way and for the same reason.
 
 A refusal is free.
 The offers are computed before the player acts, so the engine knows an interaction is impossible before a turn is spent on finding out.
-Foundry charges a turn for setting a charge where there is no console, which was a workaround for not knowing.
+[Foundry](https://github.com/rudehn/foundry) charges a turn for setting a charge where there is no console, which was a workaround for not knowing.
 
 ### 2.2 An actor offers too
 
@@ -180,7 +180,7 @@ Searching a wreck is then an offer with the `search` verb, not a bespoke action.
 
 An actor's name is its own, so a wreck would otherwise read as "line droid" in the nearby rail, sitting in the things list beside loose slugs.
 
-`RemainsPlugin::naming("{what} remains")` is the template, applied at conversion, and a game passes its own: `"{what} corpse"` in a dungeon, `"wreck of a {what}"` in a foundry.
+`RemainsPlugin::naming("{what} remains")` is the template, applied at conversion, and a game passes its own: `"{what} corpse"` in a dungeon, `"wreck of a {what}"` in a factory.
 One place, and every view and the log get it for nothing.
 
 It survives a save by construction: the game's record still says "line droid", and the plugin re-applies the template when the save lays the body back down.
@@ -252,7 +252,7 @@ An emptied crate stays emptied, a sprung trap stays sprung, a spotted plate stay
      ])),
 
     (name: "reactor console", glyph: '%', color: (0.35, 0.85, 0.9), blocks: true,
-     // No payload: Foundry answers `Interacted` with this verb itself.
+     // No payload: the game answers `Interacted` with this verb itself.
      offers: [(verb: "charge", time: 300)]),
 ]
 ```
@@ -266,19 +266,19 @@ An emptied crate stays emptied, a sprung trap stays sprung, a spotted plate stay
 5. **Triggers, hidden and breaking:** `Trigger`, `fires`, `Hidden`, `PropRng`, the drawing and listing filters. Tests: a plate fires once and no more, a hidden plate fires unspotted, spotting is a roll from the plugin's own stream, a prop with health breaks and its `Destroyed` trigger fires. **Done**, and the proof that traps are data is a test with no `AbilitiesPlugin` at all: `PropsPlugin` registers what an effect may write, so a game may have traps without abilities, combat or statuses, and what nobody resolves, nobody answers.
 6. **Saving:** the engine's own save kind. Test: an emptied crate, a sprung trap and a spotted plate all come back as they were. **Done.** It lives in `atglyph-save` rather than in `PropsPlugin`, because `Saveable` is `atglyph-save`'s and `atglyph-bevy` sits below it: `SavePlugin` registers the kind itself, so a game that saves gets its props saved without asking and a game with no props saves none. A prop is written down by its definition's name plus the part that is this prop's own history rather than its kind's: how often it has fired, whether it was stocked, whether it was emptied, and whether it is still unspotted. Where it stands and what it holds are `EntityState`'s, as for everything else.
 7. **Remains as props:** `Prop` on conversion, the naming template, props in the snapshot in place of `Snapshot::remains`. **Done.** `RemainsView` became `PropView` and `Snapshot::remains` became `Snapshot::props`, filled by one contributor in `props`, so a mind that walks to wrecks and a mind that walks to crates read one list, and a prop nobody has spotted is in neither. `RemainsNaming` is the template, applied when an actor becomes a body and again when a save lays one back down, which is what keeps the wording in one place across a reload.
-8. **Foundry:** supply crates on every deck, a hidden fuel-line plate per fabrication deck, wrecks named through the template, and the console moved onto `Interacted`. This is the proof, and the first thing in `examples/foundry/DESIGN.md` to get built. **Done**, with live cable in place of the fuel-line plate, since fabrication's decks do not exist yet and Foundry's damage kinds have no cryo. The console's bespoke action, resolver, key and refusal message are gone: what is left is a line of RON and a system that reads `Interacted` for one verb, because reporting a fact no effect can express is all that was ever Foundry's.
+8. **[Foundry](https://github.com/rudehn/foundry):** supply crates on every deck, a hidden fuel-line plate per fabrication deck, wrecks named through the template, and the console moved onto `Interacted`. This is the proof, and the first thing in its `DESIGN.md` to get built. **Done**, with live cable in place of the fuel-line plate, since fabrication's decks do not exist yet and Foundry's damage kinds have no cryo. The console's bespoke action, resolver, key and refusal message are gone: what is left is a line of RON and a system that reads `Interacted` for one verb, because reporting a fact no effect can express is all that was ever Foundry's.
 
 What adopting it taught, each fixed rather than worked around:
 - **The interact key was missing.** Slice 3 built `Interact` and the bump redirect but no key, and a wreck lies underfoot where a bump cannot reach. `atglyph-ui`'s interact key, part of `UiPlugin` in a game with `PropsPlugin` since 2026-10-13, is that key: it takes the one offer in reach and, where two are offered, takes none itself, because a key is not a question; since the offers screen was built it opens that screen to ask, and in a game with no such screen still does nothing.
-- **A game answering `FillContainer` raced the engine's ask.** Answered this frame or the next depending on which way the executor ran two systems, which moved every entity id after it and made Foundry's fingerprint tripwire flicker one run in five. `PropSet::{Stock, Fill}` inside `EngineSet::Stream` is the fix: the engine asks in one stage and a game answers in the next, so a game orders itself against the engine's phases and never against its functions.
-- **Three systems that all spawn, left unordered, is nondeterminism.** Foundry's droids, loot and props all fill a deck on arrival; nothing in the game plays differently for their order, but a tripwire that reads a run by spawn order flickers. They are one chain now.
+- **A game answering `FillContainer` raced the engine's ask.** Answered this frame or the next depending on which way the executor ran two systems, which moved every entity id after it and made [Foundry](https://github.com/rudehn/foundry)'s fingerprint tripwire flicker one run in five. `PropSet::{Stock, Fill}` inside `EngineSet::Stream` is the fix: the engine asks in one stage and a game answers in the next, so a game orders itself against the engine's phases and never against its functions.
+- **Three systems that all spawn, left unordered, is nondeterminism.** [Foundry](https://github.com/rudehn/foundry)'s droids, loot and props all fill a deck on arrival; nothing in the game plays differently for their order, but a tripwire that reads a run by spawn order flickers. They are one chain now.
 - **`report_bare_props` cannot live in a play-gated phase**, because props are put down while a place is built and `Added` matches for one frame. It runs in `PostUpdate`, in no set.
-- **`DecideSet::Sense` is never configured**, which Foundry's ambiguity test caught the moment a prop held a `Viewshed` in the same pass. Putting it in the chain breaks delve's hearing test, so it is recorded in `docs/TODO.md` with the evidence rather than fixed in passing, and the pairs it causes are allowed with that bug as their reason rather than a claim they are safe.
+- **`DecideSet::Sense` is never configured**, which [Foundry](https://github.com/rudehn/foundry)'s ambiguity test caught the moment a prop held a `Viewshed` in the same pass. Putting it in the chain breaks delve's hearing test, so it is recorded in `docs/TODO.md` with the evidence rather than fixed in passing, and the pairs it causes are allowed with that bug as their reason rather than a claim they are safe.
 
 ## 13. Risks
 
-- **The offer list is a new modal in the player's loop.** If it opens often it will feel like a tax. The mitigation is that bump and the single-offer case skip it entirely, so it should appear only in a genuinely ambiguous cell. Worth watching in Foundry before it spreads to the other games.
+- **The offer list is a new modal in the player's loop.** If it opens often it will feel like a tax. The mitigation is that bump and the single-offer case skip it entirely, so it should appear only in a genuinely ambiguous cell. Worth watching in [Foundry](https://github.com/rudehn/foundry) before it spreads to the other games.
 - **A game that builds `Bindings` by hand breaks whenever the engine adds a screen.** Corsair does, in its save key, and adding the container screen's keys broke its build until the new field was filled in. Nothing is wrong with the field; the wart is that the struct is built by hand outside a system at all. If a third screen breaks it again, `Bindings` wants a constructor that reads the world.
 - **`Interacted` is a broad message.** Every game's prop behaviour reacts to the same one, filtered by verb. If a game grows dozens of verbs this becomes a dispatch table written by hand in systems. That is the point at which a registry of interactions earns its place, and not before.
-- **The ground list gets crowded.** Props and remains are not a new kind of thing to the panels: items already lie about and are already listed, under "On the ground", by a collector that sorts on `Actor` and nothing else, so props join a path items proved. What changes is how much is in that list. A room with four crates, two wrecks and the slugs they dropped is eight rows where there used to be two, and the heading's word covers all of it. Whether the ground list wants grouping, or a heading a game can change per panel as it already can, is a question for Foundry to answer once it has crates, not something to guess at here.
-  Foundry's furnished rooms answered half of it on 2026-09-28: a prop that offers, holds, answers and hides nothing and cannot be broken is `Scenery`, left out of what is listed in sight, so a machine shop's lathes are drawn and can be looked at but add no rows. What a room holds that can be acted on is still one row each.
+- **The ground list gets crowded.** Props and remains are not a new kind of thing to the panels: items already lie about and are already listed, under "On the ground", by a collector that sorts on `Actor` and nothing else, so props join a path items proved. What changes is how much is in that list. A room with four crates, two wrecks and the slugs they dropped is eight rows where there used to be two, and the heading's word covers all of it. Whether the ground list wants grouping, or a heading a game can change per panel as it already can, is a question for [Foundry](https://github.com/rudehn/foundry) to answer once it has crates, not something to guess at here.
+  [Foundry](https://github.com/rudehn/foundry)'s furnished rooms answered half of it on 2026-09-28: a prop that offers, holds, answers and hides nothing and cannot be broken is `Scenery`, left out of what is listed in sight, so a machine shop's lathes are drawn and can be looked at but add no rows. What a room holds that can be acted on is still one row each.

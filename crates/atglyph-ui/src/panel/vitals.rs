@@ -386,9 +386,9 @@ mod tests {
         }
     }
 
-    /// The reading is on a tall panel as well as a one-row strip: Foundry
-    /// has a seven-row rail, and the gauge went missing there while the
-    /// strip had it all along.
+    /// The reading is on a tall panel as well as a one-row strip: a game
+    /// with a seven-row rail lost the gauge there while the strip had it
+    /// all along.
     #[test]
     fn a_tall_panel_shows_the_noise_reading_on_a_line_of_its_own() {
         let rules = atglyph_bevy::NoiseRules { step: 0, strike: 0, door: 0, landing: 0, door_muffle: 0 };

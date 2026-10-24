@@ -2636,15 +2636,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "aa9a19cbb55df58761df49b23516a86d432839add4af60fc256da840f66ed35b"
 
 [[package]]
-name = "foundry"
-version = "0.4.0"
-dependencies = [
- "atglyph",
- "bevy",
- "serde",
-]
-
-[[package]]
 name = "futures-channel"
 version = "0.3.33"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5003,17 +4994,6 @@ name = "typewit"
 version = "1.15.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "214ca0b2191785cbc06209b9ca1861e048e39b5ba33574b3cedd58363d5bb5f6"
-
-[[package]]
-name = "undermere"
-version = "0.4.0"
-dependencies = [
- "atglyph",
- "bevy",
- "ron 0.10.1",
- "serde",
- "ttf-parser",
-]
 
 [[package]]
 name = "unicode-ident"

@@ -14,7 +14,7 @@
             crates/atglyph-bevy/src/lighting.rs
             crates/atglyph-grid/src/light.rs
             crates/atglyph-ui/src/view/nearby.rs
-     fingerprint: af05074b -->
+     fingerprint: 93031a56 -->
 
 # Stealth
 
@@ -68,42 +68,51 @@ A status that sleeps (`docs/guide/src/systems/statuses.md`) leans on the same tw
 
 ## Using it
 
-An observer is authored per kind, so Foundry's parts give every monster the `Notice` its kind names, or by Foundry's own defaults the engine's plain one, which is sure only of what is adjacent; a kind given none would notice nobody.
+An observer is authored per kind, so the template's goblin is spawned with a `Notice` of its own, sure of what is two steps off, further while its subject stands in light, and given a chance beyond that; a kind given none would notice nobody.
 
-<!-- include: ../../../../examples/foundry/src/droids.rs:spawn -->
+<!-- include: ../../../../templates/starter/src/main.rs:goblin -->
 ```rust,no_run
-    let d = roster.defs.get(id);
-    let mut e = commands.spawn((
-        (Actor, Blocks, Position(at), OnMap(map), Kind(id), Resists(resistances(d.profile, registries))),
-        (Name::new(d.name.clone()), Glyph::new(d.glyph, Color::srgb(d.color.0, d.color.1, d.color.2)).on_layer(5)),
-    ));
-    // Health, a mind, the notice every kind carries by `defaults`, and
-    // remains: everything on a deck leaves something behind.
-    roster.parts[id.index()].insert(&mut e, registries);
-```
-
-The engine carries `Noticed` no further than writing it, and a game decides what being seen sets off: a Foundry probe that knows where the commando is has an alarm to raise.
-
-<!-- include: ../../../../examples/foundry/src/droids/alarm.rs:sense -->
-```rust,no_run
-/// Tells a probe holding the turn that it has an alarm to raise: it knows
-/// where the commando is and has not raised one yet.
-pub fn sense_alarm(
-    mut thinking: ResMut<Thinking>,
-    kinds: Res<WorkKinds>,
-    quiet: Query<(&Alarm, &Aware), Without<Raised>>,
-    players: Query<Entity, With<Player>>,
-) {
-    let Some(actor) = thinking.actor() else { return };
-    let (Ok((alarm, aware)), Some(kind)) = (quiet.get(actor), kinds.get(SIGNALLING)) else { return };
-    if !players.iter().any(|p| aware.knows(p)) {
-        return;
-    }
-    if let Some(snapshot) = thinking.snapshot_mut() {
-        snapshot.add_sense(Signal { kind, turns: alarm.signal });
+impl Goblins {
+    /// One goblin, standing at `at`.
+    fn goblin(&self, at: Point) -> impl Bundle + use<> {
+        (
+            (
+                Actor,
+                Blocks,
+                Position(at),
+                Name::new("goblin"),
+                Faction(self.side),
+            ),
+            (
+                Health::full(8),
+                Armor(0),
+                MeleeAttack::new(self.stab, DiceRoll::new(1, 4)),
+                Perception(10),
+                Mind(self.mind.clone()),
+                // Sapient: it searches where it lost you, and opens doors.
+                // `Wits::ANIMAL` would stop at a door, and `Wits::MINDLESS`
+                // would forget you the moment it lost sight of you.
+                Intelligence(Wits::SAPIENT),
+            ),
+            // It sees three steps without light, always notices you two
+            // steps away (further while you stand in light), sometimes
+            // beyond that, and remembers where you were for six turns.
+            (
+                DarkSight(3),
+                Notice(NoticeStats {
+                    certain: 2,
+                    chance_pct: 20,
+                    lit_bonus: 4,
+                    memory: 6,
+                }),
+                Glyph::new('g', Color::srgb(0.55, 0.80, 0.35)).on_layer(5),
+            ),
+        )
     }
 }
 ```
+
+The engine carries `Noticed` no further than writing it, and a game decides what being seen sets off, such as a sentry that knows where the player is raising an alarm, in a system of its own that reads `Aware`.
 
 ## The line
 

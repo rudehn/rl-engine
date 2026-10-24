@@ -16,9 +16,8 @@
 //!
 //! An opt-in plugin, [`AmmoPlugin`], rather than part of [`CombatPlugin`](crate::combat::CombatPlugin):
 //! a game with no ammunition-fed weapon (all blades, or stealth alone)
-//! pays nothing for the idea, and one that has some, as a second
-//! game with a bow does exactly as Foundry's blasters did, adds the one
-//! plugin rather than writing this loop again.
+//! pays nothing for the idea, and one that has some, a bow as much as a
+//! gun, adds the one plugin rather than writing this loop again.
 //!
 //! What a row says about a dry weapon is not here: `atglyph-ui`, which depends
 //! on this crate rather than the other way round, reads [`Ammo`] straight
@@ -74,7 +73,7 @@ pub struct Dry;
 /// wielder's bag now holds some.
 ///
 /// Written for every transition `sync_ammo` makes, whoever wields the item,
-/// so a game that wants to say so, Foundry's own narration among them,
+/// so a game that wants to say so, in its narration say,
 /// reacts to this rather than detecting the change itself from whether a
 /// component was just added or removed.
 #[derive(Message, Debug, Clone, Copy)]

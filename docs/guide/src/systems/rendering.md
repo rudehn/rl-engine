@@ -14,7 +14,7 @@
             crates/atglyph-bevy/src/cue.rs
             crates/atglyph-ui/src/tone.rs
             crates/atglyph/src/lib.rs
-     fingerprint: 782cab61 -->
+     fingerprint: 5fd825bd -->
 
 # Rendering
 
@@ -85,17 +85,7 @@ fn main() -> AppExit {
 }
 ```
 
-A game drawn in its own face hands the group the bytes of its font file, compiled in with `include_bytes!`, and Undermere's is DejaVu Sans Mono, shipped beside its licence.
-
-<!-- include: ../../../../examples/undermere/src/main.rs:typeface -->
-```rust,no_run
-    // The window, the terminal in the game's own face, the map and the
-    // engine's base; the game's subsystems, saving among them, are
-    // `UndermerePlugin`'s, added once there, since a second
-    // `CombatPlugin` would panic.
-    let engine = RoguelikePlugins::new("Undermere", COLS, ROWS).cell(CELL).font(FONT).typeface(DEJAVU_SANS_MONO).map(screen.rail.map).across(ACROSS);
-    app.add_plugins(engine)
-```
+A game drawn in its own face hands the group the bytes of its font file, compiled in with `include_bytes!` and shipped beside its licence, as `RoguelikePlugins::new(title, cols, rows).typeface(FACE)`, with `.cell` and `.font` for the size of a cell and of the glyph in it.
 
 What the engine cannot supply is the look of a tile, which is a table the game fills or a file it loads.
 

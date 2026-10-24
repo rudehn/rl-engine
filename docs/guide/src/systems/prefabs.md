@@ -16,7 +16,7 @@
             crates/atglyph-mapgen/src/place.rs
             crates/atglyph-rules/src/dressing.rs
             crates/atglyph-bevy/src/seed.rs
-     fingerprint: 7f59353c -->
+     fingerprint: 0685a64b -->
 
 # Prefabs
 
@@ -58,72 +58,9 @@ A `Mark`, and every spot of an unkeyed piece, is the game's, found among the pla
 
 ## Using it
 
-A prefab file is a piece and its slots, and Foundry's guard post is a locker and a weapon held by two sentries and a brute, each drawn at the deck it is stamped on.
+A prefab file is a piece and its slots, written as rows of glyphs under a legend, so a guard post is a locker by `Prop("locker")`, a weapon by `Item(tag: "weapon", count: 1, band: 2)` and its guards by `Monster(role: "sentry", band: 1)`, each drawn at the band of the place it is stamped in plus its own offset.
 
-<!-- include: ../../../../examples/foundry/assets/prefabs/guard_post.ron:post -->
-```ron
-(
-    name: "guard post",
-    ground: "deck",
-    turn: Quarter,
-    mirror: Both,
-    rows: [
-        "#####",
-        "#sAs#",
-        "#.w.#",
-        "#.b.#",
-        "#...#",
-    ],
-    legend: {
-        '#': Tile("bulkhead"),
-        '.': Tile("deck"),
-        'A': Prop("armory locker"),
-        'w': Item(tag: "weapon", band: 2),
-        's': Monster(role: "sentry", band: 1),
-        'b': Monster(role: "brute", band: 2),
-    },
-)
-```
-
-Turning it on takes the roles the piece's monster slots name and a maker for monsters, whose `make_at` Foundry answers with the function its own population spawns by, `make` calling it since Foundry rolls nothing on a monster, so a guard and a roaming droid of one kind are built the same way.
-
-<!-- include: ../../../../examples/foundry/assets/roles.ron:roles -->
-```ron
-{
-    "sentry": ["probe droid", "trooper droid"],
-    "brute":  ["line droid", "heavy droid"],
-}
-```
-
-<!-- include: ../../../../examples/foundry/src/droids.rs:maker -->
-```rust,no_run
-/// The engine's guards are made here: a monster at a prefab's slot is
-/// made exactly as one a deck's population places, and a deck's band is
-/// its number.
-impl ActorMaker for Roster {
-    type Def = MonsterDef;
-
-    fn make_at(&self, commands: &mut Commands, registries: &Registries, def: Id<MonsterDef>, at: Point, map: MapId) -> Entity {
-        spawn_monster(commands, self, def, at, map, registries)
-    }
-
-    fn id_of(&self, name: &str) -> Option<Id<MonsterDef>> {
-        self.defs.id(name)
-    }
-
-    fn name_of(&self, def: Id<MonsterDef>) -> &str {
-        self.defs.name(def)
-    }
-
-    fn table(&self) -> &BandedTable<Id<MonsterDef>> {
-        &self.table
-    }
-
-    fn band(&self, map: MapId) -> i32 {
-        crate::decks::deck_of(map) as i32
-    }
-}
-```
+Turning it on takes a roles file naming the monsters each of the piece's roles may draw, and a maker for monsters whose `make_at` is the function the game's own population spawns by, `make` calling it unless the game rolls something on a monster, so a guard and a roaming monster of one kind are built the same way.
 
 ## The line
 
@@ -131,8 +68,8 @@ The engine decides when a slot is filled, on the arrival that built the place an
 The game decides what its pieces and roles are, what a monster and an item are and what making one means, where its chain stamps each piece and which way it faces, and what every `Mark` stands for.
 A band is the game's number, answered by each maker for itself, and a slot's offset is the only thing on a piece that makes its draw deeper: a prefab carries no rarity, theme or stakes.
 Which pieces a place gets is the chain's, through `StampPrefab`, `StampOneOf` and `StampEachRoom`, which furnishes every room nothing else took; the engine owns what a piece holds, not how often it appears.
-So is how far the arrival stands from a piece's guards: a slot on the arrival cell is skipped, and one beside it is not, so a chain whose pieces hold monsters draws its start with `RandomStart.clear_of_stamps(n)`, as Foundry's does at seven cells.
-Whether a role's members fight side by side is the game's too, since who fights whom is its idea: Foundry's roles are all droids, because a scrap crab drawn to hold a post beside droid sentries was shot by them the moment either woke.
+So is how far the arrival stands from a piece's guards: a slot on the arrival cell is skipped, and one beside it is not, so a chain whose pieces hold monsters draws its start with `RandomStart.clear_of_stamps(n)`.
+Whether a role's members fight side by side is the game's too, since who fights whom is its idea: a role whose members are of two sides draws a post whose guards shoot each other the moment either wakes.
 
 ## Where it lives
 

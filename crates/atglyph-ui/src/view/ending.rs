@@ -140,7 +140,7 @@ mod tests {
         assert_eq!(app.world().resource::<EndingView>().summary, "", "forgotten with the record");
     }
 
-    /// A game with no `RecordsPlugin` at all, Foundry's case: nothing to
+    /// A game with no `RecordsPlugin` at all: nothing to
     /// read, so the collector clears and adds nothing, as it always did.
     #[test]
     fn with_no_run_records_at_all_the_collector_only_clears() {

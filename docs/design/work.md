@@ -10,7 +10,7 @@ Everything an actor does today takes one turn, however long it costs.
 A prop offer like `(verb: "charge", time: 300)` lands its effect on the turn it is taken and then leaves the actor out of the queue for three turns.
 That is right for a lever and wrong for anything that should take a while to *happen*.
 
-Foundry wants a repair drone that walks to a droid wreck and spends ten turns rebuilding it.
+[Foundry](https://github.com/rudehn/foundry) wants a repair drone that walks to a droid wreck and spends ten turns rebuilding it.
 Built as one action with a large cost, the wreck would stand up on the first turn, the drone would stand idle for nine, nothing could stop it, and the player would see a drone that looks stuck.
 
 Work is an actor doing one thing across many turns: it spends each of them as an ordinary turn, can be broken off, and says what it is doing while it does it.
@@ -53,7 +53,7 @@ A mind starts work by returning `Decision::Work(work)`, a new engine decision be
 The engine resolves it itself: it claims the turn, puts `Working(work)` on the actor, counts that turn as the first of `needed`, and writes `WorkBegan`.
 
 A game therefore needs no action of its own to start work.
-Foundry's drone is one tactic, `RepairWreck`, which finds a wreck of its own side in a `Wrecks` sense Foundry pushes, walks there with `step_toward`, and returns the decision once it is within reach.
+[Foundry](https://github.com/rudehn/foundry)'s drone is one tactic, `RepairWreck`, which finds a wreck of its own side in a `Wrecks` sense Foundry pushes, walks there with `step_toward`, and returns the decision once it is within reach.
 
 For a start that does not come from a mind, the `Works` system param offers `works.begin(actor, work)`.
 It is how the player's own long action starts, section 6b.
@@ -91,7 +91,7 @@ A killing blow is both harm and death, and reads as `Died`.
 
 The checks run in `TurnSet::React`, which the turn loop already runs after the whole resolve chain.
 That puts them after the copy remains takes of a dying actor in `ResolveSet::Damage` (`docs/design/remains.md` §9.1), so the copy still holds the work it died doing, and no system names another to get that order.
-A game's own `React` system may read a `WorkBroken` in the pass it was written or the next, which is already true of `RemainsLeft`, written in `CleanupSet::Remove` and answered by Foundry in `React`.
+A game's own `React` system may read a `WorkBroken` in the pass it was written or the next, which is already true of `RemainsLeft`, written in `CleanupSet::Remove` and answered by [Foundry](https://github.com/rudehn/foundry) in `React`.
 Panels draw after the loop, so either way they never show work that has broken.
 Rejected: a new `ResolveSet::Work` for the checks, which bought only that same-pass guarantee and added a set every plugin author would have to learn.
 
@@ -161,7 +161,7 @@ Each step green and committed on its own, paying its documentation in the same c
    A bug on its own, reproduced first, and what revival's rule for items (`docs/design/remains.md` §9.3) rests on.
 2. Revival, `docs/design/remains.md` §9.
 3. `WorkPlugin` and its display, with a guide page `docs/guide/src/systems/work.md` and the overview, changelog and README feature line.
-4. Foundry's repair drone: `RepairWreck`, `add_work("repairing")`, and a `WorkDone` answer in `TurnSet::React` that revives the wreck.
+4. [Foundry](https://github.com/rudehn/foundry)'s repair drone: `RepairWreck`, `add_work("repairing")`, and a `WorkDone` answer in `TurnSet::React` that revives the wreck.
 
 ## 9. Tests
 

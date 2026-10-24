@@ -6,6 +6,9 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- The games live in their own repositories: [Undermere](https://github.com/rudehn/undermere) and [Foundry](https://github.com/rudehn/foundry) left `examples/`, each with its own CI, tests and soak, and each depends on the engine from git by a release's tag through the public API alone, as any game does. The engine keeps the tutorial, the terminal example and the starter template, and the guide's system pages that quoted the games quote the tutorial and the template or say it in prose.
+  To change: nothing.
+
 ## 0.4.0
 
 0.4.0 is the engine renamed `atglyph`, its public surface cut to what a game uses, and a game's start, its log, its places and its continuing made the engine's: one release, 2026-10-24.

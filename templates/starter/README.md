@@ -64,4 +64,4 @@ The [guide](https://rudehn.github.io/rl-engine/) builds a roguelike one chapter 
 
 Each system the engine has, items and equipment among them, has a [reference page](https://rudehn.github.io/rl-engine/systems/items.html) of its own.
 
-The engine's `undermere` example is a whole game grown from the same start: ten floors under a lakeside town, a lantern that dims as you descend, and abilities.
+[Undermere](https://github.com/rudehn/undermere), a sister project of the engine's, is a whole game grown from the same start: ten floors under a lakeside town, a lantern that dims as you descend, and abilities.

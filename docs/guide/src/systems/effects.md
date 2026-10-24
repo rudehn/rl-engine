@@ -19,7 +19,7 @@
             crates/atglyph-bevy/src/cue.rs
             crates/atglyph-grid/src/targeting.rs
             crates/atglyph-ui/src/narrate.rs
-     fingerprint: 133c7452 -->
+     fingerprint: 7686cafa -->
 
 # Effects
 
@@ -73,45 +73,9 @@ What a remnant carries beyond its triggers is `RemnantKeeps`, a resource of the 
 
 ## Using it
 
-A trigger is a moment, an area and a list, and Foundry's grenades are four of them, each a burst where the grenade comes down and a noise heard from there.
+A trigger is a moment, an area and a list, written on whatever carries it: a grenade is one `land` trigger with a `Burst { radius }` area whose list harms and makes a `Noise` heard from there, spent by its one `fires`, and a stim is one `use` trigger landed `Here`, whose list mends.
 
-<!-- include: ../../../../examples/foundry/assets/items.ron:grenades -->
-```ron
-    // The grenades: thrown, and what each does is its land trigger, a
-    // burst where it comes to rest, which spends it there. Plate takes half
-    // a frag burst off a droid; an ion burst undoes a chassis and blinds
-    // every radar in it, and barely touches flesh. Smoke is thirty cells'
-    // worth, more than its burst holds, so it spills past it: a room of
-    // cover in the open, a long plume down a corridor. Each is heard where
-    // it lands: a burst fourteen steps down open deck, smoke's hiss six.
-    (name: "frag grenade", glyph: '*', color: (0.7, 0.72, 0.45), stack: true, throw: (range: 6), consumable: (charges: 1, when_empty: Destroyed),
-     triggers: [(on: "land", area: Burst(radius: 1), look: (glyph: '*', color: (r: 255, g: 200, b: 90)), effects: [(kind: "Harm", args: (kind: "kinetic", roll: "3d6")), (kind: "Noise", args: (sound: "blast", loudness: 14))])]),
-    (name: "smoke grenade", glyph: '*', color: (0.75, 0.75, 0.75), stack: true, throw: (range: 6), consumable: (charges: 1, when_empty: Destroyed),
-     triggers: [(on: "land", area: Burst(radius: 2), look: (glyph: '*', color: (r: 200, g: 200, b: 200)), effects: [(kind: "Emit", args: (gas: "smoke", amount: 590)), (kind: "Noise", args: (sound: "hiss", loudness: 6))])]),
-    (name: "ion grenade", glyph: '*', color: (0.4, 0.7, 1.0), stack: true, throw: (range: 6), consumable: (charges: 1, when_empty: Destroyed),
-     triggers: [(on: "land", area: Burst(radius: 2), look: (glyph: '*', color: (r: 90, g: 170, b: 255)), effects: [(kind: "Harm", args: (kind: "ion", roll: "1d4")), (kind: "Noise", args: (sound: "blast", loudness: 14))])]),
-    (name: "incendiary grenade", glyph: '*', color: (0.95, 0.45, 0.2), stack: true, throw: (range: 6), consumable: (charges: 1, when_empty: Destroyed),
-     triggers: [(on: "land", area: Burst(radius: 1), look: (glyph: '*', color: (r: 255, g: 110, b: 40)), effects: [(kind: "Harm", args: (kind: "thermal", roll: "2d4")), (kind: "Ignite", args: (turns: 4)), (kind: "Noise", args: (sound: "blast", loudness: 14))])]),
-```
-
-A game builds its definitions' triggers once when it reads the file, against the moments and kinds the run registered and names with its sounds chained on, so a typo is a startup failure and not a grenade that lands nothing.
-
-<!-- include: ../../../../examples/foundry/src/gear.rs:triggers -->
-```rust,no_run
-        // Each definition's parts, its triggers built once against the
-        // moments and effect kinds the run registered, and every problem in
-        // the file named at once: a grenade that lands nothing is a typo.
-        let mut parts = Vec::new();
-        let mut errors = Vec::new();
-        for (id, d) in defs.iter() {
-            let built = Triggers::build(&d.triggers, &d.effects, moments, kinds, &names).and_then(|triggers| parts_of(d, id, triggers, registries));
-            parts.push(Arc::new(built.unwrap_or_else(|mine| {
-                errors.extend(mine.into_iter().map(|e| format!("{}: {e}", d.name)));
-                ItemParts::default()
-            })));
-        }
-        assert!(errors.is_empty(), "assets/items.ron: {}", errors.join("; "));
-```
+A game builds its definitions' triggers once when it reads the file, with `Triggers::build` against the moments and kinds the run registered and names with its sounds chained on, and gathers every definition's failures before it refuses the file, so a typo is a startup failure and not a grenade that lands nothing.
 
 ## The line
 

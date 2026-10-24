@@ -16,7 +16,7 @@
             crates/atglyph-bevy/src/status.rs
             crates/atglyph-ui/src/view/nearby.rs
             crates/atglyph-ui/src/panel/nearby.rs
-     fingerprint: beb31458 -->
+     fingerprint: d44638d4 -->
 
 # Noise
 
@@ -62,66 +62,9 @@ Stealth offers its lost trails to the same place, the freshest offer becomes `Sn
 
 ## Using it
 
-A game's own noise is the same message the engine writes, so Foundry's probe sounds a klaxon that the deck's droids hear by the engine's rules and nothing else.
+A game's own noise is the same message the engine writes, so an alarm is a `MakeNoise { at, loudness, sound, maker }` written where its sounder stands, its `sound` one the game declared in `Sounds`, and whoever is in earshot hears it by the engine's rules and nothing else.
 
-<!-- include: ../../../../examples/foundry/src/droids/alarm.rs:shout -->
-```rust,no_run
-/// Lowers the alarm of a probe that no longer knows where the commando is,
-/// so the next time it finds out it has to signal again.
-pub fn lower_alarm(mut commands: Commands, raised: Query<(Entity, &Aware), With<Raised>>, players: Query<Entity, With<Player>>) {
-    for (probe, aware) in &raised {
-        if !players.iter().any(|p| aware.knows(p)) {
-            commands.entity(probe).remove::<Raised>();
-        }
-    }
-}
-
-/// Shouts the alarm for every action a probe whose alarm is [`Raised`]
-/// finishes while it knows where the player is: a [`MakeNoise`] of [`ALARM_SOUND`] where it
-/// stands, as loud as [`ALARM_LOUDNESS`], and a [`PULSE`] on it when the
-/// player can see it there. Whoever hears it comes to look; the engine's
-/// hearing decides who that is.
-///
-/// On the probe's own actions rather than on the clock, so a probe frozen
-/// on a deck the commando left says nothing, and one that notices and acts
-/// in the same pass shouts in that pass. The pulse is a cue like any
-/// other, so it holds the turns while it plays and a key skips it; one out
-/// of sight would give the probe away and hold the turns for nothing to
-/// see, so the noise goes out and the pulse does not.
-pub fn shout_alarm(
-    mut done: MessageReader<ActionDone>,
-    alarmed: Sounding,
-    players: Query<(Entity, &Viewshed), With<Player>>,
-    sounds: Res<Sounds>,
-    mut noise: MessageWriter<MakeNoise>,
-    mut cues: MessageWriter<Cued>,
-) {
-    let alarm = sounds.get(ALARM_SOUND).expect("FoundryPlugin declares the alarm's sound");
-    for ev in done.read() {
-        let Ok((at, aware)) = alarmed.get(ev.actor) else { continue };
-        if !players.iter().any(|(p, _)| aware.knows(p)) {
-            continue;
-        }
-        noise.write(MakeNoise { at: at.0, loudness: ALARM_LOUDNESS, sound: alarm, maker: Some(ev.actor) });
-        if !players.iter().any(|(_, sight)| sight.can_see(at.0)) {
-            continue;
-        }
-        cues.write(Cued { actor: ev.actor, cue: Cue::Burst { on: vec![Anchor::on(ev.actor, at.0)], look: LookOf::Given(PULSE), from: None } });
-    }
-}
-```
-
-And what the engine's own actions cost is one constant, handed to the plugin as it is added.
-
-<!-- include: ../../../../examples/foundry/src/droids/alarm.rs:noise_rules -->
-```rust,no_run
-/// How loud the engine's own actions are on a deck. A blow or a shot
-/// carries ten steps, so a firefight draws the droids in earshot; steps,
-/// doors and a thrown thing landing make no sound worth hearing over the
-/// machinery, and a shut bulkhead takes three steps off anything that
-/// passes it.
-pub const NOISE: NoiseRules = NoiseRules { step: 0, strike: 10, door: 0, landing: 0, door_muffle: 3 };
-```
+And what the engine's own actions cost is one constant, handed to the plugin as it is added: `NoisePlugin::new(NoiseRules { step: 0, strike: 10, door: 0, landing: 0, door_muffle: 3 })` is a place loud enough that only a blow or a shot carries, ten steps, and a shut door takes three off anything that passes it.
 
 ## The line
 

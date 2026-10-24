@@ -202,7 +202,7 @@ A thing used where its user stands whose `use` trigger harms those around them d
 
 ## 8c. Sleeping
 
-A status that sleeps (`StatusDef::sleeps`, built 2026-10-07 for Undermere's bestiary) skips its holder's turns the way `skips_turns` already did, and ends itself the moment the holder is woken rather than waiting for the game's own `RemoveStatus`.
+A status that sleeps (`StatusDef::sleeps`, built 2026-10-07 for [Undermere](https://github.com/rudehn/undermere)'s bestiary) skips its holder's turns the way `skips_turns` already did, and ends itself the moment the holder is woken rather than waiting for the game's own `RemoveStatus`.
 It sits beside `unseen` rather than inside awareness, because sleep is a thing that happens to one actor's turns, where awareness is a thing every observer keeps about every subject; the two meet only at the reach a sleeper notices by.
 
 A sleeper senses less than a merely held actor: its sight is still recast and noticing still rolled, but only within `SLEEPER_REACH`, two cells, and there only by its chance, never its certain radius, so a hider can cross a sleeping room without waking it, and `wake_on_sight` in `DecideSet::Notice` wakes it on exactly that roll, or on sight alone to a foe that does not hide or that sees on sight regardless.
@@ -239,7 +239,7 @@ Noise wakes it too, through `wake_on_noise`, which `docs/design/noise.md` §16 h
   Play it before going on.
 - **D. The panels.** Built.
   `Row::aware`, the rail showing who has noticed you, the vitals reading.
-- **E. Sneak attacks.** Built 2026-10-05, for Undermere's dagger, differently from this plan.
+- **E. Sneak attacks.** Built 2026-10-05, for [Undermere](https://github.com/rudehn/undermere)'s dagger, differently from this plan.
   The engine does ship the multiplier, as a number the game gives it and none of its own: `CombatRules::unaware(percent)` for every blow, or a blow's own `MeleeAttack::unaware(percent)` in its place, read through `Watchers::unaware`, so a blow on a target that has not noticed its attacker lands harder and a shot never does.
   A damage stage was the plan's seam and was not needed, since the percent is a field on the attack and the rules it is read by, and no tier-1 type broke.
 

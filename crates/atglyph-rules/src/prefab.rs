@@ -554,7 +554,7 @@ fn entries_on_the_wall(name: &str, rows: &[String], entries: &BTreeSet<char>, er
 ///
 /// Both tables are read at the same band for a column, since a report has
 /// one band per column: that assumes the game numbers its loot bands and
-/// its spawn bands alike, as Foundry does with a deck's number for both.
+/// its spawn bands alike, as a game does that uses a floor's number for both.
 /// A game whose `ItemMaker::band` and `ActorMaker::band` answer one place
 /// differently reads each kind of slot's rows against its own numbering.
 pub struct Sources<'a, M, I> {
@@ -687,8 +687,7 @@ fn slot_name(name: &str, offset: i32) -> String {
 /// what a game's tables might not cover is worth checking.
 ///
 /// One band per column serves item and monster slots alike, which assumes
-/// the game's item bands and monster bands agree, as Foundry's do; see
-/// [`Sources`].
+/// the game's item bands and monster bands agree; see [`Sources`].
 pub fn coverage<'p, M: 'p, I: Copy, D: Legended<M> + 'p>(
     prefabs: impl IntoIterator<Item = &'p D>,
     sources: &Sources<'_, M, I>,

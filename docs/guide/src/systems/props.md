@@ -19,7 +19,7 @@
             crates/atglyph-save/src/engine.rs
             crates/atglyph-bevy/src/lighting.rs
             crates/atglyph-bevy/src/app.rs
-     fingerprint: e206abb8 -->
+     fingerprint: 0fa25f87 -->
 
 # Props
 
@@ -76,43 +76,7 @@ The props the mind holding the turn can see go into `Snapshot::props` as a `Prop
 
 ## Using it
 
-The engine owns the interaction and the game owns what it meant, which is a system reading `Interacted` and keeping the verb it registered.
-
-<!-- include: ../../../../examples/foundry/src/mission.rs:charge -->
-```rust,no_run
-/// Answers the `charge` verb: reports the fact the tracker counts, says
-/// so, and leaves the console reading as spent.
-///
-/// The engine has already decided the charge was possible, spent the
-/// three turns the offer asked for, and landed whatever effects the offer
-/// carried, which for this one is none. What is left is the part no
-/// effect could express: a fact about this run. The console then becomes
-/// a different kind of prop, one with no offer and a duller glyph, which
-/// is how it stops being something to charge twice.
-pub fn answer_charge(
-    mut commands: Commands,
-    mut done: MessageReader<Interacted>,
-    verbs: Res<Verbs>,
-    registries: Res<Registries>,
-    mut report: ChargeReport,
-    consoles: Query<(&PropKind, Option<&OnMap>)>,
-) {
-    let Some(charge) = verbs.get(CHARGE) else { return };
-    let Some(spent) = registries.props.id("spent reactor console") else { return };
-    for ev in done.read() {
-        if ev.verb != charge {
-            continue;
-        }
-        let Ok((_, on)) = consoles.get(ev.target) else { continue };
-        let deck = crate::decks::deck_of(on.map(|m| m.0).unwrap_or(MapId::ZERO));
-        // The glyph comes off with the kind, so the renderer dresses it
-        // again from the definition of a console already used.
-        commands.entity(ev.target).remove::<Glyph>().insert(PropKind(spent));
-        report.happened.write(Happened(Fact::new(report.facts.charge_set).about(u64::from(deck))));
-        report.tell.write(Tell::new("You set the charge. The reactor stirs.", Tones::GOOD));
-    }
-}
-```
+The engine owns the interaction and the game owns what it meant, which is a system in `TurnSet::React` reading `Interacted`, passing over every message whose `verb` is not the one it registered, and doing what the verb meant to the `target`: a console that takes a charge writes the run's fact, says so with a `Tell`, and is given a spent `PropKind` with no offer, which is how it stops being something to charge twice.
 
 ## The line
 

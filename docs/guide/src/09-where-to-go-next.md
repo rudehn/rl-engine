@@ -2,6 +2,7 @@
 
 Warren is a complete roguelike in under 700 lines before its tests, and uses maybe a third of the engine.
 The Systems pages are the reference for the rest, one per system, and each teaser below links to the page that covers it.
+Two whole games built on the engine, [Undermere](https://github.com/rudehn/undermere) and [Foundry](https://github.com/rudehn/foundry), live in repositories of their own, and the worked examples below are theirs.
 
 ## Lighting
 
@@ -9,8 +10,8 @@ The Systems pages are the reference for the rest, one per system, and each tease
 - **You supply** a `LightSource` on a prop, an actor or an item, `Fuel` if it burns down, and `DarkSight` on whoever sees without one.
 - **You get** the `Viewshed` split from [chapter 2](02-sight-and-light.md) starting to matter: `line` stays geometric, `visible` shrinks to what is lit, and a monster that sheds nothing is found only where a light reaches it.
   `Fuel` reports `LightEvent::BurntOut`.
-- **Worked examples** `undermere`, where every place is seen dimly by its own ambient and a lantern, a brazier or a clump of glowcaps is what makes it bright.
-  `foundry` below deck one, where the lights are out and the commando sees by a shoulder lamp and a helmet's dark sight.
+- **Worked examples** [Undermere](https://github.com/rudehn/undermere), where every place is seen dimly by its own ambient and a lantern, a brazier or a clump of glowcaps is what makes it bright.
+  [Foundry](https://github.com/rudehn/foundry) below deck one, where the lights are out and the commando sees by a shoulder lamp and a helmet's dark sight.
 - **Reference** [Sight and lighting](systems/sight.md).
 - **Design** [`docs/design/lighting.md`](https://github.com/rudehn/rl-engine/blob/main/docs/design/lighting.md).
 
@@ -20,8 +21,8 @@ The Systems pages are the reference for the rest, one per system, and each tease
 - **You supply** `Notice` on an observer, which is a certain radius, a chance beyond it, a bonus while the subject stands in light, and a memory; `Stealth` on a subject narrows both.
 - **You get** a roll between being seen and being noticed.
   A monster that has not noticed you does not act on you, one that loses you searches where it last saw you, and `Watchers` answers who is watching whom for the panels.
-- **Worked examples** `foundry`: a commando the droids have to notice, and a probe that signals and then sounds an alarm that brings the rest.
-  `undermere` gives every monster a `Notice`, and a potion's darkness shrouds whoever stands in it.
+- **Worked examples** [Foundry](https://github.com/rudehn/foundry): a commando the droids have to notice, and a probe that signals and then sounds an alarm that brings the rest.
+  [Undermere](https://github.com/rudehn/undermere) gives every monster a `Notice`, and a potion's darkness shrouds whoever stands in it.
 - **Reference** [Stealth](systems/stealth.md).
 - **Design** [`docs/design/stealth.md`](https://github.com/rudehn/rl-engine/blob/main/docs/design/stealth.md).
 
@@ -32,7 +33,7 @@ The Systems pages are the reference for the rest, one per system, and each tease
   The engine ships ten effects, seven registered together by `add_engine_effects` and three by the fire, gas and noise plugins, and a game registers its own with `add_effect`.
 - **You get** a key that writes `AimAt`, a cursor the engine opens, a preview of what the shot would cover, and the turn spent.
   An item never lends an ability: what a potion does is its own triggers, which the engine lands when it is drunk or thrown, so a potion is a line of RON.
-- **Worked examples** `undermere` has fourteen, `foundry` one, and `crates/atglyph-bevy/tests/genres.rs` loads five genres of them into one registry.
+- **Worked examples** [Undermere](https://github.com/rudehn/undermere) has fourteen, [Foundry](https://github.com/rudehn/foundry) one, and `crates/atglyph-bevy/tests/genres.rs` loads five genres of them into one registry.
 - **Reference** [Abilities](systems/abilities.md).
 - **Design** [`docs/design/abilities.md`](https://github.com/rudehn/rl-engine/blob/main/docs/design/abilities.md).
 
@@ -42,7 +43,7 @@ The Systems pages are the reference for the rest, one per system, and each tease
 - **You supply** what wearing a thing does, on the thing: a worn blade carries the `MeleeAttack` it is swung with, a coat its `Armor`, and an affix what it `Bestows` on a stat.
 - **You get** afflictions ticked by the turn through the damage pipeline, with stacking rules and cures; a stat block with a modifier accumulator; an equipment slot graph with displacement; and an affix model of prefixes and suffixes with level-scaled grants, weighted rolling and per-instance state.
   `Loadout` sums the gear at the blow and `fold_gear` keeps the stats current, so nothing is ever copied onto the wearer.
-- **Worked example** `undermere` uses all of it.
+- **Worked example** [Undermere](https://github.com/rudehn/undermere) uses all of it.
 - **Reference** [Statuses](systems/statuses.md) for the afflictions and the stat block, [Items and equipment](systems/items.md) for the slots, the affixes and the `Loadout`, [Uses and charges](systems/uses.md) for what a thing does when it is used and what that costs it, and [Ammunition](systems/ammunition.md) for what a shot spends.
 
 ## Quests
@@ -60,7 +61,7 @@ The Systems pages are the reference for the rest, one per system, and each tease
 - **You get** the rest of the walk: where each thing stands, its health, its bag, its slots and its statuses, along with the scheduler's queue, the world's edits and places, and what has been explored.
   The envelope is versioned and refuses a mismatch instead of guessing, entities are remapped on the way back in, and `SavePlugin` keeps the save a turn behind the run so a closed window saves.
   It forgets the save when the run ends.
-- **Worked example** Foundry's `save.rs`: four kinds and four resources, in about two hundred and fifty lines before its tests.
+- **Worked example** [Foundry](https://github.com/rudehn/foundry)'s `save.rs`: four kinds and four resources, in about two hundred and fifty lines before its tests.
 - **Reference** [Saving and the ending screen](systems/saving.md).
 
 ## The run's beginning and end
@@ -79,7 +80,7 @@ The Systems pages are the reference for the rest, one per system, and each tease
 - **You supply** your picture, painted in `TitleSet::Backdrop`, and a start in `NewRun` that stands aside while `ContinueRun` is present, for the system of yours that restores the saved run.
 - **You get** the first run held back until the player picks: Continue, in a game with `SavePlugin`, over a save this build can read, New Game, which asks before it gives a saved run up, Records and Settings when there is something behind them, and Exit.
   The pause and end menus offer Main menu, and with `SavePlugin` a run left that way is written down for Continue.
-- **Worked examples** `undermere`, a night over a black lake, and `foundry`, a foundry's works.
+- **Worked examples** [Undermere](https://github.com/rudehn/undermere), a night over a black lake, and [Foundry](https://github.com/rudehn/foundry), a droid works.
 - **Reference** [The title screen](systems/title.md).
 
 ## Records of every run
@@ -87,7 +88,7 @@ The Systems pages are the reference for the rest, one per system, and each tease
 - **Add** `RecordsPlugin`, kept between launches by your `SavePlugin`, and `RecordsPanel::new(rect)` for the screen.
 - **You supply** one `RecordRun` when your run is over: its score, a line saying what it came to, and the sections you want shown.
 - **You get** every run filed best first and kept between launches in a slot of its own, the run's own record on the screen it ends on, and a screen listing them all, which the title opens.
-- **Worked example** `undermere`, whose score is five lines and a total.
+- **Worked example** [Undermere](https://github.com/rudehn/undermere), whose score is five lines and a total.
 - **Reference** [Run records](systems/records.md).
 - **Design** [`docs/design/records.md`](https://github.com/rudehn/rl-engine/blob/main/docs/design/records.md).
 
@@ -210,9 +211,10 @@ A tool that needs only one of them can depend on that crate alone and never comp
 
 | Example | What it shows |
 |---|---|
-| `foundry` | Ten decks of a droid foundry; combat depth, with guns that run hot or dry, droids that shoot back, and a probe that shouts for them |
 | `terminal` | A walk through generated rooms and a fight with the rats in them, in a terminal, on the Bevy-free crates alone, the way a toolkit is used when the game owns its loop |
-| `undermere` | A delve from a lakeside town down ten floors to a drowned king, written as a whole game; the engine's title and records, monsters written as traits, and square tiles |
+| `tutorial` | Warren, the game this guide builds, one binary a chapter |
+
+Two whole games, [Undermere](https://github.com/rudehn/undermere) and [Foundry](https://github.com/rudehn/foundry), live in repositories of their own and depend on the engine by a release's tag.
 
 ## Reading further
 

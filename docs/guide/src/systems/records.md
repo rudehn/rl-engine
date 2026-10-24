@@ -6,7 +6,7 @@
             crates/atglyph-ui/src/view/ending.rs
             crates/atglyph-ui/src/game_menu.rs
             crates/atglyph-ui/src/panel/title.rs
-     fingerprint: 0e8c1fb6 -->
+     fingerprint: 5a83aa9d -->
 
 # Run records
 
@@ -47,63 +47,9 @@ Which record is picked out, whether it is shown and how far it is scrolled are a
 
 ## Using it
 
-A game writes its record once, when its run is over, in its own words.
+A game writes its record once, when its run is over, in its own words: a system on entering `EngineState::Over`, the one door every ending comes through and the frame the engine's `Ending` is first there to read, writes one `RecordRun { score, summary, sections }` from what the game kept of the run.
 
-<!-- include: ../../../../examples/undermere/src/tally.rs:record -->
-```rust,no_run
-/// Writes the run down once it is over: one [`RecordRun`] with its
-/// score, its summary and its two sections, which the engine completes
-/// with the outcome, the seed and the clock, files, and shows on the end
-/// screen.
-///
-/// On entering `EngineState::Over`, the one door every ending comes
-/// through, the boss's death and the adventurer's alike, and the frame the
-/// engine's `Ending` is first there to read. Nothing in the run moves once
-/// it is over, so the tally read here is the run's last word, and the
-/// adventurer still stands where it ended.
-pub fn record(ending: Option<Res<Ending>>, tally: Res<Tally>, map: Option<Res<WorldMap>>, credit: Credit, mut records: MessageWriter<RecordRun>) {
-    let (Some(ending), Some(map)) = (ending, map) else { return };
-    let by = match ending.outcome {
-        // As noted at the death, since what did may be gone by now; asked
-        // again only of an ending no death came through.
-        Outcome::Died { by } => tally.slain_by.clone().or_else(|| credit.of(by)),
-        _ => None,
-    };
-    let lines = score(&tally, ending.outcome == Outcome::Won);
-    records.write(RecordRun {
-        score: total(&lines),
-        summary: summary(ending.outcome, by.as_deref(), map.current(), &tally),
-        sections: sections(&lines, &tally, ending.turn),
-    });
-}
-```
-
-Keeping the list between launches takes nothing beyond the plugin a game already saves its run with.
-
-<!-- include: ../../../../examples/undermere/src/save.rs:register -->
-```rust,no_run
-/// What the save is made of: the engine's plugin, which keeps the records
-/// in their own slot beside it, the five kinds, and the ten resources.
-pub fn register(app: &mut App) {
-    app.add_plugins(SavePlugin::new(SLOT).version(VERSION).on_arrival())
-        .save_items::<ItemKind>()
-        .save_actors::<Kind>()
-        .save_kind::<Adventurer>()
-        .save_kind::<Gate>()
-        .save_kind::<Townsperson>()
-        .save_state::<Tally>()
-        .save_state::<Lore>()
-        .save_state::<MonsterLore>()
-        .save_state::<Shelves>()
-        .save_state::<Folk>()
-        .save_state::<GivenNames>()
-        .save_state::<Tavern>()
-        .save_state::<crate::vaults::lifts::RisingFloods>()
-        .save_state::<Quests>()
-        .save_state::<WritingsProgress>()
-        .save_state::<crate::doors::Passed>();
-}
-```
+Keeping the list between launches takes nothing beyond the `SavePlugin` a game already saves its run with, which keeps the records in a slot of their own beside the run's.
 
 ## The line
 

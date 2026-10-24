@@ -6,7 +6,7 @@
             crates/atglyph-save/src/run.rs
             crates/atglyph-save/src/unload.rs
             crates/atglyph-ui/src/game_menu.rs
-     fingerprint: a8063ea6 -->
+     fingerprint: 0f277b6a -->
 
 # The title screen
 
@@ -51,15 +51,7 @@ With `SavePlugin`, a run left while still in play is written to the slot as it s
 
 ## Using it
 
-A title is a panel, added with the others, beside the picture the game paints under it.
-
-<!-- include: ../../../../examples/undermere/src/main.rs:title -->
-```rust,no_run
-    // The screen before there is a run: the engine's menu, which holds the
-    // run back until the player picks, over the night Undermere paints
-    // under it. With it up, the pause and end menus offer the way back.
-    app.add_plugins(TitlePanel::new(screen.title_menu)).add_systems(Update, undermere::title::paint_backdrop.in_set(TitleSet::Backdrop));
-```
+A title is a panel, added with the others, beside the picture the game paints under it: `app.add_plugins(TitlePanel::new(rect))` and the game's painter in `Update`, `.in_set(TitleSet::Backdrop)`.
 
 ## The line
 
@@ -77,4 +69,4 @@ A headless test has no title unless it adds one, so its run begins at startup as
 The words a title and a save share are plain data in `atglyph-bevy`, the one crate below both, which is what keeps `atglyph-ui` free of `atglyph-save`, the same split settings make.
 The hold and the door are `atglyph-bevy`'s because the run's life is: `begin_run` is the door the engine's own startup and its restarts go through, so a title is one more caller rather than a second way in.
 The menu is a presenter over state in a resource, so every row, the question and what each key does to them are tested by pressing keys at a headless app, with no window and no save behind it.
-Foundry's own title held all of this as some three hundred lines of menu over eight hundred of picture; the menu moved here, and the picture stayed with the game.
+A game's own title once held all of this as some three hundred lines of menu over eight hundred of picture; the menu moved here, and the picture stayed with the game.

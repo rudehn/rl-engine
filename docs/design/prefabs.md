@@ -6,7 +6,7 @@ The reasoning is here; `docs/OVERVIEW.md` lists what exists, and `docs/guide/src
 ## 0. Summary
 
 A prefab was a Rust closure from a glyph to a tile, and every other glyph was a mark the game gave meaning to by hand.
-Foundry looked up "armory locker" by name and put one at every `A`; Delve spawns its heart warden at a `W`; Corsair lays a hoard at a vault's marks.
+[Foundry](https://github.com/rudehn/foundry) looked up "armory locker" by name and put one at every `A`; Delve spawns its heart warden at a `W`; Corsair lays a hoard at a vault's marks.
 Each game wrote that loop again, and a guard at a mark was a fixed monster, strong on the first floor and harmless on the tenth.
 
 Containers had already solved this for items: a contents row says `(tag: "weapon", band: 2)`, and the item is drawn against the band of wherever the container landed.
@@ -53,10 +53,10 @@ A role file that also said where each member appears would be a second spawn tab
 When no member applies at the band asked for, the draw falls back as a tagged loot draw does: to the deepest band shallower than the one asked that has a member, so a slot asking past the table's end gets its deepest, and else to the shallowest band deeper.
 A guard post on the last deck asking for a brute two decks further should get the heaviest brute there is, not an empty doorway.
 `prefab::coverage` is how an author finds out a slot fell back, since no load can: it runs every drawn slot against the game's tables at every band and prints `✓`, `~N` or `✗` for each.
-Foundry's report shows its guard post's brute and weapon falling back to deck ten from deck nine, which is the table ending, not a mistake.
+[Foundry](https://github.com/rudehn/foundry)'s report shows its guard post's brute and weapon falling back to deck ten from deck nine, which is the table ending, not a mistake.
 
 A role is only as good as its members' agreement.
-Foundry's first brute role held a scrap crab beside its droids, and droids and vermin are hostile, so a post whose brute was a crab shot itself apart the moment a sentry woke; its roles are now all droids, and a test holds every role to one faction.
+[Foundry](https://github.com/rudehn/foundry)'s first brute role held a scrap crab beside its droids, and droids and vermin are hostile, so a post whose brute was a crab shot itself apart the moment a sentry woke; its roles are now all droids, and a test holds every role to one faction.
 The engine does not check this, because a faction is a game's idea of who fights whom and a mixed role may be what a game wants.
 
 ## 4. Streams: one per cell, and a draw before the decision
@@ -93,11 +93,11 @@ Fantasy-rogue's guards lost their posts on a revisit because the patrol route wa
 Only holding a post is built.
 Fantasy-rogue also offered roaming within the room, walking a loop of waypoints, and wandering the floor; each needs the stamp's bounds and orientation carried into the place, and no prefab here needs one yet.
 
-Foundry found the one shape rule a post needs.
+[Foundry](https://github.com/rudehn/foundry) found the one shape rule a post needs.
 Its guard post first had a one-cell door with the brute standing in it, and a sentry that went out after the commando could never get home past it; the mouth is now three cells wide.
-That is a property of a piece, not of the engine, and Foundry holds it with a test that every floor cell of a stamped guard post can be walked to from the deck's entry with its guards at home.
+That is a property of a piece, not of the engine, and [Foundry](https://github.com/rudehn/foundry) holds it with a test that every floor cell of a stamped guard post can be walked to from the deck's entry with its guards at home.
 It also found a guard standing beside the arrival on about one guard post deck in sixteen, because the start was drawn from anywhere in the first room and a post could be stamped there.
-Where the start goes is the chain's, so the fix is a mapgen option rather than a slot rule: `RandomStart.clear_of_stamps(n)` keeps the start `n` cells from every stamped piece, and Foundry asks for seven, its own population's distance from the way in.
+Where the start goes is the chain's, so the fix is a mapgen option rather than a slot rule: `RandomStart.clear_of_stamps(n)` keeps the start `n` cells from every stamped piece, and [Foundry](https://github.com/rudehn/foundry) asks for seven, its own population's distance from the way in.
 A slot that skipped a guard near the arrival instead would have left a post empty on the decks where it mattered most.
 
 ## 7. What is checked, and when
@@ -112,7 +112,7 @@ Fantasy-rogue found an unknown name only when it spawned the slot, logged a warn
 Fantasy-rogue's prefab system is the alternative, and every lesson here is from it.
 
 - **Coordinate lists beside a tile grid.** See section 1: one thing per cell by construction, where it caught a slot on a wall only at spawn and two slots on one cell never.
-- **A copied spawner.** Its prefab monster was spawned by a function that mirrored the ordinary spawner and drifted from it: the ordinary one gave a monster a dodge of six plus its authored bonus plus one per hit die plus its gear, and the copy only the authored bonus plus its gear, so every guard was easier to hit than the same monster in the open. Here the engine calls the game's `ActorMaker::make`, and Foundry answers it with the `spawn_monster` its own population spawns by, so there is one way to build a monster.
+- **A copied spawner.** Its prefab monster was spawned by a function that mirrored the ordinary spawner and drifted from it: the ordinary one gave a monster a dodge of six plus its authored bonus plus one per hit die plus its gear, and the copy only the authored bonus plus its gear, so every guard was easier to hit than the same monster in the open. Here the engine calls the game's `ActorMaker::make`, and [Foundry](https://github.com/rudehn/foundry) answers it with the `spawn_monster` its own population spawns by, so there is one way to build a monster.
 - **Unsaved patrol state.** See section 6.
 - **Silent empty slots.** See section 7: every name is checked at load or at play, and the coverage report says where a draw falls back or finds nothing.
 - **A rarity string doing two jobs.** A prefab's `rarity` was both its placement weight and a bonus to its loot's depth, so a rare room could not be made common without also making its loot worse. Here a slot's offset is the only thing that makes its draw deeper, and how often a piece is placed is the chain's; a room that pays well and bites hard is one whose author wrote high offsets.

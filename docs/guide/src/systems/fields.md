@@ -11,7 +11,7 @@
             crates/atglyph-bevy/src/effects/engine.rs
             crates/atglyph-bevy/src/world.rs
             crates/atglyph-bevy/src/plugin.rs
-     fingerprint: 0436800b -->
+     fingerprint: 526481f5 -->
 
 # Fire and gas
 
@@ -59,27 +59,10 @@ Gas at or above its `veils_at` is written into the map's veil with `set_veil`, a
 
 ## Using it
 
-Gases are content, and a game names them in `Registries::gases` with the five fields the engine acts on: two rates, a threshold, whether it catches, and what breathing it does; Undermere names four.
+Gases are content, and a game names them in `Registries::gases` with the five fields the engine acts on: two rates, a threshold, whether it catches, and what breathing it does.
+Each is a `GasDef` built from `GasDef::new(name)`, which spreads at half speed and fades a tenth a turn, with `spread`, `fade`, `veils_at`, `inflicts(at, status, turns)` and `burns` for what differs, so a confusing gas is `GasDef::new("confusing").inflicts(25, confused, 3)` and nothing more.
 
-<!-- include: ../../../../examples/undermere/src/content.rs:gases -->
-```rust,no_run
-    let gases = Registry::from_defs(vec![
-        GasDef::new(PARALYTIC).spread(40).fade(20).inflicts(25, statuses.expect(PARALYSED), 3),
-        GasDef::new(CONFUSING).spread(50).fade(15).inflicts(25, statuses.expect(CONFUSED), 3),
-        GasDef::new(DARKNESS).spread(30).fade(8).veils_at(120).inflicts(25, statuses.expect(SHROUDED), 5),
-        GasDef::new(CAUSTIC).spread(40).fade(20).inflicts(30, statuses.expect("poisoned"), 4),
-    ])
-    .unwrap();
-```
-
-Fire takes one resource before play begins, saying what its flames do beyond burning, and Foundry's is one line.
-
-<!-- include: ../../../../examples/foundry/src/run.rs:fire_rules -->
-```rust,no_run
-    // Standing in fire scorches, and whatever burns smokes: an incendiary
-    // is a fire and a screen at once.
-    commands.insert_resource(FireRules::new().inflicts(registries.statuses.expect("scorched"), 3).smoke(registries.gases.expect("smoke"), 30));
-```
+Fire takes one resource before play begins, saying what its flames do beyond burning, and it is one line: `FireRules::new().inflicts(scorched, 3).smoke(smoke, 30)` scorches whoever stands in a flame for three turns and has every burning cell give off thirty of a smoke gas a turn.
 
 ## The line
 

@@ -316,7 +316,7 @@ impl Plugin for CorePlugin {
             // was: everything after reads what the mind sees now. It was
             // left out, so `minds::sense` ran unordered against the whole
             // pass and a mind decided on sight that may or may not have
-            // been recast yet. Foundry's ambiguity test found it the moment
+            // been recast yet. A game's ambiguity test found it the moment
             // a prop held a `Viewshed` in the same pass.
             .configure_sets(
                 Turn,
@@ -659,7 +659,7 @@ pub enum ReactSet {
     /// is held now: the side one names, what one resists, and what a
     /// kind's own stats do while it holds one. After [`Settle`](Self::Settle),
     /// which wakes sleepers. A game that answers the pass before these take
-    /// hold, as Undermere's do, orders this set after its answers.
+    /// hold orders this set after its answers.
     Statuses,
 }
 

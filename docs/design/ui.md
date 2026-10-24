@@ -218,7 +218,7 @@ A game declares each key it answers to once, as a group, an action and the keys,
 
 The keys every game read the same way, walking, the way underfoot, waiting, picking up, firing and throwing, are `PlayerKeysPlugin`, since five games wrote them line for line.
 It is a plugin because a game turns it on or off whole: one with another scheme, or the tutorial's early steps, leave it out.
-A game names each verb it wants with the words `?` lists it by, and the engine supplies no line of its own: a key with nothing to act on says the game's line or nothing, and writes a `Declined` for a game whose reason depends on its own state, as Foundry's hot or dry gun does.
+A game names each verb it wants with the words `?` lists it by, and the engine supplies no line of its own: a key with nothing to act on says the game's line or nothing, and writes a `Declined` for a game whose reason depends on its own state, as [Foundry](https://github.com/rudehn/foundry)'s hot or dry gun does.
 A game's own verbs stay in its own system, ordered against `PlayerKeysSet` rather than against the engine's function.
 
 ## 8. What the engine does not get
@@ -287,9 +287,9 @@ Five decisions came out differently, and the reasons are worth keeping.
 
 More came later, from what the games built on the panels:
 
-- **A number the player does not know is a `Seems`, not a second collector.** Undermere hid a worn thing's level by working the vitals' armor, the look cursor's forecast and the targeting box's chance out again in `Annotate`, through copies of `Marksmanship` and the forecast's assembly. The engine cannot know what an unknown thing seems to be, but it can take a number off: a `Seems` on an actor says how much more armor, blow, shot and accuracy it truly has than it seems to, the collectors count it as it seems, and each view's `seeming` flag says they did, so the game's words stay a facet. Absent, the numbers are the true ones, so a game without identification pays nothing.
+- **A number the player does not know is a `Seems`, not a second collector.** [Undermere](https://github.com/rudehn/undermere) hid a worn thing's level by working the vitals' armor, the look cursor's forecast and the targeting box's chance out again in `Annotate`, through copies of `Marksmanship` and the forecast's assembly. The engine cannot know what an unknown thing seems to be, but it can take a number off: a `Seems` on an actor says how much more armor, blow, shot and accuracy it truly has than it seems to, the collectors count it as it seems, and each view's `seeming` flag says they did, so the game's words stay a facet. Absent, the numbers are the true ones, so a game without identification pays nothing.
 - **Followers on the nearby rail are a game's choice.** A follower is in sight, so the rail lists it by default, which is right for a game with no party panel; `NearbyPanel::without_followers`, or `NearbyFollowers::LeftOut` for a game drawing the view itself, leaves out whoever the party view lists, for a game whose party panel already shows them. A setting on the view rather than a filter in the panel, so Tab steps past them as the rail does.
-- **A death on the player's side is a loss.** The narrator told every uncredited death as good news, and Undermere re-toned its mercenaries' deaths in `Annotate`. `AllyDies`, `KillsAlly` and `YouKillAlly` are chosen when `CombatRules` puts the dead on the player's side, in the bad tone, and a game rewords or silences them as any phrase.
+- **A death on the player's side is a loss.** The narrator told every uncredited death as good news, and [Undermere](https://github.com/rudehn/undermere) re-toned its mercenaries' deaths in `Annotate`. `AllyDies`, `KillsAlly` and `YouKillAlly` are chosen when `CombatRules` puts the dead on the player's side, in the bad tone, and a game rewords or silences them as any phrase.
 
 Found on the way, both fixed: `VitalsViewPlugin` asserted on `StatusRules`, which made a game with no statuses insert an empty registry to have a health bar; and the look cursor would settle on the player when nothing else was in sight, so the inspect panel forecast a duel with yourself.
 

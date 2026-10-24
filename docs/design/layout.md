@@ -1,6 +1,6 @@
 # Layout
 
-Status: built 2026-10-01, against `main` at `235f864`; grown on for Undermere's dungeon from 2026-10-08, as section 10 lists.
+Status: built 2026-10-01, against `main` at `235f864`; grown on for [Undermere](https://github.com/rudehn/undermere)'s dungeon from 2026-10-08, as section 10 lists.
 The reasoning is here; `docs/OVERVIEW.md` lists what exists, and `docs/guide/src/systems/layout.md` is the reference.
 The research behind it is `docs/research/gridsage-mapgen.md`, read for its concepts and not for its algorithms.
 
@@ -181,9 +181,9 @@ The file carries the top-of-file comment listing every field and every option.
 
 A game with a `Shape` of its own builds its `Accrete` in code; naming one from a file waits for a game that has one.
 
-## 7. Foundry
+## 7. [Foundry](https://github.com/rudehn/foundry)
 
-`assets/layout.ron` holds foundry's five shapes, three districts and two recipes.
+`assets/layout.ron` holds [Foundry](https://github.com/rudehn/foundry)'s five shapes, three districts and two recipes.
 The districts are halls, cells and service passages, and each recipe weights all three: `assembly`, which favors halls, for decks one to three, and `warren`, tighter and with more loops required, for the seven below.
 Each deck names its recipe, so a deck's size is data and the `70, 40` that was in `decks.rs` is gone.
 
@@ -193,7 +193,7 @@ The map view already follows the player and clamps to the map, so a deck larger 
 
 The deck's chain swaps `Rooms` and `Doors` for `Accrete` and `OpenLoops`, and adds `Survey` after `FarthestExit` and `Require` last.
 The armory, the store, the guard post, the reactor, the core and the furnishing stay as they are, stamped into the rooms accretion emits, until the furnisher and the director replace them.
-`Foundry::build` runs the chain retrying, forty attempts at most, and `foundry --deck N --seed S` prints a deck as rows of glyphs, which is how the recipes were read before they were called done.
+Its place builder runs the chain retrying, forty attempts at most, and its `--deck N --seed S` prints a deck as rows of glyphs, which is how the recipes were read before they were called done.
 One test that ran a script on a fixed seed moved to another seed, and the fingerprint tripwire was re-baselined on a seed whose deck still brings a droid into sight.
 
 ## 8. Testing
@@ -213,7 +213,7 @@ For the survey, on small maps drawn by hand: a dead end, a chokepoint, a junctio
 
 In `atglyph-rules`: the recipe file loads, and each mistake section 6 lists is refused by name.
 
-In foundry: every deck builds within the retry bound on every seed of the range and meets its requirements, and every deck test that was there before passes unchanged.
+In [Foundry](https://github.com/rudehn/foundry): every deck builds within the retry bound on every seed of the range and meets its requirements, and every deck test that was there before passes unchanged.
 
 In `atglyph-mapgen` again, since the trim: no passage of a grown place is left with one way in, and areas are numbered in the order they are emitted.
 
@@ -226,7 +226,7 @@ A layout that meets every bound can still read badly, so sample decks are printe
 
 ## 10. What grew since
 
-Undermere's dungeon, from 2026-10-08, asked for more than rectangles and doors, and each addition is a pass or a field a chain that does not ask for it never sees, so no earlier place moved.
+[Undermere](https://github.com/rudehn/undermere)'s dungeon, from 2026-10-08, asked for more than rectangles and doors, and each addition is a pass or a field a chain that does not ask for it never sees, so no earlier place moved.
 The module docs of `atglyph-mapgen` and `atglyph-rules` are the reference; the reasons are here.
 
 - **A cave is a shape.** `Cave` draws a piece by the cellular automaton inside a box and keeps its largest region, so `Accrete` lays, joins and surveys it as it does a rectangle, and a place mixes caves and halls with no second generator.

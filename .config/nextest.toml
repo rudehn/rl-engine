@@ -18,13 +18,12 @@ command = { command-line = "scripts/slot", relative-to = "workspace-root" }
 slow-timeout = { period = "30s" }
 # The fast tier: everything but the slow tier, which is every test that took
 # two seconds of processor time or more when the tiers were last drawn, on
-# 2026-10-16 by the data-validation slice, and each game's backstop: the
-# whole-generator sweeps that grow every place of a run once a seed and ask
-# every promise of it, the walks down every stair and lift, the every-recipe
-# sweep, the play-throughs and the long behaviour checks, named below by
-# package and full path. A test the last draw found between one and a half
-# and two seconds stays where it was, since it would flip between the tiers
-# from run to run. A scoped gate runs this; `--profile full`, the gate's
+# 2026-10-16 by the data-validation slice, named below by package and full
+# path. The whole-generator backstops and play-throughs went with the games
+# that carried them, which live in repositories of their own since
+# 2026-10-24. A test the last draw found between one and a half and two
+# seconds stays where it was, since it would flip between the tiers from run
+# to run. A scoped gate runs this; `--profile full`, the gate's
 # `--all`, and CI run both tiers. The fingerprints stay in the fast tier on
 # purpose, as the early warning that a change moved play.
 # scripts/test-times.py names a fast-tier test past two seconds as one to
@@ -33,12 +32,6 @@ slow-timeout = { period = "30s" }
 # and which of the four kinds of test each kind is.
 default-filter = """
 not (
-    package(foundry) & (
-        test(=decks::tests::every_deck_of_a_run_keeps_every_promise_the_generator_makes_over_a_span_of_seeds)
-      | test(=droids::alarm::tests::a_probe_beside_an_idle_player_backs_off_and_never_comes_nearer_than_three_again_over_a_range_of_seeds)
-      | test(=lifts::tests::every_deck_ridden_down_to_is_joined_reachable_furnished_and_stocked_through_a_save_over_a_span_of_seeds)
-    )
-    |
     package(atglyph-mapgen) & (
         test(=accrete::tests::the_walk_to_the_far_side_of_a_barrier_is_on_average_longer_than_without_it)
       | test(=dress::tests::nothing_stands_beside_an_opening_and_every_area_stays_one_region)
@@ -52,11 +45,6 @@ not (
       | test(=pool::tests::every_budget_is_met_whenever_the_pool_can_meet_it)
       | test(=pool::tests::every_entry_is_drawn_somewhere_over_the_seeds)
       | test(=pool::tests::no_limit_is_exceeded_and_no_group_shares_a_floor)
-    )
-    |
-    package(undermere) & (
-        test(=dungeon::tests::every_place_of_a_run_keeps_every_promise_the_generator_makes_over_a_span_of_seeds)
-      | test(=stairs::tests::every_floor_walked_down_to_is_joined_to_the_next_and_never_cut_off_by_what_stands_on_it_through_a_save_over_a_span_of_seeds)
     )
 )
 """
@@ -93,8 +81,8 @@ filter = "all()"
 run-wrapper = "slot"
 
 # The fingerprints first: each is one long scripted run in a binary of its
-# own, which nextest schedules after the libraries, so Undermere's otherwise
-# began once nearly everything else was done and played on alone at the end.
+# own, which nextest schedules after the libraries, so a long one otherwise
+# begins once nearly everything else is done and plays on alone at the end.
 [[profile.default.overrides]]
 filter = "binary(fingerprint)"
 priority = 100

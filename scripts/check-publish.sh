@@ -40,7 +40,7 @@ sys.exit(1 if problems else 0)
 '
 
 # The games are `publish = false`, so `cargo publish` skips them and so does this:
-# only the members the checks above cover are packaged (undermere alone takes minutes).
+# only the members the checks above cover are packaged (a game would take minutes).
 args=()
 while read -r name; do args+=(-p "$name"); done < <(
   cargo metadata --format-version 1 --no-deps | python3 -I -c '

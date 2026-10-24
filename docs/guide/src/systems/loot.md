@@ -38,81 +38,9 @@ A container's `ContentRoll` is `Stock::Item`, a named item in a count, or `Stock
 
 ## Using it
 
-A game's item registry is its `ItemMaker`, and Foundry's is the armory: a deck's band is its number, its floor has one item beside every armory mark, two beside every store and `3 + deck` more, and a thing whose definition names a `level`, every weapon and piece of armor, rolls it from the armory's `LevelTable` at the band it is found at, held within the level's bounds when its parts are put on.
+A game's item registry is its `ItemMaker`: `band` numbers a place, most games by its depth, `scatter` says how its floor is laid when it is first built, an item beside every mark of a kind and so many more loose, and `make` builds what was drawn at the `Provenance` it was found at, rolling on the stream it is handed whatever the game rolls on a thing, a level from its own table at that band say.
 
-<!-- include: ../../../../examples/foundry/src/gear.rs:maker -->
-```rust,no_run
-/// The engine's loot is made here: what lies on a deck when it is first
-/// entered, what a kill leaves, and what a crate or a locker holds. A
-/// deck's band is its number. The
-/// armory makes each thing, rolling a level from `levels.ron` at the band
-/// it is found at for a thing that names a `level`.
-impl ItemMaker for Armory {
-    type Def = ItemDef;
-
-    fn make(
-        &self,
-        commands: &mut Commands,
-        _: &Registries,
-        def: Id<ItemDef>,
-        count: u32,
-        from: Provenance,
-        rng: &mut atglyph::rand::rngs::StdRng,
-    ) -> Vec<Entity> {
-        let d = self.defs.get(def);
-        if d.stack {
-            return spawn_items(commands, self, def, count);
-        }
-        // Each its own roll: two plates from one crate are two finds.
-        (0..count)
-            .map(|_| {
-                let level = d.level.as_ref().map_or(0, |_| self.levels.roll(from.band, rng));
-                spawn_item_at(commands, self, def, level)
-            })
-            .collect()
-    }
-
-    fn make_at(&self, commands: &mut Commands, _: &Registries, def: Id<ItemDef>, level: i32) -> Entity {
-        spawn_item_at(commands, self, def, level)
-    }
-
-    fn id_of(&self, name: &str) -> Option<Id<ItemDef>> {
-        self.defs.id(name)
-    }
-
-    fn name_of(&self, def: Id<ItemDef>) -> &str {
-        self.defs.name(def)
-    }
-
-    fn table(&self) -> &LootTable<Id<ItemDef>> {
-        &self.table
-    }
-
-    fn scatter(&self) -> ScatterRules {
-        crate::loot::scatter_rules()
-    }
-
-    fn band(&self, area: LootArea) -> i32 {
-        let LootArea::Place(map) = area;
-        crate::decks::deck_of(map) as i32
-    }
-}
-```
-
-A container asks for kinds of thing, so one locker scales with the deck it stands on.
-
-<!-- include: ../../../../examples/foundry/assets/props.ron:locker -->
-```ron
-    // An armory locker: better than a crate, and shut. A keycard opens
-    // it, and `props::spend_the_keycard` takes the card doing it, so a
-    // card found is a locker opened and no more. What is in it is drawn
-    // at the deck it stands on, so a locker on deck eight holds a deck
-    // eight weapon.
-    (name: "armory locker", glyph: '&', color: (r: 205, g: 210, b: 220), blocks: true, health: 8,
-     container: (contents: [(tag: "slug", count: (4, 9)), (tag: "weapon", count: 1), (tag: "armor", count: (0, 1)), (tag: "med", count: (0, 1))],
-                 locked: "keycard", opened: (glyph: '"', color: (r: 130, g: 135, b: 145))),
-     offers: [(verb: "open", time: 300)]),
-```
+A container asks for kinds of thing, a weapon or a stack of some tag, and draws each at the band it stands on, so one locker holds deeper gear on a deeper floor.
 
 ## The line
 

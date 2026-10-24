@@ -58,10 +58,9 @@ use crate::world::WorldMap;
 /// Implemented on the resource holding a game's monster definitions, the
 /// one place that knows what a monster is. The engine decides when, where
 /// and which, and asks this to make it. A game's own population should
-/// build through the same builder `make` uses, as Foundry's `make` wraps
-/// the `spawn_monster` its decks populate by, so a monster placed at a
-/// slot and one placed by the game are built the same way and cannot
-/// drift apart.
+/// build through the same builder `make` uses, `make` wrapping the
+/// function its floors populate by, so a monster placed at a slot and one
+/// placed by the game are built the same way and cannot drift apart.
 pub trait ActorMaker: Resource {
     /// The game's monster definition.
     type Def: Send + Sync + 'static;
@@ -706,7 +705,7 @@ pub(crate) mod tests {
 
     /// A slot of nought to one slug is sometimes empty and never a stack of
     /// none: a count that rolls nought lays nothing, rather than handing the
-    /// maker a nought it may round up to one, as Foundry's does.
+    /// maker a nought it may round up to one, as a game's maker once did.
     #[test]
     fn an_item_slot_whose_count_rolls_nought_lays_nothing() {
         const SLUGS: &str = r#"(name: "slugs", ground: "floor", rows: ["i"], legend: { 'i': Item(item: "slug", count: (0, 1)) })"#;

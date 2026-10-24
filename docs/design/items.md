@@ -1,6 +1,6 @@
 # Items: what a thing does
 
-Status: built 2026-09-22, against `main` at `0797370`; carriers redrawn 2026-09-23, against `60c430d`, when effects became a subsystem of their own; a use aimed at somewhere and a use made on another thing, things not yet known and things that will not come off, and ammunition added 2026-10-05 for Undermere's second part, against `d61cd5b`; authored parts, the level part and the saved item added 2026-10-13, against `43d0b4a`, when the affix model was removed.
+Status: built 2026-09-22, against `main` at `0797370`; carriers redrawn 2026-09-23, against `60c430d`, when effects became a subsystem of their own; a use aimed at somewhere and a use made on another thing, things not yet known and things that will not come off, and ammunition added 2026-10-05 for [Undermere](https://github.com/rudehn/undermere)'s second part, against `d61cd5b`; authored parts, the level part and the saved item added 2026-10-13, against `43d0b4a`, when the affix model was removed.
 Since 0.4.0 a worn thing's clock is a `WornTimer`, an attack put by is a `BenchedAttack`, the statuses a worn thing keeps on its wearer are `ItemParts::worn_statuses` and `WornStatuses`, a status is asked for with `ApplyStatus`, a moment is a `TriggerKind`, and the rule what picking up, dropping, wearing and using come to is `atglyph_rules::items::resolve_item`, which `ItemsPlugin` applies.
 The reasoning is here; `docs/OVERVIEW.md` lists what exists, and `docs/design/effects.md` says how an effect lands.
 
@@ -30,7 +30,7 @@ So an item carries `Triggers` and never `Grants`, and `Known` is only what the a
 
 The line was drawn twice before it held.
 
-Foundry's stim and medkit shipped as abilities first: each item named an ability in `grants`, and each ability was written with `costs: [Charge(1)]`, which the engine spent off the item's stack.
+[Foundry](https://github.com/rudehn/foundry)'s stim and medkit shipped as abilities first: each item named an ability in `grants`, and each ability was written with `costs: [Charge(1)]`, which the engine spent off the item's stack.
 It worked, and it was wrong in three ways that each read fine in a diff:
 
 1. **One file held two concepts.** `stims`, granted by an upgrade, is something the commando was taught; `med gel` is what a thing in the pack does when it is torn open. Nothing in the schema said which was which.
@@ -38,14 +38,14 @@ It worked, and it was wrong in three ways that each read fine in a diff:
 3. **The item's economy was spelled as the ability's cost.** `Charge(1)` says "using me destroys one of whatever lent me", a fact about the item, written on the ability.
 
 The first repair split them by what the use needed: a thing that just happens to its user became `OnUse`, and a thing that needed aiming stayed an ability the item lent.
-Foundry's four grenades were the second kind, so a grenade was still an ability whose cost destroyed the item that lent it, and the mixing was only moved.
+[Foundry](https://github.com/rudehn/foundry)'s four grenades were the second kind, so a grenade was still an ability whose cost destroyed the item that lent it, and the mixing was only moved.
 
 The second repair drew the line at two ways of aiming a thing, each owned by a subsystem that already existed:
 
 - **It is thrown**, through throwing and its cursor, and its `land` trigger fires where it comes to rest.
 - **It is fired**, as a weapon through combat, and its `hit` trigger fires on whoever the shot struck; a wand is a weapon whose shot carries effects and spends a charge.
 
-A third, an aimed use with a cursor of its own, was refused then as an ability by another name, and Undermere's staffs are why a third exists now.
+A third, an aimed use with a cursor of its own, was refused then as an ability by another name, and [Undermere](https://github.com/rudehn/undermere)'s staffs are why a third exists now.
 A staff is zapped from the pack at a foe, which is neither a throw nor a worn weapon's shot, and a game made to write it as either bends the thing to fit the engine: a staff in a hand is a blow's weapon, rolled to hit, and a staff thrown is gone.
 So a `use` trigger may carry an aim, and the aim is an ability's own rather than a copy of one: `Targeting` gathers an ability's mode, what it wants under it and whether its cell must be seen, `AbilityDef::targeting` hands one out, and an aimed use is previewed through `Bystanders::land`, refused by `aim_blocked` and landed on the footprint those work out, so a bolt from the pack and a bolt an actor knows cannot disagree about where they land or whom they catch.
 What made the refused version an ability by another name was a second cursor and a second rule, and neither exists; what keeps the line is that the aim belongs to the thing's own trigger, so nothing reaches `Known`, nothing takes a row on the abilities screen, and what it lands and what it spends stay the thing's.
@@ -64,7 +64,7 @@ So an item may write what it holds once, as `effects`, and each trigger that nam
 ```
 
 A thing that does two different things writes two lists, one on each trigger.
-The field names are a game's own; Foundry and Undermere read `triggers` into the engine's `TriggerSpec`, which is the shared part.
+The field names are a game's own; [Foundry](https://github.com/rudehn/foundry) and Undermere read `triggers` into the engine's `TriggerSpec`, which is the shared part.
 
 ## 3. `Effects`, and why it exists at all
 
@@ -134,7 +134,7 @@ A thing spent to nothing is marked `Spent` and kept, as the dead are, until the 
 ## 6a. Parts, not a schema
 
 Until 2026-10-13 the engine shared the components and the authored effect and trigger forms, and each game wrote the rest of its item file itself.
-Undermere's `ItemDef` then opened with "Foundry's item schema trimmed", and it was: the same `MeleeDef`, `RangedDef`, `ThrowDef` and `ConsumableDef`, the same `slot`, `either` and `also`, the same validation, and a `spawn_item_at` of sixty lines that differed from Foundry's in a resist added rather than set and a hand pair named in code rather than read from the slots.
+[Undermere](https://github.com/rudehn/undermere)'s `ItemDef` then opened with "Foundry's item schema trimmed", and it was: the same `MeleeDef`, `RangedDef`, `ThrowDef` and `ConsumableDef`, the same `slot`, `either` and `also`, the same validation, and a `spawn_item_at` of sixty lines that differed from Foundry's in a resist added rather than set and a hand pair named in code rather than read from the slots.
 By the rule in `CLAUDE.md` the second game writing a thing is the signal it belongs in the engine, and it did, but not as a schema.
 
 What moved is `atglyph_rules::parts`, a set of authored parts, each the type of one field and each describing only what the engine already simulates:
@@ -150,11 +150,11 @@ What moved is `atglyph_rules::parts`, a set of authored parts, each the type of 
 
 The rest of what an item's line says for the engine is a plain list, its armor, its tags, its effects and triggers, its bestows and caps, its ammunition tag, whether it stacks, its `Glow` and when it shines, the statuses it holds on its wearer and the sight in the dark it lends, needing no part of its own; `parts::resistances` reads the one list that adds up, a kind written twice resisting by both, as two worn things' resistances add on a wearer.
 A game builds an `atglyph_bevy::ItemParts` from its own fields once at load, its triggers built and its wear resolved, and keeps it beside its definition; `insert_parts` spawns a thing of it at a level and `ItemParts::check` names what the engine would never play, a worn stack or a pulse on a thing never worn.
-`Attacks { melee, ranged, throw, cost }` is the attack half on its own, which a monster uses, since a blow is one thing whoever strikes it: Foundry's droids and Undermere's monsters write their attacks as the same parts their weapons do.
+`Attacks { melee, ranged, throw, cost }` is the attack half on its own, which a monster uses, since a blow is one thing whoever strikes it: [Foundry](https://github.com/rudehn/foundry)'s droids and Undermere's monsters write their attacks as the same parts their weapons do.
 
 Every field past the essentials is optional, and absent means the engine's plain behaviour, never a mechanic switched on: a thing with no `Level` takes no level, a `Level` grows only the amounts it writes, and no part has a default the engine chose.
 That is the line drawn by the guardrail the user set: the engine shares the shape of what it already plays, and a game's rules stay in the game.
-Undermere's curse, its identification, the strength a thing asks, the traits it lends, how a level is rolled when found and what a staff's level does to its refill are Undermere's fields and Undermere's code; Foundry's heat and its `levels.ron` are Foundry's.
+[Undermere](https://github.com/rudehn/undermere)'s curse, its identification, the strength a thing asks, the traits it lends, how a level is rolled when found and what a staff's level does to its refill are Undermere's fields and Undermere's code; Foundry's heat and its `levels.ron` are Foundry's.
 Using a part is optional too: the tutorial inserts its components by hand and nothing it did changed.
 
 A single engine struct holding every part, embedded in a game's definition, was weighed and rejected.
@@ -167,22 +167,22 @@ A thing's glyph is `atglyph-render`'s and its mass noun `atglyph-ui`'s, neither 
 ## 6b. What a worn thing lends beyond its stats
 
 Until 2026-10-15 two games each kept a wearer in step with what it wore by a system of their own.
-Foundry's `sync_dark_sight` folded a droid's `NativeDarkSight` and a helmet's `WornDarkSight` into `DarkSight`, unless an ion jam had it blinded; Undermere's `lend` did the same for the traits a ring lends, with a status held while worn and a light lit while worn beside it, and kept the wearer's own sight in an `OwnSight` to give back.
+[Foundry](https://github.com/rudehn/foundry)'s `sync_dark_sight` folded a droid's `NativeDarkSight` and a helmet's `WornDarkSight` into `DarkSight`, unless an ion jam had it blinded; Undermere's `lend` did the same for the traits a ring lends, with a status held while worn and a light lit while worn beside it, and kept the wearer's own sight in an `OwnSight` to give back.
 That is the second game writing the same thing, which section 6 had named as the signal, so it is the engine's, and every piece of it is optional.
 
 `ItemParts` gains `worn_statuses`, written `holds` before 0.4.0, the statuses held on the wearer until cured while the thing is worn; `dark_sight`, the tiles its wearer sees without light, grown by the `Level` part's own `dark_sight` as every level amount is; and `light_when`, `Carried`, today's behaviour and the default, or `Worn`, for a light dark on the ground and in a pack.
 They become `WornStatuses`, `WornDarkSight` and `LitWhenWorn` on the thing, so a game that inserts components by hand gets the same as one that uses parts.
 `ActorParts::dark_sight` puts an `OwnDarkSight` beside the `DarkSight`, which is what a worn thing's sight is folded with rather than written over.
 
-`ItemsPlugin` keeps each every pass in `ReactSet::Lend`, read off what is worn now rather than answered as a thing goes on or comes off, which is the lesson Foundry's jam taught: a helmet swapped while its wearer was blinded kept the old helmet's radius the moment the jam cleared, because nothing had answered the swap while it was jammed.
+`ItemsPlugin` keeps each every pass in `ReactSet::Lend`, read off what is worn now rather than answered as a thing goes on or comes off, which is the lesson [Foundry](https://github.com/rudehn/foundry)'s jam taught: a helmet swapped while its wearer was blinded kept the old helmet's radius the moment the jam cleared, because nothing had answered the swap while it was jammed.
 A held status is asked for through `ApplyStatus`, held by the thing, and ended by `end_unworn_statuses` as any held status is.
-A wearer's `DarkSight` is the best of its own and what it wears, or none while a game has put `DarkSightSuppressed` on it; what blinds is the game's, Foundry's ion jam, and the engine only keeps the folded sight from coming back meanwhile.
+A wearer's `DarkSight` is the best of its own and what it wears, or none while a game has put `DarkSightSuppressed` on it; what blinds is the game's, [Foundry](https://github.com/rudehn/foundry)'s ion jam, and the engine only keeps the folded sight from coming back meanwhile.
 An actor with no sight of its own and nothing worn lending any is never touched, so a `DarkSight` a game sets by hand stays; one whose sight was lent with nothing of its own beneath is marked `LentDarkSight`, so the sight goes with the thing.
 A game that sets an actor's sight by hand and also lets it wear dark sight writes its own as `OwnDarkSight`, since the fold cannot tell a sight a game set from one it lent.
 
-The set comes after `ReactSet::Settle`, so a slot changed in the pass is read as it stands, and a game that blinds in its own reactions orders that before it: Foundry's `jam_sensors` runs before it, as it ran before `sync_dark_sight`, so a fresh ion hit blinds within the pass it lands.
+The set comes after `ReactSet::Settle`, so a slot changed in the pass is read as it stands, and a game that blinds in its own reactions orders that before it: [Foundry](https://github.com/rudehn/foundry)'s `jam_sensors` runs before it, as it ran before `sync_dark_sight`, so a fresh ion hit blinds within the pass it lands.
 Neither game's fingerprint moved.
-What stays each game's: Foundry's jam, its clock and its `sensors down` badge, and the pack's dark-sight facet in its own words; Undermere's traits and which of them an item lends, folded into the item's parts by its armory.
+What stays each game's: [Foundry](https://github.com/rudehn/foundry)'s jam, its clock and its `sensors down` badge, and the pack's dark-sight facet in its own words; Undermere's traits and which of them an item lends, folded into the item's parts by its armory.
 
 ## 7. A level, and the one place a game writes what it does
 
@@ -194,26 +194,26 @@ The only floors are what a component cannot hold: a pulse of under one hundredth
 The level a thing is at is `ItemLevel`, which no system of the engine's reads to play; it is what a game names and prices a thing by and what a save keeps.
 
 `atglyph_bevy::parts::level_up(world, item, by)` moves a thing's level and fits every component the level decides from the parts it was made of, never from the thing as it stands, so a level is never added to a number that already carries one; what it has left of its charges grows with what it holds, an attack put by while it cannot be made is changed where it is put by, and a wearer's stats are folded again.
-It never lifts `Stuck`: that a thing below nought will not come off is Undermere's curse and not the engine's level, so Undermere's own `level_up` calls the engine's and then frees a thing raised to nought.
+It never lifts `Stuck`: that a thing below nought will not come off is [Undermere](https://github.com/rudehn/undermere)'s curse and not the engine's level, so Undermere's own `level_up` calls the engine's and then frees a thing raised to nought.
 
 Each game writes its own rule over the part, where it reads the file.
-Undermere's is by tag, in `armory::level_defaults`: a weapon's level adds a damage and five accuracy, armor's a point of armor, a staff's and a wand's a charge, and a weapon, armor and ring go down to three below nought, each line's own `level` written over its tag's amount by amount with `Level::over`, so `items.ron` writes a ring's worth and a staff's power and not the rule every weapon shares.
-How fast a staff refills at its level divides rather than adds, so it is not a level amount at all: the line writes its pace at level one, in hundredths, and Undermere's `recharge_at` and `staffs` keep it divided.
-Foundry's is that armor and damage are inferred, +1 a level on a thing that has any, because that is what a reader expects of a `+2` plate or blade; every other key is nought unless written, because a reader cannot tell a plate's clock quickens unless the file says so.
+[Undermere](https://github.com/rudehn/undermere)'s is by tag, in `armory::level_defaults`: a weapon's level adds a damage and five accuracy, armor's a point of armor, a staff's and a wand's a charge, and a weapon, armor and ring go down to three below nought, each line's own `level` written over its tag's amount by amount with `Level::over`, so `items.ron` writes a ring's worth and a staff's power and not the rule every weapon shares.
+How fast a staff refills at its level divides rather than adds, so it is not a level amount at all: the line writes its pace at level one, in hundredths, and [Undermere](https://github.com/rudehn/undermere)'s `recharge_at` and `staffs` keep it divided.
+[Foundry](https://github.com/rudehn/foundry)'s is that armor and damage are inferred, +1 a level on a thing that has any, because that is what a reader expects of a `+2` plate or blade; every other key is nought unless written, because a reader cannot tell a plate's clock quickens unless the file says so.
 Balance is set by `max`, 3 for plain armor, 5 for a weapon and 9 for the two plates that do something worn, rather than by a slower rate, since the standard rate is the one a reader expects.
-Foundry refuses each key on a thing with nothing it adds to, `armor` and `damage` written even as nought included, `turns` on a thing with no `Inflict` among its effects and `amount` on one with no `Harm` or `Mend`, so a level rule in the wrong place is a load error naming the item rather than a plate that quietly does less; and it refuses a `pulse` that would quicken a clock past a turn by its `max`, the rule its runtime floor used to be, since a plate pulsing several times each time its wearer acts is a rule nobody wrote on purpose.
-What a level adds to the sight in the dark a thing lends is the level part's `dark_sight`, since that sight is the engine's (section 6b); until 2026-10-15 it was Foundry's own `dark_sight: (tiles:, per_level:)`.
+[Foundry](https://github.com/rudehn/foundry) refuses each key on a thing with nothing it adds to, `armor` and `damage` written even as nought included, `turns` on a thing with no `Inflict` among its effects and `amount` on one with no `Harm` or `Mend`, so a level rule in the wrong place is a load error naming the item rather than a plate that quietly does less; and it refuses a `pulse` that would quicken a clock past a turn by its `max`, the rule its runtime floor used to be, since a plate pulsing several times each time its wearer acts is a rule nobody wrote on purpose.
+What a level adds to the sight in the dark a thing lends is the level part's `dark_sight`, since that sight is the engine's (section 6b); until 2026-10-15 it was [Foundry](https://github.com/rudehn/foundry)'s own `dark_sight: (tiles:, per_level:)`.
 
 The affix model this replaced, prefixes and suffixes with level-scaled grants and extra strikes, an enhance rule and weighted rolling, was never used by a game: both spawned `Enchanted` with no affixes and wrote their own level arithmetic beside it.
 It was removed rather than kept beside the level part, because two engine answers to what a level is would be one too many.
 
-The approaches weighed for Foundry's block, on 2026-09-27, are in `docs/superpowers/specs/2026-09-27-enchant-model-design.md`.
+The approaches weighed for [Foundry](https://github.com/rudehn/foundry)'s block, on 2026-09-27, are in `docs/superpowers/specs/2026-09-27-enchant-model-design.md`.
 Scaling written on the number where it is used, `turns: (base: 10, per_level: 2)`, keeps level rules on the triggers, which is the scatter this removed; inferring every numeric key hides from a reader what grows; and the first build's `per_level` in an effect's arguments, with the level on the `Landing`, put the rule where no reader of an item looked.
 
 ## 7a. Saving a thing made of parts
 
 `atglyph_save::SaveableItem`, registered with `save_items`, saves an item as which definition it is, by its maker's `name_of`, at which level, and the game's own extra beside them.
-It is restored through the game's `ItemMaker::make_at`, so the thing is made again exactly as it was made when found, the level applied once, and only then is the game's extra put back on it, since what a game keeps is often about the level: Undermere's curse and how long it has been worn towards knowing it, Foundry's heat.
+It is restored through the game's `ItemMaker::make_at`, so the thing is made again exactly as it was made when found, the level applied once, and only then is the game's extra put back on it, since what a game keeps is often about the level: [Undermere](https://github.com/rudehn/undermere)'s curse and how long it has been worn towards knowing it, Foundry's heat.
 
 ## 8. Things not yet known, and things that will not come off
 
@@ -234,28 +234,28 @@ Refusing with a reason that did not name it, "you cannot aim there", was rejecte
 Previewing the true flight without its footprint was rejected as well, since where a line stops is its reach.
 The armor total, the look cursor's duel forecast and the character sheet count an unknown worn thing at its true numbers, because those are what a blow meets, and the vitals mark the total uncertain while one is worn, `armor 5?`.
 What a thing not yet known seems to be is the game's, as its level is, so a game whose things are written from a level, where a true total tells the level the moment the thing goes on, writes the total, the forecast and the targeting box's chance to hit again in `ViewSet::Annotate` with each unknown thing counted as it seems, keeping the mark, which under the forecast and the chance is a facet.
-Undermere counts each one at its kind's plain numbers, the level of nought any thing of its kind is, so `+2 leather armor` not yet known reads `armor 1?`, and says under the forecast that it counted unknown gear plain.
+[Undermere](https://github.com/rudehn/undermere) counts each one at its kind's plain numbers, the level of nought any thing of its kind is, so `+2 leather armor` not yet known reads `armor 1?`, and says under the forecast that it counted unknown gear plain.
 The mark goes on for any unknown worn thing, not only one that gives armor, because a mark set by what the thing truly gives would tell what it is: a ring that lends armor marked and one that lends light not, armor cursed to nothing read as no armor at all.
-A game that knows which unknown things cannot move the figure, by what the player knows of them, clears the mark in `Annotate`; Undermere clears it while every unknown thing worn is of a known kind whose level moves no armor, so an unidentified ring of light leaves `armor 1` plain.
+A game that knows which unknown things cannot move the figure, by what the player knows of them, clears the mark in `Annotate`; [Undermere](https://github.com/rudehn/undermere) clears it while every unknown thing worn is of a known kind whose level moves no armor, so an unidentified ring of light leaves `armor 1` plain.
 Leaving the thing out of the total was rejected, since a total missing a coat is wrong every turn it is worn, and so was the engine counting it plain, since what plain is, and that a level is what is hidden, are the game's to say.
 The thing itself reads the same way.
 The bag and the look cursor print an unknown thing as `unknown` and nothing it is worth, which is right for a potion whose kind is the secret and says less than the player knows of a coat whose kind is plain and only its level is not.
 So `ItemRow::seems` and `InspectView::seems` are what a game says the thing seems, facets printed where `unknown` would be, and a game may write the numbers it seems to have into the row in `Annotate`, which the bag prints as a known thing's.
-Undermere calls such a thing `unidentified chain mail`, and says what any thing of the kind is at nought, that its numbers are shown so, and how long wearing it will take to tell its level.
+[Undermere](https://github.com/rudehn/undermere) calls such a thing `unidentified chain mail`, and says what any thing of the kind is at nought, that its numbers are shown so, and how long wearing it will take to tell its level.
 A second marker for a thing whose kind is known and whose level is not was rejected: what is known of a thing is the game's partition to draw, a level here and a maker or a charge count in another game, and `Unknown` already keeps the true numbers off every panel; what the engine lacked was only a way to stop saying `unknown` where the game had said more.
-The character sheet is the one reading no game corrects yet, since it names every modifier by the thing it came from; a game that draws it with unknown gear worn corrects it the same way, and Undermere draws none.
+The character sheet is the one reading no game corrects yet, since it names every modifier by the thing it came from; a game that draws it with unknown gear worn corrects it the same way, and [Undermere](https://github.com/rudehn/undermere) draws none.
 
 `Stuck` refuses every way a worn thing comes off as any impossible item action is refused, the player keeping the turn, and says so with `ItemEvent::WouldNotComeOff`, which the narrator turns into `Your ring will not come off.`; the bag and the gear rail both say `will not come off` while it is worn, in the same words and the same bad tone, so one mark means one thing on every panel.
 Which slot a thing that may go in several takes is `Equipment::equip_keeping`'s, beside the slot algebra, because a caller that only refused what `equip` displaced would refuse a ring for the finger it picked while the other finger's ring could have come off; a mind weighing gear asks the same rule, so it never walks to a better ring it would be refused.
 Only being worn holds a thing, because a curse that held a thing in the bag would be a rule about carrying, which is a game's.
 
 Neither marker is put on, taken off or saved by the engine.
-What makes a thing known, a use, a reading or a long wear, and what frees it are the game's rules, so a game's own effect or system adds and removes the component and its own save keeps it, as Undermere's keeps its faces, its curses and the turns a thing has been worn.
+What makes a thing known, a use, a reading or a long wear, and what frees it are the game's rules, so a game's own effect or system adds and removes the component and its own save keeps it, as [Undermere](https://github.com/rudehn/undermere)'s keeps its faces, its curses and the turns a thing has been worn.
 
 ## 9. Ammunition
 
-Foundry's slugs were the first ammunition and were Foundry's own: a system of the game's spent one from the bag on every shot and benched the gun when the bag ran out.
-A second game with a bow would have written the same loop again, so it moved into the engine as `AmmoPlugin`, opt-in since most weapons never run on it, and Foundry kept its content and its words.
+[Foundry](https://github.com/rudehn/foundry)'s slugs were the first ammunition and were Foundry's own: a system of the game's spent one from the bag on every shot and benched the gun when the bag ran out.
+A second game with a bow would have written the same loop again, so it moved into the engine as `AmmoPlugin`, opt-in since most weapons never run on it, and [Foundry](https://github.com/rudehn/foundry) kept its content and its words.
 A weapon carries `Ammo { tag }`, a shot spends one thing of that tag from its wielder's bag, and with none left the weapon is dry.
 Dry is derived rather than tracked: `sync_ammo` reads every fed weapon's bag every pass and sets it dry or loaded from that alone.
 The version that reacted to the events touching a bag, an equip, a pickup, a shot, needed a listener for every way a bag changes, and it missed two: two weapons on one bag fired the same last unit, and a dropped stack left a loaded gun behind.
@@ -276,4 +276,4 @@ There is no magazine and no reload action: a game that wants either writes it as
 - `crates/atglyph-bevy/src/parts.rs`: `Attacks`, `ItemParts` and its check, `insert_parts`, `level_up`, `ItemLevel` and `MadeOf`.
 - `crates/atglyph-save/src/run.rs`: `SaveableItem`, `SavedItem` and `save_items`.
 - `crates/atglyph-ui/src/view/target.rs` and `crates/atglyph-ui/src/panel/inventory.rs`: `AimUse`, answered by the targeting cursor and by the bag choosing.
-- `examples/foundry/src/gear.rs` and `examples/foundry/assets/items.ron`, and `examples/undermere/src/armory.rs` and `examples/undermere/assets/items.ron`: two games' own item files typed with the parts above, each with its own rules for a level beside them.
+- [Foundry](https://github.com/rudehn/foundry)'s `gear.rs` and `items.ron`, and [Undermere](https://github.com/rudehn/undermere)'s `armory.rs` and `items.ron`, in their own repositories: two games' own item files typed with the parts above, each with its own rules for a level beside them.

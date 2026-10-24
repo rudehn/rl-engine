@@ -91,7 +91,7 @@ cargo run -p terminal   # arrows or hjklyubn to move, q, Esc or Ctrl-C to quit
 
 `atglyph-bevy`, `atglyph-render`, `atglyph-ui`, `atglyph-save` and `atglyph-tty`, behind the `atglyph` facade, own the loop: the turn order, the systems in a fixed sequence, the plugins, the panels and the saves.
 A game adds `RoguelikePlugins` and then the subsystems it wants by name.
-The tutorial, Undermere and Foundry are the worked examples.
+The tutorial and the starter template are the worked examples here, and two whole games, [Undermere](https://github.com/rudehn/undermere) and [Foundry](https://github.com/rudehn/foundry), are sister projects built on it in repositories of their own.
 
 ### How the two meet
 
@@ -186,8 +186,7 @@ let path = AStar::new().find(&view, start, exit, PathRules::default()).expect("r
 println!("{} cells in sight, the exit is {} steps away", seen.count(), path.steps.len());
 ```
 
-The two example games below are what to read once you know which subsystem you are looking for, and every mechanic the engine has is in one of them.
-`examples/foundry/src/decks.rs` grows every deck of a run in one file.
+Once you know which subsystem you are looking for, its page in the guide's [system reference](docs/guide/src/systems/) says how to turn it on, and the two sister games, [Undermere](https://github.com/rudehn/undermere) and [Foundry](https://github.com/rudehn/foundry), use nearly every mechanic the engine has.
 
 ## If the build fails
 
@@ -218,7 +217,7 @@ Each crate declares its tier in its `Cargo.toml`, and `scripts/check-tiers.sh` f
 | 2 | `atglyph-tty` | the glyph grid written to a text terminal, and its keys read back |
 | 3 | `atglyph` | facade and prelude |
 
-## Example games
+## Examples
 
 ### Terminal, a walk through generated rooms
 
@@ -229,34 +228,11 @@ Its tested functions are `terminal::{generate, step, look, render, direction_of}
 cargo run -p terminal
 ```
 
-### Foundry, a fight down a droid foundry
+### Two whole games, in repositories of their own
 
-`examples/foundry` is a commando fighting down ten decks of a droid foundry, and the engine's worked example of combat depth: weapons that run hot or run dry, droids that shoot and raise the alarm, radar that an ion hit blinds, and a reactor charge that ends in a choice of upgrade.
-It is a library with a thin binary, so its own tests and a fingerprint tripwire play the same game the window does.
-
-```sh
-cargo run -p foundry -- --seed 7
-FOUNDRY_START=3 cargo run -p foundry -- --seed 7   # start on the reactor deck, for a screenshot
-```
-
-Keys: arrows, `hjklyubn` or the numpad to walk, `.` to wait, `>` `<` or Enter for the lifts, `f` to fire, `t` to throw a blade, `g` to pick up, `e` to set a charge beside the console, `L` to switch the shoulder lamp off or on, `i` for the pack, `a` for abilities, `x` to look, `tab` to pick out what is in sight, Escape for the menu, and `?` for all of them on one screen.
-
-### Undermere, a delve under a lake
-
-`examples/undermere` is a fantasy roguelike written to be a whole game rather than the worked example of one system, three parts in: the whole loop, thin, the items that make a run's builds, and the monsters that live on its floors.
-A lakeside town, Mereholt, stands over the Drowned Gate, and under it ten floors of a sunken kingdom in five biomes go down to the Drowned King, whose death wins the run.
-A monster is a core and a list of named traits in RON, an item lends traits to whoever wears it, and every floor is lit by its own ambient, its fixtures and the adventurer's lantern, which dims as they descend.
-Things are its only progression: most are not known until used, scrolls of enchanting raise whatever the player reads them onto, heavy gear wants strength, a cursed thing clings once worn, and the armory runs from a dagger five times as hard on the unaware to staffs and wands zapped from the pack.
-It opens on the engine's title over a painted night on the black lake, and every run ends in an itemized score, line by line, kept in the records the title opens.
-Its map tiles are square, each two narrow cells wide, and it draws in a font it ships, DejaVu Sans Mono.
-
-```sh
-cargo run -p undermere -- --seed 7
-UNDERMERE_START=5 cargo run -p undermere -- --seed 7   # start on floor five, for a screenshot
-UNDERMERE_NEAR=camp cargo run -p undermere -- --seed 7 # walked up to a camp along the way, for a screenshot
-```
-
-Keys: arrows, `hjklyubn` or the numpad to walk, `.` to wait, `g` or `,` to pick up, `>` `<` or Enter for the stairs and the gate, `f` to shoot, `t` to throw from the pack, `i` for the pack, `x` to look, `tab` to pick out what is in sight, Escape for the menu, and `?` for all of them on one screen.
+Two games built on the engine live in repositories of their own, each depending on it from git by a release's tag and through the public API alone.
+[Undermere](https://github.com/rudehn/undermere) is a fantasy roguelike written to be a whole game: a lakeside town over ten floors of a sunken kingdom, monsters written as traits, things that are its only progression, and the engine's title and records.
+[Foundry](https://github.com/rudehn/foundry) is a commando fighting down ten decks of a droid foundry, the worked example of combat depth: weapons that run hot or run dry, droids that shoot and raise the alarm, and a reactor charge that ends in a choice of upgrade.
 
 ### Abilities in any genre
 
@@ -264,14 +240,14 @@ Abilities being data that serves any genre is proved by a test, not a game: `cra
 
 ### Pictures of your own
 
-Any of the games photographs its own window when asked, after playing a script of keys through the real input:
+Any game on `RoguelikePlugins` photographs its own window when asked, after playing a script of keys through the real input, the tutorial's last step here:
 
 ```sh
-ATGLYPH_CAPTURE=shot.png ATGLYPH_CAPTURE_KEYS="L j*4 l*6 ." cargo run -p foundry -- --seed 7
+ATGLYPH_CAPTURE=shot.png ATGLYPH_CAPTURE_KEYS="j*4 l*6 ." cargo run -p tutorial --bin step09_panels
 
 # Write a run down as it is played, and play it back.
-ATGLYPH_RECORD=run.ron cargo run -p foundry -- --seed 7
-ATGLYPH_REPLAY=run.ron cargo run -p foundry
+ATGLYPH_RECORD=run.ron cargo run -p tutorial --bin step09_panels
+ATGLYPH_REPLAY=run.ron cargo run -p tutorial --bin step09_panels
 ```
 
 The window opens above the others without taking focus, and the screen must be unlocked; a frame that comes back black is refused rather than saved.
@@ -312,7 +288,7 @@ cargo test --workspace                # everything, builds Bevy
 ## Status
 
 atglyph is pre-1.0 and its API still moves.
-Two complete example games and the guide's own run on it, and CI checks formatting, clippy, tests, docs and the WebAssembly build of every tier-1 crate.
+Two complete games in repositories of their own and the guide's own run on it, and CI checks formatting, clippy, tests, docs and the WebAssembly build of every tier-1 crate.
 
 ## License
 

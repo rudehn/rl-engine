@@ -17,7 +17,7 @@
             crates/atglyph-bevy/src/fire.rs
             crates/atglyph-bevy/src/noise.rs
             crates/atglyph-bevy/src/effects/mod.rs
-     fingerprint: 36c1bcef -->
+     fingerprint: aeec0d09 -->
 
 # Minds
 
@@ -69,22 +69,18 @@ A follower keeps on the one actor its `Leader(Entity)` component names, seen or 
 
 ## Using it
 
-Foundry's roster is a brain per kind, the standard chain at Foundry's numbers built from what that kind's parts can do, with an alarm first and repairs or a kept span in place of the hunt, and every monster of the kind is spawned carrying it.
+Warren's bestiary is a brain per kind, the standard chain at Warren's numbers built from what that kind can do, with a shove of Warren's own put first for a kind that shoves, and every rat of the kind is spawned carrying it.
 
-<!-- include: ../../../../examples/foundry/src/droids.rs:brains -->
+<!-- include: ../../../../examples/tutorial/src/bin/step09_panels.rs:brain -->
 ```rust,no_run
-            let mut brain = DROID.brain(made.repertoire());
-            // First, since nothing a probe would otherwise do matters more
-            // than raising the alarm it has not raised yet.
-            if d.alarm.is_some() {
-                brain = brain.first(SignalAlarm);
+            // A shover leads with its shove; the shove is a choice of Warren's
+            // own, which the engine routes to Warren's own action.
+            let can = Repertoire { flee_at: def.flee_at, melee: true, ..Repertoire::default() };
+            let mut brain = WARREN.brain(can);
+            if def.shoves {
+                brain = brain.first(ShoveAdjacent);
             }
-            brain = match (d.repairs, d.keep_away) {
-                // A drone that rebuilds has nothing to hunt with.
-                (Some(_), _) => brain.instead_of_hunt(RepairWrecks),
-                (None, Some(keep)) => brain.instead_of_hunt(Keep::enemies(keep.within, keep.no_closer)).instead_of_hunt(Hover),
-                (None, None) => brain,
-            };
+            minds.push(Arc::new(brain.build()));
 ```
 
 ## The line

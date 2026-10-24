@@ -7,7 +7,7 @@ The reasoning is here; `docs/OVERVIEW.md` lists what exists.
 
 A death used to be final in the most literal sense: `process_deaths` took the actor out of the world and `bury_the_dead` despawned it at the end of the frame.
 A game that wanted a body on the floor had to spawn one, and every game that wanted one would have spawned it differently.
-Foundry wants four things from a body at once: a repair drone rebuilding a droid wreck, a salvager stripping it, a scrap crab carrying it off, and the commando searching it.
+[Foundry](https://github.com/rudehn/foundry) wants four things from a body at once: a repair drone rebuilding a droid wreck, a salvager stripping it, a scrap crab carrying it off, and the commando searching it.
 None of those four are the engine's business, and all four need the same thing underneath: something left where the actor fell, that minds can see and walk to, and that survives a save.
 
 This is that thing, and no more than that thing.
@@ -41,7 +41,7 @@ That cost buys the engine never guessing at content, which is the trade this rep
 Within it, each actor is opt-in too, through `LeavesRemains` on the spawn.
 
 Two levels rather than one because "does anything stay behind" is not a property of a game, it is a property of a kind of thing in a game.
-A foundry leaves wrecks behind its droids and nothing behind the vermin that get vaporised; a dungeon leaves bodies behind its orcs and nothing behind its summoned shades.
+A factory leaves wrecks behind its droids and nothing behind the vermin that get vaporised; a dungeon leaves bodies behind its orcs and nothing behind its summoned shades.
 A game that wants bodies from everything puts the marker on every spawn, which is one line in the spawn it already writes.
 
 Whether the plugin is added decides whether the system runs, and a marker on an actor in a game without the plugin does nothing at all, which is the rule the repo already holds everywhere.
@@ -106,7 +106,7 @@ The field defaults, so a save written before this exists still loads.
 
 Status: designed 2026-09-23 with `docs/design/work.md`, built 2026-09-29.
 
-Foundry's repair drone rebuilds a droid wreck into a droid, so remains must be able to stand up again.
+[Foundry](https://github.com/rudehn/foundry)'s repair drone rebuilds a droid wreck into a droid, so remains must be able to stand up again.
 The engine laid the body down, so standing it back up is the engine's too; a game that respawned a fresh droid in its place would lose what made it that droid, its bag, its statuses and every component the game put on it, and each game would lose a different part of it.
 
 ### 9.1 A copy of the living actor, taken at the moment of death
@@ -136,14 +136,14 @@ No path through the engine or a game can skip it, because the hook belongs to th
 `commands.revive(body, health)` gives the body back the shape of its twin:
 
 - Every component the twin has and the body lacks is put back, which is everything death took off and anything a game's death took off, named nowhere.
-- Every component the body has and the twin lacks is taken off: `Remains`, whose hook then despawns the twin, `Prop`, and whatever the game added to the body, such as Foundry's `PropKind`.
+- Every component the body has and the twin lacks is taken off: `Remains`, whose hook then despawns the twin, `Prop`, and whatever the game added to the body, such as [Foundry](https://github.com/rudehn/foundry)'s `PropKind`.
 - A component on both comes back with the twin's value, so a body dressed as something else while it lay there stands up as the actor it was: the name the engine gave the body, and the look the renderer wrote into the same `Glyph` when it dressed the body as a prop, both go back to the actor's own.
 - `Position` and `OnMap` stay the body's, since where it lies is what the world did to it, and a body carried off stands up where it was carried.
 - `Health` is set to `health`, capped at the twin's maximum.
 - A body with something standing on it stands up on the nearest free cell within `RevivalRules::standing_room`, two by default and a rule value since 2026-10-22, ring by ring in reading order; with none free the revival is refused with a warning.
 
 As designed, a component on both kept the body's value, with `Name` the one exception.
-Seeing it in Foundry turned that round: a revived line droid stood up drawn as its wreck, because dressing a body writes its look into the component the living actor's look was in.
+Seeing it in [Foundry](https://github.com/rudehn/foundry) turned that round: a revived line droid stood up drawn as its wreck, because dressing a body writes its look into the component the living actor's look was in.
 The rule was only ever protecting what a body carries, which is handled on its own below, so the twin wins everywhere else and `Name` needs no exception.
 
 In a game with items, death has already let fall everything the actor carried and wore: `drop_what_the_dead_carried` empties the bag and the slots onto the cell, for bodies as for everything else, so a revived actor stands up with nothing and its gear at its feet.

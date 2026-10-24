@@ -1,12 +1,12 @@
 # Names
 
-Status: built 2026-10-08, on branch `namegen` from `main`, for Undermere's townsfolk and mercenaries.
+Status: built 2026-10-08, on branch `namegen` from `main`, for [Undermere](https://github.com/rudehn/undermere)'s townsfolk and mercenaries.
 The reasoning is here; `docs/OVERVIEW.md` lists what exists, and the module docs of `atglyph-rules::namegen` are the reference, with the file's full option space.
 
 ## 0. Summary
 
 A game with people in it names them, and a roguelike names them anew every run.
-Undermere's fifth part names everyone in its town each run, and its sixth names the mercenaries at the tavern; a scroll's unknown title is the same problem in capitals.
+[Undermere](https://github.com/rudehn/undermere)'s fifth part names everyone in its town each run, and its sixth names the mercenaries at the tavern; a scroll's unknown title is the same problem in capitals.
 Every game that wants this writes the same thing: pools of syllables, a few shapes a name can take, and a check that throws away the ones that read badly.
 So the engine owns it, as `atglyph_rules::namegen`: a `NameBook` of named `NameSet`s read from one RON file, and a draw from the caller's stream that never loops.
 
@@ -52,7 +52,7 @@ Load checks the shape: every pool named exists and holds no empty syllable, ever
 Every mistake is reported together, each naming its set.
 
 It cannot check the luck: whether a set's rejections leave enough names for a run.
-Sampling at load would need a generator, and engine code never makes one, so a set's yield is a property the game that ships it tests over a range of its seeds, as Undermere's are to draw a hundred distinct names from each of its sets.
+Sampling at load would need a generator, and engine code never makes one, so a set's yield is a property the game that ships it tests over a range of its seeds, as [Undermere](https://github.com/rudehn/undermere)'s are to draw a hundred distinct names from each of its sets.
 
 ## 4. Rejected
 

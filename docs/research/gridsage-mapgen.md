@@ -1,7 +1,7 @@
 # Grid Sage Games on map generation: a reference
 
 Research notes compiled 2026-09-30 from the first-party writing of Josh Ge (Kyzrati), developer of Cogmind and POLYBOT-7, on the Grid Sage Games blog.
-The purpose is to serve a later design session on procedural map generation for `examples/foundry`.
+The purpose is to serve a later design session on procedural map generation for [Foundry](https://github.com/rudehn/foundry).
 Everything in sections 1 to 9 is sourced, and each claim links the post it came from.
 Section 10 is inference and is labeled as such.
 Where a source does not say something, this file says "not stated" rather than guessing.
@@ -788,13 +788,13 @@ A 104-frame preview of repeated generations of one 125x125 style.
 Frames taken before tunneling show only four small white cubby prefabs, one near each corner, on an otherwise solid map, at slightly different positions each time, which shows seeding with a random offset.
 A finished frame shows a dense room cluster with the most secluded rooms shaded red at the edges.
 
-## 10. What this suggests for foundry (inference, not sourced fact)
+## 10. What this suggests for [Foundry](https://github.com/rudehn/foundry) (inference, not sourced fact)
 
-Everything in this section is my inference from the sources above, measured against the current state of `examples/foundry` and `crates/atglyph-mapgen`.
+Everything in this section is my inference from the sources above, measured against the current state of [Foundry](https://github.com/rudehn/foundry) and `crates/atglyph-mapgen`.
 None of it is something Josh Ge said about this project.
 
-Where foundry is now, from a brief read of the repo: a deck is 70x40 (2,800 cells), built by a rooms pass with L-corridors, with required pieces stamped first (armory, store, guard post, reactor or core) and then one centered prefab per remaining room from six room kinds in two sizes (`examples/foundry/src/decks.rs`, `crates/atglyph-mapgen/src/dungeon.rs`, `crates/atglyph-mapgen/src/prefab.rs`).
-Prefabs are RON with rows, a legend, tagged item and monster draws by band, and `Mark` cells (`examples/foundry/assets/prefabs/*.ron`).
+Where [Foundry](https://github.com/rudehn/foundry) is now, from a brief read of the repo: a deck is 70x40 (2,800 cells), built by a rooms pass with L-corridors, with required pieces stamped first (armory, store, guard post, reactor or core) and then one centered prefab per remaining room from six room kinds in two sizes (its `decks.rs`, `crates/atglyph-mapgen/src/dungeon.rs`, `crates/atglyph-mapgen/src/prefab.rs`).
+Prefabs are RON with rows, a legend, tagged item and monster draws by band, and `Mark` cells ([Foundry](https://github.com/rudehn/foundry)'s `assets/prefabs/*.ron`).
 The engine already has rotation, flipping, `StampOneOf` weighted choice and `Placement::AnyRoom`.
 
 ### 10.1 Unpredictable
@@ -803,7 +803,7 @@ The engine already has rotation, flipping, `StampOneOf` weighted choice and `Pla
    This is the technique he aims squarely at the owner's objection.
    A single "main corridor then subdivide" plan is predictable because it is one plan.
    Materials has three (cross, spiral, corridors) that differ in where exits sit, where barriers go and which direction growth starts, and the player cannot tell which is in play.
-   For foundry that means a small set of plans per deck theme, each a handful of numbers: exit regions with jitter, start directions, optional barriers with a probability, reserved blocks.
+   For [Foundry](https://github.com/rudehn/foundry) that means a small set of plans per deck theme, each a handful of numbers: exit regions with jitter, start directions, optional barriers with a probability, reserved blocks.
 2. Grow from the points of interest outward and let the pieces collide.
    Routes become circuitous because independent diggers meet where they happen to meet.
    This is the opposite of carving a spine first.
@@ -819,13 +819,13 @@ The engine already has rotation, flipping, `StampOneOf` weighted choice and `Pla
    In a factory these read naturally as maintenance ducts or service hatches, and they are his only direct room-to-room connection.
 
 The gap to be aware of: the posts do not give the tunneler's step rules.
-A foundry design will have to write those rules itself, with the DungeonMaker manual as the stated ancestor.
+A [Foundry](https://github.com/rudehn/foundry) design will have to write those rules itself, with the DungeonMaker manual as the stated ancestor.
 
 ### 10.2 Factory feel
 
 1. Arrays of one machine, filled to the largest grid that fits, with slots dropped where something else stands.
    Looking at his Factory maps, this is most of what makes them read as a factory: rooms hold a 2x3 of presses or a 4x6 of tanks, not one centered set piece.
-   Foundry's one-centered-prefab-per-room is the main thing those images argue against.
+   [Foundry](https://github.com/rudehn/foundry)'s one-centered-prefab-per-room is the main thing those images argue against.
 2. Halls as a distinct place type, furnished largest first.
    Big open floors with big machines as cover are where a factory looks like one.
 3. Machine themes per deck, with separate weights for room, hall and junction.
@@ -833,7 +833,7 @@ A foundry design will have to write those rules itself, with the DungeonMaker ma
 4. Terminals at rated junctions.
    A console at a corridor crossing is a factory image and it gives junctions a job.
 5. The six compositions including "nothing".
-   Foundry's design says a blank room is to be avoided, and he agrees that an area should say what it is for, but he also keeps empty floor for tactics and has an explicit empty composition.
+   [Foundry](https://github.com/rudehn/foundry)'s design says a blank room is to be avoided, and he agrees that an area should say what it is for, but he also keeps empty floor for tactics and has an explicit empty composition.
    The reconciliation that fits both is that a room with only a machine array and no encounter is "furnished but quiet".
 6. Wide main corridors if ranged combat matters; his 3-wide standard is derived from firing lines.
 
@@ -847,7 +847,7 @@ A foundry design will have to write those rules itself, with the DungeonMaker ma
 3. Seclusion-weighted rewards.
    Computing shortest paths between entry and exit and rating rooms by distance from them is cheap with the engine's `DijkstraMap`, and it is what makes leaving the direct route pay.
 4. Reward on the floor, not at the exit, if maps stay smallish.
-   This is the POLYBOT-7 lesson and it fits foundry's reactor charges and build-defining finds: put the things worth having at the periphery, and then the exit need not be far away.
+   This is the POLYBOT-7 lesson and it fits [Foundry](https://github.com/rudehn/foundry)'s reactor charges and build-defining finds: put the things worth having at the periphery, and then the exit need not be far away.
 5. Loops over dead ends, checked as a metric, and a dead end must hold something.
 6. A clock that makes full clearing a choice.
    He assumes players will not see the whole map, which is what lets a map hold more than a run consumes.
@@ -856,20 +856,20 @@ A foundry design will have to write those rules itself, with the DungeonMaker ma
 
 1. An encounter table with named weights, per-deck pools, and count limits per map and per run.
    The 1 to 200 weight spread, with most encounters belonging to one map type, is the mechanism behind "you will not see everything".
-   Foundry currently has six room kinds; his game-wide number is 148 encounter types over about thirty map types, and Garrisons alone had 44 quadrants and still felt repetitive at ten visits per run.
+   [Foundry](https://github.com/rudehn/foundry) currently has six room kinds; his game-wide number is 148 encounter types over about thirty map types, and Garrisons alone had 44 quadrants and still felt repetitive at ten visits per run.
 2. Fill only a share of rooms with encounters (his range is 10% to 100% by map type) and let the composition system furnish the rest.
    That separates "what makes this room a factory room" from "what is special here", and it is what lets the special things be rare.
 3. Multiple prefab alternatives per encounter, in different footprints, so the encounter fits more rooms and looks different each time (he has up to 12).
-   Foundry already does this at two sizes.
+   [Foundry](https://github.com/rudehn/foundry) already does this at two sizes.
 4. Randomization inside prefabs: per-line exclusion chances, pick-one groups, class tags resolved by depth, the same-adjacent rule.
-   Foundry's tagged draws by band already cover the class-tag case; exclusion chances and groups are the missing pieces.
+   [Foundry](https://github.com/rudehn/foundry)'s tagged draws by band already cover the class-tag case; exclusion chances and groups are the missing pieces.
 5. Assign uniques to a deck at run start.
    With ten decks and a per-run draw, some set pieces simply do not exist in a given run.
 6. Whole-prefab state variants chosen at run start (intact, abandoned, wrecked, under attack), which multiply content at the cost of an alternate file.
 7. Rare deck-wide events as a second layer above encounters.
 8. Optional side maps.
    His strongest "cannot see it all" lever is the branch structure with no backtracking.
-   Foundry is a ten-deck descent and return, so the nearest equivalents are optional sub-areas per deck that appear only in some runs, or intermap-style small themed maps behind a special entrance.
+   [Foundry](https://github.com/rudehn/foundry) is a ten-deck descent and return, so the nearest equivalents are optional sub-areas per deck that appear only in some runs, or intermap-style small themed maps behind a special entrance.
    That is a larger design decision than the others and is noted here only as the direction the source points.
 
 ### 10.5 Engine-side implications

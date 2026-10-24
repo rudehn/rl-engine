@@ -3,7 +3,7 @@
      files: crates/atglyph-bevy/src/seed.rs
             crates/atglyph-bevy/src/replay.rs
             crates/atglyph-core/src/seed.rs
-     fingerprint: 994499ee -->
+     fingerprint: d2c2ab87 -->
 
 # Seeds and determinism
 

@@ -12,9 +12,8 @@
 #   3. every directory in `examples/` is named in the overview,
 #   4. and named in the guide, whose last chapter is the table of them.
 #
-# Check 4 exists because Foundry, the newest example, reached its own
-# design document and a fingerprint test without ever being mentioned in
-# the guide.
+# Check 4 exists because an example once reached its own design document
+# and a fingerprint test without ever being mentioned in the guide.
 #
 # What it cannot check is whether the prose is still true. That stays a
 # review matter, and the tables the overview now carries are there so the

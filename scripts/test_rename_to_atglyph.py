@@ -63,7 +63,7 @@ class Rewrite(unittest.TestCase):
         self.assertEqual(rewrite(once, facade_user=True), once)
 
     def test_history_and_links_are_skipped(self):
-        for path in ["docs/reviews/a.md", "docs/superpowers/plans/x.md", ".planning/y.md", "docs/PLAN.md", "examples/undermere/SOAK.md", "Cargo.lock"]:
+        for path in ["docs/reviews/a.md", "docs/superpowers/plans/x.md", ".planning/y.md", "docs/PLAN.md", "Cargo.lock"]:
             self.assertEqual(classify(pathlib.Path(path)), "skip")
         self.assertEqual(classify(pathlib.Path("examples/terminal/src/main.rs")), "engine")
         self.assertEqual(classify(pathlib.Path("docs/guide/src/systems/noise.md")), "facade_user")

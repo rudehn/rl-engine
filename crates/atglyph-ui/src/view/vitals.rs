@@ -31,7 +31,7 @@ pub struct VitalsView {
     /// worn thing's armor included, less the armor the player's
     /// [`Seems`](crate::view::Seems) says is there and does not seem to
     /// be, since only a game knows what a thing not yet known seems to be:
-    /// Undermere counts one at its kind's plain numbers, so that the figure
+    /// a game may count one at its kind's plain numbers, so that the figure
     /// does not tell its level. The mark below stays either way.
     pub armor: Option<i32>,
     /// Whether `armor` is what the game's [`Seems`](crate::view::Seems)
@@ -50,8 +50,8 @@ pub struct VitalsView {
     /// would read as no armor at all. So the collector marks what it cannot
     /// rule out, and a game that knows which unknown things cannot move the
     /// figure, by what the player already knows of them, clears the mark in
-    /// [`ViewSet::Annotate`](crate::ViewSet), as Undermere does for a ring
-    /// whose kind moves no armor at any level.
+    /// [`ViewSet::Annotate`](crate::ViewSet), as for a ring whose kind
+    /// moves no armor at any level.
     pub armor_uncertain: bool,
     /// One per active status that has a badge glyph, in the order they
     /// were applied.

@@ -193,6 +193,7 @@ struct Goblins {
     side: FactionId,
 }
 
+// ANCHOR: goblin
 impl Goblins {
     /// One goblin, standing at `at`.
     fn goblin(&self, at: Point) -> impl Bundle + use<> {
@@ -231,6 +232,7 @@ impl Goblins {
         )
     }
 }
+// ANCHOR_END: goblin
 
 /// What lies about the floor to be found: potions, a dagger and a coat.
 /// An item is an entity like any other: on the floor it has a position,

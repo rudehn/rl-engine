@@ -152,7 +152,7 @@ pub enum LightEvent {
 pub const DEFAULT_THRESHOLD: u8 = 16;
 
 /// The intensity at or above which a seen tile counts as lit rather than
-/// dim, unless the game says otherwise. With the lamps the example games
+/// dim, unless the game says otherwise. With the lamps games commonly
 /// carry, it leaves a ring of one or two tiles of dim light at a lamp's
 /// edge, which is where a sneak stands and where a shot goes wide.
 pub(crate) const DEFAULT_BRIGHT: u8 = 64;

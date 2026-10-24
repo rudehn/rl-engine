@@ -43,9 +43,9 @@ The tests come in two tiers, and nextest knows which is which:
 
 - **The fast tier** is unit tests, properties tested without an `App`, small `App` tests and the fingerprints. It is nextest's default profile, so `cargo nextest run` and the scoped `scripts/gate.sh` that every commit runs play it and nothing else.
 - **The slow tier** is the full-game play-throughs, each game's backstops over the whole generator, and any test past two seconds of processor time. `.config/nextest.toml` names each of them by package and path in the default profile's `default-filter`. It runs once, at a branch's end and before it merges, in `scripts/gate.sh --all` (`--profile full`), and in CI (`--profile ci`); both profiles run both tiers.
-- **The fingerprints stay in the fast tier at any cost.** They are the early warning that a change moved play, and Undermere's four scripted delves are its dearest test, about 60 s of processor time and 17 s alone.
+- **The fingerprints stay in the fast tier at any cost.** They are the early warning that a change moved play, `atglyph-bevy`'s scripted run among them.
 - **A new test that builds a full game `App` and plays turns or floors goes in the slow tier unless it is cheap.** The check names any fast-tier test past two seconds as one to make cheaper or move there.
-- **While working on an area**, run its slow tests by filter, with `--profile full` or `--ignore-default-filter` so the default filter does not drop them: `cargo nextest run --workspace --profile full -E 'package(undermere) & test(/traps::/)'`. `cargo test -p <crate> <filter>` runs every test the filter names, slow or not.
+- **While working on an area**, run its slow tests by filter, with `--profile full` or `--ignore-default-filter` so the default filter does not drop them: `cargo nextest run --workspace --profile full -E 'package(atglyph-mapgen) & test(/lakes::/)'`. `cargo test -p <crate> <filter>` runs every test the filter names, slow or not.
 
 Every test asks one of four kinds of question, and each kind is answered its own way:
 
@@ -60,35 +60,26 @@ So generation is never played over many seeds to see whether content turns up or
 
 `scripts/slot` records each test's processor time beside the wall time nextest records, and `scripts/test-times.py` reads both after every gate:
 
-- processor time over the budget fails the gate: both tiers of the workspace over 900 s, its fast tier over 490 s, Undermere's fast tier alone over 310 s;
-- any one test over 120 s of processor time fails it, and one over 20 s, or 30 s of wall time, is named;
-- wall time over its budget only warns, since a busy machine explains it: 170 s for both tiers, 110 s for the fast tier, 60 s for Undermere's;
+- processor time over the budget fails the gate: both tiers of the workspace over 85 s, its fast tier over 55 s;
+- any one test over 20 s of processor time fails it, and one over 10 s, or 15 s of wall time, is named;
+- wall time over its budget only warns, since a busy machine explains it: 30 s for both tiers, 26 s for the fast tier;
 - CI plays every seed on another machine, so it reports against numbers of its own and only warns.
 
 Each run's totals by package are kept in `rl-test-times.tsv` in the main checkout's `.git` (`git rev-parse --git-common-dir`), one line a package a run with its branch and commit, so a branch's times outlive its worktree.
 
 When the check speaks, the slowest tests it lists are the ones to fix, by the cheapest of these that keeps the test proving what it proved:
 
-- **A property of generation is tested without an `App`.** Build the place (`Undermere::build`, an `atglyph-mapgen` chain) and read it; arriving through a headless game populates, lights and saves it as well. A rule that needs no world goes to `atglyph-rules` and is tested there.
+- **A property of generation is tested without an `App`.** Build the place (an `atglyph-mapgen` chain) and read it; arriving through a headless game populates, lights and saves it as well. A rule that needs no world goes to `atglyph-rules` and is tested there.
 - **A rule inside a system is a rule only an `App` can test.** So a system gathers, calls a function in tier 1 (`atglyph-rules`, or `atglyph-core` and `atglyph-grid` for arithmetic and grid search), and applies the result; the `App` test that is left proves the call, and the rule's cases are unit tests (`atglyph_rules::faction::stance` is the model).
 - **A property over seeds plays `seeds(full)`.** It is the first `QUICK` seeds, eight, on every run, and all of `full` under `ATGLYPH_FULL_SEEDS=1`, which CI sets, so the rare seed is still caught. A property never plays a bare range.
 - **A rate or a count of rare things plays `first_seeds(full, n)`**, with the reason beside it: such a test needs `n` seeds before its count says anything.
-- **A test waiting for a rare thing stops at the first one.** Build floors until the thing turns up, and no further, rather than every floor of every seed (`a_blood_trail_turns_up_on_some_floors_but_never_the_throne_over_a_span_of_seeds`).
-- **What does not change per seed is made once.** Content is read once and reseeded (`Undermere::reseeded`); a floor walked for every cell a check asks from is walked once and handed in (`far_choices_among`).
+- **A test waiting for a rare thing stops at the first one.** Build floors until the thing turns up, and no further, rather than every floor of every seed.
+- **What does not change per seed is made once.** Content is read once and reseeded; a floor walked for every cell a check asks from is walked once and handed in.
 - **State is set up, not played to.** Stand someone where the test needs them, give them the thing, clear the monsters: the helpers in `atglyph::testing` and a game's own `testing` module do it in a frame; turns are played only when the turns are the property.
 - **A fingerprint is never sped up by changing what it plays**; it is a tripwire, and a faster one that moves is a different run.
 - **`#[ignore]` is for a by-hand span or a tuning aid**, its reason in the attribute, never for an everyday test that grew slow; the slow tier is where a slow everyday test goes.
 
 A budget is raised only on purpose, saying why in the commit, as a fingerprint is re-baselined.
-
-### Soaks
-
-A soak (`examples/undermere/tests/soak.rs`) is a by-hand tuning aid of about ten minutes on a quiet machine, not a test.
-
-- **Soak only what changed.** `examples/undermere/SOAK.md` records each soak's numbers beside the commit they were measured at. A baseline is that latest row; re-soak it only when `git diff --quiet <commit> HEAD -- crates examples/undermere/src examples/undermere/assets` says game code changed.
-- **One soak at a time on the machine.** It already uses every core, so two at once each take twice as long; check `pgrep -f 'test soak'` first and wait.
-- **Run it on the dev profile.** Dependencies are already optimized, and a release build costs a second full build and drops the overflow checks a soak should catch.
-- **Record the result** as a row of `SOAK.md` in the commit that tuned against it.
 
 ## Rules that only review enforces
 
@@ -105,6 +96,7 @@ A soak (`examples/undermere/tests/soak.rs`) is a by-hand tuning aid of about ten
 - **Costs and clocks are integers.** Hundredths of a step, the same unit everywhere.
 - **Doc comments say why and why-not**, at the density of `atglyph-core/src/turn.rs`, not more.
 - **A resource may still be optional data.** The distinction is whether the subsystem is optional or the game's setup is wrong. `Lighting` absent means a lit world and no cost; no statuses in `Registries` means no badges on a health bar. But a `GearPanel` in a game with no `Registries` at all is a mistake, so it asserts. Read an optional one as `Option<Res<_>>` and say in the docs what its absence means.
+- **A game uses only the public API.** A game names its own systems and the engine's system sets, component, resource and message types and plugins, and never an engine system function, a private path, or a name public only so a game's test can reach it. Across a repository boundary an internal changes in any release with no semver signal, so a check that needs one is the engine's own test. [Undermere](https://github.com/rudehn/undermere) and [Foundry](https://github.com/rudehn/foundry) are the proof: each lives in a repository of its own and depends on the engine from git by a release's tag.
 - **Tests**: property-over-seed-range where a property exists, fingerprint tripwires labelled as such where none does, and a name that reads as a sentence describing the property.
 - **Every RON schema** carries a top-of-file comment listing the full option space.
 - **No `TODO` comments in source.** Outstanding work is tracked in `docs/TODO.md`, the plan's progress log, or an issue.
@@ -142,7 +134,7 @@ Writing one is a welcome slice, not a prerequisite for touching the code.
 `docs/design/ui.md` is the design and `crates/atglyph-ui/src/lib.rs` is the how-to; read the crate docs before adding a panel.
 The short version: `UiPlugin` is the base, each panel is its own plugin taking a `Rect`, and a presenter adds its view plugin behind it.
 `docs/guide/src/09-where-to-go-next.md` is the same thing aimed at a game author, and `examples/tutorial/src/bin/step09_panels.rs` is the worked example the chapter quotes.
-Undermere is the full set: vitals, gear, nearby and inspect with a game facet for a townsperson's role, log, the sheet, a party, trade and records, and its screens on the modal stack; Foundry's gear rows carry a game facet for a weapon's heat.
+[Undermere](https://github.com/rudehn/undermere), a sister project in a repository of its own, is the full set: vitals, gear, nearby and inspect with a game facet for a townsperson's role, log, the sheet, a party, trade and records, and its screens on the modal stack; [Foundry](https://github.com/rudehn/foundry)'s gear rows carry a game facet for a weapon's heat.
 
 ## Writing a system page
 

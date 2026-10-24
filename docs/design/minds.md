@@ -138,7 +138,7 @@ None of the three touches `decide_minds`, `TacticCtx` or the sort at the head of
 
 ## 8. A kind of monster made of parts
 
-Until 2026-10-14 each game spawned its monsters by hand: Undermere's `spawn_monster` and Foundry's put the same health, armor, side, sight, speed, mind, wits, notice, hearing, attacks and drops on an actor in two hand-written bundles, and each saved a monster as its definition's name and spawned it again from that name, and each read its spawn table row by row.
+Until 2026-10-14 each game spawned its monsters by hand: [Undermere](https://github.com/rudehn/undermere)'s `spawn_monster` and Foundry's put the same health, armor, side, sight, speed, mind, wits, notice, hearing, attacks and drops on an actor in two hand-written bundles, and each saved a monster as its definition's name and spawned it again from that name, and each read its spawn table row by row.
 Items had just stopped doing the same thing (`docs/design/items.md`, section 6a), and the reasoning carries over whole: what is shared is the shape of what the engine already simulates, never a schema, and the defaults are the game's.
 
 `atglyph_bevy::ActorParts<I>` is every part of one kind of actor, the actor's `ItemParts`, and a game fills one per definition at load from its own fields.
@@ -148,14 +148,14 @@ A number written is inserted as written, so a game that writes no armor has no `
 `ActorParts::insert` puts them on an entity the game spawned with its own marker, its name and its look, rather than spawning one itself, so an actor spawned by hand, as the tutorial's are, and one spawned from parts are the same kind of entity.
 
 A game's defaults are another `ActorParts`, laid under each kind with `ActorParts::over`: a value the kind writes wins, and a list the defaults hold is added to.
-Undermere's is that every monster notices by its own `NOTICE`, sure from four tiles further while the adventurer is lit, and Foundry's that every kind notices by the engine's plain rule and leaves remains; the engine gives a kind that names neither no notice and no remains.
+[Undermere](https://github.com/rudehn/undermere)'s is that every monster notices by its own `NOTICE`, sure from four tiles further while the adventurer is lit, and Foundry's that every kind notices by the engine's plain rule and leaves remains; the engine gives a kind that names neither no notice and no remains.
 A default passed to the engine, an `ActorDefaults` beside the parts or an argument to the spawn, was weighed and rejected: the defaults are only a kind of parts, `over` is the rule `Level::over` already is for items, and a game that wants none writes none.
 
 What stays in the games is what the engine does not simulate, and the line is drawn per field.
-Undermere's traits and their fold, its tricks, its boss, mini-boss and conjured kinds, its sleep and its camps are Undermere's; the fold runs first and the parts are filled from the folded values, and whether a kind leaves a body, never a boss or a conjured one, is Undermere's decision written into the part.
-A kind whose wits take things up gets a pack, slots and the worth of its own blow from Undermere, since what a monster does with what it carries is a rule of Undermere's and not a part.
-Foundry's resist profile, its alarm, its repairs and its radar are Foundry's, and its radar is why `dark_sight` is a part Foundry leaves empty: `NativeDarkSight` is folded with what a droid wears and whether it is jammed before anything reads `DarkSight`.
-A shot, a blow, a light and the span a kind keeps from its enemies are parts both games type their fields with, Foundry's `keep_away` among them, and where in a brain a game keeps that span is its own, Foundry's in place of the hunt and beside `Hover`.
+[Undermere](https://github.com/rudehn/undermere)'s traits and their fold, its tricks, its boss, mini-boss and conjured kinds, its sleep and its camps are Undermere's; the fold runs first and the parts are filled from the folded values, and whether a kind leaves a body, never a boss or a conjured one, is Undermere's decision written into the part.
+A kind whose wits take things up gets a pack, slots and the worth of its own blow from [Undermere](https://github.com/rudehn/undermere), since what a monster does with what it carries is a rule of Undermere's and not a part.
+[Foundry](https://github.com/rudehn/foundry)'s resist profile, its alarm, its repairs and its radar are Foundry's, and its radar is why `dark_sight` is a part Foundry leaves empty: `NativeDarkSight` is folded with what a droid wears and whether it is jammed before anything reads `DarkSight`.
+A shot, a blow, a light and the span a kind keeps from its enemies are parts both games type their fields with, [Foundry](https://github.com/rudehn/foundry)'s `keep_away` among them, and where in a brain a game keeps that span is its own, Foundry's in place of the hunt and beside `Hover`.
 
 A monster is saved the way an item is (`docs/design/items.md`, section 7a): `atglyph_save::SaveableActor`, registered with `save_actors`, writes which definition it is by its maker's `name_of` and the game's own extra beside it, and restores it through `ActorMaker::make_at`, nowhere and with nothing rolled, before the extra goes back on, since what a game keeps is a change to what it was made as: a side it was turned to, a mind it was given, a look a wreck lost.
 `ActorMaker::make` calls `make_at` unless a game rolls something on a monster, so a game that rolls nothing writes one function.
@@ -166,7 +166,7 @@ The band's name is the engine's, `bands` as the item spawn file's is, since a fl
 ## 9. The standard chain
 
 Every game with monsters wrote one brain by hand, and wrote it the same way: run when hurt, keep a span, reach for an ability, strike, shoot, throw, fetch, hunt, search, walk back to a post and drift, each step guarded by whether the kind can.
-`atglyph_rules::ai::Standard` is that chain, in Undermere's order, the one the user chose as the default, and only the engine's own tactics are in it.
+`atglyph_rules::ai::Standard` is that chain, in [Undermere](https://github.com/rudehn/undermere)'s order, the one the user chose as the default, and only the engine's own tactics are in it.
 
 A game writes its chain once as a constant: which steps it holds, a `bool` for each step that needs no number, and every number a step does need, the chance of reaching for an ability, of throwing and of a wanderer's step, and how far a scavenger goes, as an `Option`.
 `Standard::NONE` holds nothing and the engine has no number of its own for any step, so a step whose number a game never gave is not in its chain, and which of `Hunt`, `SearchLastKnown`, `KeepPost` and `Wander` close the chain is the game's to say: the tutorial's rats neither search nor keep a post.
@@ -175,22 +175,22 @@ A shot is taken on every turn there is one, the tactic's own default and not a r
 `Repertoire` is what one kind can do, read from its parts by `ActorParts::repertoire` or written by hand by a game that keeps none, and a step is in a kind's brain only where the chain holds it and the kind can take it: a threshold above nought to run at, a span to keep, an ability known, a blow, a shot, wits that throw, and wits that take things up, `Wits::takes_things`, the rule `Scavenge` fetches by.
 So the chain says what a game's monsters do and the parts say which of it each kind can, and a kind that never runs still has no `FleeWhenHurt` in its brain.
 
-Where flee goes is the one choice of order: `flee_after_attacks` puts it after the blow, the shot and the throw, as Foundry and the tutorial have it, a droid trading the blow it has in hand before it goes, where Undermere runs first because a kind its examine panel says runs when hurt must not fight on while its enemy stands beside it.
-Everything else a game adds goes in at five named points: `first`, ahead of running, Undermere's flight after a theft and Foundry's alarm; `before_attacks`, after running and the span kept and before the ability, Undermere's mercenary mending and pointing what it carries with `UseCarried`; `before_hunt`, after every attack, Undermere's pack, led and flit; `instead_of_hunt`, which leaves `Hunt` out, Foundry's repairs and its span kept beside `Hover`; and `before_wander`, Undermere's patrol.
-`before_attacks` was left out until Undermere's mercenaries needed it on 2026-10-14: without it a game whose tactic must come after running had to put its own `FleeWhenHurt` in `first`, writing again the guard on the kind's threshold the chain exists to hold.
+Where flee goes is the one choice of order: `flee_after_attacks` puts it after the blow, the shot and the throw, as [Foundry](https://github.com/rudehn/foundry) and the tutorial have it, a droid trading the blow it has in hand before it goes, where Undermere runs first because a kind its examine panel says runs when hurt must not fight on while its enemy stands beside it.
+Everything else a game adds goes in at five named points: `first`, ahead of running, [Undermere](https://github.com/rudehn/undermere)'s flight after a theft and Foundry's alarm; `before_attacks`, after running and the span kept and before the ability, Undermere's mercenary mending and pointing what it carries with `UseCarried`; `before_hunt`, after every attack, Undermere's pack, led and flit; `instead_of_hunt`, which leaves `Hunt` out, Foundry's repairs and its span kept beside `Hover`; and `before_wander`, Undermere's patrol.
+`before_attacks` was left out until [Undermere](https://github.com/rudehn/undermere)'s mercenaries needed it on 2026-10-14: without it a game whose tactic must come after running had to put its own `FleeWhenHurt` in `first`, writing again the guard on the kind's threshold the chain exists to hold.
 A point between one attack and the next is still not needed by any game and is not there; a game wanting another order builds its `Brain` by hand, as it always could.
 
-Undermere's brains for an ally and a freed captive are the same builder over a second constant: run, ability, blow and shot as their kind, then `Keep::allies` or `Keep::leader` before the hunt, and nothing after it.
+[Undermere](https://github.com/rudehn/undermere)'s brains for an ally and a freed captive are the same builder over a second constant: run, ability, blow and shot as their kind, then `Keep::allies` or `Keep::leader` before the hunt, and nothing after it.
 A hired mercenary's three, one for each order, are the builder over a third constant that closes nothing, at its own throw chance of always, and each order closes it: hold by `KeepPost`, fight freely by `Hunt` with the leader kept and gear fetched after it, and follow by a hunt leashed to the adventurer in the hunt's place.
 Each game's chain, tactic by tactic and in order, is what it was before the builder, which the fingerprints hold.
 
 ## 10. Following, leaving, and putting on
 
-Three pieces Undermere's party wrote for itself are the engine's since 2026-10-14, each without a rule number in it.
+Three pieces [Undermere](https://github.com/rudehn/undermere)'s party wrote for itself are the engine's since 2026-10-14, each without a rule number in it.
 
 `Leashed { inner, reach }` and `OutOfSight(inner)` wrap any tactic over the engine's own `Led` sense: the first lets through no step that ends further than `reach` from the leader, and lets every step through with no leader on the map; the second decides only while the leader is out of sight.
 Wrappers rather than fields on `Hunt` and `Keep`, because what is held in is any tactic, a hunt, a fetch or a game's own, and a field on each would be the same rule written in every tactic that steps.
-How far the leash reaches is the game's: Undermere's is its `LEASH` of three, and the engine has none.
+How far the leash reaches is the game's: [Undermere](https://github.com/rudehn/undermere)'s is its `LEASH` of three, and the engine has none.
 
 `Decision::Equip(item)` is putting on something carried, answered by the resolver that answers the player's `Equip`.
 It had been a game's own choice relayed to the engine's intent, which is a decision of the engine's under another name; when a mind arms, and with what, stays the game's, and no engine tactic decides it.
@@ -201,7 +201,7 @@ Content's `travels` reads as both, so nothing written before the split changed m
 
 ## 11. What a status does to whoever holds it
 
-Until 2026-10-15 Undermere answered four of its statuses by name in systems of its own: a confused body's steps turned a random way on a stream of Undermere's, a discordant one's side changed and kept in a `Discordant { was }`, fire immunity's hundred percent written into the holder's own `Resists` behind a `Fireproofed` marker, and a wraith's `Wither` effect refusing a fourth stack of `weakened`.
+Until 2026-10-15 [Undermere](https://github.com/rudehn/undermere) answered four of its statuses by name in systems of its own: a confused body's steps turned a random way on a stream of Undermere's, a discordant one's side changed and kept in a `Discordant { was }`, fire immunity's hundred percent written into the holder's own `Resists` behind a `Fireproofed` marker, and a wraith's `Wither` effect refusing a fourth stack of `weakened`.
 A troll's mending halted while it burns was a fifth, keyed by a `BurnsBadly` marker, and the rail's saying what holds a monster a sixth, reading nothing but engine fields.
 Each is a mechanic any game might want and none should have to take, so each is now an optional field, absent meaning no mechanic, and every number is the game's.
 
@@ -212,7 +212,7 @@ Which factions there are and who is hostile to whom stay the game's: a status on
 What a status lends is kept every pass from what is held, in `ReactSet::Statuses`, rather than answered as the status comes and goes, so a status a save puts back does it again with nothing else saved.
 The side is the exception that has to be saved: once the holder's `Faction` is the status's, the side it goes back to is nowhere else, so it is `SideWas`, and `EntityState::side_was` puts it back as the holder's side for the status to turn it from again.
 What a status resists goes in its own `StatusResists`, which `Loadout::resistances` adds, rather than into the holder's `Resists`, so taking it off is exact whatever else moved them.
-It is kept once a pass rather than read live where a blow is weighed: a draught drunk and a burn landed in one pass are weighed as things stood before it, and the last tick of a burn is still resisted by a ward running out that pass, which is how Undermere played it and so how the engine does.
+It is kept once a pass rather than read live where a blow is weighed: a draught drunk and a burn landed in one pass are weighed as things stood before it, and the last tick of a burn is still resisted by a ward running out that pass, which is how [Undermere](https://github.com/rudehn/undermere) played it and so how the engine does.
 
 A kind's own rule for a status, burning halting a troll's mending and nobody else's, is not the status's to say, so it is `ActorParts::while_holding`, a list of stat changes by status that becomes `WhileHolding` on the actor and lands under `Source::Holding(status)`.
 A field on `StatusDef` keyed by kind was weighed and rejected: the status would then name every kind it treats differently, which is the bestiary written into the status table.
@@ -220,14 +220,14 @@ A field on `StatusDef` keyed by kind was weighed and rejected: the status would 
 A stumble rewrites the intent where it stands, in `DecideSet::Statuses`, a stage after the game's own answer, so what a game wrote is turned too and nothing reading the intent later reads the old way.
 It draws from `StumbleRng`, an engine stream, only where an open way exists and, below a hundred percent, once more for whether to stumble at all, so a holder that always stumbles spends exactly one draw a step.
 The run's seed is asked for by the statuses only when one of them stumbles, through a requirement that holds only then, since `CorePlugin` has never needed a seed and a game whose statuses draw nothing should not start to.
-Undermere's fingerprint did not move with the stream: its scripted delve is never confused.
+[Undermere](https://github.com/rudehn/undermere)'s fingerprint did not move with the stream: its scripted delve is never confused.
 
 The rail's saying of it is `NearbyStatuses`, off unless a game asks with `NearbyPanel::statuses(key, asleep)`: every status with a badge as a facet under the game's key, by its registered name, and a sleeper as doing the game's sleep word.
-Undermere's confusion gas, `Discord`'s choice of target, every status name and number, and the lantern going out while shrouded stay Undermere's.
+[Undermere](https://github.com/rudehn/undermere)'s confusion gas, `Discord`'s choice of target, every status name and number, and the lantern going out while shrouded stay Undermere's.
 
 ## 12. How the fields and the gap moved
 
-Four changes to how a mind walks came out of Undermere's dungeon and party, the first three moving a fingerprint over the minds they touch and the last none, since a composed field is cell for cell the flood it stands for.
+Four changes to how a mind walks came out of [Undermere](https://github.com/rudehn/undermere)'s dungeon and party, the first three moving a fingerprint over the minds they touch and the last none, since a composed field is cell for cell the flood it stands for.
 
 - **A field floods round what stands.** A blocker that is no actor, a blocking prop above all, is a wall to `FlowFields` as it always was to the move resolver: a field that flooded the tiles alone walked a mind into a post or a rack, which the resolver refused, and it stood there with a way round a few steps off. What stands is read off `Occupancy` when it changes, and fields are thrown away only when the cells it stands on differ, so an actor's step costs no flood.
 - **A wary mind walks round a shown trap.** `Wits::WARY`, in the sapient preset, prices a cell under a trap anyone can see ten steps more, rather than refusing it, since a refused cell would leave a follower standing behind a trap in a corridor for good; a beast still blunders onto one, which is what a player lures it there for, and the cell its target or leader stands on is never priced.

@@ -23,7 +23,7 @@ They moved to `atglyph-mapgen` rather than `atglyph-rules`, for the reason `atgl
 
 ## 2. A seed per place
 
-`PlaceRules::build` was handed no seed, so every game made one: four tutorial steps and Foundry mixed the depth into the run's seed by hand with a shift and an exclusive or, which the guide then quoted, and one Undermere floor drew from three roots.
+`PlaceRules::build` was handed no seed, so every game made one: four tutorial steps and [Foundry](https://github.com/rudehn/foundry) mixed the depth into the run's seed by hand with a shift and an exclusive or, which the guide then quoted, and one Undermere floor drew from three roots.
 `PlaceRules::build(map, seed)` is handed the place's own `PlaceSeed`, and the engine draws everything it places on a place, its scattered loot, its containers and its slots, from the same seed.
 
 Derived from the run's seed and the place's number alone, so building floor two before floor one cannot change floor one, and a floor built again after a failed attempt is built from the same seed.
@@ -56,7 +56,7 @@ A fresh run's world is built from the places' tiles after `NewRun`, not between 
 ## 5. What a place keeps
 
 A place keeps what its builder said of it with its map and its save, rather than in a flag a game keeps in step with whichever map is current: its locks, its secrets, its ambient light and whether it is peaceful.
-Each was a game's own system first, Undermere's town's peace and both games' ambient set from the current map every frame, and each moved onto the build when a second thing needed to read it.
+Each was a game's own system first, [Undermere](https://github.com/rudehn/undermere)'s town's peace and both games' ambient set from the current map every frame, and each moved onto the build when a second thing needed to read it.
 
 ## 6. What is not here
 
