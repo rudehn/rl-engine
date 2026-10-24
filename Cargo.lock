@@ -312,7 +312,7 @@ dependencies = [
 
 [[package]]
 name = "atglyph"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "atglyph-bevy",
  "atglyph-core",
@@ -329,7 +329,7 @@ dependencies = [
 
 [[package]]
 name = "atglyph-bevy"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "atglyph-core",
  "atglyph-grid",
@@ -344,7 +344,7 @@ dependencies = [
 
 [[package]]
 name = "atglyph-core"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "rand 0.9.5",
  "ron 0.10.1",
@@ -353,7 +353,7 @@ dependencies = [
 
 [[package]]
 name = "atglyph-grid"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "atglyph-core",
  "criterion",
@@ -364,7 +364,7 @@ dependencies = [
 
 [[package]]
 name = "atglyph-mapgen"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "atglyph-core",
  "atglyph-grid",
@@ -375,7 +375,7 @@ dependencies = [
 
 [[package]]
 name = "atglyph-render"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "atglyph-bevy",
  "atglyph-core",
@@ -388,7 +388,7 @@ dependencies = [
 
 [[package]]
 name = "atglyph-rules"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "atglyph-core",
  "atglyph-grid",
@@ -400,7 +400,7 @@ dependencies = [
 
 [[package]]
 name = "atglyph-save"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "atglyph-bevy",
  "atglyph-core",
@@ -417,7 +417,7 @@ dependencies = [
 
 [[package]]
 name = "atglyph-tty"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "atglyph-render",
  "bevy",
@@ -427,7 +427,7 @@ dependencies = [
 
 [[package]]
 name = "atglyph-ui"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "atglyph-bevy",
  "atglyph-core",
@@ -2637,7 +2637,7 @@ checksum = "aa9a19cbb55df58761df49b23516a86d432839add4af60fc256da840f66ed35b"
 
 [[package]]
 name = "foundry"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "atglyph",
  "bevy",
@@ -4743,7 +4743,7 @@ dependencies = [
 
 [[package]]
 name = "terminal"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "atglyph-core",
  "atglyph-grid",
@@ -4985,7 +4985,7 @@ checksum = "d2df906b07856748fa3f6e0ad0cbaa047052d4a7dd609e231c4f72cee8c36f31"
 
 [[package]]
 name = "tutorial"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "atglyph",
  "bevy",
@@ -5006,7 +5006,7 @@ checksum = "214ca0b2191785cbc06209b9ca1861e048e39b5ba33574b3cedd58363d5bb5f6"
 
 [[package]]
 name = "undermere"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "atglyph",
  "bevy",

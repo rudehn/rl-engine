@@ -17,7 +17,7 @@ The quickest start is the template, one file that plays from the first build:
 
 ```sh
 cargo install cargo-generate
-cargo generate --git https://github.com/rudehn/rl-engine --tag v0.3.0 templates/starter --name my-game
+cargo generate --git https://github.com/rudehn/rl-engine --tag v0.4.0 templates/starter --name my-game
 cd my-game
 cargo run
 ```
@@ -123,7 +123,7 @@ The `atglyph` crate is the facade that re-exports every other crate, and `atglyp
 
 ```toml
 [dependencies]
-atglyph = "0.3.0"
+atglyph = "0.4.0"
 bevy = "0.19"
 ```
 
@@ -148,9 +148,9 @@ The sample below uses three.
 
 ```toml
 [dependencies]
-atglyph-core = "0.3.0"
-atglyph-grid = "0.3.0"
-atglyph-mapgen = "0.3.0"
+atglyph-core = "0.4.0"
+atglyph-grid = "0.4.0"
+atglyph-mapgen = "0.4.0"
 ```
 
 This builds a dungeon floor from a seed, computes what is visible from the start, and finds the path to the exit, all without Bevy.

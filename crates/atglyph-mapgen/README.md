@@ -8,7 +8,7 @@ Used alone, it needs the crates it builds on at the same version, because its ex
 
 ```toml
 [dependencies]
-atglyph-core = "0.3.0"
-atglyph-grid = "0.3.0"
-atglyph-mapgen = "0.3.0"
+atglyph-core = "0.4.0"
+atglyph-grid = "0.4.0"
+atglyph-mapgen = "0.4.0"
 ```

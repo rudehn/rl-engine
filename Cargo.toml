@@ -5,7 +5,7 @@ members = ["crates/*", "examples/foundry", "examples/terminal", "examples/tutori
 exclude = ["templates"]
 
 [workspace.package]
-version = "0.3.0"
+version = "0.4.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/rudehn/rl-engine"
@@ -15,16 +15,16 @@ rust-version = "1.88"
 [workspace.dependencies]
 # The version on each internal entry is the workspace version; the release's
 # version bump changes them together with `[workspace.package]`.
-atglyph-core = { path = "crates/atglyph-core", version = "0.3.0" }
-atglyph-grid = { path = "crates/atglyph-grid", version = "0.3.0" }
-atglyph-mapgen = { path = "crates/atglyph-mapgen", version = "0.3.0" }
-atglyph-rules = { path = "crates/atglyph-rules", version = "0.3.0" }
-atglyph-save = { path = "crates/atglyph-save", version = "0.3.0" }
-atglyph = { path = "crates/atglyph", version = "0.3.0" }
-atglyph-bevy = { path = "crates/atglyph-bevy", version = "0.3.0" }
-atglyph-render = { path = "crates/atglyph-render", version = "0.3.0" }
-atglyph-ui = { path = "crates/atglyph-ui", version = "0.3.0" }
-atglyph-tty = { path = "crates/atglyph-tty", version = "0.3.0" }
+atglyph-core = { path = "crates/atglyph-core", version = "0.4.0" }
+atglyph-grid = { path = "crates/atglyph-grid", version = "0.4.0" }
+atglyph-mapgen = { path = "crates/atglyph-mapgen", version = "0.4.0" }
+atglyph-rules = { path = "crates/atglyph-rules", version = "0.4.0" }
+atglyph-save = { path = "crates/atglyph-save", version = "0.4.0" }
+atglyph = { path = "crates/atglyph", version = "0.4.0" }
+atglyph-bevy = { path = "crates/atglyph-bevy", version = "0.4.0" }
+atglyph-render = { path = "crates/atglyph-render", version = "0.4.0" }
+atglyph-ui = { path = "crates/atglyph-ui", version = "0.4.0" }
+atglyph-tty = { path = "crates/atglyph-tty", version = "0.4.0" }
 
 # Default features off: they include OS entropy through getrandom, which
 # does not build for wasm32-unknown-unknown, and engine code never seeds
