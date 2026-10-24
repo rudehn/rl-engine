@@ -404,7 +404,7 @@ impl Wares {
 pub const TRADE_TIME: u32 = 100;
 
 /// The share of a thing's worth every keeper pays for it, in hundredths:
-/// a quarter, rounded down by the engine's own `Trader::pays`.
+/// a quarter, rounded down by the engine's own `Trader::each`.
 pub const PAYS_PCT: u32 = 25;
 
 /// Which keeper of `wares.ron` a role of `townsfolk.ron` keeps shop as.
