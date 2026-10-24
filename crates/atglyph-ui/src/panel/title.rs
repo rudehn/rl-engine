@@ -132,11 +132,10 @@ impl TitleMenu {
     }
 
     /// Every row drawn, in order, and whether it can be taken now, as the
-    /// keys last saw them: what a game drawing the menu its own way reads,
-    /// the rows drawn dim included, which [`rows`](Self::rows) leaves out.
-    /// Read-only, since the keys refill it every frame and a row a game
-    /// added would be a row no key could take. Empty until the title's
-    /// first frame.
+    /// keys last saw them, the rows drawn dim included, which
+    /// [`rows`](Self::rows) leaves out. The tests' alone: the panel always
+    /// draws its own rows, so no game draws the menu another way and needs
+    /// the dim ones, and what a game reads is `rows` and `selected`.
     #[cfg(test)]
     pub(crate) fn drawn(&self) -> &[(TitleRow, bool)] {
         &self.drawn

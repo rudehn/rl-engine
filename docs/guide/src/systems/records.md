@@ -6,7 +6,7 @@
             crates/atglyph-ui/src/view/ending.rs
             crates/atglyph-ui/src/game_menu.rs
             crates/atglyph-ui/src/panel/title.rs
-     fingerprint: 3f6bc0d7 -->
+     fingerprint: 0e8c1fb6 -->
 
 # Run records
 
