@@ -151,7 +151,7 @@ fn start(mut commands: Commands, seed: Res<Seed>, mut log: Log) {
 /// the engine claims the turn, charges it, and refuses what cannot be done.
 /// Quitting is Warren's own.
 ///
-/// A walk key writes a [`Bump`], which the engine resolves to a step, a
+/// A walk key writes a [`Bump`](atglyph::ecs::Bump), which the engine resolves to a step, a
 /// blow at a foe, or opening a door, whichever is in the way.
 fn declare_controls(app: &mut App) {
     app.add_plugins(PlayerKeysPlugin::new().walk("Move", "walk, or strike whoever is there").wait("Act", "wait a turn"));

@@ -27,7 +27,7 @@ use crate::allies::fight_for;
 use crate::bestiary::{Bestiary, Kind};
 
 /// What the shackled offer is called, declared with
-/// [`EngineApp::add_verb`](atglyph::ecs::EngineApp::add_verb) by [`crate::plugin::UndermerePlugin`].
+/// [`atglyph::ecs::EngineApp::add_verb`] by [`crate::plugin::UndermerePlugin`].
 pub const FREE_VERB: &str = "free";
 
 /// The kind of work freeing a captive is, as the panels name it.

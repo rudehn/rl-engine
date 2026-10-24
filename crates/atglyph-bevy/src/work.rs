@@ -200,7 +200,7 @@ impl Works<'_, '_> {
 ///
 /// The hook for anything a game adds that should break work off, such as
 /// a noise heard or a shout from a friend, from any system that can write
-/// a message. [`answer_stops`] reads it at the head of every pass, before
+/// a message. The work system reads it at the head of every pass, before
 /// any turn of work is spent in it, so a stop written in one pass's
 /// `TurnSet::React` or in a frame's drawing is answered before the next
 /// turn of the work. [`Works::stop`] is the same, at once.
