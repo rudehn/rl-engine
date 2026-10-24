@@ -32,6 +32,24 @@ if [ -z "$repository" ]; then
   exit 1
 fi
 
+# GitHub refuses a release body past 125,000 characters, and a release
+# with hundreds of entries passes it (0.4.0's was 280,000). Such a page
+# keeps the section's summary, everything above "Every change, newest
+# first:", and links the full list in the changelog at the tag, which
+# stays the one text.
+limit=100000
+if [ "${#section}" -gt "$limit" ]; then
+  summary=$(awk '/^Every change, newest first:/ { exit } { print }' <<<"$section")
+  if [ "${#summary}" -eq "${#section}" ] || [ "${#summary}" -gt "$limit" ]; then
+    echo "error: the $version section is past $limit characters and has no short summary above \"Every change, newest first:\"" >&2
+    exit 1
+  fi
+  anchor=$(printf '%s' "$version" | tr -d '.')
+  section="$summary
+
+Every change, with what a game on the last release changes for it, is in [CHANGELOG.md]($repository/blob/v$version/CHANGELOG.md#$anchor)."
+fi
+
 printf '%s\n' "$section"
 cat <<EOF
 
