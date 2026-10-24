@@ -6,12 +6,13 @@ It closes the "abilities and targeting" item deferred from M5.
 
 Superseded in part on 2026-09-23: items no longer lend abilities, so `Grants` on items, `Charges` and `Cost::Charge` are gone, and the effect machinery moved out of `ability.rs` into `EffectsPlugin`.
 Where this document puts an ability on a wand or a grenade, read a weapon or a throwable item carrying triggers and a `Consumable`; `docs/design/effects.md` and `docs/design/items.md` are why.
+Since 0.4.0 the request that puts a status on is `ApplyStatus` and the one that takes it off `RemoveStatus`, the gate's answer is `UsableAbilities`, the stream is `EffectRng`, and the affix model is gone, so section 5's third source is a game's own.
 
-Four things changed on the way from this document to the code, each noted where it happens below: the effect that puts a status on is `Inflict`, not `Afflict`, because `Afflict` is already the request and an effect is not a request; names in an ability file are resolved through [`Names`], the engine's one lookup over whichever registries a game has, which was not in the plan and removed the per-game mirror types the content layer used to need; a cooldown counts from the moment of use rather than the end of it; and the sight requirement is not applied to an actor with no viewshed, since most non-players carry none and the question cannot be asked of them.
+Four things changed on the way from this document to the code, each noted where it happens below: the effect that puts a status on is `Inflict`, because `ApplyStatus` is already the request and an effect is not a request; names in an ability file are resolved through [`Names`], the engine's one lookup over whichever registries a game has, which was not in the plan and removed the per-game mirror types the content layer used to need; a cooldown counts from the moment of use rather than the end of it; and the sight requirement is not applied to an actor with no viewshed, since most non-players carry none and the question cannot be asked of them.
 
 Phase D changed four more.
 A key needs no aiming code at all: a game writes `AimAt` and the engine opens the cursor, or uses a self ability at once, so every ability is bound the same way.
-`Offered` covers whoever holds the turn rather than only a deciding mind, and gained the refused list with its reasons, so the minds, the menu and the preview all read one answer from one gate.
+`UsableAbilities` covers whoever holds the turn rather than only a deciding mind, and gained the refused list with its reasons, so the minds, the menu and the preview all read one answer from one gate.
 The targeting view counts a target that has no `Name` or `Glyph`, where the other views leave such a row out, because a nameless row is one a list may skip but a nameless target is one the ability will hit anyway; the first run of Knacks said "fireball at nothing" over a brute for exactly this reason.
 And `atglyph-grid` became a real dependency of `atglyph-ui` rather than a dev-only one, since previewing a footprint is grid work.
 
@@ -204,7 +205,7 @@ pub trait Effect: Send + Sync + 'static {
 
 `Landing` is the resolved use: the user, the ability, the aim point, the footprint's cells and path, and the living actors standing in it that `Aim::hits`, the user counted as its own ally.
 It comes from `Bystanders::land`, which the targeting preview calls too.
-`EffectWorld` is a `SystemParam` exposing the requests the engine already answers - `DamageEvent`, `Afflict`, `Cure`, a teleport, a spawn, a light - plus `Commands`.
+`EffectWorld` is a `SystemParam` exposing the requests the engine already answers - `DamageEvent`, `ApplyStatus`, `RemoveStatus`, a teleport, a spawn, a light - plus `Commands`.
 `Commands` is the escape hatch, and it is a real one: an effect a game writes can do anything a system can do, including write its own messages.
 
 Registration mirrors actions exactly:
@@ -223,8 +224,8 @@ The engine ships one effect per subsystem, all in `effects.rs`, and each asks th
 | --- | --- | --- |
 | `Harm { kind, roll }` | combat | a `DamageEvent` per actor in the footprint |
 | `Mend { kind, roll }` | combat | negative damage, through the same pipeline, past armor and scaled by resistance |
-| `Inflict { status, turns }` | statuses | an `Afflict` per actor |
-| `Cleanse { status }` | statuses | a `Cure` per actor |
+| `Inflict { status, turns }` | statuses | an `ApplyStatus` per actor |
+| `Cleanse { status }` | statuses | a `RemoveStatus` per actor |
 | `Shove { cells }` / `Pull { cells }` | `EffectWorld` | a move along the line, stopping at a blocker |
 | `Teleport` | `EffectWorld` | the user to the landing cell, if it is free |
 
@@ -290,7 +291,7 @@ So adding an ability is editing one file, and a game may ship five hundred witho
 ```
 
 Neither of those needs a line of Rust.
-Nor would a fireball, a taser, a smoke bomb or a rally, because each is `Harm`, `Afflict`, `Kindle` or `Mend` over a shape.
+Nor would a fireball, a taser, a smoke bomb or a rally, because each is `Harm`, `Inflict`, `Kindle` or `Mend` over a shape.
 
 What is not data is the set of verbs.
 `Harm` is a Rust type, because something has to know that a damage roll becomes a `DamageEvent` per actor in a footprint and goes through the mitigation pipeline.
@@ -333,7 +334,7 @@ All of it is testable without a window.
 - `Abilities`: the registry plus the boxed effects, built at load.
 - `Known(Vec<AbilityId>)`, `Pools(Stats)` - reusing `StatBlock` rather than a second store - `Cooldowns(BTreeMap<AbilityId, u32>)` keyed on the same clock the turn queue runs on, and `Charges(u16)` on the granting item.
 - `Use { ability: AbilityId, aim: Point }`, an `Action` like any other, resolved in `TurnSet::Resolve`.
-- The resolver: gate, afford, resolve the footprint against the map and occupancy, pay, run the effects in order against `AbilityRng`, set the cooldown, and report through `Resolution`: `done` with `def.time`, or `failed` with it when the gate or the aim refuses.
+- The resolver: gate, afford, resolve the footprint against the map and occupancy, pay, run the effects in order against `EffectRng`, set the cooldown, and report through `Resolution`: `done` with `def.time`, or `failed` with it when the gate or the aim refuses.
   A refusal costs nothing and keeps the turn, for the player only, exactly as the attack resolver does.
 - `AbilityEvent { user, ability, cells, landed }` for narration and for facts.
 - `AbilitiesPlugin`, opt-in, declaring what it needs the way the other plugins now do.
@@ -388,7 +389,7 @@ A wand the player can fire and a monster cannot is the half-shipped shape `PLAN.
 - Cooldowns and pools go in the save beside the scheduler's clock, in the same units.
   Built 2026-09-13, after the review found this promised and not done: `EngineSave` holds them, with the charges on whatever lends an ability, for every entity the game saved.
   A cooldown is an absolute time on the turn queue's clock, not a countdown, so restoring the clock restores every cooldown for free.
-- `AbilityRng` is derived from the run's `Seed` on its own domain, by the plugin rather than the game, so adding an ability does not shift the combat stream and change every monster's rolls.
+- `EffectRng`, `AbilityRng` until effects became a subsystem of their own, is derived from the run's `Seed` on its own domain, by the plugin rather than the game, so adding an ability does not shift the combat stream and change every monster's rolls.
 - Chances are rolled once per effect per use, in order, from that stream.
 - An ability used is a `FactKind`, so a quest can require one: "hex the idol", "blow the door", "bribe the watch".
   It reports the user as subject, the ability as object, and the number of actors it landed on as the amount.
@@ -403,7 +404,7 @@ No effects, no Bevy, no example.
 Tests are pure.
 
 **B. The action and the engine's effects** (`atglyph-bevy`). Built.
-`Abilities`, `Known`, `Cooldowns`, `Use`, the resolver, `Effect`, `EffectWorld`, `add_effect`, and `Harm`, `Mend`, `Afflict`, `Cleanse`, `Teleport`.
+`Abilities`, `Known`, `Cooldowns`, `Use`, the resolver, `Effect`, `EffectWorld`, `add_effect`, and `Harm`, `Mend`, `Inflict`, `Cleanse`, `Teleport`.
 Fired from a test with a literal aim point; no UI yet.
 This is the phase that proves the loop is owned.
 

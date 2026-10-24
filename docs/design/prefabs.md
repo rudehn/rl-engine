@@ -26,7 +26,7 @@ Nothing tied a coordinate to what the grid held there, so a slot could be declar
 Fantasy-rogue caught the first only at spawn, by skipping a slot whose cell was not walkable, and the second not at all; here neither can be written.
 
 A slot's glyph is a mark to `atglyph-mapgen`, so it turns and mirrors with the tiles for nothing, and the stamp carries the prefab's key so each mark says which piece it came from.
-`atglyph-rules` owns the file and every draw, and names no mapgen type: `Prefabs::piece` in `atglyph-bevy` turns a loaded file into a keyed `atglyph_mapgen::Prefab`, so a prefab file loads and every one of its mistakes is reported with no map and no `App`.
+`atglyph-rules` owns the file and every draw, and reads it straight into `atglyph-mapgen`'s own `Rotation`, `Mirror` and `Placement` rather than copies of them: it depended on no mapgen type until 2026-10-22, when the copies and their translation were found to be the only thing the boundary bought, and it now depends on `atglyph-mapgen`, which depends on nothing above the grid. `PrefabLibrary::piece`, in `atglyph-rules`, turns a loaded file into a keyed `atglyph_mapgen::Prefab`, and `Prefabs` in `atglyph-bevy` is that library as a resource, so a prefab file loads, every one of its mistakes is reported, and a place is grown from it with no `App`.
 
 ## 2. Items: the container's row
 
@@ -65,7 +65,7 @@ Terrain and contents are two steps with two streams.
 Mapgen stamps terrain and records which piece it stamped; contents are drawn on the arrival that built the place, and never again, so a revisit finds what it left.
 Fantasy-rogue learned this from a shared stream: a revisit re-stamped terrain and restored contents from a cache, advanced the stream differently, and moved every prefab after the first.
 
-Each slot then draws from a stream of its own, derived as `prefab.content` from the run's seed, hashed by the map and the slot's cell.
+Each slot then draws from a stream of its own, derived under the engine's prefab-content domain from the place's own seed, `seed.place(map)`, and hashed by the slot's cell; until 2026-10-22 it was derived from the run's seed hashed by the map and the cell, which is the same property spelled by hand.
 One stream for the whole place, drawn in spot order, would make every slot's contents depend on every slot before it, so adding a slot to one piece, or a chain stamping a piece in a different room, would change what an unrelated piece holds.
 Per cell, a slot's contents depend on its place, its cell and the seed, and on nothing else.
 

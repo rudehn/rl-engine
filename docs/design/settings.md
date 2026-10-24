@@ -54,7 +54,8 @@ The grid is laid out for the window it is in, by one pure function, `atglyph_ren
 
 ## Remembering
 
-- **Opt-in**, as every subsystem is: without `SettingsSavePlugin` the settings work and start on their defaults.
+- **Opt-in**, as every subsystem is: without `SavePlugin` the settings work and start on their defaults; remembering them was `SettingsSavePlugin` until 2026-10-13, when it became part of `SavePlugin`, since a game that saves has nowhere else to keep them.
+- **A directory of its own.** Each desktop game keeps its slots in `saves/<name>` beside the executable, named by its `SavePlugin`, since every example builds into one directory and two games there shared one settings file and wrote over each other's.
 - **Not the versioned envelope.**
   That refuses a save whole when its version differs, which is right for a run and wrong for a preference.
   The file is a map of names to words, and a name nobody declares, a choice that is gone and text that is not RON at all each leave a default standing and stop nothing.

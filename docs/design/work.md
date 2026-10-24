@@ -1,6 +1,6 @@
 # Work
 
-Status: designed 2026-09-23, built 2026-09-29.
+Status: designed 2026-09-23, built 2026-09-29; the player's own long action built 2026-10-11, section 6b; part of `CorePlugin` since 2026-10-13, when `WorkPlugin` stopped being a plugin of its own, since no game would turn work off by itself and one that declares no kind of work has none to do.
 The reasoning is here; `docs/OVERVIEW.md` lists what exists.
 Bringing remains back to life is part of the same slice of work and is written up in `docs/design/remains.md` §9, since it is a change to that subsystem rather than a new one.
 
@@ -53,10 +53,10 @@ A mind starts work by returning `Decision::Work(work)`, a new engine decision be
 The engine resolves it itself: it claims the turn, puts `Working(work)` on the actor, counts that turn as the first of `needed`, and writes `WorkBegan`.
 
 A game therefore needs no action of its own to start work.
-Foundry's drone is one tactic, `RepairWreck`, which finds a wreck of its own side in `Snapshot::remains`, walks there with `step_toward`, and returns the decision once it is within reach.
+Foundry's drone is one tactic, `RepairWreck`, which finds a wreck of its own side in a `Wrecks` sense Foundry pushes, walks there with `step_toward`, and returns the decision once it is within reach.
 
 For a start that does not come from a mind, the `Works` system param offers `works.begin(actor, work)`.
-Nothing in this slice uses it; it is there so that the player's long interactions, when they come, start work the same way.
+It is how the player's own long action starts, section 6b.
 
 ## 3. Continuing
 
@@ -137,11 +137,20 @@ The engine supplies no English a game cannot override.
 Nothing else is kept, since §4 remembers nothing.
 If the target was not saved the work is dropped on load, as a remains' `credit` is.
 
+## 6b. The player's own long action
+
+Work on the player, begun with `Works::begin` or by any `Working`, spends the player's turns for it with no key pressed, until `WorkDone`.
+It is paced, at most one turn each `WorkPace` of wall-clock time, twenty a second by default, because the turns are chosen and can be stopped: the world is seen moving round the player, and a key pressed to stop lands before the work is over.
+The pace decides only when a turn is spent and never what it does, so a replay keyed by the turn clock plays the same at any pace, and a test sets `WorkPace::every_frame()`.
+It breaks off as a mind's does, on a blow that lands, and on two things only a player's work needs: a foe coming into sight, `BreakReason::FoeSighted`, since the player chose to work while nobody was there, and the player spending the turn on anything else, `BreakReason::LeftOff`.
+With `UiPlugin` any key but a modifier alone stops it, and so does a screen opening, and the key is still read as itself, so a step is still a step; a direction toward the work's own target presses on with it, so a held key into a captive being freed is not read as beginning the same work over.
+The controls list it as "stop what you are doing" only in a game that declares a kind of work, since it is the only long action a player has.
+
 ## 7. Where it lives
 
 - `atglyph-rules`: `Work`, `advance`, `WorkKindId`, `Decision::Work`, and the reach condition as a plain function over two points.
   All of it is tested without an `App`, over a range of `needed` and speeds.
-- `atglyph-bevy`: `WorkPlugin`, opt-in, with `add_work`, the `Working` component, `Toil` and its resolver, the break checks, `WorkBegan`, `WorkDone`, `WorkBroken`, the `Works` param and the save fields.
+- `atglyph-bevy`: part of `CorePlugin`, with `add_work`, the `Working` component, `Toil` and its resolver, the break checks, `WorkBegan`, `WorkDone`, `WorkBroken`, the `Works` param and the save fields.
 - `atglyph-ui`: the row field, the nearby word and the inspect line.
 
 ## 8. Order of work
@@ -167,7 +176,6 @@ Each step green and committed on its own, paying its documentation in the same c
 ## 10. What waits
 
 - **Ability wind-ups and bosses that cannot be interrupted.** A wind-up is work whose finish is an ability use, with `windup: 3` on the ability as its only content; the wind-up state is one engine kind the game names once.
-- **The player's own long actions**, a hack or a search over several turns, started through `works.begin`, continued automatically and stopped by a key or an `ExploreInterrupt`.
 - **The look on the map**: a spark on the target each turn of work, which needs a cue that does not hold the turns, and the target's colour drawn toward what it will become as the work progresses.
 - **Progress that outlives a break**, a half-rebuilt wreck another drone finishes.
   `WorkBroken` already carries `done`; if a game wants this it keeps the number on the target itself and starts the next worker partway, and a second game doing the same is the signal to lift it.

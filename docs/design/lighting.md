@@ -3,6 +3,7 @@
 Status: phases A to C built 2026-09-11, with a Brogue-style renderer and Corsair's dark caves; the rest proposed.
 Written 2026-09-11 against `main` at `7df090a`.
 It adapts the fantasy-rogue lighting plan (v3) to the engine's shape: theme-agnostic, opt-in, split across the tiers, and integer throughout.
+What moved since, each in its own `CHANGELOG.md` line: `LightingPlugin` inserts `Lighting` itself, so adding the plugin, not inserting the resource, turns lighting on (2026-09-22); the player's own sight hides a `Concealed` actor outside the lit band, through `PlayerSight::shows` (2026-10-09); a coloured light warms what it falls on and a source may cast darkness (2026-10-11); a place carries its own ambient, which the plugin makes current, where a game wrote it from a system of its own, and a tile or a prop kind sheds the `Glow` its definition writes, the one light type a `LightSource` is now a component over (2026-10-13); and light is recast inside the turn loop in `DecideSet::Light` as well as once a frame.
 
 ## 0. Summary
 
@@ -110,7 +111,7 @@ Ambient is data the game writes, not a rule the engine runs: a constant for a de
 - `Fuel(u32)`: optional, ticked on `TurnEnd` beside statuses; at zero the engine removes the `LightSource` and writes `LightEvent::BurntOut`.
   Fuel is the one piece of per-instance state, and it is the game's to save, as `Enchant` already is.
 - `Lighting` resource: three layers over the window (static, dynamic, combined), the window origin, `ambient: Light`, and `static_dirty`.
-  Inserting it turns lighting on.
+  Inserting it turned lighting on as first built; `LightingPlugin` inserts it now.
   `ambient` is a plain field the game writes: once at start for a delve, or from a system of its own on the open world.
   There is no ambient rules trait and no clock hook in the engine; a game with no day cycle carries none of its machinery.
 - Systems in a new `EngineSet::Light`, between `Turns` and `Fov`:

@@ -39,7 +39,7 @@ Kept as the filing system's own state, a record whose run was torn down before i
 
 ## A slot apart from the run's
 
-`RecordsSavePlugin` keeps the list in a `records` slot of its own, as `SettingsSavePlugin` keeps a player's choices.
+`SavePlugin` keeps the list in a `records` slot of its own, in a game that added `RecordsPlugin`, as it keeps a player's choices in a `settings` slot; until 2026-10-13 each was a plugin of its own, `RecordsSavePlugin` and `SettingsSavePlugin`, which no game would add without the other or without saving.
 
 - **Not in the run's save.**
   The run's slot is deleted by the death or the win a record is filed for, and given up by New Game; the list has to outlive every run, so it cannot live in a slot every run ends by deleting.

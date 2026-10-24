@@ -140,7 +140,7 @@ No path through the engine or a game can skip it, because the hook belongs to th
 - A component on both comes back with the twin's value, so a body dressed as something else while it lay there stands up as the actor it was: the name the engine gave the body, and the look the renderer wrote into the same `Glyph` when it dressed the body as a prop, both go back to the actor's own.
 - `Position` and `OnMap` stay the body's, since where it lies is what the world did to it, and a body carried off stands up where it was carried.
 - `Health` is set to `health`, capped at the twin's maximum.
-- A body with something standing on it stands up on the nearest free cell within `STANDING_ROOM`, two, ring by ring in reading order; with none free the revival is refused with a warning.
+- A body with something standing on it stands up on the nearest free cell within `RevivalRules::standing_room`, two by default and a rule value since 2026-10-22, ring by ring in reading order; with none free the revival is refused with a warning.
 
 As designed, a component on both kept the body's value, with `Name` the one exception.
 Seeing it in Foundry turned that round: a revived line droid stood up drawn as its wreck, because dressing a body writes its look into the component the living actor's look was in.

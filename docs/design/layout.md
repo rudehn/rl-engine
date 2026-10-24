@@ -1,6 +1,6 @@
 # Layout
 
-Status: built 2026-10-01, against `main` at `235f864`.
+Status: built 2026-10-01, against `main` at `235f864`; grown on for Undermere's dungeon from 2026-10-08, as section 10 lists.
 The reasoning is here; `docs/OVERVIEW.md` lists what exists, and `docs/guide/src/systems/layout.md` is the reference.
 The research behind it is `docs/research/gridsage-mapgen.md`, read for its concepts and not for its algorithms.
 
@@ -16,8 +16,8 @@ Which shapes are drawn depends on where on the map the piece is going, so a plac
 Then the place is surveyed, and the survey is published: every area, every door, and for each what a later pass needs to decide what belongs there.
 A place that fails what its recipe requires is thrown away and built again from the next attempt of the same seed.
 
-It is the first of four pieces of work, and the only one built.
-The other three key on what this one publishes: a furnisher that fills an area to its size, a director that decides what a run holds and where, and tells that show a thing before it is reached.
+It was the first of four pieces of work, and the other three key on what it publishes: a furnisher that fills an area to its size, a director that decides what a run holds and where, and tells that show a thing before it is reached.
+The furnisher and the director are built, as the dressing and the pool of section 10; the tells are not.
 
 ## 1. What it is for
 
@@ -166,8 +166,8 @@ The same seed therefore builds the same place however many attempts it took, and
 ## 6. The recipe file
 
 A recipe is data, and its file is the engine's, as a prefab's is.
-`atglyph-rules` owns the file and what is wrong with it, and names no mapgen type; `atglyph-bevy` turns a loaded recipe into the passes, the way `Prefabs::piece` turns a loaded prefab into a `atglyph_mapgen::Prefab`.
-So a recipe loads, and every mistake in it is reported by name, with no map and no `App`.
+`atglyph-rules` owns the file and what is wrong with it, reading its barriers straight into `atglyph_mapgen::Barrier` and refusing one by the pass's own `Barrier::may_cut`, and `atglyph_rules::grow::passes` turns a loaded recipe into the passes, the way `PrefabLibrary::piece` turns a loaded prefab into an `atglyph_mapgen::Prefab`.
+So a recipe loads, every mistake in it is reported by name, and a place is grown from it, with no `App`: a tool or a terminal game grows the places the framework does.
 
 A layout file holds the shapes, the districts and the recipes:
 
@@ -221,8 +221,21 @@ A layout that meets every bound can still read badly, so sample decks are printe
 
 ## 9. What is not here
 
-- Prefabs attached by their own door, and a room refilled to a piece's size: the director's.
-- Filling an area with what it was for: the furnisher's.
-- Which pieces a run holds, limits per place and per run, states and rare events: the director's.
+- States and rare events: the director's, still to come.
 - Larger decks: a number in a file, raised when there is content to fill them.
-- Caves and any shape that is not built of rectangles: a `Shape` a later slice adds.
+
+## 10. What grew since
+
+Undermere's dungeon, from 2026-10-08, asked for more than rectangles and doors, and each addition is a pass or a field a chain that does not ask for it never sees, so no earlier place moved.
+The module docs of `atglyph-mapgen` and `atglyph-rules` are the reference; the reasons are here.
+
+- **A cave is a shape.** `Cave` draws a piece by the cellular automaton inside a box and keeps its largest region, so `Accrete` lays, joins and surveys it as it does a rectangle, and a place mixes caves and halls with no second generator.
+- **Barriers.** Rock across a share of the map that growth goes round, laid at a chance and shifted as a whole, so a floor has a wall to walk round without a hand-drawn piece; a barrier some shift could lay from one edge to the other is refused at load, since it would part the place.
+- **A drawn piece as an area.** A `PrefabShape` is a prefab grown as an area of its own, painted rather than carved and entered only at the entries its file draws, so a vault keeps its shape; joined `Locked` to a tag or `Sealed`, it grows nothing past its spare entries, so a lock keeps the piece alone, and the survey, the loops and the exit never walk through it.
+- **A landmark.** A `FirstPiece` is laid before anything grows and the place grows out from it, so what a floor is remembered by stands where its entry says rather than wherever growth left room, and the way in and the way down may keep to opposite `Sides` of it.
+- **Lakes and bridges.** By default a lake is a pond that never parts the floor; with `cut` one may, since ponds alone never make an island, and `Bridges` joins every part again by a straight crossing or fails the place for `run_retrying`.
+- **Secrets.** `HideOpenings` walls over a dead end's only door or a loop's shortcut and publishes the cell as a `SecretCell`, never one the way down needs, so a hidden room is always optional; a secret is a record on its place's map rather than an entity, since a wall nobody has found is the map's, not a thing standing on it.
+- **The pool, which is the director.** A run's pieces are drawn once, at its start, from one pool file, by floor, tag, weight, limits per place and per run, a group and a budget per kind, so no limit is passed whichever floor is built first and a floor grown again after a failed attempt is another layout holding the same pieces; `StampPicks` lays each in the area it prefers, from what the survey published.
+- **The dressing, which is the furnisher.** A dressing is a legend and rules for where each glyph goes, along walls, in corners, in rows or scattered, rather than rows of a fixed piece, so one dressing fills a closet, a hall and a cave; `Dress` works on an area's own cells, never beside an opening, and takes back anything that would cut an area in two or shut a slot in.
+- **Walking through a shut door.** The survey, the loops and the farthest exit walk every cell the registry marks passable, a shut door included, and never through a lock, where they had read `walkable` and so stopped at the first closed door.
+- **Tier 1 throughout.** Reading the files and turning them into passes is `atglyph_rules::grow`, over `atglyph-mapgen`'s own types, so a place is grown from its files with no `App` and no copy of a mapgen type to keep in step.

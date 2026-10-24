@@ -1,6 +1,7 @@
 # Effects: what lands, and what sets it off
 
 Status: built 2026-09-23, against `main` at `60c430d`.
+Since 0.4.0 a moment is a `TriggerKind`, `Moments` is `TriggerKinds` and a worn thing's clock is a `WornTimer`, charges are part of `ItemsPlugin`, which no longer adds this plugin, and the effects' stream draws under `atglyph.effects`.
 The reasoning is here; `docs/OVERVIEW.md` lists what exists, and `docs/design/items.md` says which carrier a thing should use.
 
 ## 0. Summary
@@ -12,27 +13,27 @@ Until this slice the machinery lived in `ability.rs`, so props and items reached
 `EffectsPlugin` is now the subsystem, and abilities, props and items use it as peers.
 It owns four things:
 
-- the `Effect` trait, `EffectKinds` and `AddEffect`, which is how a game registers an effect of its own;
+- the `Effect` trait, `EffectKinds` and `add_effect` on `EngineApp`, which is how a game registers an effect of its own;
 - `Landing`, `EffectWorld` and `Source`, which is what an effect sees when it lands and what landed it;
 - `EffectRng`, the one stream every effect rolls from;
-- `Moments`, `Triggers` and `Fired`, which is how a prop or an item says what it does at a moment, and `land_triggers`, which lands it.
+- `TriggerKinds`, `Triggers` and `Fired`, which is how a prop or an item says what it does at a moment, and `land_triggers`, which lands it.
 
 It does not own charges.
-What a use costs a thing is `ConsumablesPlugin`'s, and it reads the same messages.
+What a use costs a thing is `ItemsPlugin`'s, and it reads the same messages.
 
 ## 1. One stream, and why it keeps its old seed
 
 Every effect rolls from `EffectRng`, whoever landed it: a trap, a stim and a spell are dealt from one deck.
 A subsystem that rolled from a stream of its own would shift another's dice by the order passes happen to run in, which is the bug `docs/design/lighting.md` section 4 and the seeding rules in `CLAUDE.md` exist to prevent.
 
-The stream was `AbilityRng`, and it keeps that stream's derivation domain, `b"ability"`.
-Renaming the domain would have moved every roll of every run for no gain, and `effects::tests` pins the first draw for seed seven as a tripwire so a change that moves it is a change someone meant.
+The stream was `AbilityRng`, and it kept that stream's derivation domain, `b"ability"`, until the engine's streams were named under the engine's own prefix, `rl.effects` and then `atglyph.effects`, a rename that moved every run once on purpose.
+Renaming a domain moves every roll of every run, so it is done only beside a rename that moves them anyway, and `effects::tests` pins the first draw for seed seven as a tripwire so a change that moves it is a change someone meant.
 
 ## 2. Moments are a registry, not an enum
 
 A moment is when a thing does what it does: `use`, `land`, `fire`, `hit`, `entered`, `destroyed`.
-`Moments` is an `Interner<Moment>`, the same shape as props' `Verbs`, with the engine's six interned first so their ids are constants on the type.
-A game adds its own with `app.add_moment("overheat")` and reports it from a system of its own.
+`TriggerKinds` is an `Interner<TriggerKind>`, the same shape as props' `Verbs`, with the engine's own interned first so their ids are constants on the type.
+A game adds its own with `app.add_trigger_kind("overheat")` and reports it from a system of its own.
 
 A closed enum would be the `#[non_exhaustive]` taxonomy `CLAUDE.md` rules out.
 The first game that wants a moment the engine did not think of, a blaster that does something when it overheats, would have to fork the enum or fake the moment through one that exists.
@@ -46,7 +47,7 @@ Its period is written on the trigger it sets off, `(on: "pulse", every: 1000, ..
 
 ## 3. `Triggers`, and the potion model
 
-`TriggerSpec` is the authored form, in `atglyph-rules` beside `EffectSpec` so any game's file can read it: a moment by name, an `Area`, an optional count of `fires`, an optional effect list, and a pulse trigger's `every`.
+`TriggerSpec` is the authored form, in `atglyph-rules` beside `EffectSpec` so any game's file can read it: a moment by name, an `EffectArea`, an optional count of `fires`, an optional effect list, and a pulse trigger's `every`.
 `Triggers::build(specs, shared, moments, kinds, names)` turns a definition's specs into the `Triggers` component once, and every copy of that item or prop shares each list through an `Arc`.
 `fires` is per entity: the list is shared, the count is not, so springing one cable does not spend another.
 
@@ -64,7 +65,7 @@ In a fantasy game a potion drunk and a potion thrown do the same thing to differ
 A thing that does two different things writes two lists.
 A trigger with neither a list nor a shared one fails the build, because a trigger that does nothing is a typo.
 
-`Area` is `Here`, the one cell the moment happened at, or `Burst { radius }`, the cells within the radius that a straight line from the centre reaches without crossing a wall.
+`EffectArea` is `Here`, the one cell the moment happened at, or `Burst { radius }`, the cells within the radius that a straight line from the centre reaches without crossing a wall.
 Walls stop a burst and nobody standing does: a burst catches whoever is in the way rather than stopping on them, which is the difference between it and a projectile.
 It is the same call, `atglyph_grid::burst`, that an ability's `Ball` bursts with once it lands, so a grenade and a fireball of one radius reach the same cells, and a ball that flies into a wall bursts on the near side of it.
 The first build left bursts as plain discs, reaching through walls because a ball did; walls were chosen for both on 2026-09-23, since a grenade that hurt a droid behind a wall read as a bug to anyone playing.
@@ -83,7 +84,7 @@ It does not find the triggers, build the footprint or land anything, so the rule
 | `struck` | combat, on the actor an attack landed on, after the `hit`s | `ResolveSet::Act`, `LandSet::Shot` | the same pass |
 | `entered` | props, on a step onto an armed prop's cell | `ResolveSet::Travel`, after every step, swap and warp | the same pass |
 | `destroyed` | props, on the prop's death | `TurnSet::React` | the next pass |
-| `pulse` | items, for each worn `Pulse` whose period came round, on the current map | `ResolveSet::Triggers`, before `land_triggers` | the same pass |
+| `pulse` | items, for each worn `WornTimer` whose period came round, on the current map | `ResolveSet::Triggers`, before `land_triggers` | the same pass |
 | `died` | effects, on an actor's death, from a remnant | `TurnSet::React` | the next pass |
 
 `land_triggers` runs in `ResolveSet::Triggers`, a stage of its own between `Act` and `Fields`.
@@ -132,11 +133,11 @@ A thing with no triggers for that moment still spends, which is how a plain wand
 At zero a stack of more than one loses a unit and the next starts full; otherwise `Destroyed` despawns the thing and `Kept` leaves it empty.
 An empty thing does nothing it is spent by: `Loadout` stops finding its attack, and a use of it is refused and costs no turn.
 
-`EffectsPlugin` knows nothing about charges, and a game with triggers and no charges does not add `ConsumablesPlugin`.
+`EffectsPlugin` knows nothing about charges, and the charges are part of `ItemsPlugin`, since every game with items spends them.
 
 ## 6. The dependency, made explicit
 
-`AbilitiesPlugin`, `PropsPlugin` and `ConsumablesPlugin` each need `EffectsPlugin`, and each adds it when the game has not, through `effects::ensure`.
+`AbilitiesPlugin` and `PropsPlugin` each need `EffectsPlugin`, and each adds it when the game has not, through `effects::ensure`; `ItemsPlugin`, whose things' triggers land through it too, does not, so a game with items and neither of the other two adds it by name.
 The plugin is not unique and builds once, so a game that adds it by hand as well, before or after, gets one copy and no error.
 That is a departure from the usual `depends_on`, which only reports: a game that adds props should not have to learn that effects are a separate plugin before its first trap works.
 `add_engine_effects` does not add the plugin, because it may be called after the app is finished, where adding a plugin panics; it registers the kinds, and whichever plugin lands them brings the rest.

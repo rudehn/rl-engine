@@ -116,9 +116,9 @@ A soak (`examples/undermere/tests/soak.rs`) is a by-hand tuning aid of about ten
 crates/<name>/src/lib.rs        module-level //! docs name every public item
 crates/<name>/benches/          criterion, on realistic maps, only for hot paths
 docs/PLAN.md                    the design and milestones
-docs/design/                    how one subsystem works, and why: abilities, accuracy, charts, effects,
-                                fields, items, layout, lighting, loot, minds, names, noise, prefabs, props,
-                                records, remains, settings, stealth, tilesets, ui, watching, work
+docs/design/                    how one subsystem works, and why: abilities, accuracy, effects, fields,
+                                items, layout, lighting, loot, minds, names, noise, places, prefabs, props,
+                                records, remains, settings, stealth, tilesets, tty, ui, watching, work
 docs/guide/                     the mdBook; every chapter quotes examples/tutorial
 docs/reviews/                   the evidence
 scripts/check-tiers.sh          the tier boundary check
@@ -133,7 +133,7 @@ scripts/slot                    the slots: one compile or test process per core,
 scripts/test-times.py           the slowest tests of the last run, and the suite held to its budget
 ```
 
-The subsystems with no design doc yet are the turn loop with its cues and holds, combat and `Loadout`, equipment and what a worn thing lends, places, saving and the end of a run, the title and its hold on a run's start, registries and content loading, and the controls, modals and cursors.
+The subsystems with no design doc yet are the turn loop with its cues and the wait on them, combat and `Loadout`, equipment and what a worn thing lends, saving and the end of a run, the title and its hold on a run's start, registries and content loading, the controls, modals and cursors, trade between two actors, the party rail, the standard keys and the play screen's layout, and the testing harness a game's tests stand on.
 Each is documented in its crate's module docs and in the overview; what is missing is the page that says why it is shaped that way.
 Writing one is a welcome slice, not a prerequisite for touching the code.
 

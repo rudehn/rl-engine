@@ -1,6 +1,6 @@
 # Stealth and awareness
 
-Status: phases A to D built 2026-09-12, on top of the abilities slice; E proposed.
+Status: phases A to D built 2026-09-12, on top of the abilities slice; E built 2026-10-05, differently from its plan, as section 10 says.
 Written against `main` at `5b12d0a` while that slice was in flight, and built once it had landed; section 12b records where the build differs.
 
 ## 0. Summary
@@ -202,14 +202,14 @@ A thing used where its user stands whose `use` trigger harms those around them d
 
 ## 8c. Sleeping
 
-A status that sleeps (`StatusDef::sleeps`, built 2026-10-07 for Undermere's bestiary) holds its holder's turns the way `holds` already did, and ends itself the moment the holder is woken rather than waiting for the game's own `Cure`.
+A status that sleeps (`StatusDef::sleeps`, built 2026-10-07 for Undermere's bestiary) skips its holder's turns the way `skips_turns` already did, and ends itself the moment the holder is woken rather than waiting for the game's own `RemoveStatus`.
 It sits beside `unseen` rather than inside awareness, because sleep is a thing that happens to one actor's turns, where awareness is a thing every observer keeps about every subject; the two meet only at the reach a sleeper notices by.
 
 A sleeper senses less than a merely held actor: its sight is still recast and noticing still rolled, but only within `SLEEPER_REACH`, two cells, and there only by its chance, never its certain radius, so a hider can cross a sleeping room without waking it, and `wake_on_sight` in `DecideSet::Notice` wakes it on exactly that roll, or on sight alone to a foe that does not hide or that sees on sight regardless.
 This is the sneak-attack seam section 9 deferred, narrowed to one case the content needed now rather than opened in general: a blow lands on a sleeper as it lands on anyone `Watchers::unaware` answers yes for, with or without `StealthPlugin` running, and only then wakes it, in `wake_on_harm` in `TurnSet::React`.
-A full sneak-attack multiplier over every unaware target, phase E, is still undone; sleep borrows the one reader that already existed rather than building a second.
+Sleep borrows the one reader that already existed rather than building a second, and the multiplier over every unaware target, phase E in section 10, had been built on the same reader two days earlier.
 
-Harm and noticing both wake directly, by curing the sleep in place, rather than through a `Cure` a game would have to write: a `Cure` is not read until the next pass's statuses resolve, and a sleeper struck mid-pass needs to answer for the rest of it awake.
+Harm and noticing both wake directly, by curing the sleep in place, rather than through a `RemoveStatus` a game would have to write: a `RemoveStatus` is not read until the next pass's statuses resolve, and a sleeper struck mid-pass needs to answer for the rest of it awake.
 Noise wakes it too, through `wake_on_noise`, which `docs/design/noise.md` §16 has, since hearing is a second plugin's to add and a game with statuses and no noise should not be asked to wake a sleeper from a sound that cannot reach it.
 
 ## 9. What is not in this slice
@@ -218,10 +218,11 @@ Noise wakes it too, through `wake_on_noise`, which `docs/design/noise.md` §16 h
   The model is symmetric and the components would work, but the player has no mind to consult an `Aware`, and a hidden monster has to be kept off the map view as well as out of the panel.
   That is a render change and a separate slice.
   The same is true of an unseen monster: the minds already cannot see one, and the player's screen still can.
+  Both are built since: a sleeping status, section 8c, and `Concealed`, an actor the player's own sight does not show outside the lit band unless it stands beside them, asked of `PlayerSight::shows` by the map, the lists and the narrator alike.
 - **Squad alerting.**
   The `Noticed` message is the seam; the propagation is the game's.
 - **Sneak attack damage.**
-  Phase E, and the one breaking change to a tier-1 type, so it is last and separable.
+  Phase E, planned as the one breaking change to a tier-1 type, and built since without one: section 10.
 - **Noise.**
   A second sense with its own propagation is a bigger idea than this one and should not be smuggled in as a third knob on `Notice`.
   Built since, beside stealth rather than inside it: `docs/design/noise.md`.
@@ -238,9 +239,9 @@ Noise wakes it too, through `wake_on_noise`, which `docs/design/noise.md` §16 h
   Play it before going on.
 - **D. The panels.** Built.
   `Row::aware`, the rail showing who has noticed you, the vitals reading.
-- **E. Sneak attacks.**
-  `Defender` gains `unaware`, so a game can write its own damage stage for it.
-  The engine ships no multiplier: that is balance.
+- **E. Sneak attacks.** Built 2026-10-05, for Undermere's dagger, differently from this plan.
+  The engine does ship the multiplier, as a number the game gives it and none of its own: `CombatRules::unaware(percent)` for every blow, or a blow's own `MeleeAttack::unaware(percent)` in its place, read through `Watchers::unaware`, so a blow on a target that has not noticed its attacker lands harder and a shot never does.
+  A damage stage was the plan's seam and was not needed, since the percent is a field on the attack and the rules it is read by, and no tier-1 type broke.
 
 ## 11. Tests
 

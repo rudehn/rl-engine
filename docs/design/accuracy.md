@@ -23,7 +23,7 @@ Light becomes something to use: a lamp shows you everything and shows everything
 A `HitModel` turns a `Shot` into `Odds`.
 
 `Shot` is plain facts gathered by the engine: how the attack travels (`Delivery::Melee`, `Shot` or `Thrown`), the distance, the weapon's effective range and reach, the `LightBand` at the target, and the attacker's accuracy and the target's evasion as the stats the game named give them, `None` where it named none.
-`Odds` is `hits` chances in `out_of`, and the labelled `Line`s that produced it.
+`Odds` is `hits` chances in `out_of`, and the labelled `OddsLine`s that produced it.
 
 Every model reduces to that.
 A percent roll is 67 in 100.

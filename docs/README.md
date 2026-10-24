@@ -5,7 +5,7 @@ The guide is the only part of this folder that is published as a website; everyt
 
 ## Start here
 
-- **[The guide](guide/src/introduction.md)**, nine chapters that build a small roguelike called Warren, each one playable in the browser.
+- **[The guide](guide/src/introduction.md)**, nine chapters that build a small roguelike called Warren, the first six playable in the browser.
   Read it as a website at [rudehn.github.io/rl-engine](https://rudehn.github.io/rl-engine/), which has a sidebar and search, or as markdown from the link above.
   Every chapter's code is a runnable binary in `examples/tutorial/src/bin`, compiled by CI, so the code in the guide is code that works.
 - **[The system reference](guide/src/systems/)**, one page per system: what it is, how to turn it on, what the engine decides and what your game decides.
@@ -29,16 +29,16 @@ These are the reasoning; the overview is the list.
 
 - [abilities.md](design/abilities.md), what an actor can spend a turn on, as data.
 - [accuracy.md](design/accuracy.md), whether an attack lands, and the three bands of light the odds read.
-- [charts.md](design/charts.md), what someone other than the player has seen: a chart per party, and a mind that walks to what its chart lacks.
 - [effects.md](design/effects.md), what lands and what sets it off: the effects subsystem, its moments and triggers, and what a use costs a thing.
 - [fields.md](design/fields.md), a value per tile stepped a turn at a time, and the fire and gas built on it.
 - [items.md](design/items.md), what a thing does: the three carriers of an effect list, why an item never lends an ability even when its use is aimed, and why the unknown, the stuck and ammunition are the engine's.
-- [layout.md](design/layout.md), a place grown piece by piece, surveyed, and built again when it falls short; [research/gridsage-mapgen.md](research/gridsage-mapgen.md) is what it was drawn from.
+- [layout.md](design/layout.md), a place grown piece by piece, surveyed, and built again when it falls short, with the caves, lakes, secrets, landmarks, pool and dressing grown on it since; [research/gridsage-mapgen.md](research/gridsage-mapgen.md) is what it was drawn from.
 - [lighting.md](design/lighting.md), light cast through the same shadows as sight.
 - [loot.md](design/loot.md), where items turn up and how many, with what an item is left to the game.
 - [minds.md](design/minds.md), how a non-player decides.
 - [names.md](design/names.md), names drawn from syllables: libtcod's rejections over typed, weighted patterns, and why a draw is bounded.
 - [noise.md](design/noise.md), what a sound is and who hears it.
+- [places.md](design/places.md), a bounded map built once and kept whole: the place model below Bevy, a seed per place, and a run's start and its continuing as the engine's.
 - [prefabs.md](design/prefabs.md), a piece of a place as data: slots for props, items and monsters drawn at the place's depth, roles, and guards that hold their post.
 - [props.md](design/props.md), what stands on a map that is neither an actor nor an item.
 - [records.md](design/records.md), what a run came to: a record in the game's own words, kept in a slot apart from the run, and read by the screen the run ends on.
@@ -46,6 +46,7 @@ These are the reasoning; the overview is the list.
 - [settings.md](design/settings.md), what a player chooses once: a registry three crates read, and a terminal laid out for its window.
 - [stealth.md](design/stealth.md), being noticed, and being looked for.
 - [tilesets.md](design/tilesets.md), pictures in place of glyphs: a tileset as a font, so nothing that draws the map has to change.
+- [tty.md](design/tty.md), the text terminal: the same cell buffer written to a terminal, locally or over SSH, and its keys read back as a keyboard's.
 - [ui.md](design/ui.md), why a panel is a view, a collector and a presenter.
 - [watching.md](design/watching.md), a run somebody watches and nobody plays: an onlooker, a sight that sees everywhere, and a pace.
 - [work.md](design/work.md), an actor doing one thing across many turns.

@@ -29,7 +29,7 @@ It knows actors, items, slots and tones, and a game maps its vocabulary onto the
 ## 1. What the split buys
 
 - **The nearby list, for every game at once.**
-  Every input already exists: `Viewshed`, `Position`, `Health`, `Faction` with `Factions::relation`, `Afflicted`, and the glyph.
+  Every input already exists: `Viewshed`, `Position`, `Health`, `Faction` with `Factions::relation`, `ActiveStatuses`, and the glyph.
   `atglyph-rules::balance::threat` already scores danger.
   The view is a query; the reason no game has one yet is that nobody wanted to write it twice.
 - **The status line stops being a string each game builds by hand.**
@@ -73,8 +73,8 @@ pub struct Row {
 
 /// A game-authored note on a row: a wielded item, an AI state, a resist chip.
 pub struct Facet {
-    /// Which kind of note, interned by the game.
-    pub key: FacetId,
+    /// Which kind of note, a word the game's code names.
+    pub key: &'static str,
     /// The words.
     pub text: String,
     /// Its semantic role, which the palette turns into a colour.
@@ -92,6 +92,7 @@ pub struct NearbyView {
 ```
 
 A view holds no `Color`, no rectangle, no layout and no string the game did not supply.
+A facet's key was planned as an id interned in a `Facets` registry, and was one until 2026-10-23; it is a plain `&'static str`, since a key is a word the game's own code names and the registry bought nothing but a resource every system that pushed one had to borrow.
 It names `Entity`, so it lives in tier 2 with the rest of the Bevy layer; its derivations do not, and they live in `atglyph-rules` where they can be tested without an `App`.
 
 The collector runs in `PresentSet::Narrate`, which the reaction-phase commit named for exactly this: what a frame works out once, before the chrome draws it.
@@ -178,13 +179,13 @@ Pure functions over plain numbers, unit-tested without an `App`, and usable by a
 
 `tone.rs`: `Tones`, `Palette`, the engine's starting set.
 `view/`: `NearbyView`, `VitalsView`, `EquipView`, `InspectView`, the `Row` and `Facet` types, and one collector plugin each.
-`panel/`: a terminal presenter per view, each its own plugin taking a `Rect` and a title.
+`panel/`: a terminal presenter per view, each its own plugin taking a `GridRect` and a title.
 `modal.rs`: `ModalId`, the `Modals` stack, `modal_is` and `no_modal` run conditions.
 `panel::wrap`: a screen presenter wraps where a strip clips, because on a strip a cut line is a cut line, while on a screen the reader opened in order to read, losing the end of a sentence is worse than spending a second row on it. Two presenters over one view is the case that proves the split: `LogPanel` and `ScrollbackPanel` draw the same `MessageLog` and neither knows the other exists.
 `log.rs` and `menu.rs` stay where they are and move onto tones.
 
 `ChromeLayout` goes.
-A single resource holding every panel's rectangle is a god object that grows a field per panel; a panel takes its own rectangle, and a `Dock` helper splits a `Rect` for the games that want the split written once.
+A single resource holding every panel's rectangle is a god object that grows a field per panel; a panel takes its own rectangle, and a `Dock` helper splits a `GridRect` for the games that want the split written once.
 
 ### atglyph-bevy (tier 2)
 

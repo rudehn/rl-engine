@@ -1,6 +1,7 @@
 # Items: what a thing does
 
 Status: built 2026-09-22, against `main` at `0797370`; carriers redrawn 2026-09-23, against `60c430d`, when effects became a subsystem of their own; a use aimed at somewhere and a use made on another thing, things not yet known and things that will not come off, and ammunition added 2026-10-05 for Undermere's second part, against `d61cd5b`; authored parts, the level part and the saved item added 2026-10-13, against `43d0b4a`, when the affix model was removed.
+Since 0.4.0 a worn thing's clock is a `WornTimer`, an attack put by is a `BenchedAttack`, the statuses a worn thing keeps on its wearer are `ItemParts::worn_statuses` and `WornStatuses`, a status is asked for with `ApplyStatus`, a moment is a `TriggerKind`, and the rule what picking up, dropping, wearing and using come to is `atglyph_rules::items::resolve_item`, which `ItemsPlugin` applies.
 The reasoning is here; `docs/OVERVIEW.md` lists what exists, and `docs/design/effects.md` says how an effect lands.
 
 ## 0. Summary
@@ -126,7 +127,7 @@ A thing spent to nothing is marked `Spent` and kept, as the dead are, until the 
 
 ## 6. What is deliberately not here
 
-- **`on_equip` effects.** Effects are one-shot; wearing is a standing state. A worn thing's clock is the other half, and it exists: a [`Pulse`] reports the `pulse` moment every period its thing is worn, so a plate that knits wounds is a trigger, not a system. What a worn thing does is already declarative and needs no list: `Armor`, `Resists`, an attack, `Bestows` for the registered stats. A one-shot when something goes on, a cursed plate that bites, is a real case and a small one; it waits for a game that wants it, and would be one more moment.
+- **`on_equip` effects.** Effects are one-shot; wearing is a standing state. A worn thing's clock is the other half, and it exists: a [`WornTimer`] reports the `pulse` moment every period its thing is worn, so a plate that knits wounds is a trigger, not a system. What a worn thing does is already declarative and needs no list: `Armor`, `Resists`, an attack, `Bestows` for the registered stats. A one-shot when something goes on, a cursed plate that bites, is a real case and a small one; it waits for a game that wants it, and would be one more moment.
 - **An engine item schema.** No engine type is an item's definition, and no file's shape is the engine's; what is shared is the authored parts in section 6a, which a game's own fields are typed with, and the components they make.
 - **Items as offers.** A crate you open and a medkit you use are nearly the same shape, and props' offers already carry a verb, a time cost and a refusal reason in words. Only a use is chosen, though; a landing or a hit is not, so it would carry half of what an item does. The refusal reasons are the part worth taking later, onto the `use` trigger.
 
@@ -142,7 +143,7 @@ What moved is `atglyph_rules::parts`, a set of authored parts, each the type of 
 | --- | --- | --- |
 | `Melee` | `roll`, `kind`, `look`, `shape`, `unaware` | `MeleeAttack` |
 | `Ranged` | `range`, `effective`, `roll`, `kind`, `look` | `RangedAttack` |
-| `Throw` | `range`, `effective`, `strike` | `Throwable` |
+| `ThrowDef` | `range`, `effective`, `strike` | `Throwable` |
 | `Wear` | `slot`, `either`, `also` | `Wearable(EquipShape)`, the pair `either` reaches for read from the slot registry's `SlotDef::pair` |
 | `Charges` | `charges`, `when_empty`, `recharge`, `while_worn` | `Consumable`, its `Recharge` in hundredths of a step, and `Attuned` |
 | `Level` | `min`, `max`, `armor`, `damage`, `amount`, `turns`, `pulse`, `charges`, `dark_sight`, `stats` | what each level adds to all of the above, in section 7 |
@@ -169,12 +170,12 @@ Until 2026-10-15 two games each kept a wearer in step with what it wore by a sys
 Foundry's `sync_dark_sight` folded a droid's `NativeDarkSight` and a helmet's `WornDarkSight` into `DarkSight`, unless an ion jam had it blinded; Undermere's `lend` did the same for the traits a ring lends, with a status held while worn and a light lit while worn beside it, and kept the wearer's own sight in an `OwnSight` to give back.
 That is the second game writing the same thing, which section 6 had named as the signal, so it is the engine's, and every piece of it is optional.
 
-`ItemParts` gains `holds`, the statuses held on the wearer until cured while the thing is worn; `dark_sight`, the tiles its wearer sees without light, grown by the `Level` part's own `dark_sight` as every level amount is; and `light_when`, `Carried`, today's behaviour and the default, or `Worn`, for a light dark on the ground and in a pack.
-They become `HeldWhileWorn`, `WornDarkSight` and `LitWhenWorn` on the thing, so a game that inserts components by hand gets the same as one that uses parts.
+`ItemParts` gains `worn_statuses`, written `holds` before 0.4.0, the statuses held on the wearer until cured while the thing is worn; `dark_sight`, the tiles its wearer sees without light, grown by the `Level` part's own `dark_sight` as every level amount is; and `light_when`, `Carried`, today's behaviour and the default, or `Worn`, for a light dark on the ground and in a pack.
+They become `WornStatuses`, `WornDarkSight` and `LitWhenWorn` on the thing, so a game that inserts components by hand gets the same as one that uses parts.
 `ActorParts::dark_sight` puts an `OwnDarkSight` beside the `DarkSight`, which is what a worn thing's sight is folded with rather than written over.
 
 `ItemsPlugin` keeps each every pass in `ReactSet::Lend`, read off what is worn now rather than answered as a thing goes on or comes off, which is the lesson Foundry's jam taught: a helmet swapped while its wearer was blinded kept the old helmet's radius the moment the jam cleared, because nothing had answered the swap while it was jammed.
-A held status is asked for through `Afflict`, held by the thing, and ended by `end_unworn_holds` as any held status is.
+A held status is asked for through `ApplyStatus`, held by the thing, and ended by `end_unworn_statuses` as any held status is.
 A wearer's `DarkSight` is the best of its own and what it wears, or none while a game has put `DarkSightSuppressed` on it; what blinds is the game's, Foundry's ion jam, and the engine only keeps the folded sight from coming back meanwhile.
 An actor with no sight of its own and nothing worn lending any is never touched, so a `DarkSight` a game sets by hand stays; one whose sight was lent with nothing of its own beneath is marked `LentDarkSight`, so the sight goes with the thing.
 A game that sets an actor's sight by hand and also lets it wear dark sight writes its own as `OwnDarkSight`, since the fold cannot tell a sight a game set from one it lent.
@@ -186,7 +187,7 @@ What stays each game's: Foundry's jam, its clock and its `sensors down` badge, a
 ## 7. A level, and the one place a game writes what it does
 
 A `+2` thing is the same definition as a `+0` one, spawned stronger.
-The `Level` part says what one level adds, and the engine's rule for it is linear and nothing else: a thing at level `n` is its own numbers plus `n` times each amount, armor to its `Armor`, damage to every damage roll of its blow, its shot and its thrown strike, `amount` and `turns` to its `EffectBonus`, `pulse` to its `Pulse`'s period, `charges` to what a fresh unit holds, and each of `stats` to its `Bestows`.
+The `Level` part says what one level adds, and the engine's rule for it is linear and nothing else: a thing at level `n` is its own numbers plus `n` times each amount, armor to its `Armor`, damage to every damage roll of its blow, its shot and its thrown strike, `amount` and `turns` to its `EffectBonus`, `pulse` to its `WornTimer`'s period, `charges` to what a fresh unit holds, and each of `stats` to its `Bestows`.
 Absent amounts are nought, and a level part with none at all is a thing that takes levels and changes nothing with them.
 The only floors are what a component cannot hold: a pulse of under one hundredth, a unit of no charges, a status inflicted for less than nothing.
 `min` and `max` bound the level, nought and no ceiling where neither is written, so a negative level is something a line asks for rather than something every thing can fall to.
@@ -258,20 +259,20 @@ A second game with a bow would have written the same loop again, so it moved int
 A weapon carries `Ammo { tag }`, a shot spends one thing of that tag from its wielder's bag, and with none left the weapon is dry.
 Dry is derived rather than tracked: `sync_ammo` reads every fed weapon's bag every pass and sets it dry or loaded from that alone.
 The version that reacted to the events touching a bag, an equip, a pickup, a shot, needed a listener for every way a bag changes, and it missed two: two weapons on one bag fired the same last unit, and a dropped stack left a loaded gun behind.
-A dry weapon's shot is put by in the same `Stowed` a game's own reason for benching a weapon uses, heat among them, so `Loadout` falls through to the next worn thing knowing nothing of ammunition, and `Dry` marks which of them ammunition put by, so each reason restores only its own.
+A dry weapon's shot is put by in the same `BenchedAttack` a game's own reason for benching a weapon uses, heat among them, so `Loadout` falls through to the next worn thing knowing nothing of ammunition, and `Dry` marks which of them ammunition put by, so each reason restores only its own.
 What the gear rail says of a fed weapon is a facet the engine pushes in `ViewSet::Collect`, `N left` or `dry`, rather than a field of `Row`, since a magazine's count is a fact about a fed weapon and not about every row a panel draws; what a game says when one dries or loads is its own, over `AmmoChanged`.
 There is no magazine and no reload action: a game that wants either writes it as the stack a reload makes.
 
 ## 10. Where the pieces are
 
-- `crates/atglyph-bevy/src/effects/`: `Effects`, the engine's effects, `EffectBonus`, `Moments`, `Triggers`, `Fired`, `FiredOn`, `land_triggers` and `land_aimed_uses`.
+- `crates/atglyph-bevy/src/effects/`: `Effects`, the engine's effects, `EffectBonus`, `TriggerKinds`, `Triggers`, `Fired`, `FiredOn`, `land_triggers` and `land_aimed_uses`.
 - `crates/atglyph-bevy/src/consumable.rs`: `Consumable`, which moments spend, `spend_charges` and `recharge_charges`.
 - `crates/atglyph-bevy/src/items.rs`: the actions, `UseItemAt` and `UseOn` among them, `may_use` and `may_use_on`, `ItemEvent`, `Bestows`, the gear fold, `Unknown` and `Stuck`.
-- `crates/atglyph-bevy/src/ammo.rs`: `Ammo`, `Dry`, `AmmoChanged`, `spend_ammo` and `sync_ammo`; `Stowed` and `Loadout::dry` are in `combat.rs`.
+- `crates/atglyph-bevy/src/ammo.rs`: `Ammo`, `Dry`, `AmmoChanged`, `spend_ammo` and `sync_ammo`; `BenchedAttack` and `Loadout::dry` are in `combat.rs`.
 - `crates/atglyph-bevy/src/ability.rs`: `Grants` and `Known`, an actor's own, and `Aimed` and `Bystanders::land`, which an aimed use shares.
 - `crates/atglyph-rules/src/ability.rs`: `EffectSpec` and `TriggerSpec`, the authored forms any content file can read, and `Targeting` and `Asks`, a use's aim and its question.
 - `crates/atglyph-rules/src/equip.rs`: `Equipment::equip_keeping`, the slot rule a stuck thing needs, and `SlotDef::pair` with `pair_of`, which `either` reaches for.
-- `crates/atglyph-rules/src/parts.rs`: the authored parts, `Melee`, `Ranged`, `Throw`, `Wear`, `Charges` and `Level`, and `resistances`; tested on plain values, with no `App`.
+- `crates/atglyph-rules/src/parts.rs`: the authored parts, `Melee`, `Ranged`, `ThrowDef`, `Wear`, `Charges` and `Level`, and `resistances`; tested on plain values, with no `App`.
 - `crates/atglyph-bevy/src/parts.rs`: `Attacks`, `ItemParts` and its check, `insert_parts`, `level_up`, `ItemLevel` and `MadeOf`.
 - `crates/atglyph-save/src/run.rs`: `SaveableItem`, `SavedItem` and `save_items`.
 - `crates/atglyph-ui/src/view/target.rs` and `crates/atglyph-ui/src/panel/inventory.rs`: `AimUse`, answered by the targeting cursor and by the bag choosing.

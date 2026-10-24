@@ -126,7 +126,7 @@ A container whose definition gives no opened look keeps its offer and the modal 
 
 ## 4. Triggers
 
-Since 2026-09-23 a prop's triggers are the `Triggers` an item carries, owned by `EffectsPlugin`: `on` is a moment by name from an open registry, `entered` or `destroyed` for a prop, each with an `Area`, the prop reports the moment as `Fired`, and `land_triggers` lands it; `docs/design/effects.md` has the timing and why. What follows is the design as it was first built.
+Since 2026-09-23 a prop's triggers are the `Triggers` an item carries, owned by `EffectsPlugin`: `on` is a moment by name from an open registry, `entered` or `destroyed` for a prop, each with an `EffectArea`, the prop reports the moment as `Fired`, and `land_triggers` lands it; `docs/design/effects.md` has the timing and why. What follows is the design as it was first built.
 
 `Trigger { on, fires, effects }`, where `on` is `Entered` or `Destroyed` and `fires` is how many times it may go off, once for a pressure plate and more for a leaking line.
 
@@ -269,7 +269,7 @@ An emptied crate stays emptied, a sprung trap stays sprung, a spotted plate stay
 8. **Foundry:** supply crates on every deck, a hidden fuel-line plate per fabrication deck, wrecks named through the template, and the console moved onto `Interacted`. This is the proof, and the first thing in `examples/foundry/DESIGN.md` to get built. **Done**, with live cable in place of the fuel-line plate, since fabrication's decks do not exist yet and Foundry's damage kinds have no cryo. The console's bespoke action, resolver, key and refusal message are gone: what is left is a line of RON and a system that reads `Interacted` for one verb, because reporting a fact no effect can express is all that was ever Foundry's.
 
 What adopting it taught, each fixed rather than worked around:
-- **The interact key was missing.** Slice 3 built `Interact` and the bump redirect but no key, and a wreck lies underfoot where a bump cannot reach. `atglyph-ui`'s `InteractKey` is that key: it takes the one offer in reach and, where two are offered, takes none, because a key is not a question.
+- **The interact key was missing.** Slice 3 built `Interact` and the bump redirect but no key, and a wreck lies underfoot where a bump cannot reach. `atglyph-ui`'s interact key, part of `UiPlugin` in a game with `PropsPlugin` since 2026-10-13, is that key: it takes the one offer in reach and, where two are offered, takes none itself, because a key is not a question; since the offers screen was built it opens that screen to ask, and in a game with no such screen still does nothing.
 - **A game answering `FillContainer` raced the engine's ask.** Answered this frame or the next depending on which way the executor ran two systems, which moved every entity id after it and made Foundry's fingerprint tripwire flicker one run in five. `PropSet::{Stock, Fill}` inside `EngineSet::Stream` is the fix: the engine asks in one stage and a game answers in the next, so a game orders itself against the engine's phases and never against its functions.
 - **Three systems that all spawn, left unordered, is nondeterminism.** Foundry's droids, loot and props all fill a deck on arrival; nothing in the game plays differently for their order, but a tripwire that reads a run by spawn order flickers. They are one chain now.
 - **`report_bare_props` cannot live in a play-gated phase**, because props are put down while a place is built and `Added` matches for one frame. It runs in `PostUpdate`, in no set.

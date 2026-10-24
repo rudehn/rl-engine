@@ -49,7 +49,7 @@ It is empty when no mind holds the turn or a game has already claimed the decisi
 - `Begin`: the minds open the snapshot for the actor holding the turn, after `DecideSet::Sense` recast its sight.
 - `Roster`: the minds sort everyone the thinker can see into `enemies`, `allies` and `others` by the faction matrix when combat inserted one, or all into `others` without one.
 - `Filter`: stealth removes hiders the thinker has not noticed and fills `last_known`.
-- `Annotate`: items and throwing fill `missiles` and `items`; abilities copy `Offered` into `usable`; fire marks `hazards`; a game pushes its own `Sense`.
+- `Annotate`: items and throwing fill `missiles` and `items`; abilities copy `UsableAbilities` into `usable`; fire marks `hazards`; a game pushes its own `Sense`.
 
 `decide_minds` is then the last step: sort the snapshot once, build `TacticCtx`, run the brain, write the intent.
 Sorting happens there and nowhere else, so the order contributors ran in cannot reach a tactic.
@@ -92,7 +92,7 @@ The tactics never see a `DijkstraMap`.
 `Hunt` asks toward every enemy it sees, `FleeWhenHurt` away from them, `SearchLastKnown` toward `last_known`, `Scavenge` toward the item, and `Keep` toward every one of whichever roster it keeps station on, so a whole faction descends one flood rather than one per monster.
 
 `Keep::allies(keep_within, no_closer_than)` is what a companion is, and `Keep::enemies(..)` a spotter: one tactic, since the only thing that ever differed between the two was the roster it read.
-A companion cannot yet take the stairs; `WarpRequest` and `GoThrough` remain the player's, and `docs/TODO.md` tracks "anyone travels".
+A companion could not take the stairs when this was written; anyone travels now, when its wits say so, section 10.
 
 ## 4. Order of work
 
@@ -142,7 +142,7 @@ Until 2026-10-14 each game spawned its monsters by hand: Undermere's `spawn_mons
 Items had just stopped doing the same thing (`docs/design/items.md`, section 6a), and the reasoning carries over whole: what is shared is the shape of what the engine already simulates, never a schema, and the defaults are the game's.
 
 `atglyph_bevy::ActorParts<I>` is every part of one kind of actor, the actor's `ItemParts`, and a game fills one per definition at load from its own fields.
-Each field maps onto a component the engine already plays, `hp` onto `Health`, `wits` onto `Intelligence`, `notice` onto `Notice`, `statuses` onto what `Afflicted` holds for life, `leaves_remains` onto `LeavesRemains`, `drops` onto `Drops<I>`, or onto a tactic the brain is built with, `flee_at` and `keep_away`.
+Each field maps onto a component the engine already plays, `hp` onto `Health`, `wits` onto `Intelligence`, `notice` onto `Notice`, `statuses` onto what `ActiveStatuses` holds for life, `leaves_remains` onto `LeavesRemains`, `drops` onto `Drops<I>`, or onto a tactic the brain is built with, `flee_at` and `keep_away`.
 Every field is optional and absent means no mechanic: no notice is a mind that never notices what tries not to be seen, no remains is a death that leaves nothing, no hearing is deaf.
 A number written is inserted as written, so a game that writes no armor has no `Armor` and one that writes `Some(0)` has `Armor(0)`; the engine never decides that a nought is the same as nothing.
 `ActorParts::insert` puts them on an entity the game spawned with its own marker, its name and its look, rather than spawning one itself, so an actor spawned by hand, as the tutorial's are, and one spawned from parts are the same kind of entity.
@@ -224,3 +224,12 @@ Undermere's fingerprint did not move with the stream: its scripted delve is neve
 
 The rail's saying of it is `NearbyStatuses`, off unless a game asks with `NearbyPanel::statuses(key, asleep)`: every status with a badge as a facet under the game's key, by its registered name, and a sleeper as doing the game's sleep word.
 Undermere's confusion gas, `Discord`'s choice of target, every status name and number, and the lantern going out while shrouded stay Undermere's.
+
+## 12. How the fields and the gap moved
+
+Four changes to how a mind walks came out of Undermere's dungeon and party, the first three moving a fingerprint over the minds they touch and the last none, since a composed field is cell for cell the flood it stands for.
+
+- **A field floods round what stands.** A blocker that is no actor, a blocking prop above all, is a wall to `FlowFields` as it always was to the move resolver: a field that flooded the tiles alone walked a mind into a post or a rack, which the resolver refused, and it stood there with a way round a few steps off. What stands is read off `Occupancy` when it changes, and fields are thrown away only when the cells it stands on differ, so an actor's step costs no flood.
+- **A wary mind walks round a shown trap.** `Wits::WARY`, in the sapient preset, prices a cell under a trap anyone can see ten steps more, rather than refusing it, since a refused cell would leave a follower standing behind a trap in a corridor for good; a beast still blunders onto one, which is what a player lures it there for, and the cell its target or leader stands on is never priced.
+- **A gap is measured on foot.** `Keep::allies` and `Keep::leader` measure by the walk the mind already closes down, `Gap` and `Fields::on_foot`, where the crow's distance stood a follower three cells off across a wall while the walk to its leader was five; `Keep::enemies` keeps the crow's, since what it holds is a line of sight.
+- **Fields are kept longer and shared wider.** The field asked for longest ago goes first when the cache is full, rather than all of them at once, and a field toward up to four goals is composed from one flood per goal, so two hunters that see different enemies share the flood from each enemy both see.
