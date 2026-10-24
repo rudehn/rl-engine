@@ -14,6 +14,20 @@
 //!
 //! `Pointer` is the cell the mouse is over, read off the same layout the
 //! grid is drawn with, and through a [`MapView`] the map tile drawn there.
+//!
+//! - [`terminal`]: the glyph grid a game and its panels write cells into,
+//!   and the plugin that draws its back buffer.
+//! - [`layout`] and [`pointer`](mod@pointer): where the cells go in a window of any
+//!   size, and which cell the mouse is over.
+//! - [`map_view`]: the map drawn from the player's point of view, each
+//!   tile's look and the actors over it.
+//! - [`shade`], [`looks`] and [`fields`]: colour, light and memory the way
+//!   Brogue draws them, tile looks read from a file, and fire and gas
+//!   blended in over a moment.
+//! - [`particles`]: what flies, bursts and fades over the map after a turn.
+//! - [`tileset`]: pictures drawn in place of glyphs.
+//! - [`fullscreen`] and [`capture`]: filling the screen, as a setting, and
+//!   a game photographing its own window.
 
 #![deny(missing_docs)]
 #![forbid(unsafe_code)]

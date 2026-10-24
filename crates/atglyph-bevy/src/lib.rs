@@ -11,6 +11,39 @@
 //! the subsystem out. The scheduler here advances the clock, deals turns,
 //! requeues actors and recovers stalls. A game only decides what an actor
 //! does with its turn.
+//!
+//! - [`plugin`] and [`turn`]: the wiring and the loop, [`CorePlugin`]
+//!   with every set and schedule a game's systems go in, and the turn
+//!   itself, its actions, intents, clock and occupancy.
+//! - [`app`]: [`EngineApp`], every method a game and a plugin call on the
+//!   `App` while it is put together.
+//! - [`components`]: what every actor is made of, its position, its sight
+//!   and its speed.
+//! - [`state`], [`title`], [`seed`] and [`replay`]: a run's life, how it
+//!   ends and begins again, its start held for a title, the seed every
+//!   stream derives from, and a run written down and played back.
+//! - [`world`], [`places`], [`knowledge`] and [`fov`]: the map every reader
+//!   reads, the places it is made of and travel between them, what the
+//!   player has seen, and who sees what.
+//! - [`lighting`], [`doors`], [`secrets`], [`props`] and [`work`]: what is
+//!   on a map besides its actors and items, and what an actor does there
+//!   across many turns.
+//! - [`fields`], [`fire`] and [`gas`]: what spreads over the map, stepped
+//!   by the rules in `atglyph-rules`.
+//! - [`combat`], [`accuracy`], [`bump`], [`status`], [`ability`],
+//!   [`effects`], [`throwing`] and [`ammo`]: fighting, from a blow to an
+//!   ability's effects landing where it was aimed.
+//! - [`items`], [`consumable`], [`loot`], [`parts`], [`prefabs`] and
+//!   [`registries`]: things, what a use costs them, where they turn up,
+//!   the authored parts an actor or an item is made from, and the
+//!   registries those are read against.
+//! - [`minds`], [`stealth`] and [`noise`]: what decides everyone else's
+//!   turn, who has noticed whom, and what was heard.
+//! - [`cue`] and [`settings`]: what a turn did that is worth showing, with
+//!   the wait while it is shown, and what a player chooses once.
+//! - [`events`], [`records`], [`remains`] and [`trade`]: facts and quests,
+//!   what a run comes to, what the dead leave, and trade between two
+//!   actors.
 
 #![deny(missing_docs)]
 #![forbid(unsafe_code)]
