@@ -56,6 +56,7 @@ Everything in the first band is either a bug, or cheap enough that the reasoning
 | 33 | One root-and-prelude rule per crate | 10 | low | low |
 | 34 | The rule numbers, closed lists and English the engine still holds | 10 | low | medium |
 | 35 | The API review's renames | 10 | low | high |
+| 36 | A run whose start builds no world sits idle without a word | 3 | medium | medium |
 | - | Everything in 5 and 6 | 5, 6 | gated | gated |
 
 The first eight items of the order this file opened with were built on 2026-09-22, and the plan's progress log says how.
@@ -74,7 +75,7 @@ Why the order that is left, in five moves:
    Neither is urgent.
 3. **Items 8 to 18 are cleanups** worth taking whenever their file is open for another reason rather than scheduling.
    Item 17 is a measurement, not a change: run the lit bench before deciding there is anything to fix.
-   Item 22, added on 2026-10-09, is one more of these.
+   Item 22, added on 2026-10-09, is one more of these, and so is 36, added on 2026-10-24, though it reaches every test that begins a run on no world.
 4. **The rest wait on something.**
    Item 19 waits on a game that actually wants the tactics it would add, and item 20 on a second game asking for it.
    Item 21 was raised on 2026-09-28 when Foundry's rooms were first furnished, and is what the furnished rooms most visibly lack; the three furnishing items raised beside it were built on 2026-10-10.
@@ -151,6 +152,12 @@ The five items that opened this section were built in the six stages of `docs/de
   Effects land once and wearing is a standing state, which is why `docs/design/items.md` section 6 defers it; a cursed plate that bites when put on is a real case and would be one more moment, reported by the items resolver on `Equip`.
   It waits for a game that wants it.
 
+- **A run whose start builds no world sits idle without a word.**
+  `begin_run` sets the engine playing only once the run stands in a `WorldMap`, and `check_requirements`, which reports every plugin's `needs` together, runs on entering `EngineState::Playing`.
+  So a game that names no `places` and whose `NewRun` builds no map never begins play, its `needs::<WorldMap>` and every other missing piece are never reported, and the window stays still; `warn_if_play_never_began` covers only a map inserted outside the run's start.
+  The cheap fix, running `check_requirements` in `begin_run` when no world stands, was tried on 2026-10-24 and broke 34 tests across `atglyph-bevy`, `atglyph-save` and `atglyph-ui`, which begin runs on no world on purpose to test records, settings, the title and the save slots, and `title::tests::a_start_that_builds_no_world_leaves_play_idle` pins the idle start as the design.
+  Either those tests stand on `ground` or a `HoldStart`, and a world-less start becomes the error the `needs` report already describes, or the report runs only for a game that named no places and set no hold, which the tests would still trip.
+  Found by the 0.4.0 guide pass; the turn-loop and places pages, which said such a game is told so when play begins, now say it is not yet reported.
 - **`HalveIfBlocked` can never fire.**
   The engine builds a `Defender` in exactly two places and both hardcode the flag: `apply_damage` at `crates/atglyph-bevy/src/combat.rs:659` and `expected_damage` at `crates/atglyph-rules/src/forecast.rs:70`, each `blocked: false`.
   Every other construction is a test in `crates/atglyph-rules/src/damage.rs`, so nothing outside the tests ever sets it true.

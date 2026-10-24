@@ -26,7 +26,7 @@ It begins the first run at startup unless a title holds it, through the same `be
 It registers the actions that need nothing else: `Step`, `Wait`, `Bump`, a swap with an ally, `GoThrough`, `Open` and `Close`.
 Statuses and work are part of it rather than plugins of their own, since a game that registers no status and declares no kind of work has nothing to tick or do.
 It sets `Turn` to run on one thread, because a pass is dozens of small systems dealt once per actor turn rather than once per frame, and the multi-threaded executor's per-system handoff cost more than the systems it was handing off.
-It declares `needs::<WorldMap>`, so a game that never builds a map is told so, by name, the moment play begins rather than by an empty screen.
+It declares `needs::<WorldMap>`, so a game that sets play going with no map is told so, by name, rather than by an empty screen; a run whose start builds no map does not begin play, and is not yet reported.
 A game's own action is registered with `app.add_action::<A>()`, which adds `Intent<A>` as a message and one sweeper that refuses an intent no resolver claimed.
 Cues and the wait for them are in `CorePlugin` too, and stay inert until a plugin that draws them calls `CueWait::watch`.
 A landing is not: `AbilitiesPlugin`, `CombatPlugin`, `ThrowingPlugin` and `EffectsPlugin`, for a thing's aimed use, each register their own, so an `Airborne<L>` arrives with the subsystem that flies something rather than with the loop.

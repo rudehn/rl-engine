@@ -21,7 +21,7 @@ Every entity with a position is on exactly one map, and the turn loop freezes wh
 
 ## Turning it on
 
-Places need no plugin: `CorePlugin` puts `resolve_warps` in `ResolveSet::Travel` and `tag_new_positions` in `TurnSet::Schedule` before anyone is dealt a turn, and declares `needs::<WorldMap>`, so a game that builds no map is told so by name when play begins.
+Places need no plugin: `CorePlugin` puts `resolve_warps` in `ResolveSet::Travel` and `tag_new_positions` in `TurnSet::Schedule` before anyone is dealt a turn, and declares `needs::<WorldMap>`, so a game that sets play going with no map is told so by name; one whose run's start builds no map and names no places stays idle, unreported.
 What a game adds is its `PlaceRules`, handed over once with `app.places(rules)` where the game is put together, which also says the game needs a `Seed`; the engine calls them the first time a map id is entered.
 A run whose start makes no `WorldMap` gets one built over `PlaceRules::tiles`, a start that makes its own keeps it, and `commands.spawn_player(map, bundle)` spawns the player as a blocking actor warped to that place's entry.
 
