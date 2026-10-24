@@ -58,6 +58,7 @@ const TORCH: LightSource = LightSource::new(210, 7, Rgb::new(255, 180, 110)).fli
 
 fn main() -> AppExit {
     let mut app = App::new();
+    // ANCHOR: front_end
     // The window and glyph terminal, the turn loop, field of view, the map
     // between the status row and the log, and the base every panel needs;
     // or, with `--tty`, all of it in the text terminal you started the game
@@ -68,6 +69,7 @@ fn main() -> AppExit {
     } else {
         app.add_plugins(RoguelikePlugins::new(TITLE, COLS, ROWS).map(map));
     }
+    // ANCHOR_END: front_end
     // The game itself, the same plugin the tests add.
     app.add_plugins(Starter)
         // The panels draw themselves from views the engine keeps current.

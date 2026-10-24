@@ -47,6 +47,7 @@
   - [Statuses](systems/statuses.md)
 - [What you see]()
   - [Rendering](systems/rendering.md)
+  - [The text terminal](systems/tty.md)
   - [Panels](systems/panels.md)
   - [Controls, modals and cursors](systems/controls.md)
   - [Settings](systems/settings.md)
