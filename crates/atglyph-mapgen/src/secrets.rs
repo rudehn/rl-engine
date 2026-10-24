@@ -229,7 +229,7 @@ impl Pass for HideOpenings {
         let painted = |i: usize| areas.iter().any(|a| a.index == i && a.entries.is_some());
         // Pieces' floors never share a cell, so a room's rectangle on an
         // area's floor is that area's own.
-        let room_rects: Vec<atglyph_core::Rect> = ctx.outputs().iter::<Room>().map(|r| r.0).collect();
+        let room_rects: Vec<atglyph_core::GridRect> = ctx.outputs().iter::<Room>().map(|r| r.0).collect();
         let is_room = |a: &Area| a.cells.iter().any(|c| room_rects.iter().any(|r| r.contains(*c)));
 
         // Each opening's wall tile, or `None` where it may never be hidden.
@@ -436,7 +436,7 @@ mod tests {
                 let Some(room) = hidden_room(&ctx, &group[0]) else { continue };
                 rooms += 1;
                 let cells = &areas[room].cells;
-                let rooms: Vec<atglyph_core::Rect> = ctx.outputs().iter::<Room>().map(|r| r.0).collect();
+                let rooms: Vec<atglyph_core::GridRect> = ctx.outputs().iter::<Room>().map(|r| r.0).collect();
                 assert!(cells.iter().any(|c| rooms.iter().any(|r| r.contains(*c))), "seed {s}: a hidden room is a room");
                 assert!(!cells.contains(&start) && !cells.contains(&exit), "seed {s}: a hidden room holds neither way");
                 let shut = walk_through_doors(&ctx, start, false);
@@ -499,7 +499,7 @@ mod tests {
     /// its growth called it a room, and openings of floor between them,
     /// the way in at the first piece's corner and the way down at the
     /// second's far corner.
-    fn drawn(w: i32, h: i32, pieces: &[(atglyph_core::Rect, bool)], openings: &[(Point, Direction, (usize, usize))]) -> BaseContext {
+    fn drawn(w: i32, h: i32, pieces: &[(atglyph_core::GridRect, bool)], openings: &[(Point, Direction, (usize, usize))]) -> BaseContext {
         let tiles = TileRegistry::standard();
         let (wall, floor) = (tiles.expect("wall"), tiles.expect("floor"));
         let mut ctx = BaseContext::blank(w, h, tiles, wall);
@@ -526,7 +526,7 @@ mod tests {
     /// Two rooms and one door between them, the way in in one and the way
     /// down in the other: no loop, and no dead end without a way in it.
     fn two_rooms() -> BaseContext {
-        let pieces = [(atglyph_core::Rect::new(1, 1, 4, 3), true), (atglyph_core::Rect::new(6, 1, 4, 3), true)];
+        let pieces = [(atglyph_core::GridRect::new(1, 1, 4, 3), true), (atglyph_core::GridRect::new(6, 1, 4, 3), true)];
         drawn(11, 5, &pieces, &[(Point::new(5, 2), Direction::East, (0, 1))])
     }
 
@@ -535,10 +535,10 @@ mod tests {
     #[test]
     fn a_dead_end_passage_is_never_hidden_and_a_dead_end_room_is() {
         let pieces = [
-            (atglyph_core::Rect::new(1, 1, 4, 3), true),
-            (atglyph_core::Rect::new(6, 1, 4, 3), true),
-            (atglyph_core::Rect::new(2, 5, 1, 3), false),
-            (atglyph_core::Rect::new(11, 1, 4, 3), true),
+            (atglyph_core::GridRect::new(1, 1, 4, 3), true),
+            (atglyph_core::GridRect::new(6, 1, 4, 3), true),
+            (atglyph_core::GridRect::new(2, 5, 1, 3), false),
+            (atglyph_core::GridRect::new(11, 1, 4, 3), true),
         ];
         let openings =
             [(Point::new(5, 2), Direction::East, (0, 1)), (Point::new(2, 4), Direction::South, (0, 2)), (Point::new(10, 2), Direction::East, (1, 3))];

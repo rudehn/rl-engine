@@ -8,7 +8,7 @@
 use std::collections::BTreeMap;
 
 use atglyph_bevy::PresentSet;
-use atglyph_core::Rect;
+use atglyph_core::GridRect;
 use atglyph_render::{Cell, Terminal};
 use atglyph_rules::Relation;
 use bevy::prelude::*;
@@ -24,7 +24,7 @@ use crate::view::{Alert, NearbyFollowers, NearbyStatuses, NearbyView, NearbyView
 #[derive(Resource, Debug, Clone)]
 pub(crate) struct NearbyLayout {
     /// The terminal cells it occupies, border included.
-    pub rect: Rect,
+    pub rect: GridRect,
     /// The title in the top border. Empty draws no frame.
     pub title: String,
     /// The heading over the actors, with how many of them are hostile at
@@ -132,7 +132,7 @@ impl NearbyPanel {
     /// A rail in `rect`, with the engine's default headings: `In sight`
     /// over the actors and `Things in sight` over the things, which says
     /// what that list holds where a game has not said it in its own words.
-    pub fn new(rect: Rect) -> Self {
+    pub fn new(rect: GridRect) -> Self {
         Self(
             NearbyLayout {
                 rect,
@@ -263,7 +263,7 @@ pub(crate) fn draw_nearby(mut terminal: ResMut<Terminal>, rail: Rail, palette: R
         rect
     } else {
         frame(&mut terminal, rect, &layout.title, "", &palette);
-        Rect::new(rect.x + 1, rect.y + 1, rect.width - 2, rect.height - 2)
+        GridRect::new(rect.x + 1, rect.y + 1, rect.width - 2, rect.height - 2)
     };
     let beneath = Beneath::new(&layout.beneath, inner.width);
     let threats = Some(view.threats()).filter(|n| *n > 0);
@@ -304,7 +304,7 @@ pub(crate) fn draw_nearby(mut terminal: ResMut<Terminal>, rail: Rail, palette: R
                 break;
             }
             let focused = view.is_focused(row);
-            draw_row(&mut terminal, Rect::new(inner.x, y, inner.width, 1), row, focused, &beneath, layout, &palette);
+            draw_row(&mut terminal, GridRect::new(inner.x, y, inner.width, 1), row, focused, &beneath, layout, &palette);
             y += 1;
             let base = palette.get(if focused { Tones::SELECT } else { Tones::SURFACE });
             y = paint_beneath(&mut terminal, inner, y, bottom, notes, base, &palette);
@@ -325,7 +325,7 @@ pub(crate) const WASH: f32 = 0.2;
 
 /// Draws `row` on `line`, one cell high, with the facets `beneath` does
 /// not take after its name.
-fn draw_row(terminal: &mut Terminal, line: Rect, row: &Row, focused: bool, beneath: &Beneath, layout: &NearbyLayout, palette: &Palette) {
+fn draw_row(terminal: &mut Terminal, line: GridRect, row: &Row, focused: bool, beneath: &Beneath, layout: &NearbyLayout, palette: &Palette) {
     let base = palette.get(if focused { Tones::SELECT } else { Tones::SURFACE });
     let mut name = row.label.clone();
     for facet in row.facets.iter().filter(|f| !beneath.takes(f)) {
@@ -359,7 +359,7 @@ fn draw_row(terminal: &mut Terminal, line: Rect, row: &Row, focused: bool, benea
 /// with no health is `base` edge to edge. The nearby rail and the party
 /// rail both draw their rows so, and a follower reads as hurt by the
 /// same wash a foe beside it does.
-pub(crate) fn paint_row(terminal: &mut Terminal, line: Rect, row: &Row, base: Color, text: &str, tone: ToneId, palette: &Palette) {
+pub(crate) fn paint_row(terminal: &mut Terminal, line: GridRect, row: &Row, base: Color, text: &str, tone: ToneId, palette: &Palette) {
     let (x0, y) = (line.x, line.y);
     terminal.fill(line, Cell::new(' ', base).on(base));
     let filled = match row.health {
@@ -369,7 +369,7 @@ pub(crate) fn paint_row(terminal: &mut Terminal, line: Rect, row: &Row, base: Co
     let hurt = palette.get(row.health.map_or(Tones::GOOD, |(current, max)| crate::view::health_tone(current, max)));
     let wash = base.mix(&hurt, WASH);
     if filled > 0 {
-        terminal.fill(Rect::new(x0, y, filled, 1), Cell::new(' ', base).on(wash));
+        terminal.fill(GridRect::new(x0, y, filled, 1), Cell::new(' ', base).on(wash));
     }
     let bg_at = |x: i32| if x < x0 + filled { wash } else { base };
     terminal.print_on(x0, y, &row.glyph.ch.to_string(), row.glyph.fg, bg_at(x0));
@@ -382,12 +382,20 @@ pub(crate) fn paint_row(terminal: &mut Terminal, line: Rect, row: &Row, base: Co
 /// Paints `lines` under a row from `y`, set in under its name, each on
 /// `base` edge to edge so a row and its notes read as one block, and
 /// stops at `bottom`. Returns the line after the last one drawn.
-pub(crate) fn paint_beneath(terminal: &mut Terminal, inner: Rect, mut y: i32, bottom: i32, lines: &[(String, ToneId)], base: Color, palette: &Palette) -> i32 {
+pub(crate) fn paint_beneath(
+    terminal: &mut Terminal,
+    inner: GridRect,
+    mut y: i32,
+    bottom: i32,
+    lines: &[(String, ToneId)],
+    base: Color,
+    palette: &Palette,
+) -> i32 {
     for (line, tone) in lines {
         if y >= bottom {
             break;
         }
-        terminal.fill(Rect::new(inner.x, y, inner.width, 1), Cell::new(' ', base).on(base));
+        terminal.fill(GridRect::new(inner.x, y, inner.width, 1), Cell::new(' ', base).on(base));
         terminal.print_on(inner.x + 2, y, line, palette.get(*tone), base);
         y += 1;
     }
@@ -470,7 +478,7 @@ mod tests {
 
     #[test]
     fn the_rail_prints_a_heading_a_glyph_a_name_and_the_row_itself_is_the_health_bar() {
-        let mut stage = Stage::new(NearbyPanel::new(Rect::new(0, 0, 24, 10)).titled("")).screen(24, 10);
+        let mut stage = Stage::new(NearbyPanel::new(GridRect::new(0, 0, 24, 10)).titled("")).screen(24, 10);
         stage.actor("crab", 'c', 2, 0);
         stage.thing("rum", '!', 1, 0);
         stage.tick();
@@ -500,7 +508,7 @@ mod tests {
     /// `0` never stands over a list of people as though it counted them.
     #[test]
     fn the_heading_says_no_count_when_nothing_in_sight_is_hostile() {
-        let mut stage = Stage::new(NearbyPanel::new(Rect::new(0, 0, 24, 10)).titled("")).screen(24, 10);
+        let mut stage = Stage::new(NearbyPanel::new(GridRect::new(0, 0, 24, 10)).titled("")).screen(24, 10);
         let keeper = stage.actor("keeper", 'k', 2, 0);
         stage.app.world_mut().entity_mut(keeper).remove::<atglyph_bevy::Faction>();
         stage.tick();
@@ -512,7 +520,7 @@ mod tests {
     #[test]
     fn one_coming_to_look_at_a_sound_carries_a_question_and_one_that_has_seen_you_the_bang_instead() {
         let rules = atglyph_bevy::NoiseRules { step: 0, strike: 0, door: 0, landing: 0, door_muffle: 0 };
-        let panel = NearbyPanel::new(Rect::new(0, 0, 24, 10)).titled("");
+        let panel = NearbyPanel::new(GridRect::new(0, 0, 24, 10)).titled("");
         let mut stage = Stage::new((panel, atglyph_bevy::NoisePlugin::new(rules))).screen(24, 10);
         let rat = stage.actor("rat", 'r', 2, 0);
         stage.app.world_mut().entity_mut(rat).insert(atglyph_bevy::Hearing::default());
@@ -526,7 +534,7 @@ mod tests {
         row.alert = Some(Alert::Hunting);
         let palette = stage.app.world().resource::<Palette>().clone();
         let mut terminal = Terminal::new(24, 1, bevy::math::Vec2::ONE);
-        draw_row(&mut terminal, Rect::new(0, 0, 24, 1), &row, false, &Beneath::none(), &NearbyPanel::new(Rect::new(0, 0, 24, 10)).0, &palette);
+        draw_row(&mut terminal, GridRect::new(0, 0, 24, 1), &row, false, &Beneath::none(), &NearbyPanel::new(GridRect::new(0, 0, 24, 10)).0, &palette);
         let said: String = (0..24).filter_map(|x| terminal.get(x, 0).map(|c| c.glyph)).collect();
         assert!(said.contains("(hunting)"), "{said:?}");
     }
@@ -537,18 +545,18 @@ mod tests {
     /// work outranks both.
     #[test]
     fn what_an_actor_is_doing_is_written_in_the_games_words_before_its_alert() {
-        let mut stage = Stage::new(NearbyPanel::new(Rect::new(0, 0, 30, 10)).titled("")).screen(30, 10);
+        let mut stage = Stage::new(NearbyPanel::new(GridRect::new(0, 0, 30, 10)).titled("")).screen(30, 10);
         stage.actor("rat", 'r', 2, 0);
         stage.tick();
         let palette = stage.app.world().resource::<Palette>().clone();
-        let layout = NearbyPanel::new(Rect::new(0, 0, 30, 10)).activities(ActivityWords::new().word("flee_when_hurt", "fleeing")).0;
+        let layout = NearbyPanel::new(GridRect::new(0, 0, 30, 10)).activities(ActivityWords::new().word("flee_when_hurt", "fleeing")).0;
         let say = |doing: Option<&'static str>, work: bool| {
             let mut row = stage.app.world().resource::<NearbyView>().actors[0].clone();
             row.alert = Some(Alert::Hunting);
             row.doing = doing;
             row.work = work.then(|| crate::view::WorkRow { doing: "mending".into(), target: None, left: 3 });
             let mut terminal = Terminal::new(30, 1, bevy::math::Vec2::ONE);
-            draw_row(&mut terminal, Rect::new(0, 0, 30, 1), &row, false, &Beneath::none(), &layout, &palette);
+            draw_row(&mut terminal, GridRect::new(0, 0, 30, 1), &row, false, &Beneath::none(), &layout, &palette);
             (0..30).filter_map(|x| terminal.get(x, 0).map(|c| c.glyph)).collect::<String>()
         };
         assert!(say(Some("flee_when_hurt"), false).contains("rat (fleeing)"), "{:?}", say(Some("flee_when_hurt"), false));
@@ -558,7 +566,7 @@ mod tests {
 
     #[test]
     fn what_an_actor_is_working_at_is_written_where_its_alert_would_be() {
-        let mut stage = Stage::new(NearbyPanel::new(Rect::new(0, 0, 24, 10)).titled("")).screen(24, 10);
+        let mut stage = Stage::new(NearbyPanel::new(GridRect::new(0, 0, 24, 10)).titled("")).screen(24, 10);
         stage.actor("drone", 'u', 2, 0);
         stage.tick();
         let mut row = stage.app.world().resource::<NearbyView>().actors[0].clone();
@@ -566,7 +574,7 @@ mod tests {
         row.work = Some(crate::view::WorkRow { doing: "mending".into(), target: None, left: 3 });
         let palette = stage.app.world().resource::<Palette>().clone();
         let mut terminal = Terminal::new(24, 1, bevy::math::Vec2::ONE);
-        draw_row(&mut terminal, Rect::new(0, 0, 24, 1), &row, false, &Beneath::none(), &NearbyPanel::new(Rect::new(0, 0, 24, 10)).0, &palette);
+        draw_row(&mut terminal, GridRect::new(0, 0, 24, 1), &row, false, &Beneath::none(), &NearbyPanel::new(GridRect::new(0, 0, 24, 10)).0, &palette);
         let said: String = (0..24).filter_map(|x| terminal.get(x, 0).map(|c| c.glyph)).collect();
         assert!(said.contains("drone (mending)"), "{said:?}");
         assert!(!said.contains("hunting"), "what it is busy with, not what it knows: {said:?}");
@@ -574,7 +582,7 @@ mod tests {
 
     #[test]
     fn a_facet_is_printed_after_the_name_and_a_long_row_is_clipped_not_wrapped() {
-        let mut stage = Stage::new(NearbyPanel::new(Rect::new(0, 0, 24, 10)).titled("")).screen(24, 10);
+        let mut stage = Stage::new(NearbyPanel::new(GridRect::new(0, 0, 24, 10)).titled("")).screen(24, 10);
         stage.actor("crab", 'c', 2, 0);
         stage.tick();
         stage.app.add_systems(
@@ -598,14 +606,14 @@ mod tests {
     /// is doing does: "Grubnak the… (unaware)", never "(unawar…".
     #[test]
     fn a_long_name_is_clipped_and_the_state_after_it_is_kept_whole() {
-        let mut stage = Stage::new(NearbyPanel::new(Rect::new(0, 0, 24, 10)).titled("")).screen(24, 10);
+        let mut stage = Stage::new(NearbyPanel::new(GridRect::new(0, 0, 24, 10)).titled("")).screen(24, 10);
         stage.actor("Grubnak the goblin king", 'g', 2, 0);
         stage.tick();
         let mut row = stage.app.world().resource::<NearbyView>().actors[0].clone();
         row.alert = Some(Alert::Unaware);
         let palette = stage.app.world().resource::<Palette>().clone();
         let mut terminal = Terminal::new(24, 1, bevy::math::Vec2::ONE);
-        draw_row(&mut terminal, Rect::new(0, 0, 24, 1), &row, false, &Beneath::none(), &NearbyPanel::new(Rect::new(0, 0, 24, 10)).0, &palette);
+        draw_row(&mut terminal, GridRect::new(0, 0, 24, 1), &row, false, &Beneath::none(), &NearbyPanel::new(GridRect::new(0, 0, 24, 10)).0, &palette);
         let said: String = (0..24).filter_map(|x| terminal.get(x, 0).map(|c| c.glyph)).collect();
         assert_eq!(said.trim_end(), "g Grubnak the\u{2026} (unaware)", "the name clipped, the state whole");
 
@@ -613,7 +621,7 @@ mod tests {
         // beside the state is clipped from the end as before, so the
         // name is never lost to the word after it.
         let mut terminal = Terminal::new(14, 1, bevy::math::Vec2::ONE);
-        draw_row(&mut terminal, Rect::new(0, 0, 14, 1), &row, false, &Beneath::none(), &NearbyPanel::new(Rect::new(0, 0, 14, 10)).0, &palette);
+        draw_row(&mut terminal, GridRect::new(0, 0, 14, 1), &row, false, &Beneath::none(), &NearbyPanel::new(GridRect::new(0, 0, 14, 10)).0, &palette);
         let said: String = (0..14).filter_map(|x| terminal.get(x, 0).map(|c| c.glyph)).collect();
         assert_eq!(said.trim_end(), "g Grubnak the\u{2026}", "too narrow for both, the name comes first");
     }
@@ -632,7 +640,7 @@ mod tests {
     /// facet it does not stays after the name.
     #[test]
     fn a_facet_put_beneath_is_wrapped_under_the_name_and_picked_out_with_its_row() {
-        let mut stage = Stage::new(NearbyPanel::new(Rect::new(0, 0, 24, 10)).titled("").beneath("kit")).screen(24, 10);
+        let mut stage = Stage::new(NearbyPanel::new(GridRect::new(0, 0, 24, 10)).titled("").beneath("kit")).screen(24, 10);
         stage.app.add_systems(Update, kit_and_mark.in_set(crate::ViewSet::Annotate));
         stage.actor("crab", 'c', 2, 0);
         stage.actor("gull", 'g', 3, 0);
@@ -664,7 +672,7 @@ mod tests {
     /// view with its line.
     #[test]
     fn with_no_room_to_wrap_every_rows_notes_each_keeps_one_clipped_line_and_scrolls_with_it() {
-        let mut stage = Stage::new(NearbyPanel::new(Rect::new(0, 0, 24, 6)).titled("").beneath("kit")).screen(24, 6);
+        let mut stage = Stage::new(NearbyPanel::new(GridRect::new(0, 0, 24, 6)).titled("").beneath("kit")).screen(24, 6);
         stage.app.add_systems(Update, kit_and_mark.in_set(crate::ViewSet::Annotate));
         stage.actor("crab", 'c', 2, 0);
         stage.actor("gull", 'g', 3, 0);
@@ -681,7 +689,7 @@ mod tests {
 
     #[test]
     fn an_empty_rail_draws_no_headings_at_all() {
-        let stage = Stage::new(NearbyPanel::new(Rect::new(0, 0, 24, 10)).titled("")).screen(24, 10);
+        let stage = Stage::new(NearbyPanel::new(GridRect::new(0, 0, 24, 10)).titled("")).screen(24, 10);
         assert!(stage.rows().iter().all(|r| r.is_empty()), "nothing in sight is nothing drawn: {:?}", stage.rows());
     }
 
@@ -692,8 +700,8 @@ mod tests {
 
     #[test]
     fn the_row_picked_out_is_drawn_on_the_selection_bar_and_all_and_so_is_its_tile() {
-        let mut stage = Stage::new_with(NearbyPanel::new(Rect::new(40, 0, 24, 10)).titled(""), |app| {
-            app.add_plugins(atglyph_render::MapViewPlugin::new(Rect::new(0, 0, 40, 20)));
+        let mut stage = Stage::new_with(NearbyPanel::new(GridRect::new(40, 0, 24, 10)).titled(""), |app| {
+            app.add_plugins(atglyph_render::MapViewPlugin::new(GridRect::new(0, 0, 40, 20)));
         })
         .screen(64, 20);
         stage.actor("crab", 'c', 2, 0);
@@ -729,7 +737,7 @@ mod tests {
 
     #[test]
     fn a_row_picked_out_below_the_rail_scrolls_the_list_to_show_it() {
-        let mut stage = Stage::new(NearbyPanel::new(Rect::new(0, 0, 24, 5)).titled("")).screen(24, 5);
+        let mut stage = Stage::new(NearbyPanel::new(GridRect::new(0, 0, 24, 5)).titled("")).screen(24, 5);
         for (i, name) in ["ant", "bee", "cat", "dog", "eel"].into_iter().enumerate() {
             stage.actor(name, name.chars().next().unwrap(), i as i32 + 1, 0);
         }

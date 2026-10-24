@@ -6,6 +6,9 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- The grid's rectangle is `GridRect`, where it was `Rect`, so it no longer fights Bevy's `Rect` and is in `atglyph::prelude` beside it; its fields and methods are unchanged, and it is `atglyph::primitives::GridRect` (`atglyph_core::GridRect` used alone).
+  To change: breaking: `atglyph::primitives::Rect` becomes `GridRect`, and a game that globs `atglyph::prelude::*` may drop its `use atglyph::primitives::Rect;` line.
+
 - Each crate's `App` methods come through one trait, so one import brings every method whatever prelude a game globs: `atglyph::ecs::EngineApp` holds what `AddStream`, `AddWork`, `AddEngineEffects`, `AddChoice`, `AddEffect`, `AddSpending`, `AddTriggerKind`, `KeepOnRemnant`, `AddAction`, `AddSettings`, `AddVerb`, `ResetsOnNewRun`, `Reads`, `Needs`, `AddSound` and `AddPlaces` held, `atglyph::ui::UiApp` what `AddModal`, `AddControls` and `AddTone` held, and `atglyph::save::SaveApp` is `AddSaveable`. Every method keeps its name. `depends_on` is a method beside `needs` and `reads`, `app.depends_on::<P>("MyPlugin")`. `AddAirborne`, which only the engine's own subsystems call, is no longer public.
   To change: breaking: a `use` naming any of the twenty old traits names `atglyph::ecs::EngineApp`, `atglyph::ui::UiApp` or `atglyph::save::SaveApp` instead (`atglyph::prelude::*` brings all three), and `atglyph::ecs::plugin::depends_on::<P>(app, "MyPlugin")` becomes `app.depends_on::<P>("MyPlugin")`.
 

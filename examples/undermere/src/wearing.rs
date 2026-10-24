@@ -31,7 +31,7 @@
 
 #[cfg(test)]
 mod tests {
-    use atglyph::primitives::{Rect, RunSeed};
+    use atglyph::primitives::RunSeed;
     use bevy::ecs::system::RunSystemOnce;
     use bevy::ecs::world::CommandQueue;
 
@@ -143,7 +143,7 @@ mod tests {
         // them, with the statuses below.
         let (width, height) = (60, 40);
         let mut app = headless(RunSeed(2));
-        app.add_plugins((KeyScriptPlugin, SheetPanel::new(Rect::new(0, 0, width, height))));
+        app.add_plugins((KeyScriptPlugin, SheetPanel::new(GridRect::new(0, 0, width, height))));
         app.insert_resource(Terminal::new(width, height, Vec2::ONE));
         let me = arrive(&mut app, map_of(3));
         clear_monsters(&mut app);

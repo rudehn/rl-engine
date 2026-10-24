@@ -1162,8 +1162,8 @@ mod tests {
     }
 
     /// Room enough that no shape is clipped by the edge.
-    fn arena() -> atglyph_core::Rect {
-        atglyph_core::Rect::new(0, 0, 40, 40)
+    fn arena() -> atglyph_core::GridRect {
+        atglyph_core::GridRect::new(0, 0, 40, 40)
     }
 
     fn nothing_blocks(_: Point) -> bool {

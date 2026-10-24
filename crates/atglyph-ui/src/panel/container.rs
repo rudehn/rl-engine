@@ -17,7 +17,7 @@
 
 use atglyph_bevy::prelude::*;
 use atglyph_bevy::{EngineSet, PresentSet};
-use atglyph_core::{Direction, Rect};
+use atglyph_core::{Direction, GridRect};
 use atglyph_render::{Cell, Terminal};
 use bevy::prelude::*;
 
@@ -55,7 +55,7 @@ impl Default for ContainerKeys {
 #[derive(Resource, Debug, Clone)]
 pub(crate) struct ContainerLayout {
     /// The terminal cells it occupies.
-    pub rect: Rect,
+    pub rect: GridRect,
     /// Shown in place of rows when there are none.
     pub empty: String,
 }
@@ -89,7 +89,7 @@ pub struct ContainerPanel(ContainerLayout);
 impl ContainerPanel {
     /// The container screen in `rect`. Its title is whatever the container
     /// is called, so the engine never names a crate.
-    pub fn new(rect: Rect) -> Self {
+    pub fn new(rect: GridRect) -> Self {
         Self(ContainerLayout { rect, empty: "Empty.".into() })
     }
 
@@ -243,7 +243,7 @@ pub(crate) fn draw_container(mut terminal: ResMut<Terminal>, mut menu: ResMut<Co
     hints.push(format!("{} close", key_name(bindings.cursor.close)));
     clear(&mut terminal, rect, palette);
     frame(&mut terminal, rect, &view.title, &hints.join(" \u{2022} "), palette);
-    let inner = Rect::new(rect.x + 2, rect.y + 1, rect.width - 4, rect.height - 2);
+    let inner = GridRect::new(rect.x + 2, rect.y + 1, rect.width - 4, rect.height - 2);
     let surface = palette.get(Tones::SURFACE);
     let width = inner.width.max(0) as usize;
 
@@ -258,7 +258,7 @@ pub(crate) fn draw_container(mut terminal: ResMut<Terminal>, mut menu: ResMut<Co
         let selected = i == menu.selected;
         let bg = if selected { palette.get(Tones::SELECT) } else { surface };
         let fg = palette.get(Tones::TEXT);
-        terminal.fill(Rect::new(inner.x, y, inner.width, 1), Cell::new(' ', fg).on(bg));
+        terminal.fill(GridRect::new(inner.x, y, inner.width, 1), Cell::new(' ', fg).on(bg));
         let mut x = inner.x;
         terminal.set(x, y, Cell::new(row.glyph.ch, row.glyph.fg).on(bg));
         x += 2;
@@ -278,7 +278,7 @@ mod tests {
     /// A crate beside the player, holding two things, with the screen
     /// added and the engine's props running.
     fn stage() -> (Stage, Entity) {
-        let mut stage = Stage::new_with(ContainerPanel::new(Rect::new(10, 5, 40, 12)), |app| {
+        let mut stage = Stage::new_with(ContainerPanel::new(GridRect::new(10, 5, 40, 12)), |app| {
             app.add_plugins(PropsPlugin);
             app.insert_resource(Seed(TEST_SEED));
         });

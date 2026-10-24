@@ -7,7 +7,7 @@
 
 use std::collections::BTreeMap;
 
-use atglyph_core::{Point, Rect};
+use atglyph_core::{GridRect, Point};
 use atglyph_grid::TileField;
 use serde::{Deserialize, Serialize};
 
@@ -19,7 +19,7 @@ use crate::world::WorldMap;
 pub(crate) struct MapFields<T> {
     /// The map the field covers, `None` until it first follows one.
     map: Option<MapId>,
-    window: Rect,
+    window: GridRect,
     field: TileField<T>,
     /// Every other map's cells that hold something, in world coordinates.
     aside: BTreeMap<MapId, Vec<(Point, T)>>,
@@ -36,7 +36,7 @@ pub struct SavedField<T> {
 
 impl<T: Copy + Default + PartialEq> Default for MapFields<T> {
     fn default() -> Self {
-        Self { map: None, window: Rect::new(0, 0, 0, 0), field: TileField::new(0, 0), aside: BTreeMap::new() }
+        Self { map: None, window: GridRect::new(0, 0, 0, 0), field: TileField::new(0, 0), aside: BTreeMap::new() }
     }
 }
 

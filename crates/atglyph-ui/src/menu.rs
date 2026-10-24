@@ -11,7 +11,7 @@
 //! stays visible is the same arithmetic every time, and getting it wrong
 //! is how a list ends up jumping a page when the cursor reaches the edge.
 
-use atglyph_core::Rect;
+use atglyph_core::GridRect;
 use atglyph_render::{Cell, Terminal};
 
 use crate::panel::{clip, frame};
@@ -107,7 +107,7 @@ impl ListMenu {
 /// Draws `menu` framed inside `rect`: title in the top border, rows
 /// scrolled to keep the cursor visible, the selected row's detail under
 /// them, and the hints in the bottom border.
-pub fn draw_menu(terminal: &mut Terminal, rect: Rect, menu: &ListMenu, palette: &Palette) {
+pub fn draw_menu(terminal: &mut Terminal, rect: GridRect, menu: &ListMenu, palette: &Palette) {
     if rect.width < 4 || rect.height < 4 {
         return;
     }
@@ -115,7 +115,7 @@ pub fn draw_menu(terminal: &mut Terminal, rect: Rect, menu: &ListMenu, palette: 
     terminal.fill(rect, Cell::new(' ', palette.get(Tones::TEXT)).on(surface));
     frame(terminal, rect, &menu.title, &menu.hints, palette);
 
-    let inner = Rect::new(rect.x + 2, rect.y + 1, rect.width - 4, rect.height - 2);
+    let inner = GridRect::new(rect.x + 2, rect.y + 1, rect.width - 4, rect.height - 2);
     // The last inner row is the detail line, with a blank row above it.
     let list_rows = (inner.height - 2).max(1) as usize;
     if menu.rows.is_empty() {
@@ -128,7 +128,7 @@ pub fn draw_menu(terminal: &mut Terminal, rect: Rect, menu: &ListMenu, palette: 
         let selected = i == menu.selected;
         let bg = if selected { palette.get(Tones::SELECT) } else { surface };
         let fg = if selected { palette.get(Tones::TEXT) } else { palette.get(row.tone) };
-        terminal.fill(Rect::new(inner.x, y, inner.width, 1), Cell::new(' ', fg).on(bg));
+        terminal.fill(GridRect::new(inner.x, y, inner.width, 1), Cell::new(' ', fg).on(bg));
         let label = clip(&row.label, (inner.width as usize).saturating_sub(row.tag.chars().count() + 1));
         terminal.print_on(inner.x, y, &label, fg, bg);
         if !row.tag.is_empty() {
@@ -170,7 +170,7 @@ mod tests {
         m.hints = "q".into();
         m.set_rows((0..20).map(|i| MenuRow::new(format!("row {i}")).tag("t").detail(format!("detail {i}"))).collect());
         m.selected = 15;
-        let rect = Rect::new(0, 0, 40, 10);
+        let rect = GridRect::new(0, 0, 40, 10);
         draw_menu(&mut t, rect, &m, &Palette::default());
         let line = |y: i32| -> String { (0..40).map(|x| t.get(x, y).unwrap().glyph).collect() };
         assert!(line(0).contains(" bag "), "title in the top border: {:?}", line(0));

@@ -18,7 +18,7 @@
 //! is tiring to look at: the furnace breathes, its sparks rise, and the
 //! line carries chassis to the right.
 
-use atglyph::primitives::Rect;
+use atglyph::primitives::GridRect;
 use atglyph::render::{Cell, Terminal};
 use atglyph::ui::{Palette, Tones};
 use bevy::prelude::*;
@@ -27,8 +27,8 @@ use bevy::prelude::*;
 /// rows under the gantry's rule, the whole width across, which the picture
 /// leaves dark so the menu reads over nothing. The panel centres its rows
 /// across it, where Foundry's own menu stood.
-pub fn menu(width: i32, height: i32) -> Rect {
-    Rect::new(0, rows::MENU, width, height - rows::MENU)
+pub fn menu(width: i32, height: i32) -> GridRect {
+    GridRect::new(0, rows::MENU, width, height - rows::MENU)
 }
 
 /// Paints the picture: the scene, the title, its tagline and the rule

@@ -11,7 +11,6 @@
 //! `t` lantern, `.` wait, `q` quit.
 
 use atglyph::prelude::*;
-use atglyph::primitives::Rect;
 use atglyph::rand::Rng;
 use atglyph::rules::Wits;
 use atglyph::rules::ai::tactics::{FleeWhenHurt, Hunt, MeleeAdjacent, Wander};
@@ -34,7 +33,7 @@ fn main() -> AppExit {
     let mut app = App::new();
     // What every game adds: the window and the glyph terminal, the turn
     // loop, sight, the map in everything but the status row and the log, and the UI base.
-    app.add_plugins(RoguelikePlugins::new("Warren", COLS, ROWS).map(Rect::new(0, 1, COLS, ROWS - 1 - LOG_ROWS)))
+    app.add_plugins(RoguelikePlugins::new("Warren", COLS, ROWS).map(GridRect::new(0, 1, COLS, ROWS - 1 - LOG_ROWS)))
         // Without this the world is lit everywhere and sight is geometry
         // alone. With it, `visible` shrinks to what a light reaches.
         .add_plugins((CombatPlugin, MindsPlugin, LightingPlugin, ItemsPlugin, ThrowingPlugin, TargetViewPlugin))
@@ -42,14 +41,14 @@ fn main() -> AppExit {
         .insert_resource(Seed(RunSeed(7)))
         // Two panels: the vitals strip on the top row, the log along the
         // bottom. Each draws itself; neither needs a system of yours.
-        .add_plugins(VitalsPanel::new(Rect::new(0, 0, COLS, 1)).hints("[g]et [e]at [r]ock [t]orch [.]wait [q]uit"))
-        .add_plugins(LogPanel::new(Rect::new(0, ROWS - LOG_ROWS, COLS, LOG_ROWS)))
+        .add_plugins(VitalsPanel::new(GridRect::new(0, 0, COLS, 1)).hints("[g]et [e]at [r]ock [t]orch [.]wait [q]uit"))
+        .add_plugins(LogPanel::new(GridRect::new(0, ROWS - LOG_ROWS, COLS, LOG_ROWS)))
         // The engine narrates blows, deaths and pickups into the log, naming
         // things in their own colours. Warren changes one phrase: what a rat
         // does to you is a bite.
         .add_plugins(NarratorPlugin::default().phrase(Phrase::HitsYou, "{Who} bites you for {n}.", Tones::BAD))
         // Escape opens the menu, and the run's end opens it by itself.
-        .add_plugins(GameMenuPanel::new(Rect::new(COLS / 2 - 20, 8, 40, 12)).died("The warren keeps you."))
+        .add_plugins(GameMenuPanel::new(GridRect::new(COLS / 2 - 20, 8, 40, 12)).died("The warren keeps you."))
         .add_systems(NewRun, start)
         // A floor fills the first time it is entered, inside the turn.
         .add_systems(Turn, (populate, eat).in_set(TurnSet::React))

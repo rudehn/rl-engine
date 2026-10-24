@@ -38,7 +38,6 @@ use atglyph::mapgen::dungeon::{ExitPoint, FarthestExit, MarkedStart, RandomStart
 use atglyph::mapgen::passes::StartPoint;
 use atglyph::mapgen::{Area, DistrictDressings, Opening};
 use atglyph::prelude::*;
-use atglyph::primitives::Rect;
 use atglyph::rand::Rng;
 use atglyph::rand::seq::SliceRandom;
 use atglyph::render::TileAppearance;
@@ -995,7 +994,7 @@ pub(crate) fn ways(ctx: &BaseContext) -> Vec<Point> {
 }
 
 /// The bounds of every piece stamped so far.
-pub(crate) fn pieces(ctx: &BaseContext) -> Vec<Rect> {
+pub(crate) fn pieces(ctx: &BaseContext) -> Vec<GridRect> {
     ctx.outputs().iter::<Stamped>().map(|st| st.bounds).collect()
 }
 
@@ -1006,7 +1005,7 @@ pub(crate) fn pieces(ctx: &BaseContext) -> Vec<Rect> {
 pub(crate) fn under_pieces(ctx: &BaseContext) -> atglyph::grid::BitGrid {
     let terrain = ctx.terrain();
     let mut under = atglyph::grid::BitGrid::new(terrain.width(), terrain.height());
-    for p in pieces(ctx).into_iter().flat_map(Rect::cells) {
+    for p in pieces(ctx).into_iter().flat_map(GridRect::cells) {
         under.insert(p);
     }
     under
@@ -1424,7 +1423,6 @@ mod tests {
     use atglyph::mapgen::Join;
     use atglyph::mapgen::accrete::Landmark;
     use atglyph::mapgen::prefab::Stamped;
-    use atglyph::primitives::Rect;
     use atglyph::rules::pool::Laid;
     use atglyph::rules::prefab::{Slot, SlotPick};
 
@@ -1690,7 +1688,7 @@ mod tests {
     ) {
         let boss = undermere.final_boss();
         let key = undermere.prefabs().defs().expect(boss.piece).raw();
-        let throne: Vec<Rect> = stamped.iter().filter(|st| st.prefab == Some(key)).map(|st| st.bounds).collect();
+        let throne: Vec<GridRect> = stamped.iter().filter(|st| st.prefab == Some(key)).map(|st| st.bounds).collect();
         assert_eq!(throne.len(), 1, "{at}: one {} on floor ten", boss.piece);
         let throne = throne[0];
         let (mut monsters, mut props): (Vec<&str>, Vec<&str>) = (Vec::new(), Vec::new());
@@ -2251,7 +2249,7 @@ mod tests {
     /// with every secret found and every lock opened, and the way down with
     /// none of them: the by-hand span's check, beside the run's backstop
     /// that asks the same of the floors a run draws.
-    fn recipe_is_walked(built: &PlaceBuild, tables: &TileTables, bounds: Rect, at: &str) {
+    fn recipe_is_walked(built: &PlaceBuild, tables: &TileTables, bounds: GridRect, at: &str) {
         let mut found = built.terrain.clone();
         for secret in &built.secrets {
             found.set(secret.at, secret.is);

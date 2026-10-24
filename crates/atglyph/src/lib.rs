@@ -104,10 +104,9 @@ pub use atglyph_ui as ui;
 /// ```no_run
 /// use bevy::prelude::*;
 /// use atglyph::prelude::*;
-/// use atglyph::primitives::Rect;
 ///
 /// App::new()
-///     .add_plugins(RoguelikePlugins::new("Warren", 80, 40).map(Rect::new(0, 1, 80, 34)).build().disable::<CapturePlugin>())
+///     .add_plugins(RoguelikePlugins::new("Warren", 80, 40).map(GridRect::new(0, 1, 80, 34)).build().disable::<CapturePlugin>())
 ///     .add_plugins((CombatPlugin, MindsPlugin))
 ///     .run();
 /// ```
@@ -118,7 +117,7 @@ pub struct RoguelikePlugins {
     rows: i32,
     cell: Vec2,
     font: f32,
-    map: Option<atglyph_core::Rect>,
+    map: Option<atglyph_core::GridRect>,
     across: i32,
     typeface: Option<Typeface>,
 }
@@ -165,7 +164,7 @@ impl RoguelikePlugins {
     }
 
     /// The terminal cells the map is drawn in; the rest is left to panels.
-    pub fn map(mut self, viewport: atglyph_core::Rect) -> Self {
+    pub fn map(mut self, viewport: atglyph_core::GridRect) -> Self {
         self.map = Some(viewport);
         self
     }
@@ -186,7 +185,7 @@ impl PluginGroup for RoguelikePlugins {
         // its parent, which leaves it overflowing whatever it is embedded in.
         // The field does nothing off the web.
         let window = Window { title: self.title, resolution: WindowResolution::new(width, height), fit_canvas_to_parent: true, ..default() };
-        let map = self.map.unwrap_or(atglyph_core::Rect::new(0, 0, self.cols, self.rows));
+        let map = self.map.unwrap_or(atglyph_core::GridRect::new(0, 0, self.cols, self.rows));
         let mut terminal = atglyph_render::TerminalPlugin::new(self.cols, self.rows, self.cell, self.font);
         if let Some(Typeface(face)) = self.typeface {
             terminal = terminal.typeface(face);
@@ -241,16 +240,15 @@ impl PluginGroup for RoguelikePlugins {
 /// ```no_run
 /// use bevy::prelude::*;
 /// use atglyph::prelude::*;
-/// use atglyph::primitives::Rect;
 ///
-/// App::new().add_plugins(TtyRoguelikePlugins::new(80, 40).map(Rect::new(0, 1, 80, 34))).add_plugins((CombatPlugin, MindsPlugin)).run();
+/// App::new().add_plugins(TtyRoguelikePlugins::new(80, 40).map(GridRect::new(0, 1, 80, 34))).add_plugins((CombatPlugin, MindsPlugin)).run();
 /// ```
 #[cfg(not(target_arch = "wasm32"))]
 #[derive(Debug, Clone)]
 pub struct TtyRoguelikePlugins {
     cols: i32,
     rows: i32,
-    map: Option<atglyph_core::Rect>,
+    map: Option<atglyph_core::GridRect>,
     across: i32,
 }
 
@@ -262,7 +260,7 @@ impl TtyRoguelikePlugins {
     }
 
     /// The terminal cells the map is drawn in; the rest is left to panels.
-    pub fn map(mut self, viewport: atglyph_core::Rect) -> Self {
+    pub fn map(mut self, viewport: atglyph_core::GridRect) -> Self {
         self.map = Some(viewport);
         self
     }
@@ -278,7 +276,7 @@ impl TtyRoguelikePlugins {
 #[cfg(not(target_arch = "wasm32"))]
 impl PluginGroup for TtyRoguelikePlugins {
     fn build(self) -> PluginGroupBuilder {
-        let map = self.map.unwrap_or(atglyph_core::Rect::new(0, 0, self.cols, self.rows));
+        let map = self.map.unwrap_or(atglyph_core::GridRect::new(0, 0, self.cols, self.rows));
         // Thirty frames a second: a terminal repeats a held key about as
         // often, and a frame with nothing to write writes nothing.
         let frames = bevy::app::ScheduleRunnerPlugin::run_loop(std::time::Duration::from_secs_f64(1.0 / 30.0));
@@ -304,11 +302,9 @@ impl PluginGroup for TtyRoguelikePlugins {
 /// use atglyph::prelude::*;
 /// ```
 ///
-/// `Rect` is deliberately left out. Bevy's prelude has a `Rect` of its
-/// own, so a game that globs both would have to disambiguate every use of
-/// the name; import [`atglyph::primitives::Rect`](atglyph_core::Rect) where you want the grid one. That is
-/// the only name the two preludes would have fought over, and the doc test
-/// below is what keeps it that way.
+/// The grid's rectangle is [`GridRect`](atglyph_core::GridRect), so it sits
+/// beside Bevy's own `Rect` and neither glob shadows the other; the doc
+/// test below names both, which is what keeps it that way.
 ///
 /// ```
 /// use bevy::prelude::*;
@@ -316,7 +312,7 @@ impl PluginGroup for TtyRoguelikePlugins {
 ///
 /// // One name from each crate the prelude covers, named rather than
 /// // glob-imported, so a future collision with Bevy fails here.
-/// fn takes(_: Point, _: Direction, _: TileId, _: Terrain, _: Chain) {}
+/// fn takes(_: Point, _: GridRect, _: Rect, _: Direction, _: TileId, _: Terrain, _: Chain) {}
 /// fn rules(_: Registry<StatDef>, _: NameRef<StatDef>, _: Names, _: Brain<Entity>, _: Ledger, _: MovementProfile) {}
 /// fn bevy_side(_: Position, _: Player, _: Health, _: Intent<Step>, _: MapId, _: EngineSet, _: PresentSet) {}
 /// fn title(_: HoldStart, _: SavedRun, _: ContinueRun, _: AbandonRun, _: LeaveRun) {}
@@ -334,10 +330,10 @@ pub mod prelude {
     pub use crate::RoguelikePlugins;
     #[cfg(not(target_arch = "wasm32"))]
     pub use crate::TtyRoguelikePlugins;
-    // Core, minus `Rect`: see the note above.
     pub use atglyph_bevy::prelude::*;
     pub use atglyph_core::prelude::{
-        BASE_ACTION_COST, DequeueOutcome, DiceRoll, Direction, Grid, Grid2D, Id, Interner, PlaceSeed, Point, RunSeed, SeedDomain, Steps, TurnQueue, geometry,
+        BASE_ACTION_COST, DequeueOutcome, DiceRoll, Direction, Grid, Grid2D, GridRect, Id, Interner, PlaceSeed, Point, RunSeed, SeedDomain, Steps, TurnQueue,
+        geometry,
     };
     pub use atglyph_grid::prelude::*;
     pub use atglyph_mapgen::prelude::*;

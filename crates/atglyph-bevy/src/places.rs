@@ -493,7 +493,7 @@ mod tests {
     use crate::testing::headless_app;
     use crate::turn::Wait;
     use crate::turn::{ActionRefused, Turns};
-    use atglyph_core::Rect;
+    use atglyph_core::GridRect;
     use atglyph_grid::{TileRegistry, TileTables};
     use atglyph_mapgen::dungeon::{FarthestExit, RandomStart, Rooms};
     use atglyph_mapgen::passes::StartPoint;
@@ -615,7 +615,7 @@ mod tests {
             assert_eq!(w.get::<Position>(r.player).unwrap().0, place.entry);
             assert_eq!(w.get::<OnMap>(r.player).unwrap().0, cave);
             assert!(map.is_walkable(place.entry));
-            assert_eq!(map.window_tiles(), Rect::new(0, 0, 40, 30), "the place is the whole window");
+            assert_eq!(map.window_tiles(), GridRect::new(0, 0, 40, 30), "the place is the whole window");
             assert!(w.resource::<Occupancy>().is_occupied(place.entry));
             assert!(!w.resource::<Occupancy>().is_occupied(r.start.offset(2, 0)), "the watcher on map zero is not on this map's index");
             assert_eq!(w.resource::<Entered>().0, vec![PlaceEntered { map: cave, first: true, entry: place.entry, exit: place.exit }]);

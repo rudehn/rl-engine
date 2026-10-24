@@ -50,7 +50,7 @@
 //! the ambient itself; the engine has no clock hook and no notion of a day.
 
 use crate::app::EngineApp;
-use atglyph_core::{Grid2D, Point, Rect, geometry};
+use atglyph_core::{Grid2D, GridRect, Point, geometry};
 use atglyph_grid::{BitGrid, Emitter, Glow, Light, LightBand, LightField, Rgb};
 use bevy::prelude::*;
 
@@ -311,13 +311,13 @@ pub(crate) struct Sources<'w, 's> {
 ///
 /// Both lists are sorted, so this is a merge. `None` means the lists are
 /// the same and nothing moved.
-fn changed_area(was: &[Emitter], now: &[Emitter]) -> Option<Rect> {
-    let mut area: Option<Rect> = None;
+fn changed_area(was: &[Emitter], now: &[Emitter]) -> Option<GridRect> {
+    let mut area: Option<GridRect> = None;
     let mut cover = |e: &Emitter| {
         // The rim, where light reaches exactly zero, is still a cell whose
         // value can change, so the disc is taken inclusive of it.
         let r = e.glow.radius;
-        let disc = Rect::from_corners(e.origin.offset(-r, -r), e.origin.offset(r, r));
+        let disc = GridRect::from_corners(e.origin.offset(-r, -r), e.origin.offset(r, r));
         area = Some(match area {
             Some(a) => a.union(&disc),
             None => disc,
@@ -467,7 +467,7 @@ fn recast(map: &WorldMap, lighting: &mut Lighting, sources: &Sources, viewsheds:
     // What moved, before the lists are replaced. `None` where the whole
     // field is being rebuilt anyway, which is every viewshed's business.
     let mut changed = false;
-    let mut touched: Option<Rect> = None;
+    let mut touched: Option<GridRect> = None;
     let mut everywhere = recast_all;
     let view = map.view();
     if recast_all || lighting.static_dirty || statics != lighting.static_emitters {
@@ -500,7 +500,7 @@ fn recast(map: &WorldMap, lighting: &mut Lighting, sources: &Sources, viewsheds:
 }
 
 /// The smaller rectangle covering both, where there are two.
-fn union(a: Option<Rect>, b: Option<Rect>) -> Option<Rect> {
+fn union(a: Option<GridRect>, b: Option<GridRect>) -> Option<GridRect> {
     match (a, b) {
         (Some(a), Some(b)) => Some(a.union(&b)),
         (a, b) => a.or(b),
@@ -512,9 +512,9 @@ fn union(a: Option<Rect>, b: Option<Rect>) -> Option<Rect> {
 ///
 /// A viewer whose cell nobody knows is taken as reachable: it is one
 /// entity, and guessing wrong the other way is sight that never updates.
-fn reaches(touched: Option<Rect>, at: Option<Point>, range: i32) -> bool {
+fn reaches(touched: Option<GridRect>, at: Option<Point>, range: i32) -> bool {
     let (Some(touched), Some(at)) = (touched, at) else { return true };
-    Rect::from_corners(at.offset(-range, -range), at.offset(range, range)).intersects(&touched)
+    GridRect::from_corners(at.offset(-range, -range), at.offset(range, range)).intersects(&touched)
 }
 
 /// Cuts a computed line of sight down to what light, dark sight or touch
@@ -1147,7 +1147,7 @@ mod tests {
     /// Every cell of the room, with its band and whether the player sees it.
     fn survey(rig: &Rig) -> Vec<(Point, LightBand, bool)> {
         let light = rig.app.world().resource::<Lighting>();
-        Rect::new(0, 0, 20, 9).cells().map(|p| (p, light.band(p), rig.sees(p))).collect()
+        GridRect::new(0, 0, 20, 9).cells().map(|p| (p, light.band(p), rig.sees(p))).collect()
     }
 
     #[test]

@@ -10,7 +10,7 @@
 #![deny(missing_docs)]
 
 use atglyph_core::turn::BASE_ACTION_COST;
-use atglyph_core::{Direction, Grid2D, Point, Rect, RunSeed, SeedDomain, TurnQueue};
+use atglyph_core::{Direction, Grid2D, GridRect, Point, RunSeed, SeedDomain, TurnQueue};
 use atglyph_grid::{BitGrid, OpacitySource, Terrain, TileRegistry, fov};
 use atglyph_mapgen::dungeon::{RandomStart, Rooms};
 use atglyph_mapgen::passes::StartPoint;
@@ -260,7 +260,7 @@ fn rat_turn(walk: &mut Walk, i: usize, brain: &Brain<Who>) {
         can_step: &can_step,
         blocks_shot: &blocks,
         blocks_burst: &blocks,
-        bounds: Rect::new(0, 0, view.width(), view.height()),
+        bounds: GridRect::new(0, 0, view.width(), view.height()),
         rng: &mut walk.minds,
     });
     match decision {

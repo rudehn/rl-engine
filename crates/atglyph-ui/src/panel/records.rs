@@ -24,7 +24,7 @@
 //! yet.
 
 use atglyph_bevy::prelude::*;
-use atglyph_core::{Direction, Rect};
+use atglyph_core::{Direction, GridRect};
 use atglyph_render::{Cell, Terminal};
 use bevy::prelude::*;
 
@@ -47,7 +47,7 @@ pub(crate) struct RecordsLayout {
     /// shrunk to the records there are: the list can run to a hundred
     /// entries, so it scrolls inside this rectangle rather than growing to
     /// swallow the screen.
-    pub rect: Rect,
+    pub rect: GridRect,
     /// Drawn in the top border while the list is showing.
     pub title: String,
     /// Shown in place of the list when there are no records yet.
@@ -82,7 +82,7 @@ pub struct RecordsPanel(RecordsLayout);
 
 impl RecordsPanel {
     /// The screen in `rect`.
-    pub fn new(rect: Rect) -> Self {
+    pub fn new(rect: GridRect) -> Self {
         Self(RecordsLayout { rect, title: "Records".into(), empty: "No runs recorded yet.".into() })
     }
 
@@ -242,9 +242,9 @@ fn draw_records(terminal: Option<ResMut<Terminal>>, screen: Screen) {
 
 /// The list, best score first: each row clipped to the rectangle, scrolled
 /// to keep the picked row in view.
-fn draw_list(terminal: &mut Terminal, rect: Rect, layout: &RecordsLayout, records: &[RunRecord], picked: usize, hints: &str, palette: &Palette) {
+fn draw_list(terminal: &mut Terminal, rect: GridRect, layout: &RecordsLayout, records: &[RunRecord], picked: usize, hints: &str, palette: &Palette) {
     frame(terminal, rect, &layout.title, hints, palette);
-    let inner = Rect::new(rect.x + 2, rect.y + 1, rect.width - 4, rect.height - 2);
+    let inner = GridRect::new(rect.x + 2, rect.y + 1, rect.width - 4, rect.height - 2);
     let surface = palette.get(Tones::SURFACE);
     let width = inner.width.max(0) as usize;
     if records.is_empty() {
@@ -258,7 +258,7 @@ fn draw_list(terminal: &mut Terminal, rect: Rect, layout: &RecordsLayout, record
     for (i, record) in records.iter().enumerate().skip(first).take(list_rows) {
         let y = inner.y + (i - first) as i32;
         let bg = if i == picked { palette.get(Tones::SELECT) } else { surface };
-        terminal.fill(Rect::new(inner.x, y, inner.width, 1), Cell::new(' ', text).on(bg));
+        terminal.fill(GridRect::new(inner.x, y, inner.width, 1), Cell::new(' ', text).on(bg));
         terminal.print_on(inner.x, y, &clip(&row_text(i + 1, record), width), text, bg);
     }
 }
@@ -281,9 +281,9 @@ fn detail_lines(record: &RunRecord, width: usize) -> Vec<(String, ToneId)> {
 /// The picked record in full under its summary, the frame's title:
 /// [`detail_lines`], scrolled by `scroll` lines once they run past the
 /// rectangle.
-fn draw_detail(terminal: &mut Terminal, rect: Rect, record: &RunRecord, scroll: usize, hints: &str, palette: &Palette) {
+fn draw_detail(terminal: &mut Terminal, rect: GridRect, record: &RunRecord, scroll: usize, hints: &str, palette: &Palette) {
     frame(terminal, rect, &record.summary, hints, palette);
-    let inner = Rect::new(rect.x + 2, rect.y + 1, rect.width - 4, rect.height - 2);
+    let inner = GridRect::new(rect.x + 2, rect.y + 1, rect.width - 4, rect.height - 2);
     let surface = palette.get(Tones::SURFACE);
     let width = inner.width.max(0) as usize;
     let lines = detail_lines(record, width);
@@ -340,7 +340,7 @@ mod tests {
     /// `records`.
     fn opened(records: RunRecords) -> App {
         let mut app = atglyph_bevy::testing::headless_app();
-        app.add_plugins((atglyph_bevy::testing::KeyScriptPlugin, crate::UiPlugin, RecordsPanel::new(Rect::new(0, 0, 50, 10))));
+        app.add_plugins((atglyph_bevy::testing::KeyScriptPlugin, crate::UiPlugin, RecordsPanel::new(GridRect::new(0, 0, 50, 10))));
         app.insert_resource(Terminal::new(50, 10, Vec2::ONE));
         app.insert_resource(records);
         app.finish();
@@ -434,7 +434,7 @@ mod tests {
 
     #[test]
     fn the_title_offers_records_once_there_is_one() {
-        let rect = Rect::new(0, 0, 40, 12);
+        let rect = GridRect::new(0, 0, 40, 12);
         let mut app = atglyph_bevy::testing::headless_app();
         app.add_plugins((atglyph_bevy::testing::KeyScriptPlugin, crate::UiPlugin, crate::TitlePanel::new(rect), RecordsPanel::new(rect)));
         app.insert_resource(Terminal::new(40, 12, Vec2::ONE));

@@ -89,7 +89,7 @@ impl SubAssign for Point {
 
 /// An axis-aligned rectangle of cells, half-open: `x..x + width`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct Rect {
+pub struct GridRect {
     /// Left edge, inclusive.
     pub x: i32,
     /// Top edge, inclusive.
@@ -100,7 +100,7 @@ pub struct Rect {
     pub height: i32,
 }
 
-impl Rect {
+impl GridRect {
     /// A rectangle with its top-left corner at `(x, y)`.
     ///
     /// # Panics
@@ -158,7 +158,7 @@ impl Rect {
     }
 
     /// Whether two rectangles share at least one cell.
-    pub fn intersects(&self, other: &Rect) -> bool {
+    pub fn intersects(&self, other: &GridRect) -> bool {
         self.too_close(other, 0)
     }
 
@@ -166,7 +166,7 @@ impl Rect {
     ///
     /// Rooms placed without a margin share walls and read as one blob; this
     /// is what keeps them separate.
-    pub fn too_close(&self, other: &Rect, margin: i32) -> bool {
+    pub fn too_close(&self, other: &GridRect, margin: i32) -> bool {
         let separated =
             self.right() + margin <= other.x || other.right() + margin <= self.x || self.bottom() + margin <= other.y || other.bottom() + margin <= self.y;
         !separated
@@ -175,19 +175,19 @@ impl Rect {
     /// The rectangle grown by `n` cells on every side (shrunk for negative `n`).
     ///
     /// Shrinking past zero yields an empty rectangle rather than a negative one.
-    pub fn inflate(&self, n: i32) -> Rect {
+    pub fn inflate(&self, n: i32) -> GridRect {
         let width = (self.width + 2 * n).max(0);
         let height = (self.height + 2 * n).max(0);
-        Rect { x: self.x - n, y: self.y - n, width, height }
+        GridRect { x: self.x - n, y: self.y - n, width, height }
     }
 
     /// The overlap of two rectangles, or `None` if they do not touch.
-    pub fn intersection(&self, other: &Rect) -> Option<Rect> {
+    pub fn intersection(&self, other: &GridRect) -> Option<GridRect> {
         let x = self.x.max(other.x);
         let y = self.y.max(other.y);
         let right = self.right().min(other.right());
         let bottom = self.bottom().min(other.bottom());
-        if right > x && bottom > y { Some(Rect::new(x, y, right - x, bottom - y)) } else { None }
+        if right > x && bottom > y { Some(GridRect::new(x, y, right - x, bottom - y)) } else { None }
     }
 
     /// The smallest rectangle covering both.
@@ -195,7 +195,7 @@ impl Rect {
     /// An empty rectangle covers nothing, so the union with one is the
     /// other: growing a bounding box from nothing would otherwise drag it
     /// to the origin.
-    pub fn union(&self, other: &Rect) -> Rect {
+    pub fn union(&self, other: &GridRect) -> GridRect {
         if self.is_empty() {
             return *other;
         }
@@ -204,7 +204,7 @@ impl Rect {
         }
         let x = self.x.min(other.x);
         let y = self.y.min(other.y);
-        Rect::new(x, y, self.right().max(other.right()) - x, self.bottom().max(other.bottom()) - y)
+        GridRect::new(x, y, self.right().max(other.right()) - x, self.bottom().max(other.bottom()) - y)
     }
 
     /// Every cell inside, row-major.
@@ -246,7 +246,7 @@ mod tests {
 
     #[test]
     fn a_rect_covers_the_cells_it_says_it_does() {
-        let r = Rect::new(2, 3, 4, 2);
+        let r = GridRect::new(2, 3, 4, 2);
         assert_eq!(r.right(), 6);
         assert_eq!(r.bottom(), 5);
         assert!(r.contains(Point::new(2, 3)));
@@ -259,15 +259,15 @@ mod tests {
 
     #[test]
     fn from_corners_is_inclusive_and_order_free() {
-        let a = Rect::from_corners(Point::new(4, 4), Point::new(1, 2));
-        let b = Rect::from_corners(Point::new(1, 2), Point::new(4, 4));
+        let a = GridRect::from_corners(Point::new(4, 4), Point::new(1, 2));
+        let b = GridRect::from_corners(Point::new(1, 2), Point::new(4, 4));
         assert_eq!(a, b);
-        assert_eq!(a, Rect::new(1, 2, 4, 3));
+        assert_eq!(a, GridRect::new(1, 2, 4, 3));
     }
 
     #[test]
     fn the_border_ring_is_the_border_only() {
-        let r = Rect::new(0, 0, 4, 4);
+        let r = GridRect::new(0, 0, 4, 4);
         assert!(r.is_border(Point::new(0, 0)));
         assert!(r.is_border(Point::new(3, 2)));
         assert!(r.is_border(Point::new(2, 3)));
@@ -278,25 +278,25 @@ mod tests {
 
     #[test]
     fn rects_that_do_not_touch_are_not_too_close() {
-        let a = Rect::new(0, 0, 3, 3);
-        let far = Rect::new(6, 0, 3, 3);
+        let a = GridRect::new(0, 0, 3, 3);
+        let far = GridRect::new(6, 0, 3, 3);
         assert!(!a.too_close(&far, 1));
         assert!(!a.intersects(&far));
     }
 
     #[test]
     fn overlapping_rects_are_always_too_close() {
-        let a = Rect::new(0, 0, 4, 4);
-        let b = Rect::new(2, 2, 4, 4);
+        let a = GridRect::new(0, 0, 4, 4);
+        let b = GridRect::new(2, 2, 4, 4);
         assert!(a.too_close(&b, 0));
         assert!(a.intersects(&b));
-        assert_eq!(a.intersection(&b), Some(Rect::new(2, 2, 2, 2)));
+        assert_eq!(a.intersection(&b), Some(GridRect::new(2, 2, 2, 2)));
     }
 
     #[test]
     fn the_margin_pushes_rects_apart() {
-        let a = Rect::new(0, 0, 3, 3);
-        let adjacent = Rect::new(4, 0, 3, 3);
+        let a = GridRect::new(0, 0, 3, 3);
+        let adjacent = GridRect::new(4, 0, 3, 3);
         assert!(!a.too_close(&adjacent, 1));
         assert!(a.too_close(&adjacent, 2));
         assert_eq!(a.too_close(&adjacent, 2), adjacent.too_close(&a, 2));
@@ -304,30 +304,30 @@ mod tests {
 
     #[test]
     fn inflate_grows_and_shrinks_without_going_negative() {
-        let r = Rect::new(5, 5, 4, 4);
-        assert_eq!(r.inflate(1), Rect::new(4, 4, 6, 6));
-        assert_eq!(r.inflate(-1), Rect::new(6, 6, 2, 2));
+        let r = GridRect::new(5, 5, 4, 4);
+        assert_eq!(r.inflate(1), GridRect::new(4, 4, 6, 6));
+        assert_eq!(r.inflate(-1), GridRect::new(6, 6, 2, 2));
         assert!(r.inflate(-3).is_empty());
     }
 
     #[test]
     fn center_is_the_middle_cell() {
-        assert_eq!(Rect::new(0, 0, 5, 5).center(), Point::new(2, 2));
-        assert_eq!(Rect::new(10, 10, 4, 4).center(), Point::new(12, 12));
+        assert_eq!(GridRect::new(0, 0, 5, 5).center(), Point::new(2, 2));
+        assert_eq!(GridRect::new(10, 10, 4, 4).center(), Point::new(12, 12));
     }
 
     #[test]
     fn a_union_covers_both_rectangles_and_an_empty_one_contributes_nothing() {
-        let a = Rect::new(0, 0, 2, 2);
-        let b = Rect::new(5, 4, 1, 1);
+        let a = GridRect::new(0, 0, 2, 2);
+        let b = GridRect::new(5, 4, 1, 1);
         let both = a.union(&b);
-        assert_eq!(both, Rect::new(0, 0, 6, 5));
+        assert_eq!(both, GridRect::new(0, 0, 6, 5));
         for r in [a, b] {
             for p in r.cells() {
                 assert!(both.contains(p), "{p:?} of {r:?} is outside {both:?}");
             }
         }
-        let nothing = Rect::new(3, 3, 0, 0);
+        let nothing = GridRect::new(3, 3, 0, 0);
         assert_eq!(a.union(&nothing), a, "an empty rectangle is nowhere, not a corner to stretch to");
         assert_eq!(nothing.union(&a), a);
     }

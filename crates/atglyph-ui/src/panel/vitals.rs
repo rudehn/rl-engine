@@ -5,7 +5,7 @@
 //! the top of a rail.
 
 use atglyph_bevy::{LightBand, PresentSet};
-use atglyph_core::Rect;
+use atglyph_core::GridRect;
 use atglyph_render::Terminal;
 use bevy::prelude::*;
 
@@ -17,7 +17,7 @@ use crate::view::{VitalsView, VitalsViewPlugin};
 #[derive(Resource, Debug, Clone)]
 pub(crate) struct VitalsLayout {
     /// The terminal cells it occupies.
-    pub rect: Rect,
+    pub rect: GridRect,
     /// Key hints printed at the right of the last row. The game's, since
     /// the engine does not know what a game bound.
     pub hints: String,
@@ -50,7 +50,7 @@ pub struct VitalsPanel(VitalsLayout);
 
 impl VitalsPanel {
     /// Vitals in `rect`.
-    pub fn new(rect: Rect) -> Self {
+    pub fn new(rect: GridRect) -> Self {
         Self(VitalsLayout {
             rect,
             hints: String::new(),
@@ -275,7 +275,7 @@ fn exposure_word(band: LightBand) -> (&'static str, ToneId) {
 /// room for it, and nothing later jumps ahead of something that did not
 /// fit. The first bar is the exception, clipped rather than dropped, so a
 /// strip too narrow for health still says something.
-fn draw_line(terminal: &mut Terminal, rect: Rect, view: &VitalsView, layout: &VitalsLayout, palette: &Palette) {
+fn draw_line(terminal: &mut Terminal, rect: GridRect, view: &VitalsView, layout: &VitalsLayout, palette: &Palette) {
     let bg = palette.get(Tones::SURFACE);
     let mut parts: Vec<Part> = Vec::new();
     for gauge in &view.bars {
@@ -349,7 +349,7 @@ mod tests {
 
     #[test]
     fn a_one_row_strip_keeps_everything_on_the_line_and_ends_with_the_hints() {
-        let stage = Stage::new(VitalsPanel::new(Rect::new(0, 0, 60, 1)).bars(6).hints("[q]uit")).screen(60, 3);
+        let stage = Stage::new(VitalsPanel::new(GridRect::new(0, 0, 60, 1)).bars(6).hints("[q]uit")).screen(60, 3);
         let row = stage.row(0);
         assert!(row.starts_with("health 30/30"), "the reading first: {row:?}");
         assert!(row.contains('\u{2588}'), "then the bar: {row:?}");
@@ -360,7 +360,7 @@ mod tests {
 
     #[test]
     fn a_taller_panel_puts_the_name_first_and_a_line_per_reading() {
-        let stage = Stage::new(VitalsPanel::new(Rect::new(0, 0, 24, 6)).bars(6)).screen(24, 6);
+        let stage = Stage::new(VitalsPanel::new(GridRect::new(0, 0, 24, 6)).bars(6)).screen(24, 6);
         let rows = stage.rows();
         assert_eq!(rows[0], "you", "the name has the top line");
         assert!(rows[1].starts_with("health 30/30"), "{:?}", rows[1]);
@@ -372,7 +372,7 @@ mod tests {
     /// with a question mark after it, on a strip and a taller panel alike.
     #[test]
     fn armor_that_counts_an_unknown_worn_thing_is_written_with_a_question_mark() {
-        for rect in [Rect::new(0, 0, 60, 1), Rect::new(0, 0, 24, 6)] {
+        for rect in [GridRect::new(0, 0, 60, 1), GridRect::new(0, 0, 24, 6)] {
             let mut stage = Stage::new(VitalsPanel::new(rect).bars(6)).screen(60, 6);
             let body = atglyph_rules::Registry::from_defs(vec![atglyph_rules::SlotDef::new("body")]).unwrap().expect("body");
             let mail = stage.app.world_mut().spawn((atglyph_bevy::Item, Name::new("chain mail"), atglyph_bevy::Armor(5), atglyph_bevy::Unknown)).id();
@@ -392,7 +392,7 @@ mod tests {
     #[test]
     fn a_tall_panel_shows_the_noise_reading_on_a_line_of_its_own() {
         let rules = atglyph_bevy::NoiseRules { step: 0, strike: 0, door: 0, landing: 0, door_muffle: 0 };
-        let panel = VitalsPanel::new(Rect::new(0, 0, 40, 7)).heading("Vitals").noise("noise", 1000);
+        let panel = VitalsPanel::new(GridRect::new(0, 0, 40, 7)).heading("Vitals").noise("noise", 1000);
         let mut stage = Stage::new((panel, atglyph_bevy::NoisePlugin::new(rules))).screen(40, 10);
         let player = stage.player;
         stage.app.world_mut().entity_mut(player).insert(atglyph_bevy::Hearing(atglyph_rules::HearingStats { threshold: 0, memory: 6 }));
@@ -411,7 +411,7 @@ mod tests {
     #[test]
     fn a_player_with_ears_is_told_how_loud_it_is_where_they_stand() {
         let rules = atglyph_bevy::NoiseRules { step: 0, strike: 0, door: 0, landing: 0, door_muffle: 0 };
-        let panel = VitalsPanel::new(Rect::new(0, 0, 64, 1)).noise("noise", 1000);
+        let panel = VitalsPanel::new(GridRect::new(0, 0, 64, 1)).noise("noise", 1000);
         let mut stage = Stage::new((panel, atglyph_bevy::NoisePlugin::new(rules))).screen(64, 3);
         let player = stage.player;
         stage.app.world_mut().entity_mut(player).insert(atglyph_bevy::Hearing(atglyph_rules::HearingStats { threshold: 0, memory: 6 }));
@@ -425,7 +425,7 @@ mod tests {
         assert!(row.contains('\u{2588}'), "and fills as something is heard: {row:?}");
 
         // A game that wants no reading at all says so by naming it nothing.
-        let quiet = VitalsPanel::new(Rect::new(0, 0, 64, 1)).noise("", 1000);
+        let quiet = VitalsPanel::new(GridRect::new(0, 0, 64, 1)).noise("", 1000);
         let mut without = Stage::new((quiet, atglyph_bevy::NoisePlugin::new(rules))).screen(64, 3);
         let deaf = without.player;
         without.app.world_mut().entity_mut(deaf).insert(atglyph_bevy::Hearing(atglyph_rules::HearingStats { threshold: 0, memory: 6 }));
@@ -436,7 +436,7 @@ mod tests {
     #[test]
     fn a_player_that_can_hide_is_told_whether_it_has_been_seen() {
         // Stealth is decided in the minds' pass, so it needs the minds.
-        let mut stage = Stage::new((VitalsPanel::new(Rect::new(0, 0, 24, 8)), atglyph_bevy::MindsPlugin, atglyph_bevy::StealthPlugin)).screen(24, 8);
+        let mut stage = Stage::new((VitalsPanel::new(GridRect::new(0, 0, 24, 8)), atglyph_bevy::MindsPlugin, atglyph_bevy::StealthPlugin)).screen(24, 8);
         let player = stage.player;
         stage.app.world_mut().entity_mut(player).insert(atglyph_bevy::Stealth::default());
         stage.tick();
@@ -453,7 +453,7 @@ mod tests {
     #[test]
     fn the_band_the_player_stands_in_is_named_beside_whether_it_has_been_seen() {
         let mut stage =
-            Stage::new((VitalsPanel::new(Rect::new(0, 0, 24, 8)), atglyph_bevy::MindsPlugin, atglyph_bevy::StealthPlugin, atglyph_bevy::LightingPlugin))
+            Stage::new((VitalsPanel::new(GridRect::new(0, 0, 24, 8)), atglyph_bevy::MindsPlugin, atglyph_bevy::StealthPlugin, atglyph_bevy::LightingPlugin))
                 .screen(24, 8);
         let player = stage.player;
         stage.app.world_mut().entity_mut(player).insert(atglyph_bevy::Stealth::default());
@@ -465,7 +465,7 @@ mod tests {
 
     #[test]
     fn a_player_that_cannot_hide_is_still_told_its_exposure() {
-        let mut stage = Stage::new((VitalsPanel::new(Rect::new(0, 0, 24, 8)), atglyph_bevy::LightingPlugin)).screen(24, 8);
+        let mut stage = Stage::new((VitalsPanel::new(GridRect::new(0, 0, 24, 8)), atglyph_bevy::LightingPlugin)).screen(24, 8);
         stage.app.world_mut().resource_mut::<atglyph_bevy::Lighting>().ambient = atglyph_grid::Light::white(200);
         stage.tick();
         stage.tick();
@@ -474,7 +474,7 @@ mod tests {
 
     #[test]
     fn a_facet_a_game_pushed_is_drawn_in_the_tone_it_asked_for() {
-        let mut stage = Stage::new(VitalsPanel::new(Rect::new(0, 0, 24, 6))).screen(24, 6);
+        let mut stage = Stage::new(VitalsPanel::new(GridRect::new(0, 0, 24, 6))).screen(24, 6);
         stage.app.add_systems(
             Update,
             (|mut view: ResMut<VitalsView>| {
@@ -510,7 +510,7 @@ mod tests {
             stage.tick();
             stage.rows()
         };
-        let rect = Rect::new(0, 0, 24, 6);
+        let rect = GridRect::new(0, 0, 24, 6);
         let (bare, badged) = (rows_of(VitalsPanel::new(rect).badges_last(), false), rows_of(VitalsPanel::new(rect).badges_last(), true));
         let row = |rows: &[String], text: &str| rows.iter().position(|r| r == text);
         assert_eq!(row(&bare, "gold 50"), row(&badged, "gold 50"), "the facet's row is its own: {bare:?} {badged:?}");
@@ -536,7 +536,7 @@ mod tests {
     /// before everything else, rather than silently dropped.
     #[test]
     fn a_second_bar_on_a_one_row_strip_is_drawn_after_health() {
-        let mut stage = Stage::new(VitalsPanel::new(Rect::new(0, 0, 80, 1)).bars(6).hints("[q]uit")).screen(80, 3);
+        let mut stage = Stage::new(VitalsPanel::new(GridRect::new(0, 0, 80, 1)).bars(6).hints("[q]uit")).screen(80, 3);
         with_bar(&mut stage, "mana", 12, 40);
         let row = stage.row(0);
         let health = row.find("health 30/30").expect("health first");
@@ -552,7 +552,7 @@ mod tests {
     /// half-drawn one or one printed over the hints.
     #[test]
     fn a_bar_that_does_not_fit_stops_the_line_rather_than_overlapping_it() {
-        let mut stage = Stage::new(VitalsPanel::new(Rect::new(0, 0, 40, 1)).bars(6).hints("[q]uit")).screen(40, 3);
+        let mut stage = Stage::new(VitalsPanel::new(GridRect::new(0, 0, 40, 1)).bars(6).hints("[q]uit")).screen(40, 3);
         with_bar(&mut stage, "stamina", 9, 30);
         let row = stage.row(0);
         assert!(row.starts_with("health 30/30"), "{row:?}");

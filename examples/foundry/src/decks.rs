@@ -370,7 +370,7 @@ mod tests {
 
     use atglyph::grid::TileTables;
     use atglyph::mapgen::prefab::Stamped;
-    use atglyph::primitives::{Grid2D, Rect};
+    use atglyph::primitives::{Grid2D, GridRect};
 
     use super::*;
     use crate::testing::{par_seeds, seeds};
@@ -434,7 +434,7 @@ mod tests {
     /// room an earlier stamp had used, and drew over it while its mark was
     /// still reported.
     fn no_two_pieces_overlap_and_every_mark_sits_on_a_floor_tile(ctx: &BaseContext, tables: &TileTables, at: &str) {
-        let bounds: Vec<Rect> = ctx.outputs().iter::<Stamped>().map(|st| st.bounds).collect();
+        let bounds: Vec<GridRect> = ctx.outputs().iter::<Stamped>().map(|st| st.bounds).collect();
         for i in 0..bounds.len() {
             for j in (i + 1)..bounds.len() {
                 assert!(bounds[i].intersection(&bounds[j]).is_none(), "{at}: pieces {i} and {j} overlap: {:?} and {:?}", bounds[i], bounds[j]);
@@ -452,7 +452,7 @@ mod tests {
     /// take theirs, and every other room is furnished as what it was for.
     fn no_room_is_left_empty(ctx: &BaseContext, at: &str) {
         use atglyph::mapgen::dungeon::Room;
-        let stamps: Vec<Rect> = ctx.outputs().iter::<Stamped>().map(|st| st.bounds).collect();
+        let stamps: Vec<GridRect> = ctx.outputs().iter::<Stamped>().map(|st| st.bounds).collect();
         for room in ctx.outputs().iter::<Room>() {
             assert!(stamps.iter().any(|b| room.0.intersection(b).is_some()), "{at}: room {:?} is empty", room.0);
         }

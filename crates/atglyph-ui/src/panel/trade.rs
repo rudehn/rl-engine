@@ -21,7 +21,7 @@
 
 use atglyph_bevy::prelude::*;
 use atglyph_bevy::{EngineSet, PresentSet};
-use atglyph_core::{Direction, Rect};
+use atglyph_core::{Direction, GridRect};
 use atglyph_render::{Cell, Terminal};
 use bevy::prelude::*;
 
@@ -130,7 +130,7 @@ impl TradeWords {
 #[derive(Resource, Debug, Clone)]
 pub(crate) struct TradeLayout {
     /// The terminal cells it occupies.
-    pub rect: Rect,
+    pub rect: GridRect,
     /// Its words.
     pub words: TradeWords,
 }
@@ -187,7 +187,7 @@ pub struct TradePanel(TradeLayout);
 impl TradePanel {
     /// The trade screen in `rect`, titled by whatever the trader is
     /// called, so the engine never names a shop.
-    pub fn new(rect: Rect) -> Self {
+    pub fn new(rect: GridRect) -> Self {
         Self(TradeLayout { rect, words: TradeWords::default() })
     }
 
@@ -342,7 +342,7 @@ pub(crate) fn draw_trade(mut terminal: ResMut<Terminal>, mut menu: ResMut<TradeM
     let title = view.trader.as_ref().map_or("", |t| t.label.as_str());
     clear(&mut terminal, rect, palette);
     frame(&mut terminal, rect, title, &hints.join(" \u{2022} "), palette);
-    let inner = Rect::new(rect.x + 2, rect.y + 1, rect.width - 4, rect.height - 2);
+    let inner = GridRect::new(rect.x + 2, rect.y + 1, rect.width - 4, rect.height - 2);
     let surface = palette.get(Tones::SURFACE);
 
     // The game's line, in its own tones, one facet after another.
@@ -356,9 +356,9 @@ pub(crate) fn draw_trade(mut terminal: ResMut<Terminal>, mut menu: ResMut<TradeM
 
     let gap = 2;
     let half = (inner.width - gap) / 2;
-    let lists = Rect::new(inner.x, inner.y + 2, half, inner.height - 3);
+    let lists = GridRect::new(inner.x, inner.y + 2, half, inner.height - 3);
     let wares = lists;
-    let pack = Rect::new(inner.x + half + gap, lists.y, inner.width - half - gap, lists.height);
+    let pack = GridRect::new(inner.x + half + gap, lists.y, inner.width - half - gap, lists.height);
     let selected = |side| (menu.side == side).then_some(menu.selected());
     draw_side(&mut terminal, wares, (&words.wares, Deal::Bought), &view.wares, selected(TradeSide::Wares), words, palette);
     draw_side(&mut terminal, pack, (&words.pack, Deal::Sold), &view.pack, selected(TradeSide::Pack), words, palette);
@@ -375,7 +375,7 @@ pub(crate) fn draw_trade(mut terminal: ResMut<Terminal>, mut menu: ResMut<TradeM
 /// struck by, the row picked out lit when the cursor is on this side.
 fn draw_side(
     terminal: &mut Terminal,
-    rect: Rect,
+    rect: GridRect,
     (heading, deal): (&str, Deal),
     rows: &[TradeRow],
     selected: Option<usize>,
@@ -383,7 +383,7 @@ fn draw_side(
     palette: &Palette,
 ) {
     section(terminal, rect, rect.y, heading, None, palette);
-    let list = Rect::new(rect.x, rect.y + 2, rect.width, rect.height - 2);
+    let list = GridRect::new(rect.x, rect.y + 2, rect.width, rect.height - 2);
     let surface = palette.get(Tones::SURFACE);
     if rows.is_empty() {
         terminal.print_on(list.x, list.y, &clip(&words.empty, list.width.max(0) as usize), palette.get(Tones::MUTED), surface);
@@ -396,7 +396,7 @@ fn draw_side(
         let y = list.y + (i - first) as i32;
         let bg = if selected == Some(i) { palette.get(Tones::SELECT) } else { surface };
         let fg = palette.get(if row.open() { Tones::TEXT } else { Tones::MUTED });
-        terminal.fill(Rect::new(list.x, y, list.width, 1), Cell::new(' ', fg).on(bg));
+        terminal.fill(GridRect::new(list.x, y, list.width, 1), Cell::new(' ', fg).on(bg));
         // What one changes hands for, or why it cannot: a short purse
         // still shows the price, since how short is the useful part. A
         // row of more than one says the price is for one, where it fits.
@@ -444,7 +444,7 @@ mod tests {
     /// half from a till of 9; the player with 25 in scrip and an awl worth
     /// 6. The screen is added and the trade opened.
     fn stage() -> (Stage, Entity) {
-        let mut stage = Stage::new_with(TradePanel::new(Rect::new(10, 5, 60, 12)), |app| {
+        let mut stage = Stage::new_with(TradePanel::new(GridRect::new(10, 5, 60, 12)), |app| {
             app.add_plugins((PropsPlugin, TradePlugin));
             app.insert_resource(Seed(TEST_SEED));
             let tags = Registry::from_defs(vec![TagDef::new("scrip"), TagDef::new("tool")]).expect("two tags");

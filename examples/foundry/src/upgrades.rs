@@ -31,7 +31,6 @@
 //! lock or a dry spell for free.
 
 use atglyph::prelude::*;
-use atglyph::primitives::Rect;
 use bevy::prelude::*;
 
 /// What finishing the first objective may give, one of three, kept for the
@@ -301,11 +300,11 @@ pub fn choice_keys(world: &mut World) {
 /// screen working out where to sit on its own. A headless test adds none,
 /// and the pick still opens, reads its keys and applies the upgrade
 /// without it.
-pub struct ChoicePanel(pub Rect);
+pub struct ChoicePanel(pub GridRect);
 
 /// Where [`ChoicePanel`] draws.
 #[derive(Resource, Debug, Clone, Copy)]
-struct ChoiceRect(Rect);
+struct ChoiceRect(GridRect);
 
 impl Plugin for ChoicePanel {
     fn build(&self, app: &mut App) {

@@ -17,7 +17,7 @@
 //! these measure. What they measure is everything up to it.
 
 use atglyph_bevy::prelude::*;
-use atglyph_core::Rect;
+use atglyph_core::GridRect;
 use atglyph_grid::{Light, Rgb};
 use atglyph_render::{Glyph, MapViewPlugin, Terminal};
 use atglyph_ui::{LogPanel, NearbyPanel, UiPlugin, VitalsPanel};
@@ -25,7 +25,7 @@ use bevy::prelude::*;
 use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
 
 /// How the screen is cut up, the way a game cuts it.
-const SCREEN: Rect = Rect { x: 0, y: 0, width: 100, height: 40 };
+const SCREEN: GridRect = GridRect { x: 0, y: 0, width: 100, height: 40 };
 
 /// What goes in the app besides the engine: none, the panels a game always
 /// shows, or those plus the screens a game opens now and then.
@@ -63,15 +63,23 @@ fn drawing_spread(crowd: usize, lit: bool, panels: Panels, spread: bool) -> (App
     match panels {
         Panels::None => {}
         Panels::Always => {
-            app.add_plugins((VitalsPanel::new(Rect::new(0, 0, 100, 1)), NearbyPanel::new(Rect::new(76, 1, 24, 30)), LogPanel::new(Rect::new(0, 35, 76, 5))));
+            app.add_plugins((
+                VitalsPanel::new(GridRect::new(0, 0, 100, 1)),
+                NearbyPanel::new(GridRect::new(76, 1, 24, 30)),
+                LogPanel::new(GridRect::new(0, 35, 76, 5)),
+            ));
         }
         Panels::WithScreens => {
-            app.add_plugins((VitalsPanel::new(Rect::new(0, 0, 100, 1)), NearbyPanel::new(Rect::new(76, 1, 24, 30)), LogPanel::new(Rect::new(0, 35, 76, 5))));
             app.add_plugins((
-                atglyph_ui::panel::InventoryPanel::new(Rect::new(20, 5, 60, 30)),
-                atglyph_ui::panel::SheetPanel::new(Rect::new(20, 5, 60, 30)),
-                atglyph_ui::panel::AbilityPanel::new(Rect::new(20, 5, 60, 30)),
-                atglyph_ui::panel::InspectPanel::new(Rect::new(20, 5, 60, 30)),
+                VitalsPanel::new(GridRect::new(0, 0, 100, 1)),
+                NearbyPanel::new(GridRect::new(76, 1, 24, 30)),
+                LogPanel::new(GridRect::new(0, 35, 76, 5)),
+            ));
+            app.add_plugins((
+                atglyph_ui::panel::InventoryPanel::new(GridRect::new(20, 5, 60, 30)),
+                atglyph_ui::panel::SheetPanel::new(GridRect::new(20, 5, 60, 30)),
+                atglyph_ui::panel::AbilityPanel::new(GridRect::new(20, 5, 60, 30)),
+                atglyph_ui::panel::InspectPanel::new(GridRect::new(20, 5, 60, 30)),
             ));
         }
     }

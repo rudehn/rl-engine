@@ -37,10 +37,10 @@
 //!
 //! ```
 //! # use bevy::prelude::*;
-//! # use atglyph_core::Rect;
+//! # use atglyph_core::GridRect;
 //! # use atglyph_ui::{LogPanel, NearbyPanel, UiPlugin, VitalsPanel, panel};
 //! # let mut app = App::new();
-//! let screen = Rect::new(0, 0, 100, 40);
+//! let screen = GridRect::new(0, 0, 100, 40);
 //! let (left, rail) = panel::split_right(screen, 24);
 //! let (map, log) = panel::split_bottom(left, 5);
 //! let (status, _map) = panel::split_top(map, 1);
@@ -66,12 +66,12 @@
 //!
 //! ```
 //! # use bevy::prelude::*;
-//! # use atglyph_core::Rect;
+//! # use atglyph_core::GridRect;
 //! # use atglyph_ui::{TitlePanel, TitleSet, UiPlugin};
 //! # fn paint_the_picture() {}
 //! # let mut app = App::new();
 //! app.add_plugins(UiPlugin)
-//!     .add_plugins(TitlePanel::new(Rect::new(30, 30, 40, 6)))
+//!     .add_plugins(TitlePanel::new(GridRect::new(30, 30, 40, 6)))
 //!     .add_systems(Update, paint_the_picture.in_set(TitleSet::Backdrop));
 //! ```
 //!
@@ -89,7 +89,7 @@
 //! Write it in this order and the seams come out right:
 //!
 //! 1. A view struct in [`view`], holding [`Row`]s, [`Bar`]s and numbers.
-//!    No `Color`, no [`Rect`](atglyph_core::Rect), no string the game did not
+//!    No `Color`, no [`GridRect`](atglyph_core::GridRect), no string the game did not
 //!    supply. Anything a game might phrase differently is a [`Facet`].
 //!    What an actor is working at is a [`WorkRow`] on its row, read by any
 //!    collector through `Workings`.

@@ -15,7 +15,6 @@
 //! and `>` the way down.
 
 use atglyph::prelude::*;
-use atglyph::primitives::Rect;
 use bevy::prelude::*;
 use foundry::cheats::CheatPanel;
 use foundry::plugin::FoundryPlugin;
@@ -55,17 +54,17 @@ const GEAR_ROWS: i32 = 11;
 struct Screen {
     /// The map, the log, the gutter and every section of the rail.
     rail: RailScreen,
-    inspect: Rect,
-    abilities: Rect,
-    pack: Rect,
-    menu: Rect,
-    settings: Rect,
-    choice: Rect,
-    cheats: Rect,
-    search: Rect,
-    chest: Rect,
-    here: Rect,
-    title_menu: Rect,
+    inspect: GridRect,
+    abilities: GridRect,
+    pack: GridRect,
+    menu: GridRect,
+    settings: GridRect,
+    choice: GridRect,
+    cheats: GridRect,
+    search: GridRect,
+    chest: GridRect,
+    here: GridRect,
+    title_menu: GridRect,
 }
 
 impl Screen {
@@ -88,7 +87,7 @@ impl Screen {
         let centred = |w: i32, y: i32, h: i32| rail.centred(w, y, h);
         Self {
             rail,
-            inspect: Rect::new(map.x + 2, map.bottom() - 12, map.width.min(52), 10),
+            inspect: GridRect::new(map.x + 2, map.bottom() - 12, map.width.min(52), 10),
             // Stims and the four grenades, a rule, and what the one picked
             // out does: how it is aimed, what it costs and every effect, which
             // for an incendiary is two.
@@ -266,7 +265,7 @@ mod tests {
     #[test]
     fn every_rectangle_of_the_screen_stands_where_it_always_has() {
         let s = Screen::new();
-        let r = Rect::new;
+        let r = GridRect::new;
         assert_eq!(s.rail.map, r(0, 0, 69, 36), "map");
         assert_eq!(s.rail.gutter, r(69, 0, 1, 40), "gutter");
         assert_eq!(s.rail.log, r(0, 36, 69, 4), "log");
@@ -462,7 +461,7 @@ mod tests {
         // was on the terminal before does not show through.
         let mut app = on_screen(RunSeed(7));
         let dirt = atglyph::render::Cell::new('x', Color::WHITE);
-        app.world_mut().resource_mut::<Terminal>().fill(Rect::new(rail - 1, 0, 1, ROWS), dirt);
+        app.world_mut().resource_mut::<Terminal>().fill(GridRect::new(rail - 1, 0, 1, ROWS), dirt);
         app.update();
         let column: String = (0..ROWS).map(|y| app.world().resource::<Terminal>().get(rail - 1, y).map_or('?', |c| c.glyph)).collect();
         assert_eq!(column.trim(), "", "the gutter: {column:?}");

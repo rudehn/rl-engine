@@ -29,7 +29,7 @@ use std::collections::btree_map::Entry;
 use atglyph_bevy::Recalled;
 use atglyph_bevy::prelude::*;
 use atglyph_core::Grid2D;
-use atglyph_core::{Point, Rect};
+use atglyph_core::{GridRect, Point};
 use atglyph_grid::{Light, Rgb, TileId};
 use atglyph_rules::GasId;
 use bevy::color::Mix;
@@ -270,7 +270,7 @@ impl FieldAppearance {
 #[derive(Resource, Debug, Clone, Copy)]
 pub struct MapView {
     /// The terminal cells the map occupies.
-    pub viewport: Rect,
+    pub viewport: GridRect,
     /// The world tile drawn at the viewport's top-left.
     pub origin: Point,
     /// How many cells across one tile is drawn. At least one.
@@ -279,7 +279,7 @@ pub struct MapView {
 
 impl MapView {
     /// A view filling `viewport`, a cell to a tile.
-    pub fn new(viewport: Rect) -> Self {
+    pub fn new(viewport: GridRect) -> Self {
         Self { viewport, origin: Point::ZERO, across: 1 }
     }
 
@@ -314,7 +314,7 @@ impl MapView {
     /// viewport: standing near an edge puts the map's rim mid-screen and
     /// spends the rest on nothing. A map smaller than the viewport is
     /// centred in it instead, since there is nothing to scroll.
-    pub(crate) fn clamp_to(&mut self, bounds: Rect) {
+    pub(crate) fn clamp_to(&mut self, bounds: GridRect) {
         let slack = Point::new(bounds.width - self.tiles_wide(), bounds.height - self.viewport.height);
         self.origin.x = if slack.x <= 0 { bounds.x + slack.x / 2 } else { self.origin.x.clamp(bounds.x, bounds.x + slack.x) };
         self.origin.y = if slack.y <= 0 { bounds.y + slack.y / 2 } else { self.origin.y.clamp(bounds.y, bounds.y + slack.y) };
@@ -388,14 +388,14 @@ impl MapView {
 /// field of view: without it no tile is ever seen or remembered, so the
 /// map would draw as nothing at all.
 pub struct MapViewPlugin {
-    viewport: Rect,
+    viewport: GridRect,
     across: i32,
 }
 
 impl MapViewPlugin {
     /// The map, drawn in the terminal cells of `viewport`, a cell to a
     /// tile.
-    pub fn new(viewport: Rect) -> Self {
+    pub fn new(viewport: GridRect) -> Self {
         Self { viewport, across: 1 }
     }
 
@@ -772,7 +772,7 @@ mod tests {
     fn drawn_for(sight: Viewshed) -> [char; 3] {
         use atglyph_bevy::components::RevealsMap;
         let mut app = atglyph_bevy::testing::headless_app();
-        app.add_plugins((FovPlugin, MapViewPlugin::new(Rect::new(0, 0, 40, 20))));
+        app.add_plugins((FovPlugin, MapViewPlugin::new(GridRect::new(0, 0, 40, 20))));
         app.insert_resource(Terminal::new(40, 20, Vec2::ONE));
         let start = atglyph_bevy::testing::ground(&mut app);
         let tiles = atglyph_grid::TileRegistry::standard();
@@ -819,7 +819,7 @@ mod tests {
     fn open_ground() -> (App, Point, Entity) {
         use atglyph_bevy::components::RevealsMap;
         let mut app = atglyph_bevy::testing::headless_app();
-        app.add_plugins((FovPlugin, MapViewPlugin::new(Rect::new(0, 0, 60, 30))));
+        app.add_plugins((FovPlugin, MapViewPlugin::new(GridRect::new(0, 0, 60, 30))));
         app.insert_resource(Terminal::new(60, 30, Vec2::ONE));
         let start = atglyph_bevy::testing::ground(&mut app);
         let tiles = atglyph_grid::TileRegistry::standard();
@@ -977,7 +977,7 @@ mod tests {
 
     #[test]
     fn view_maps_between_world_and_screen() {
-        let mut v = MapView::new(Rect::new(10, 2, 40, 20));
+        let mut v = MapView::new(GridRect::new(10, 2, 40, 20));
         v.center_on(Point::new(100, 100));
         assert_eq!(v.origin, Point::new(80, 90));
         assert_eq!(v.to_screen(Point::new(100, 100)), Some(Point::new(30, 12)));
@@ -990,7 +990,7 @@ mod tests {
     /// of its cells is that tile, and a write covers both.
     #[test]
     fn a_wide_view_maps_a_tile_to_its_cells_and_any_of_them_back() {
-        let mut v = MapView::new(Rect::new(10, 2, 41, 20)).across(2);
+        let mut v = MapView::new(GridRect::new(10, 2, 41, 20)).across(2);
         v.origin = Point::new(100, 50);
         assert_eq!((v.tile_width(), v.tiles_wide()), (2, 20), "forty-one cells hold twenty tiles and one cell over");
         assert_eq!(v.to_screen(Point::new(100, 50)), Some(Point::new(10, 2)));
@@ -1003,7 +1003,7 @@ mod tests {
         assert_eq!(v.tiles().count(), 20 * 20);
         v.center_on(Point::new(200, 200));
         assert_eq!(v.origin, Point::new(190, 190), "centred by tiles, not by cells");
-        v.clamp_to(Rect::new(0, 0, 10, 10));
+        v.clamp_to(GridRect::new(0, 0, 10, 10));
         assert_eq!(v.origin, Point::new(-5, -5), "a map of ten tiles is centred in a view of twenty");
 
         let mut terminal = Terminal::new(60, 30, Vec2::ONE);
@@ -1064,8 +1064,8 @@ mod view_tests {
     /// the rim pulls the view back rather than showing what is not there.
     #[test]
     fn the_view_never_runs_off_the_edge_of_the_map() {
-        let mut v = MapView::new(Rect::new(0, 0, 80, 40));
-        let map = Rect::new(0, 0, 84, 42);
+        let mut v = MapView::new(GridRect::new(0, 0, 80, 40));
+        let map = GridRect::new(0, 0, 84, 42);
         v.center_on(Point::new(77, 11));
         v.clamp_to(map);
         // Centring wants (37, -9); the map allows 4 of slack across and 2
@@ -1080,9 +1080,9 @@ mod view_tests {
     /// in the middle instead of in a corner.
     #[test]
     fn a_map_smaller_than_the_view_is_centred_in_it() {
-        let mut v = MapView::new(Rect::new(0, 0, 80, 40));
+        let mut v = MapView::new(GridRect::new(0, 0, 80, 40));
         v.center_on(Point::new(5, 5));
-        v.clamp_to(Rect::new(0, 0, 60, 20));
+        v.clamp_to(GridRect::new(0, 0, 60, 20));
         assert_eq!(v.origin, Point::new(-10, -10), "half the difference on each side");
     }
 }

@@ -1,4 +1,3 @@
-use atglyph::primitives::Rect;
 use atglyph::rand::SeedableRng;
 use bevy::ecs::system::RunSystemOnce;
 use bevy::ecs::world::CommandQueue;
@@ -60,7 +59,7 @@ fn decides(world: &World, e: Entity, hp: i32, max: i32, library: &Library) -> Op
         can_step: &|_| true,
         blocks_shot: &|_| false,
         blocks_burst: &|_| false,
-        bounds: Rect::new(-20, -20, 40, 40),
+        bounds: GridRect::new(-20, -20, 40, 40),
         rng: &mut rng,
     };
     brain.decide(ctx).1
@@ -596,7 +595,7 @@ fn a_will_o_wisp_keeps_its_distance_rather_than_closing_to_melee() {
         can_step: &|_| true,
         blocks_shot: &|_| false,
         blocks_burst: &|_| false,
-        bounds: Rect::new(-20, -20, 40, 40),
+        bounds: GridRect::new(-20, -20, 40, 40),
         rng: &mut rng,
     };
     assert_eq!(brain.decide(ctx).1, Some("shadow"), "a foe one cell off, inside its no-closer-than, is backed away from rather than struck");
@@ -942,7 +941,7 @@ fn a_packing_kind_closes_on_its_own_kind_when_nothing_else_is_in_sight() {
         can_step: &|_| true,
         blocks_shot: &|_| false,
         blocks_burst: &|_| false,
-        bounds: Rect::new(-20, -20, 40, 40),
+        bounds: GridRect::new(-20, -20, 40, 40),
         rng: &mut rng,
     };
     assert_eq!(brain.decide(ctx).1, Some("follow"), "closes the gap on its own kind");
@@ -968,7 +967,7 @@ fn a_led_kind_closes_on_its_leader_when_nothing_else_is_in_sight() {
         can_step: &|_| true,
         blocks_shot: &|_| false,
         blocks_burst: &|_| false,
-        bounds: Rect::new(-20, -20, 40, 40),
+        bounds: GridRect::new(-20, -20, 40, 40),
         rng: &mut rng,
     };
     assert_eq!(brain.decide(ctx).1, Some("follow"), "closes the gap on its leader");
@@ -1001,7 +1000,7 @@ fn a_dar_priestess_whose_leader_is_gone_keeps_station_on_its_allies_rather_than_
         can_step: &|_| true,
         blocks_shot: &|_| false,
         blocks_burst: &|_| false,
-        bounds: Rect::new(-20, -20, 40, 40),
+        bounds: GridRect::new(-20, -20, 40, 40),
         rng: &mut rng,
     };
     let decision = brain.decide(ctx);
@@ -1032,7 +1031,7 @@ fn a_goblin_of_grubnaks_band_whose_leader_is_gone_keeps_station_on_its_allies_ra
         can_step: &|_| true,
         blocks_shot: &|_| false,
         blocks_burst: &|_| false,
-        bounds: Rect::new(-20, -20, 40, 40),
+        bounds: GridRect::new(-20, -20, 40, 40),
         rng: &mut rng,
     };
     let decision = brain.decide(ctx);

@@ -23,7 +23,7 @@
 //! fallen is that fight lost.
 
 use atglyph::prelude::*;
-use atglyph::primitives::{Rect, RunSeed};
+use atglyph::primitives::RunSeed;
 use bevy::prelude::*;
 use undermere::plugin::UndermerePlugin;
 use undermere::run::{ExtraPack, StartFloor, StartNear, StartParty};
@@ -89,15 +89,15 @@ const PARTY_ROWS: i32 = 10;
 struct Screen {
     /// The map, the log, the gutter and every section of the rail.
     rail: RailScreen,
-    inspect: Rect,
-    pack: Rect,
-    chest: Rect,
-    shop: Rect,
-    here: Rect,
-    menu: Rect,
-    settings: Rect,
-    records: Rect,
-    title_menu: Rect,
+    inspect: GridRect,
+    pack: GridRect,
+    chest: GridRect,
+    shop: GridRect,
+    here: GridRect,
+    menu: GridRect,
+    settings: GridRect,
+    records: GridRect,
+    title_menu: GridRect,
 }
 
 impl Screen {
@@ -141,7 +141,7 @@ impl Screen {
             rail,
             // Low on the left of the map; it moves to the top while the
             // cursor is under it.
-            inspect: Rect::new(map.x + 2, map.bottom() - 12, 52, 10),
+            inspect: GridRect::new(map.x + 2, map.bottom() - 12, 52, 10),
             // The pack's rows, a rule, and what the row picked out is: the
             // engine gives the rows half of it, so fifteen of them, enough
             // for a pack of potions, scrolls and rings to be seen whole. A
@@ -168,7 +168,7 @@ impl Screen {
             // offers anything ever stands. On a floor, the adventurer or
             // whoever offers may stand under it, and the screen moves to
             // the top, as the look panel does off its cursor.
-            here: Rect::new(map.x + 2, map.bottom() - 10, 52, 8),
+            here: GridRect::new(map.x + 2, map.bottom() - 10, 52, 8),
             // The most the menu may take: the run's own line, the seed and
             // turn, the record's score and its numbers, the fallen under
             // them, a party's worth with their heading, and the choices
@@ -405,7 +405,7 @@ mod tests {
     #[test]
     fn every_rectangle_of_the_screen_stands_where_it_always_has() {
         let s = Screen::new();
-        let r = Rect::new;
+        let r = GridRect::new;
         assert_eq!(s.rail.map, r(0, 0, 124, 40), "map");
         assert_eq!(s.rail.gutter, r(124, 0, 2, 45), "gutter");
         assert_eq!(s.rail.edge, r(159, 0, 1, 45), "edge");
@@ -1047,7 +1047,7 @@ mod tests {
 
     /// The text inside a panel's frame on row `y`, from its left border to
     /// its right, the border and the padding cut off and the end trimmed.
-    fn framed(app: &App, rect: Rect, y: i32) -> String {
+    fn framed(app: &App, rect: GridRect, y: i32) -> String {
         let line: String = row(app, y).chars().skip(rect.x as usize + 2).take(rect.width as usize - 4).collect();
         line.trim_end().to_string()
     }

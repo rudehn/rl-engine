@@ -12,7 +12,7 @@
 //! that opened it.
 
 use atglyph_bevy::prelude::*;
-use atglyph_core::{Direction, Rect};
+use atglyph_core::{Direction, GridRect};
 use atglyph_render::{Cell, Terminal};
 use bevy::prelude::*;
 
@@ -30,7 +30,7 @@ pub(crate) const SETTINGS_MODAL: &str = "settings";
 pub(crate) struct SettingsLayout {
     /// The most of the terminal it may occupy; drawn only as far down as
     /// its rows need.
-    pub rect: Rect,
+    pub rect: GridRect,
 }
 
 /// Which row is picked out, counting settings and not headings.
@@ -51,7 +51,7 @@ pub struct SettingsPanel(SettingsLayout);
 impl SettingsPanel {
     /// The screen in `rect`, from its top-left corner down as far as its
     /// rows need.
-    pub fn new(rect: Rect) -> Self {
+    pub fn new(rect: GridRect) -> Self {
         Self(SettingsLayout { rect })
     }
 }
@@ -183,11 +183,11 @@ fn draw_settings(terminal: Option<ResMut<Terminal>>, screen: Screen) {
         return;
     }
     let ids = ordered(settings);
-    let rect = Rect::new(rect.x, rect.y, rect.width, rows_drawn(settings).min(rect.height));
+    let rect = GridRect::new(rect.x, rect.y, rect.width, rows_drawn(settings).min(rect.height));
     let hints = format!("\u{2191}\u{2193} pick \u{2022} \u{2190}\u{2192} change \u{2022} {} back", key_name(keys.bindings().cursor.close));
     clear(&mut terminal, rect, palette);
     frame(&mut terminal, rect, "Settings", &hints, palette);
-    let inner = Rect::new(rect.x + 2, rect.y + 1, rect.width - 4, rect.height - 2);
+    let inner = GridRect::new(rect.x + 2, rect.y + 1, rect.width - 4, rect.height - 2);
     let (surface, text) = (palette.get(Tones::SURFACE), palette.get(Tones::TEXT));
     let picked = screen.selected.min(ids.len().saturating_sub(1));
     let width = inner.width as usize;
@@ -205,7 +205,7 @@ fn draw_settings(terminal: Option<ResMut<Terminal>>, screen: Screen) {
             break;
         }
         let bg = if row == picked { palette.get(Tones::SELECT) } else { surface };
-        terminal.fill(Rect::new(inner.x, y, inner.width, 1), Cell::new(' ', text).on(bg));
+        terminal.fill(GridRect::new(inner.x, y, inner.width, 1), Cell::new(' ', text).on(bg));
         let choice = clip(settings.choice(*id), width.saturating_sub(4));
         let room = width.saturating_sub(choice.chars().count() + 3);
         terminal.print_on(inner.x + 1, y, &clip(&setting.label, room), text, bg);
@@ -221,7 +221,7 @@ mod tests {
     use crate::harness::Stage;
 
     fn staged() -> Stage {
-        let rect = Rect::new(0, 0, 40, 12);
+        let rect = GridRect::new(0, 0, 40, 12);
         let mut stage = Stage::new_with((GameMenuPanel::new(rect), SettingsPanel::new(rect), crate::InventoryPanel::new(rect)), |app| {
             app.add_setting(Setting::new("glow", "Display", "Glow", ["Off", "On"]).key(KeyCode::F11));
             app.add_setting(Setting::new("pace", "Play", "Pace", ["Slow", "Even", "Fast"]).default_choice(1));
@@ -261,7 +261,7 @@ mod tests {
     #[test]
     fn the_menu_is_not_drawn_under_the_screen_and_is_back_when_it_closes() {
         // The two apart on the terminal, so a menu still drawn is seen.
-        let mut stage = Stage::new_with((GameMenuPanel::new(Rect::new(0, 0, 40, 8)), SettingsPanel::new(Rect::new(0, 8, 40, 4))), |app| {
+        let mut stage = Stage::new_with((GameMenuPanel::new(GridRect::new(0, 0, 40, 8)), SettingsPanel::new(GridRect::new(0, 8, 40, 4))), |app| {
             app.add_setting(Setting::new("glow", "Display", "Glow", ["Off", "On"]));
         })
         .screen(40, 12);
@@ -328,7 +328,7 @@ mod tests {
 
     #[test]
     fn the_menu_offers_no_settings_row_when_nothing_is_declared() {
-        let rect = Rect::new(0, 0, 40, 12);
+        let rect = GridRect::new(0, 0, 40, 12);
         let mut stage = Stage::new((GameMenuPanel::new(rect), SettingsPanel::new(rect))).screen(40, 12);
         stage.press(KeyCode::Escape);
         assert!(!stage.rows().join("\n").contains("Settings"));
@@ -336,7 +336,7 @@ mod tests {
 
     #[test]
     fn rows_are_picked_in_the_order_they_are_drawn_when_a_group_is_declared_in_two_parts() {
-        let rect = Rect::new(0, 0, 40, 12);
+        let rect = GridRect::new(0, 0, 40, 12);
         let mut stage = Stage::new_with((GameMenuPanel::new(rect), SettingsPanel::new(rect)), |app| {
             app.add_setting(Setting::new("a", "Display", "A", ["Off", "On"]));
             app.add_setting(Setting::new("b", "Play", "B", ["Off", "On"]));

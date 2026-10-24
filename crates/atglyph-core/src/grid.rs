@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::direction::Direction;
-use crate::point::{Point, Rect};
+use crate::point::{GridRect, Point};
 
 /// Row-major 2D addressing.
 ///
@@ -29,8 +29,8 @@ pub trait Grid2D {
     }
 
     /// The rectangle covering every cell.
-    fn bounds(&self) -> Rect {
-        Rect::new(0, 0, self.width(), self.height())
+    fn bounds(&self) -> GridRect {
+        GridRect::new(0, 0, self.width(), self.height())
     }
 
     /// Flat row-major index for `(x, y)`. Inverse of [`idx_xy`](Self::idx_xy).

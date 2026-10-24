@@ -3,7 +3,7 @@
 //! Everything takes plain [`Point`]s and returns plain values. Shapes are
 //! iterators so callers that only want to test membership never allocate.
 
-use crate::point::{Point, Rect};
+use crate::point::{GridRect, Point};
 
 /// `|dx| + |dy|`: movement cost on a 4-connected grid.
 pub const fn manhattan(a: Point, b: Point) -> i32 {
@@ -46,7 +46,7 @@ pub const fn within_disc(center: Point, p: Point, radius: i32) -> bool {
 }
 
 /// Clamps `p` into `bounds`.
-pub fn clamp_to(p: Point, bounds: Rect) -> Point {
+pub fn clamp_to(p: Point, bounds: GridRect) -> Point {
     Point::new(p.x.clamp(bounds.x, bounds.right() - 1), p.y.clamp(bounds.y, bounds.bottom() - 1))
 }
 
@@ -100,7 +100,7 @@ impl Iterator for Line {
 /// Every cell within Chebyshev `radius` of `center`, row-major: a
 /// `(2r + 1)` square. Radius 0 is the centre alone.
 pub fn square(center: Point, radius: i32) -> impl Iterator<Item = Point> {
-    Rect::new(center.x - radius, center.y - radius, 2 * radius + 1, 2 * radius + 1).cells()
+    GridRect::new(center.x - radius, center.y - radius, 2 * radius + 1, 2 * radius + 1).cells()
 }
 
 /// Every cell within Euclidean `radius` of `center`, row-major.
@@ -253,7 +253,7 @@ mod tests {
 
     #[test]
     fn clamp_keeps_a_point_inside_the_bounds() {
-        let b = Rect::new(0, 0, 80, 60);
+        let b = GridRect::new(0, 0, 80, 60);
         assert_eq!(clamp_to(p(40, 30), b), p(40, 30));
         assert_eq!(clamp_to(p(-1, 30), b), p(0, 30));
         assert_eq!(clamp_to(p(80, 60), b), p(79, 59));

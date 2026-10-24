@@ -12,7 +12,7 @@
 //! sides, or the way down [`within`](MarkedExit) it, on a cell its drawing
 //! marks.
 
-use atglyph_core::{Direction, Grid2D, Point, Rect};
+use atglyph_core::{Direction, Grid2D, GridRect, Point};
 use atglyph_grid::{BitGrid, CostSource, DijkstraMap, PathRules, Terrain, TileId};
 use rand::Rng;
 
@@ -25,7 +25,7 @@ use crate::prefab::Stamped;
 
 /// A room a pass carved, emitted once per room in placement order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Room(pub Rect);
+pub struct Room(pub GridRect);
 
 /// Where a map's exit should stand, emitted by [`FarthestExit`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -92,7 +92,7 @@ impl Pass for Rooms {
     }
     fn apply(&self, ctx: &mut BaseContext) -> Result<(), BuildError> {
         let bounds = ctx.terrain().bounds();
-        let mut rooms: Vec<Rect> = Vec::new();
+        let mut rooms: Vec<GridRect> = Vec::new();
         for _ in 0..self.attempts {
             let w = ctx.rng().random_range(self.min_size..=self.max_size);
             let h = ctx.rng().random_range(self.min_size..=self.max_size);
@@ -101,7 +101,7 @@ impl Pass for Rooms {
             }
             let x = ctx.rng().random_range(1..bounds.width - w - 1 + 1);
             let y = ctx.rng().random_range(1..bounds.height - h - 1 + 1);
-            let room = Rect::new(x, y, w, h);
+            let room = GridRect::new(x, y, w, h);
             if rooms.iter().any(|r| r.too_close(&room, 1)) {
                 continue;
             }
@@ -144,17 +144,17 @@ impl Default for Bsp {
 }
 
 impl Bsp {
-    fn split(&self, ctx: &mut BaseContext, leaf: Rect, depth: u32) -> Option<Rect> {
+    fn split(&self, ctx: &mut BaseContext, leaf: GridRect, depth: u32) -> Option<GridRect> {
         let can_split_w = leaf.width >= 2 * self.min_leaf;
         let can_split_h = leaf.height >= 2 * self.min_leaf;
         if depth > 0 && (can_split_w || can_split_h) {
             let vertical = if can_split_w && can_split_h { ctx.rng().random_bool(0.5) } else { can_split_w };
             let (a, b) = if vertical {
                 let cut = ctx.rng().random_range(self.min_leaf..=leaf.width - self.min_leaf);
-                (Rect::new(leaf.x, leaf.y, cut, leaf.height), Rect::new(leaf.x + cut, leaf.y, leaf.width - cut, leaf.height))
+                (GridRect::new(leaf.x, leaf.y, cut, leaf.height), GridRect::new(leaf.x + cut, leaf.y, leaf.width - cut, leaf.height))
             } else {
                 let cut = ctx.rng().random_range(self.min_leaf..=leaf.height - self.min_leaf);
-                (Rect::new(leaf.x, leaf.y, leaf.width, cut), Rect::new(leaf.x, leaf.y + cut, leaf.width, leaf.height - cut))
+                (GridRect::new(leaf.x, leaf.y, leaf.width, cut), GridRect::new(leaf.x, leaf.y + cut, leaf.width, leaf.height - cut))
             };
             let ra = self.split(ctx, a, depth - 1);
             let rb = self.split(ctx, b, depth - 1);
@@ -165,7 +165,7 @@ impl Bsp {
             return ra.or(rb);
         }
         // A leaf: a room inset from its edges, at least 2x2.
-        let inner = Rect::new(leaf.x + self.padding, leaf.y + self.padding, leaf.width - 2 * self.padding, leaf.height - 2 * self.padding);
+        let inner = GridRect::new(leaf.x + self.padding, leaf.y + self.padding, leaf.width - 2 * self.padding, leaf.height - 2 * self.padding);
         if inner.width < 2 || inner.height < 2 {
             return None;
         }
@@ -173,7 +173,7 @@ impl Bsp {
         let h = ctx.rng().random_range(2..=inner.height);
         let x = ctx.rng().random_range(inner.x..=inner.right() - w);
         let y = ctx.rng().random_range(inner.y..=inner.bottom() - h);
-        let room = Rect::new(x, y, w, h);
+        let room = GridRect::new(x, y, w, h);
         for p in room.cells() {
             ctx.terrain_mut().set(p, self.floor);
         }
@@ -191,7 +191,7 @@ impl Pass for Bsp {
     }
     fn apply(&self, ctx: &mut BaseContext) -> Result<(), BuildError> {
         let bounds = ctx.terrain().bounds();
-        let area = Rect::new(1, 1, bounds.width - 2, bounds.height - 2);
+        let area = GridRect::new(1, 1, bounds.width - 2, bounds.height - 2);
         if self.split(ctx, area, 8).is_none() {
             return Err(BuildError::new("bsp", "no leaf could hold a room"));
         }
@@ -217,7 +217,7 @@ impl Pass for Doors {
     }
     fn apply(&self, ctx: &mut BaseContext) -> Result<(), BuildError> {
         let tables = ctx.tiles().tables();
-        let rooms: Vec<Rect> = ctx.outputs().iter::<Room>().map(|r| r.0).collect();
+        let rooms: Vec<GridRect> = ctx.outputs().iter::<Room>().map(|r| r.0).collect();
         let mut doors = Vec::new();
         for room in rooms {
             let ring = room.inflate(1);
@@ -289,7 +289,7 @@ fn bridged(ctx: &BaseContext) -> BitGrid {
 }
 
 /// The open cells of `area`, never one of `bridged`.
-fn open_cells(ctx: &BaseContext, walkable: &[bool], bridged: &BitGrid, area: Rect) -> Vec<Point> {
+fn open_cells(ctx: &BaseContext, walkable: &[bool], bridged: &BitGrid, area: GridRect) -> Vec<Point> {
     area.cells().filter(|p| ctx.terrain().get(*p).is_some_and(|t| walkable[t.index()]) && !bridged.contains(*p)).collect()
 }
 
@@ -411,7 +411,7 @@ impl Pass for ClearStart {
         Phase::Exits
     }
     fn apply(&self, ctx: &mut BaseContext) -> Result<(), BuildError> {
-        let stamps: Vec<Rect> = ctx.outputs().iter::<Stamped>().map(|s| s.bounds).collect();
+        let stamps: Vec<GridRect> = ctx.outputs().iter::<Stamped>().map(|s| s.bounds).collect();
         let clear = |p: &Point| stamps.iter().all(|r| atglyph_core::geometry::chebyshev(*p, atglyph_core::geometry::clamp_to(*p, *r)) >= self.cells);
         let landmark = ctx.outputs().first::<Landmark>().cloned();
         if let (Some(mark), Some(landmark)) = (self.far_from, &landmark) {
@@ -428,7 +428,7 @@ impl Pass for ClearStart {
             let drawn = usize::from(!ctx.rng().random_bool(0.5));
             return emit_start(ctx, &sides[drawn]);
         }
-        let mut areas: Vec<Rect> = ctx.outputs().iter::<Room>().map(|r| r.0).collect();
+        let mut areas: Vec<GridRect> = ctx.outputs().iter::<Room>().map(|r| r.0).collect();
         if areas.is_empty() {
             areas.push(ctx.terrain().bounds());
         }
@@ -642,7 +642,7 @@ impl Pass for FarExit {
         let map = walk_through_doors(ctx, start, true);
         let bridged = bridged(ctx);
         let walkable = |p: Point| ctx.terrain().get(p).is_some_and(|t| tables.walkable[t.index()]) && !bridged.contains(p);
-        let stamps: Vec<Rect> = ctx.outputs().iter::<Stamped>().map(|s| s.bounds).collect();
+        let stamps: Vec<GridRect> = ctx.outputs().iter::<Stamped>().map(|s| s.bounds).collect();
         let away = |p: Point| stamps.iter().map(|r| atglyph_core::geometry::chebyshev(p, atglyph_core::geometry::clamp_to(p, *r))).min().unwrap_or(i32::MAX);
         // The side across the landmark from the start, when kept beyond it.
         let landmark = ctx.outputs().first::<Landmark>().cloned().filter(|_| self.beyond);
@@ -868,7 +868,7 @@ mod tests {
                 .then(FarthestExit)
                 .run(&mut c, RunSeed(seed))
                 .unwrap();
-            let rooms: Vec<Rect> = c.outputs().iter::<Room>().map(|r| r.0).collect();
+            let rooms: Vec<GridRect> = c.outputs().iter::<Room>().map(|r| r.0).collect();
             assert!(rooms.len() >= 3, "seed {seed}");
             for (i, a) in rooms.iter().enumerate() {
                 for b in &rooms[i + 1..] {
@@ -892,7 +892,7 @@ mod tests {
         for seed in 1..=6 {
             let (mut c, _, floor, _) = ctx();
             Chain::new().then(Bsp { floor, ..Default::default() }).then(RandomStart).run(&mut c, RunSeed(seed)).unwrap();
-            let rooms: Vec<Rect> = c.outputs().iter::<Room>().map(|r| r.0).collect();
+            let rooms: Vec<GridRect> = c.outputs().iter::<Room>().map(|r| r.0).collect();
             assert!(rooms.len() >= 8, "seed {seed}: {} rooms", rooms.len());
             assert!(connected(&c), "seed {seed}");
             let left = rooms.iter().filter(|r| r.center().x < 30).count();
@@ -903,7 +903,7 @@ mod tests {
 
     /// Rooms with a three-by-three piece stamped in one of them, and then
     /// `start`, on `seed`: the start and the piece's bounds.
-    fn start_beside_a_stamp(start: impl Pass + 'static, seed: u64) -> (Point, Rect, Vec<Rect>) {
+    fn start_beside_a_stamp(start: impl Pass + 'static, seed: u64) -> (Point, GridRect, Vec<GridRect>) {
         use crate::prefab::{Orient, Placement, Prefab, StampPrefab, Stamped};
         let (mut c, _, floor, _) = ctx();
         let piece = Prefab::parse(&["...", ".m.", "..."], |ch| (ch == '.').then_some(floor)).unwrap();
@@ -919,7 +919,7 @@ mod tests {
     }
 
     /// How far `p` stands from the nearest cell of `r`, nought inside it.
-    fn clearance(p: Point, r: Rect) -> i32 {
+    fn clearance(p: Point, r: GridRect) -> i32 {
         atglyph_core::geometry::chebyshev(p, atglyph_core::geometry::clamp_to(p, r))
     }
 
@@ -953,7 +953,7 @@ mod tests {
     fn a_door_sits_in_a_one_wide_gap_only() {
         let (mut c, _, floor, door) = ctx();
         // A room with a corridor leaving north and a wide opening east.
-        let room = Rect::new(10, 10, 5, 5);
+        let room = GridRect::new(10, 10, 5, 5);
         for p in room.cells() {
             c.terrain_mut().set(p, floor);
         }
@@ -977,8 +977,8 @@ mod tests {
         let tiles = TileRegistry::standard();
         let (wall, floor, door) = (tiles.expect("wall"), tiles.expect("floor"), tiles.expect("door_closed"));
         let mut c = BaseContext::blank(20, 7, tiles, wall);
-        let near = Rect::new(1, 1, 4, 4);
-        let far_room = Rect::new(10, 1, 4, 4);
+        let near = GridRect::new(1, 1, 4, 4);
+        let far_room = GridRect::new(10, 1, 4, 4);
         for p in near.cells().chain(far_room.cells()) {
             c.terrain_mut().set(p, floor);
         }
@@ -1014,7 +1014,7 @@ mod tests {
 
     /// A grown place owing a hall painted from a prefab, its way in drawn,
     /// and its way out by `exit`: the exit and the hall's stamp.
-    fn exit_beside_a_grown_piece(exit: impl Pass + 'static, seed: u64) -> (Point, Rect) {
+    fn exit_beside_a_grown_piece(exit: impl Pass + 'static, seed: u64) -> (Point, GridRect) {
         use crate::accrete::tests::{owing, rig};
         let rig = rig();
         let chain = Chain::new().then(owing(&rig, crate::Join::Door)).then(RandomStart).then(exit);
@@ -1042,7 +1042,7 @@ mod tests {
             c.terrain_mut().set(Point::new(x, 2), floor);
         }
         c.emit(StartPoint(Point::new(1, 2)));
-        c.emit(Stamped { bounds: Rect::new(24, 1, 5, 3), marks: Vec::new(), prefab: None });
+        c.emit(Stamped { bounds: GridRect::new(24, 1, 5, 3), marks: Vec::new(), prefab: None });
         Chain::new().then(exit).run(&mut c, RunSeed(1)).unwrap();
         c.outputs().first::<ExitPoint>().unwrap().0
     }
@@ -1192,7 +1192,7 @@ mod tests {
         for x in 1..59 {
             c.terrain_mut().set(Point::new(x, 5), floor);
         }
-        c.emit(Landmark { name: "hall".into(), bounds: Rect::new(10, 2, 5, 3), sides: crate::accrete::Sides::WestEast });
+        c.emit(Landmark { name: "hall".into(), bounds: GridRect::new(10, 2, 5, 3), sides: crate::accrete::Sides::WestEast });
         c.emit(StartPoint(Point::new(12, 5)));
         let e = Chain::new().then(FarthestExit.beyond()).run(&mut c, RunSeed(1)).unwrap_err();
         assert!(e.pass == "farthest_exit" && e.reason.contains("level with the landmark hall"), "{e}");
@@ -1203,8 +1203,8 @@ mod tests {
     #[test]
     fn a_marked_start_and_a_marked_exit_stand_on_the_cell_a_stamp_marks_and_fail_naming_a_glyph_none_marks() {
         let (mut c, ..) = ctx();
-        c.emit(Stamped { bounds: Rect::new(2, 2, 6, 3), marks: vec![('@', Point::new(3, 3)), ('>', Point::new(6, 3))], prefab: None });
-        c.emit(Stamped { bounds: Rect::new(20, 2, 3, 3), marks: vec![('@', Point::new(21, 3))], prefab: None });
+        c.emit(Stamped { bounds: GridRect::new(2, 2, 6, 3), marks: vec![('@', Point::new(3, 3)), ('>', Point::new(6, 3))], prefab: None });
+        c.emit(Stamped { bounds: GridRect::new(20, 2, 3, 3), marks: vec![('@', Point::new(21, 3))], prefab: None });
         Chain::new().then(MarkedStart { mark: '@' }).then(MarkedExit { mark: '>' }).run(&mut c, RunSeed(1)).unwrap();
         assert_eq!(c.outputs().first::<StartPoint>().unwrap().0, Point::new(3, 3), "the first stamp's mark");
         assert_eq!(c.outputs().first::<ExitPoint>().unwrap().0, Point::new(6, 3));
@@ -1246,7 +1246,7 @@ mod tests {
             for x in 1..9 {
                 c.terrain_mut().set(Point::new(x, 5), floor);
             }
-            c.emit(Landmark { name: "hall".into(), bounds: Rect::new(10, 2, 5, 3), sides: crate::accrete::Sides::WestEast });
+            c.emit(Landmark { name: "hall".into(), bounds: GridRect::new(10, 2, 5, 3), sides: crate::accrete::Sides::WestEast });
             let e = Chain::new().then(Stairs::Beyond.start(RandomStart.clear_of_stamps(0))).run(&mut c, RunSeed(seed)).unwrap_err();
             assert!(e.pass == "random_start" && e.reason.contains("landmark hall") && e.reason.contains("After"), "seed {seed}: {e}");
         }
@@ -1258,11 +1258,11 @@ mod tests {
     #[test]
     fn a_way_down_within_a_landmark_is_its_own_stamps_mark_and_never_an_earlier_stamps() {
         let (mut c, ..) = ctx();
-        c.emit(Stamped { bounds: Rect::new(2, 2, 6, 3), marks: vec![('X', Point::new(3, 3))], prefab: None });
+        c.emit(Stamped { bounds: GridRect::new(2, 2, 6, 3), marks: vec![('X', Point::new(3, 3))], prefab: None });
         let e = Chain::new().then(Stairs::Within('X').exit(FarExit::default())).run(&mut c, RunSeed(1)).unwrap_err();
         assert!(e.pass == "marked_exit" && e.reason.contains("no landmark"), "{e}");
-        c.emit(Stamped { bounds: Rect::new(20, 2, 5, 3), marks: vec![('X', Point::new(22, 3))], prefab: None });
-        c.emit(Landmark { name: "hall".into(), bounds: Rect::new(20, 2, 5, 3), sides: crate::accrete::Sides::WestEast });
+        c.emit(Stamped { bounds: GridRect::new(20, 2, 5, 3), marks: vec![('X', Point::new(22, 3))], prefab: None });
+        c.emit(Landmark { name: "hall".into(), bounds: GridRect::new(20, 2, 5, 3), sides: crate::accrete::Sides::WestEast });
         Chain::new().then(Stairs::Within('X').exit(FarExit::default())).run(&mut c, RunSeed(1)).unwrap();
         assert_eq!(c.outputs().first::<ExitPoint>().unwrap().0, Point::new(22, 3));
     }

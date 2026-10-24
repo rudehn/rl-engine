@@ -16,7 +16,7 @@
 //! way down may keep to opposite sides of.
 
 use atglyph_core::geometry::{euclidean_sq, line};
-use atglyph_core::{Direction, Grid, Grid2D, Point, Rect};
+use atglyph_core::{Direction, Grid, Grid2D, GridRect, Point};
 use atglyph_grid::{BitGrid, Terrain, TileId};
 use rand::seq::SliceRandom;
 use rand::{Rng, RngCore};
@@ -104,9 +104,9 @@ impl Piece {
 }
 
 /// The smallest rectangle holding every one of `cells`; empty for none.
-pub(crate) fn bounds_of(cells: &[Point]) -> Rect {
+pub(crate) fn bounds_of(cells: &[Point]) -> GridRect {
     let Some(first) = cells.first() else {
-        return Rect::new(0, 0, 0, 0);
+        return GridRect::new(0, 0, 0, 0);
     };
     let (mut x0, mut y0, mut x1, mut y1) = (first.x, first.y, first.x, first.y);
     for c in cells {
@@ -115,19 +115,19 @@ pub(crate) fn bounds_of(cells: &[Point]) -> Rect {
         x1 = x1.max(c.x);
         y1 = y1.max(c.y);
     }
-    Rect::new(x0, y0, x1 - x0 + 1, y1 - y0 + 1)
+    GridRect::new(x0, y0, x1 - x0 + 1, y1 - y0 + 1)
 }
 
 /// The largest rectangle made only of `cells`, which all lie in `bounds`.
 /// It is where a stamp is centred, so an area that is not a rectangle
 /// still has one to offer.
-pub(crate) fn largest_rect(cells: &[Point], bounds: Rect) -> Rect {
+pub(crate) fn largest_rect(cells: &[Point], bounds: GridRect) -> GridRect {
     let (w, h) = (bounds.width as usize, bounds.height as usize);
     let mut filled = vec![false; w * h];
     for c in cells {
         filled[(c.y - bounds.y) as usize * w + (c.x - bounds.x) as usize] = true;
     }
-    let mut best = Rect::new(bounds.x, bounds.y, 0, 0);
+    let mut best = GridRect::new(bounds.x, bounds.y, 0, 0);
     for top in 0..h {
         // Whether each column is floor on every row from `top` to `y`.
         let mut column = vec![true; w];
@@ -145,7 +145,7 @@ pub(crate) fn largest_rect(cells: &[Point], bounds: Rect) -> Rect {
                 while x < w && column[x] {
                     x += 1;
                 }
-                let r = Rect::new(bounds.x + start as i32, bounds.y + top as i32, (x - start) as i32, (y - top + 1) as i32);
+                let r = GridRect::new(bounds.x + start as i32, bounds.y + top as i32, (x - start) as i32, (y - top + 1) as i32);
                 if r.area() > best.area() {
                     best = r;
                 }
@@ -201,7 +201,7 @@ impl Shape for Rectangle {
     fn draw(&self, rng: &mut dyn RngCore) -> Piece {
         let w = rng.random_range(self.w.0..=self.w.1);
         let h = rng.random_range(self.h.0..=self.h.1);
-        Piece::from_cells(Rect::new(0, 0, w, h).cells().collect())
+        Piece::from_cells(GridRect::new(0, 0, w, h).cells().collect())
     }
 }
 
@@ -230,8 +230,8 @@ impl Shape for Cross {
     fn draw(&self, rng: &mut dyn RngCore) -> Piece {
         let (lying, standing) = (rng.random_range(self.long.0..=self.long.1), rng.random_range(self.long.0..=self.long.1));
         let (thick_l, thick_s) = (rng.random_range(self.short.0..=self.short.1), rng.random_range(self.short.0..=self.short.1));
-        let mut cells: Vec<Point> = Rect::new(0, (standing - thick_l) / 2, lying, thick_l).cells().collect();
-        cells.extend(Rect::new((lying - thick_s) / 2, 0, thick_s, standing).cells());
+        let mut cells: Vec<Point> = GridRect::new(0, (standing - thick_l) / 2, lying, thick_l).cells().collect();
+        cells.extend(GridRect::new((lying - thick_s) / 2, 0, thick_s, standing).cells());
         Piece::from_cells(cells)
     }
 }
@@ -264,10 +264,10 @@ impl Shape for Passage {
     fn draw(&self, rng: &mut dyn RngCore) -> Piece {
         let width = rng.random_range(self.width.0..=self.width.1);
         let first = rng.random_range(self.length.0..=self.length.1).max(width);
-        let mut cells: Vec<Point> = Rect::new(0, 0, first, width).cells().collect();
+        let mut cells: Vec<Point> = GridRect::new(0, 0, first, width).cells().collect();
         if rng.random_range(0..100) < self.bend_pct {
             let second = rng.random_range(self.length.0..=self.length.1).max(width);
-            cells.extend(Rect::new(first - width, 0, width, second).cells());
+            cells.extend(GridRect::new(first - width, 0, width, second).cells());
         }
         // Lying or standing, so a passage runs either way off a wall.
         if rng.random_bool(0.5) {
@@ -304,9 +304,9 @@ pub struct Area {
     /// Every cell of its floor, in map coordinates.
     pub cells: Vec<Point>,
     /// The smallest rectangle holding them.
-    pub bounds: Rect,
+    pub bounds: GridRect,
     /// The largest rectangle made only of them: where a stamp is centred.
-    pub inner: Rect,
+    pub inner: GridRect,
     /// For a piece painted from a prefab, the cells of its wall drawn as
     /// entries, in map coordinates: the only cells growth ever opens into
     /// it, each by its own join, and a loop never does. `None` for a piece
@@ -521,7 +521,7 @@ pub struct Landmark {
     /// a failure round it names.
     pub name: String,
     /// The cells its drawing covers.
-    pub bounds: Rect,
+    pub bounds: GridRect,
     /// Which way it divides the place.
     pub sides: Sides,
 }
@@ -653,7 +653,7 @@ fn solid(terrain: &Terrain, walkable: &[bool], p: Point) -> bool {
 /// body may not take: one its ring would put beside a barrier, and every
 /// cell a painted piece laid, so nothing grows into its wall.
 struct Ground {
-    inner: Rect,
+    inner: GridRect,
     kept: BitGrid,
 }
 
@@ -665,7 +665,7 @@ impl Ground {
 
 /// Every cell `prefab` paints or draws as an entry, prefab-local.
 fn painted(prefab: &Prefab) -> impl Iterator<Item = Point> + '_ {
-    Rect::new(0, 0, prefab.width(), prefab.height()).cells().filter(|q| prefab.tile(*q).is_some() || prefab.entries().contains(q))
+    GridRect::new(0, 0, prefab.width(), prefab.height()).cells().filter(|q| prefab.tile(*q).is_some() || prefab.entries().contains(q))
 }
 
 /// Whether `piece` moved by `by` lies where growth may stand with its body
@@ -789,7 +789,7 @@ impl Accrete {
                 let walkable = |c: &Point| ctx.terrain().get(*c).is_some_and(|t| grown.walkable[t.index()]);
                 let (cells, under): (Vec<Point>, Vec<TileId>) = body.iter().zip(before).filter(|(c, _)| walkable(c)).map(|(c, t)| (*c, t)).unzip();
                 let marks = drawn.marks().iter().map(|(ch, q)| (*ch, *q + by)).collect();
-                grown.stamps.push(Stamped { bounds: Rect::new(by.x, by.y, drawn.width(), drawn.height()), marks, prefab: drawn.key() });
+                grown.stamps.push(Stamped { bounds: GridRect::new(by.x, by.y, drawn.width(), drawn.height()), marks, prefab: drawn.key() });
                 (cells, under, Some(drawn.entries().iter().map(|q| *q + by).collect()))
             }
         };
@@ -973,7 +973,7 @@ impl Pass for Accrete {
                 let Some((i, origin, sides)) = on_map(at, &sizes, bounds, ctx.rng()) else { continue };
                 let (_, (w, h), piece) = &first.facings[i];
                 if fits(ctx.terrain(), &grown.walkable, &grown.ground, piece, origin) {
-                    let placed = Rect::new(origin.x, origin.y, *w, *h);
+                    let placed = GridRect::new(origin.x, origin.y, *w, *h);
                     let laying = Laying { name: &first.name, room: false, join: None, district: district_at(placed.center()), stays: true };
                     self.lay(ctx, &mut grown, piece, origin, laying, None);
                     landmark = Some(Landmark { name: first.name.clone(), bounds: placed, sides });
@@ -1131,7 +1131,7 @@ pub(crate) mod tests {
 
     #[test]
     fn a_rectangle_has_a_site_outside_every_edge_cell_and_none_at_a_corner() {
-        let piece = Piece::from_cells(Rect::new(0, 0, 3, 2).cells().collect());
+        let piece = Piece::from_cells(GridRect::new(0, 0, 3, 2).cells().collect());
         assert_eq!(piece.cells.len(), 6);
         assert_eq!(piece.sites.len(), 10, "three above, three below, two each side");
         assert!(piece.sites.contains(&(Point::new(1, -1), Direction::North)));
@@ -1176,8 +1176,8 @@ pub(crate) mod tests {
     #[test]
     fn the_largest_rectangle_inside_a_cross_is_one_of_its_bars() {
         // A 7x3 bar across a 3x7 bar.
-        let mut cells: Vec<Point> = Rect::new(0, 2, 7, 3).cells().collect();
-        cells.extend(Rect::new(2, 0, 3, 7).cells());
+        let mut cells: Vec<Point> = GridRect::new(0, 2, 7, 3).cells().collect();
+        cells.extend(GridRect::new(2, 0, 3, 7).cells());
         let piece = Piece::from_cells(cells);
         let inner = largest_rect(&piece.cells, bounds_of(&piece.cells));
         assert_eq!(inner.area(), 21);
@@ -1362,7 +1362,7 @@ pub(crate) mod tests {
         let rig = rig();
         for s in 0..40 {
             let ctx = build(accrete(&rig, 3), &rig, 84, 48, s).unwrap();
-            let rooms: Vec<Rect> = ctx.outputs().iter::<Room>().map(|r| r.0).collect();
+            let rooms: Vec<GridRect> = ctx.outputs().iter::<Room>().map(|r| r.0).collect();
             let areas: Vec<&Area> = ctx.outputs().iter::<Area>().collect();
             assert_eq!(rooms.len(), areas.iter().filter(|a| a.shape != "run").count(), "seed {s}");
             for a in &areas {
@@ -1654,7 +1654,7 @@ pub(crate) mod tests {
                 .filter(|f| {
                     let p = &facings[*f];
                     (p.width(), p.height()) == (stamp.bounds.width, stamp.bounds.height)
-                        && Rect::new(0, 0, p.width(), p.height()).cells().all(|q| p.tile(q).is_none_or(|t| ctx.terrain().get(q + origin) == Some(t)))
+                        && GridRect::new(0, 0, p.width(), p.height()).cells().all(|q| p.tile(q).is_none_or(|t| ctx.terrain().get(q + origin) == Some(t)))
                 })
                 .collect();
             assert!(!matching.is_empty(), "seed {s}: nothing grew over its wall");

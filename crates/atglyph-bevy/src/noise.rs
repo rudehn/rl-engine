@@ -30,7 +30,7 @@
 //! so a sound nobody declared fails the load rather than a throw.
 
 use crate::app::EngineApp;
-use atglyph_core::{Grid2D, Id, Interner, Point, Rect, geometry};
+use atglyph_core::{Grid2D, GridRect, Id, Interner, Point, geometry};
 use atglyph_grid::{CostSource, DijkstraMap, PathRules};
 use atglyph_rules::Names;
 use atglyph_rules::ai::awareness::Awareness;
@@ -245,7 +245,7 @@ pub(crate) struct Earshot(DijkstraMap);
 
 impl Default for Earshot {
     fn default() -> Self {
-        Self(DijkstraMap::new(Rect::new(0, 0, 0, 0)))
+        Self(DijkstraMap::new(GridRect::new(0, 0, 0, 0)))
     }
 }
 
@@ -406,7 +406,7 @@ pub(crate) fn resolve_noise(
         let Some(from) = map.to_local(noise.at) else { continue };
         // A flood cannot carry further than its loudness, and nothing lies
         // beyond the loaded window to hear it.
-        let square = Rect::new(from.x - reach, from.y - reach, 2 * reach + 1, 2 * reach + 1);
+        let square = GridRect::new(from.x - reach, from.y - reach, 2 * reach + 1, 2 * reach + 1);
         let Some(region) = square.intersection(&view.bounds()) else { continue };
         earshot.0.reset(region);
         earshot.0.build(&view, [from], PathRules::EIGHT_WAY);

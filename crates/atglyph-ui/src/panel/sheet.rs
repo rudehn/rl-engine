@@ -10,7 +10,7 @@
 
 use crate::app::UiApp;
 use atglyph_bevy::{EngineSet, PresentSet};
-use atglyph_core::Rect;
+use atglyph_core::GridRect;
 use atglyph_render::Terminal;
 use atglyph_rules::stats::Op;
 use bevy::prelude::*;
@@ -45,7 +45,7 @@ impl Default for SheetKeys {
 #[derive(Resource, Debug, Clone)]
 pub(crate) struct SheetLayout {
     /// The terminal cells it occupies, border included.
-    pub rect: Rect,
+    pub rect: GridRect,
     /// The title in the top border.
     pub title: String,
     /// The headings, in the order the sections are drawn: stats,
@@ -61,7 +61,7 @@ pub struct SheetPanel(SheetLayout);
 
 impl SheetPanel {
     /// A sheet in `rect`.
-    pub fn new(rect: Rect) -> Self {
+    pub fn new(rect: GridRect) -> Self {
         Self(SheetLayout { rect, title: "Character".into(), headings: ["Stats".into(), "Resists".into(), "Attacks".into(), "Statuses".into(), "Worn".into()] })
     }
 
@@ -153,7 +153,7 @@ pub(crate) fn draw_sheet(
     }
     clear(&mut terminal, rect, &palette);
     frame(&mut terminal, rect, &layout.title, &format!("{} close", key_name(keys.close)), &palette);
-    let inner = Rect::new(rect.x + 2, rect.y + 1, rect.width - 4, rect.height - 2);
+    let inner = GridRect::new(rect.x + 2, rect.y + 1, rect.width - 4, rect.height - 2);
     let bg = palette.get(Tones::SURFACE);
     let width = inner.width.max(0) as usize;
     let bottom = inner.bottom();
@@ -273,7 +273,7 @@ mod tests {
     use atglyph_rules::{StatDef, StatusDef, stats::Modifier};
 
     fn stage() -> Stage {
-        let mut stage = Stage::new_with(SheetPanel::new(Rect::new(0, 0, 50, 20)), |app| {
+        let mut stage = Stage::new_with(SheetPanel::new(GridRect::new(0, 0, 50, 20)), |app| {
             let mut registries = app.world_mut().resource_mut::<Registries>();
             registries.stats = Registry::from_defs(vec![StatDef::new("might", 10)]).unwrap();
             let might = registries.stats.expect("might");
@@ -358,7 +358,7 @@ mod tests {
 
     #[test]
     fn the_sheet_is_on_the_controls_screen_under_the_key_it_answers_to() {
-        let mut stage = Stage::new((SheetPanel::new(Rect::new(0, 0, 50, 20)), crate::ControlsPanel::new(Rect::new(0, 0, 60, 30)))).screen(60, 30);
+        let mut stage = Stage::new((SheetPanel::new(GridRect::new(0, 0, 50, 20)), crate::ControlsPanel::new(GridRect::new(0, 0, 60, 30)))).screen(60, 30);
         stage.app.world_mut().resource_mut::<SheetKeys>().toggle = Chord::shift(KeyCode::Digit2);
         stage.chord(&[KeyCode::ShiftLeft, KeyCode::Slash]);
         let rows = stage.rows();

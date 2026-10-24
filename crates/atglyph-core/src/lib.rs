@@ -19,7 +19,7 @@
 //!
 //! What lives here:
 //!
-//! - [`Point`], [`Rect`], [`Direction`]: addressing a grid.
+//! - [`Point`], [`GridRect`], [`Direction`]: addressing a grid.
 //! - [`Grid<T>`] and the [`Grid2D`] trait: dense row-major storage and the
 //!   index arithmetic every map type shares.
 //! - [`geometry`]: distances, Bresenham lines, discs, cones, squares.
@@ -49,7 +49,7 @@ pub use dice::DiceRoll;
 pub use direction::Direction;
 pub use grid::{Grid, Grid2D, Steps};
 pub use id::{Id, Interner};
-pub use point::{Point, Rect};
+pub use point::{GridRect, Point};
 pub use seed::{PlaceSeed, RunSeed, SeedDomain};
 pub use turn::{DequeueOutcome, TurnQueue};
 
@@ -60,7 +60,7 @@ pub mod prelude {
     pub use crate::geometry;
     pub use crate::grid::{Grid, Grid2D, Steps};
     pub use crate::id::{Id, Interner};
-    pub use crate::point::{Point, Rect};
+    pub use crate::point::{GridRect, Point};
     pub use crate::seed::{PlaceSeed, RunSeed, SeedDomain};
     pub use crate::turn::{BASE_ACTION_COST, DequeueOutcome, TurnQueue};
 }

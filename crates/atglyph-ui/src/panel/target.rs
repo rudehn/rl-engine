@@ -24,7 +24,7 @@
 //! would be hard to count.
 
 use atglyph_bevy::PresentSet;
-use atglyph_core::{Point, Rect};
+use atglyph_core::{GridRect, Point};
 use atglyph_render::{MapView, Terminal};
 use bevy::color::Mix;
 use bevy::prelude::*;
@@ -40,7 +40,7 @@ use crate::view::target::{TargetView, TargetViewPlugin};
 pub(crate) struct TargetLayout {
     /// The box the aim is described in. Under three rows tall draws none,
     /// leaving only the footprint.
-    pub rect: Rect,
+    pub rect: GridRect,
     /// Key hints, in the box's bottom border.
     pub hints: String,
     /// How the cell being aimed at is marked, over the footprint. A glow
@@ -58,7 +58,7 @@ pub struct TargetPanel(TargetLayout);
 impl TargetPanel {
     /// The box in `rect`, eight rows or more to hold a shot's lines. Pass a
     /// zero-height rectangle for the footprint alone.
-    pub fn new(rect: Rect) -> Self {
+    pub fn new(rect: GridRect) -> Self {
         Self(TargetLayout { rect, hints: String::new(), cursor: CursorStyle::glow(Tones::TITLE) })
     }
 
@@ -235,10 +235,10 @@ mod tests {
     /// same cells a player would.
     fn staged() -> Stage {
         let mut stage =
-            Stage::new_with((AbilitiesPlugin, atglyph_bevy::ThrowingPlugin, TargetPanel::new(Rect::new(0, 0, 26, 10)).hints("[tab] next")), |app| {
+            Stage::new_with((AbilitiesPlugin, atglyph_bevy::ThrowingPlugin, TargetPanel::new(GridRect::new(0, 0, 26, 10)).hints("[tab] next")), |app| {
                 app.add_engine_effects();
                 abilities(app);
-                app.add_plugins(atglyph_render::MapViewPlugin::new(Rect::new(0, 10, 40, 20)));
+                app.add_plugins(atglyph_render::MapViewPlugin::new(GridRect::new(0, 10, 40, 20)));
             });
         stage.tick();
         stage
@@ -252,9 +252,9 @@ mod tests {
     /// A stage with the box, a shooter whose gun reaches twelve and three of
     /// them without penalty, and the game's odds a percent roll.
     fn shooter(height: i32) -> Stage {
-        let mut stage = Stage::new_with(TargetPanel::new(Rect::new(0, 0, 26, height)), |app| {
+        let mut stage = Stage::new_with(TargetPanel::new(GridRect::new(0, 0, 26, height)), |app| {
             app.insert_resource(atglyph_bevy::HitRules(Box::new(atglyph_rules::Percent::new(5, 16, 30))));
-            app.add_plugins(atglyph_render::MapViewPlugin::new(Rect::new(0, 12, 40, 20)));
+            app.add_plugins(atglyph_render::MapViewPlugin::new(GridRect::new(0, 12, 40, 20)));
         });
         let (user, kind) = (stage.player, stage.kind);
         stage.app.world_mut().entity_mut(user).insert(atglyph_bevy::RangedAttack::new(kind, atglyph_core::DiceRoll::flat(2), 12).effective_to(3));
@@ -411,8 +411,8 @@ mod tests {
 
     #[test]
     fn a_box_too_narrow_for_the_target_line_clips_it_inside_the_frame() {
-        let mut stage = Stage::new_with(TargetPanel::new(Rect::new(0, 0, 9, 8)), |app| {
-            app.add_plugins(atglyph_render::MapViewPlugin::new(Rect::new(0, 12, 40, 20)));
+        let mut stage = Stage::new_with(TargetPanel::new(GridRect::new(0, 0, 9, 8)), |app| {
+            app.add_plugins(atglyph_render::MapViewPlugin::new(GridRect::new(0, 12, 40, 20)));
         });
         let (user, kind) = (stage.player, stage.kind);
         stage.app.world_mut().entity_mut(user).insert(atglyph_bevy::RangedAttack::new(kind, atglyph_core::DiceRoll::flat(2), 12));

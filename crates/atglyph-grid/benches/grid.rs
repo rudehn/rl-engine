@@ -2,7 +2,7 @@
 //! maps, region labelling and lighting, on maps shaped like the ones a game
 //! produces.
 
-use atglyph_core::{Grid2D, Point, Rect, Steps};
+use atglyph_core::{Grid2D, GridRect, Point, Steps};
 use atglyph_grid::{AStar, BitGrid, DijkstraMap, Emitter, Glow, LightField, PathRules, Rgb, Terrain, TileField, TileRegistry, fov, region};
 use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
 use rand::{Rng, SeedableRng, rngs::StdRng};
@@ -87,7 +87,7 @@ fn bench_dijkstra(c: &mut Criterion) {
     let mut rng = StdRng::seed_from_u64(6);
     for side in [64, 128, 256] {
         let goal = open_cell(&t, &r, &mut rng);
-        let region = Rect::new(goal.x - side / 2, goal.y - side / 2, side, side);
+        let region = GridRect::new(goal.x - side / 2, goal.y - side / 2, side, side);
         let mut map = DijkstraMap::new(region);
         group.bench_with_input(BenchmarkId::new("build_region", side), &side, |b, _| {
             b.iter(|| {

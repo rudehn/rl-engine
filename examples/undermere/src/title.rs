@@ -28,7 +28,7 @@
 //! reads at every moment of the picture's motion. A glyph the face lacked
 //! would be drawn as an empty box in the night.
 
-use atglyph::primitives::{Point, Rect};
+use atglyph::primitives::{GridRect, Point};
 use atglyph::render::{Cell, Terminal};
 use bevy::prelude::*;
 
@@ -37,8 +37,8 @@ use bevy::prelude::*;
 /// so the rows read over nothing. Six rows, the five the title can offer
 /// and one spare, and wide enough for the question New Game asks over a
 /// save.
-pub fn menu(width: i32) -> Rect {
-    Rect::new(width / 2 - MENU_WIDTH / 2, rows::MENU, MENU_WIDTH, 6)
+pub fn menu(width: i32) -> GridRect {
+    GridRect::new(width / 2 - MENU_WIDTH / 2, rows::MENU, MENU_WIDTH, 6)
 }
 
 /// Paints the picture, the whole terminal of it, as it stands `t` seconds
@@ -381,7 +381,7 @@ fn moon(canvas: &mut Canvas) {
 
 /// The water the menu stands on, and a margin round it: the picture
 /// leaves it dark and puts no glyph in it, so the rows read over nothing.
-fn clear_water(width: i32) -> Rect {
+fn clear_water(width: i32) -> GridRect {
     menu(width).inflate(2)
 }
 
@@ -632,9 +632,9 @@ fn gate(canvas: &mut Canvas, glow: f32) {
 /// Everything the gate's glow lights, on a terminal `width` across: the
 /// island, its stones, the air over them and the water under them, and
 /// nothing past it, so the breath is seen nowhere else.
-fn glow_reach(width: i32) -> Rect {
+fn glow_reach(width: i32) -> GridRect {
     let (ring, top) = (width - art::RING_FROM_RIGHT, rows::HORIZON - 9);
-    Rect::new(ring - 34, top, 68, rows::MIST_FLOOR - top)
+    GridRect::new(ring - 34, top, 68, rows::MIST_FLOOR - top)
 }
 
 /// Where the glow's heart is, in pixels: the middle of the doorway.
@@ -828,7 +828,7 @@ mod art {
 
     /// The gate's doorway against the ring's middle column, where its
     /// glow is: between the two stones that hold the lintel.
-    pub const DOOR: atglyph::primitives::Rect = atglyph::primitives::Rect { x: -2, y: 17, width: 5, height: 8 };
+    pub const DOOR: atglyph::primitives::GridRect = atglyph::primitives::GridRect { x: -2, y: 17, width: 5, height: 8 };
 
     /// The ring as it is seen from Mereholt's shore: a ring of stones on
     /// the island seen from low across the water, so the far ones stand
@@ -986,10 +986,10 @@ mod tests {
 
     /// Everything the moon's path lights at its widest, on a terminal `width`
     /// across, so its shimmer is seen nowhere else.
-    fn path_reach(width: i32) -> Rect {
+    fn path_reach(width: i32) -> GridRect {
         let middle = (moon_centre(width).x / 8.0) as i32;
         let reach = ((3.5 + (rows::MIST_FLOOR - rows::HORIZON) as f32 * 1.4) * (1.0 + SWAY)) as i32 + 1;
-        Rect::new(middle - reach, rows::HORIZON, reach * 2 + 1, rows::MIST_FLOOR - rows::HORIZON + 1)
+        GridRect::new(middle - reach, rows::HORIZON, reach * 2 + 1, rows::MIST_FLOOR - rows::HORIZON + 1)
     }
 
     /// The glints on the moon's path, as a set of cells, at `t` seconds:

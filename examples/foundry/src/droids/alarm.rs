@@ -201,7 +201,7 @@ pub fn shout_alarm(
 
 #[cfg(test)]
 mod tests {
-    use atglyph::primitives::{Point, Rect, RunSeed};
+    use atglyph::primitives::{Point, RunSeed};
     use atglyph::render::{MapViewPlugin, Particles, ParticlesPlugin, Terminal};
     use atglyph::testing::KeyScriptPlugin;
 
@@ -463,7 +463,7 @@ mod tests {
     #[test]
     fn a_key_pressed_while_a_probe_pulses_skips_the_pulse_and_hands_the_commando_its_turn() {
         let mut app = crate::testing::headless(RunSeed(1));
-        app.add_plugins((MapViewPlugin::new(Rect::new(0, 0, 70, 36)), ParticlesPlugin, KeyScriptPlugin));
+        app.add_plugins((MapViewPlugin::new(GridRect::new(0, 0, 70, 36)), ParticlesPlugin, KeyScriptPlugin));
         app.insert_resource(Terminal::new(100, 40, Vec2::ONE));
         let (probe, me) = crate::testing::droid_facing_player(&mut app, "probe droid", 4);
         crate::testing::alert(&mut app, probe, me);

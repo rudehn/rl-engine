@@ -22,7 +22,7 @@
 //! screen, which is how the search steps back to the menu.
 
 use atglyph::prelude::*;
-use atglyph::primitives::{Id, Rect};
+use atglyph::primitives::Id;
 use bevy::prelude::*;
 
 use crate::decks::{DECKS, deck_of, map_of};
@@ -417,9 +417,9 @@ pub fn reveal_the_deck(cheats: Res<Cheats>, map: Res<WorldMap>, mut knowledge: R
 #[derive(Resource, Debug, Clone, Copy)]
 pub struct CheatPanel {
     /// Where the menu draws.
-    pub menu: Rect,
+    pub menu: GridRect,
     /// Where the search draws.
-    pub search: Rect,
+    pub search: GridRect,
 }
 
 impl Plugin for CheatPanel {

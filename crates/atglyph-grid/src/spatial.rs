@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 
 use atglyph_core::Point;
 #[cfg(test)]
-use atglyph_core::{Rect, geometry};
+use atglyph_core::{GridRect, geometry};
 
 /// Entities indexed by cell.
 #[derive(Debug, Clone)]
@@ -75,7 +75,7 @@ impl<E: Copy + Eq> SpatialGrid<E> {
 
     /// Everything inside `rect`, row-major.
     #[cfg(test)]
-    pub(crate) fn in_rect(&self, rect: Rect) -> impl Iterator<Item = (Point, E)> + '_ {
+    pub(crate) fn in_rect(&self, rect: GridRect) -> impl Iterator<Item = (Point, E)> + '_ {
         (rect.y..rect.bottom())
             .flat_map(move |y| self.cells.range(Point::new(rect.x, y)..Point::new(rect.right(), y)).flat_map(|(p, list)| list.iter().map(move |e| (*p, *e))))
     }
@@ -83,7 +83,7 @@ impl<E: Copy + Eq> SpatialGrid<E> {
     /// Everything within Chebyshev `radius` of `center`, row-major.
     #[cfg(test)]
     pub(crate) fn in_square(&self, center: Point, radius: i32) -> impl Iterator<Item = (Point, E)> + '_ {
-        self.in_rect(Rect::new(center.x - radius, center.y - radius, 2 * radius + 1, 2 * radius + 1))
+        self.in_rect(GridRect::new(center.x - radius, center.y - radius, 2 * radius + 1, 2 * radius + 1))
     }
 
     /// Everything within Euclidean `radius` of `center`, row-major.
@@ -152,7 +152,7 @@ mod tests {
         assert_eq!(square, vec![p(7, 3), p(5, 5), p(5, 6), p(3, 7)]);
         let disc: Vec<Point> = g.in_disc(p(5, 5), 2).map(|(pt, _)| pt).collect();
         assert_eq!(disc, vec![p(5, 5), p(5, 6)]);
-        assert_eq!(g.in_rect(Rect::new(0, 0, 1, 1)).count(), 1);
+        assert_eq!(g.in_rect(GridRect::new(0, 0, 1, 1)).count(), 1);
         assert_eq!(g.iter().count(), 6);
     }
 }

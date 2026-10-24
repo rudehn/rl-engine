@@ -707,9 +707,9 @@ mod tests {
     /// as any; and the hold lets go when the last of it has played.
     #[test]
     fn cues_become_one_animation_per_actor_that_holds_the_turns_until_it_has_played() {
-        use atglyph_core::Rect;
+        use atglyph_core::GridRect;
         let mut app = atglyph_bevy::testing::headless_app();
-        app.add_plugins((crate::map_view::MapViewPlugin::new(Rect::new(0, 0, 40, 20)), ParticlesPlugin));
+        app.add_plugins((crate::map_view::MapViewPlugin::new(GridRect::new(0, 0, 40, 20)), ParticlesPlugin));
         app.insert_resource(Terminal::new(40, 20, Vec2::ONE));
         app.insert_resource(ParticleStyle { cell_secs: 0.01, burst_secs: 0.05, ..ParticleStyle::default() });
         let start = atglyph_bevy::testing::ground(&mut app);
@@ -745,9 +745,9 @@ mod tests {
     /// the turns go, in the frame the key is read.
     #[test]
     fn a_key_pressed_while_the_turns_wait_skips_what_holds_them() {
-        use atglyph_core::Rect;
+        use atglyph_core::GridRect;
         let mut app = atglyph_bevy::testing::headless_app();
-        app.add_plugins((crate::map_view::MapViewPlugin::new(Rect::new(0, 0, 40, 20)), ParticlesPlugin, atglyph_bevy::testing::KeyScriptPlugin));
+        app.add_plugins((crate::map_view::MapViewPlugin::new(GridRect::new(0, 0, 40, 20)), ParticlesPlugin, atglyph_bevy::testing::KeyScriptPlugin));
         app.insert_resource(Terminal::new(40, 20, Vec2::ONE));
         app.insert_resource(ParticleStyle { cell_secs: 1.0, burst_secs: 1.0, ..ParticleStyle::default() });
         let start = atglyph_bevy::testing::ground(&mut app);
@@ -770,9 +770,9 @@ mod tests {
     /// `CueWait::ask_skip`, and this is the answering half.
     #[test]
     fn a_skip_asked_for_while_the_turns_wait_skips_what_holds_them_the_way_a_press_does() {
-        use atglyph_core::Rect;
+        use atglyph_core::GridRect;
         let mut app = atglyph_bevy::testing::headless_app();
-        app.add_plugins((crate::map_view::MapViewPlugin::new(Rect::new(0, 0, 40, 20)), ParticlesPlugin));
+        app.add_plugins((crate::map_view::MapViewPlugin::new(GridRect::new(0, 0, 40, 20)), ParticlesPlugin));
         app.insert_resource(Terminal::new(40, 20, Vec2::ONE));
         app.insert_resource(ParticleStyle { cell_secs: 1.0, burst_secs: 1.0, ..ParticleStyle::default() });
         let start = atglyph_bevy::testing::ground(&mut app);
@@ -808,10 +808,10 @@ mod tests {
     /// reached.
     #[test]
     fn a_key_pressed_while_a_shot_at_the_player_flies_lands_it_before_the_player_moves() {
-        use atglyph_core::{DiceRoll, Rect};
+        use atglyph_core::{DiceRoll, GridRect};
         use atglyph_rules::ai::{Brain, tactics::ShootAtRange};
         let mut app = atglyph_bevy::testing::headless_app();
-        app.add_plugins((crate::map_view::MapViewPlugin::new(Rect::new(0, 0, 40, 20)), ParticlesPlugin, atglyph_bevy::testing::KeyScriptPlugin));
+        app.add_plugins((crate::map_view::MapViewPlugin::new(GridRect::new(0, 0, 40, 20)), ParticlesPlugin, atglyph_bevy::testing::KeyScriptPlugin));
         app.add_plugins((FovPlugin, CombatPlugin, MindsPlugin));
         app.insert_resource(Terminal::new(40, 20, Vec2::ONE));
         app.insert_resource(ParticleStyle { cell_secs: 1.0, burst_secs: 1.0, ..ParticleStyle::default() });
@@ -872,11 +872,11 @@ mod tests {
     /// further, as before. Over a span of seeds, so both outcomes are seen.
     #[test]
     fn a_reflected_bolt_is_drawn_to_the_body_that_turned_it_and_back_to_its_caster() {
-        use atglyph_core::{Rect, RunSeed};
+        use atglyph_core::{GridRect, RunSeed};
         let (mut reflected, mut landed) = (0, 0);
         for seed in 0..40 {
             let mut app = atglyph_bevy::testing::headless_app();
-            app.add_plugins((crate::map_view::MapViewPlugin::new(Rect::new(0, 0, 40, 20)), ParticlesPlugin));
+            app.add_plugins((crate::map_view::MapViewPlugin::new(GridRect::new(0, 0, 40, 20)), ParticlesPlugin));
             app.add_plugins((FovPlugin, CombatPlugin, MindsPlugin, AbilitiesPlugin));
             app.add_engine_effects();
             app.insert_resource(Terminal::new(40, 20, Vec2::ONE));

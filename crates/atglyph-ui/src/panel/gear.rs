@@ -1,7 +1,7 @@
 //! What is worn, slot by slot, empty ones included.
 
 use atglyph_bevy::PresentSet;
-use atglyph_core::Rect;
+use atglyph_core::GridRect;
 use atglyph_render::Terminal;
 use bevy::prelude::*;
 
@@ -14,7 +14,7 @@ use crate::view::{GearView, GearViewPlugin};
 #[derive(Resource, Debug, Clone)]
 pub(crate) struct GearLayout {
     /// The terminal cells it occupies, border included.
-    pub rect: Rect,
+    pub rect: GridRect,
     /// The title in the top border. Empty draws no frame.
     pub title: String,
     /// The heading over the list. Empty draws no heading.
@@ -30,7 +30,7 @@ pub struct GearPanel(GearLayout);
 
 impl GearPanel {
     /// A gear list in `rect`.
-    pub fn new(rect: Rect) -> Self {
+    pub fn new(rect: GridRect) -> Self {
         Self(GearLayout { rect, title: String::new(), heading: "Worn".into(), empty: "\u{2014}".into() })
     }
 
@@ -82,7 +82,7 @@ pub(crate) fn draw_gear(mut terminal: ResMut<Terminal>, layout: Res<GearLayout>,
         rect
     } else {
         frame(&mut terminal, rect, &layout.title, "", &palette);
-        Rect::new(rect.x + 1, rect.y + 1, rect.width - 2, rect.height - 2)
+        GridRect::new(rect.x + 1, rect.y + 1, rect.width - 2, rect.height - 2)
     };
     let bg = palette.get(Tones::SURFACE);
     let mut y = inner.y;
@@ -207,7 +207,7 @@ mod tests {
     fn every_slot_gets_a_line_and_an_empty_one_reads_as_a_dash() {
         let slots = || atglyph_rules::Registry::from_defs(vec![SlotDef::new("main hand"), SlotDef::new("body")]).unwrap();
         let hand = slots().expect("main hand");
-        let mut stage = Stage::new_with(GearPanel::new(Rect::new(0, 0, 26, 6)), move |app| {
+        let mut stage = Stage::new_with(GearPanel::new(GridRect::new(0, 0, 26, 6)), move |app| {
             app.world_mut().resource_mut::<atglyph_bevy::Registries>().slots = slots();
         })
         .screen(26, 6);
@@ -230,7 +230,7 @@ mod tests {
     /// count is written everywhere else on the rail.
     #[test]
     fn a_worn_wands_row_reads_its_charges() {
-        let mut stage = Stage::new_with(GearPanel::new(Rect::new(0, 0, 40, 6)), |app| {
+        let mut stage = Stage::new_with(GearPanel::new(GridRect::new(0, 0, 40, 6)), |app| {
             app.world_mut().resource_mut::<Registries>().slots = atglyph_rules::Registry::from_defs(vec![SlotDef::new("main hand")]).unwrap();
         });
         let player = stage.player;
@@ -259,7 +259,7 @@ mod tests {
     fn a_long_name_and_its_facet_wrap_to_a_line_under_it_rather_than_clip() {
         let slots = || atglyph_rules::Registry::from_defs(vec![SlotDef::new("main hand")]).unwrap();
         let hand = slots().expect("main hand");
-        let mut stage = Stage::new_with(GearPanel::new(Rect::new(0, 0, 26, 4)), move |app| {
+        let mut stage = Stage::new_with(GearPanel::new(GridRect::new(0, 0, 26, 4)), move |app| {
             app.world_mut().resource_mut::<atglyph_bevy::Registries>().slots = slots();
             app.add_systems(
                 Update,
@@ -294,7 +294,7 @@ mod tests {
     fn a_stuck_worn_thing_says_it_will_not_come_off_in_the_bad_tone() {
         let slots = || atglyph_rules::Registry::from_defs(vec![SlotDef::new("finger")]).unwrap();
         let finger = slots().expect("finger");
-        let mut stage = Stage::new_with(GearPanel::new(Rect::new(0, 0, 40, 4)), move |app| {
+        let mut stage = Stage::new_with(GearPanel::new(GridRect::new(0, 0, 40, 4)), move |app| {
             app.world_mut().resource_mut::<atglyph_bevy::Registries>().slots = slots();
         })
         .screen(40, 4);
@@ -326,7 +326,7 @@ mod tests {
         let slots = || atglyph_rules::Registry::from_defs(vec![SlotDef::new("finger"), SlotDef::new("light")]).unwrap();
         let finger = slots().expect("finger");
         let staged = |height: i32| {
-            let mut stage = Stage::new_with(GearPanel::new(Rect::new(0, 0, 26, height)), move |app| {
+            let mut stage = Stage::new_with(GearPanel::new(GridRect::new(0, 0, 26, height)), move |app| {
                 app.world_mut().resource_mut::<atglyph_bevy::Registries>().slots = slots();
             })
             .screen(26, height);
@@ -367,7 +367,7 @@ mod tests {
     fn a_name_wider_than_the_row_itself_still_clips_with_an_ellipsis() {
         let slots = || atglyph_rules::Registry::from_defs(vec![SlotDef::new("main hand")]).unwrap();
         let hand = slots().expect("main hand");
-        let mut stage = Stage::new_with(GearPanel::new(Rect::new(0, 0, 26, 4)), move |app| {
+        let mut stage = Stage::new_with(GearPanel::new(GridRect::new(0, 0, 26, 4)), move |app| {
             app.world_mut().resource_mut::<atglyph_bevy::Registries>().slots = slots();
             app.add_systems(
                 Update,
@@ -407,7 +407,7 @@ mod tests {
             let s = slots();
             (s.expect("main hand"), s.expect("off hand"))
         };
-        let mut stage = Stage::new_with(GearPanel::new(Rect::new(0, 0, 30, 6)), move |app| {
+        let mut stage = Stage::new_with(GearPanel::new(GridRect::new(0, 0, 30, 6)), move |app| {
             app.world_mut().resource_mut::<atglyph_bevy::Registries>().slots = slots();
             app.add_systems(
                 Update,

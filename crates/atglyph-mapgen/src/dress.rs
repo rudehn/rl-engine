@@ -21,7 +21,7 @@
 //! checks are `atglyph-rules`'s; this reads only what growth and the passes
 //! after it published.
 
-use atglyph_core::{Direction, Point, Rect};
+use atglyph_core::{Direction, GridRect, Point};
 use atglyph_grid::TileId;
 use rand::Rng;
 use rand::seq::SliceRandom;
@@ -192,8 +192,8 @@ impl Pass for Dress {
     fn apply(&self, ctx: &mut BaseContext) -> Result<(), BuildError> {
         let err = |reason: String| BuildError::new(self.name, reason);
         let areas: Vec<Area> = ctx.outputs().iter::<Area>().cloned().collect();
-        let rooms: Vec<Rect> = ctx.outputs().iter::<Room>().map(|r| r.0).collect();
-        let stamps: Vec<Rect> = ctx.outputs().iter::<Stamped>().map(|s| s.bounds).collect();
+        let rooms: Vec<GridRect> = ctx.outputs().iter::<Room>().map(|r| r.0).collect();
+        let stamps: Vec<GridRect> = ctx.outputs().iter::<Stamped>().map(|s| s.bounds).collect();
         let given: Vec<DressAt> = ctx.outputs().iter::<DressAt>().cloned().collect();
         // Every cell nothing may stand on or beside: the openings, hidden
         // ones too, and the two ways.
@@ -250,7 +250,7 @@ impl Pass for Dress {
             let d = &self.dressings[dressing];
             let marks = dress_area(ctx, area, d, &keep, self.floor);
             for (glyph, at) in marks {
-                ctx.emit(Stamped { bounds: Rect::new(at.x, at.y, 1, 1), marks: vec![(glyph, at)], prefab: d.key });
+                ctx.emit(Stamped { bounds: GridRect::new(at.x, at.y, 1, 1), marks: vec![(glyph, at)], prefab: d.key });
             }
             ctx.emit(Dressed { area: index, dressing: d.name.clone() });
         }
@@ -262,7 +262,7 @@ impl Pass for Dress {
 /// indexed locally, so a look at a neighbour is an index and not a search
 /// of the area's cells.
 struct Frame {
-    rect: Rect,
+    rect: GridRect,
     /// The area's own cells a body can stand on.
     own: Vec<bool>,
     /// Cells beside the area a body can stand on, orthogonally: a door, an
@@ -544,7 +544,7 @@ mod tests {
     /// cell beyond the door.
     fn room(r: &Rig, w: i32, h: i32) -> BaseContext {
         let mut ctx = BaseContext::blank(w + 6, h + 6, r.tiles.clone(), r.wall);
-        let bounds = Rect::new(2, 3, w, h);
+        let bounds = GridRect::new(2, 3, w, h);
         for c in bounds.cells() {
             ctx.terrain_mut().set(c, r.floor);
         }
@@ -560,7 +560,7 @@ mod tests {
 
     /// The cells of `bounds` with a cell outside it straight beside them
     /// and not at a corner: what `Walls` offers in a rectangle.
-    fn walls_of(bounds: Rect) -> Vec<Point> {
+    fn walls_of(bounds: GridRect) -> Vec<Point> {
         let inner = bounds.inflate(-1);
         let corner = |p: Point| (p.x == bounds.x || p.x == bounds.right() - 1) && (p.y == bounds.y || p.y == bounds.bottom() - 1);
         bounds.cells().filter(|p| !inner.contains(*p) && !corner(*p)).collect()
@@ -626,7 +626,7 @@ mod tests {
         let (r, ..) = tiles();
         let d = dressing("store", vec![slot('w', Spread::Walls, 50), slot('s', Spread::Scatter, 10)], None);
         for (w, h) in [(5, 5), (20, 12)] {
-            let bounds = Rect::new(2, 3, w, h);
+            let bounds = GridRect::new(2, 3, w, h);
             let walls = walls_of(bounds);
             for s in 0..200 {
                 let mut ctx = room(&r, w, h);
@@ -657,13 +657,13 @@ mod tests {
             let got: Vec<Point> = slots(&ctx).into_iter().map(|(_, p)| p).collect();
             // A cell in from the walls: x 3 to 20 and y 4 to 13, lines
             // from y 4 every aisle plus one.
-            let inner = Rect::new(2, 3, 20, 12).inflate(-1);
+            let inner = GridRect::new(2, 3, 20, 12).inflate(-1);
             for p in inner.cells() {
                 let line = (p.y - 4) % (aisle as i32 + 1) == 0;
                 assert_eq!(got.contains(&p), line, "aisle {aisle}: {p:?} is {} a line", if line { "on" } else { "off" });
             }
             assert!(got.iter().all(|p| inner.contains(*p)), "aisle {aisle}: a line runs only a cell in from the walls");
-            let cells: Vec<Point> = Rect::new(2, 3, 20, 12).cells().collect();
+            let cells: Vec<Point> = GridRect::new(2, 3, 20, 12).cells().collect();
             assert_eq!(regions(&cells, &got), 1, "aisle {aisle}: every aisle joins the ring along the walls");
         }
     }
@@ -675,20 +675,20 @@ mod tests {
     fn a_thing_that_would_cut_an_area_in_two_is_taken_back() {
         let (r, ..) = tiles();
         let cells: Vec<Point> =
-            Rect::new(1, 2, 4, 4).cells().chain([Point::new(5, 3), Point::new(6, 3), Point::new(7, 3)]).chain(Rect::new(8, 2, 4, 4).cells()).collect();
+            GridRect::new(1, 2, 4, 4).cells().chain([Point::new(5, 3), Point::new(6, 3), Point::new(7, 3)]).chain(GridRect::new(8, 2, 4, 4).cells()).collect();
         let neck = || {
             let mut ctx = BaseContext::blank(16, 9, r.tiles.clone(), r.wall);
             for c in &cells {
                 ctx.terrain_mut().set(*c, r.floor);
             }
-            ctx.emit(Room(Rect::new(1, 2, 4, 4)));
+            ctx.emit(Room(GridRect::new(1, 2, 4, 4)));
             ctx.emit(Area {
                 index: 0,
                 shape: "room".into(),
                 district: "d".into(),
                 cells: cells.clone(),
-                bounds: Rect::new(1, 2, 11, 4),
-                inner: Rect::new(1, 2, 4, 4),
+                bounds: GridRect::new(1, 2, 11, 4),
+                inner: GridRect::new(1, 2, 4, 4),
                 entries: None,
             });
             ctx
@@ -714,7 +714,7 @@ mod tests {
         let (r, ..) = tiles();
         let d = dressing("crowd", vec![slot('c', Spread::Corners, 100), slot('w', Spread::Walls, 100)], None);
         for (w, h) in [(5, 5), (7, 6), (12, 9)] {
-            let bounds = Rect::new(2, 3, w, h);
+            let bounds = GridRect::new(2, 3, w, h);
             for s in 0..50 {
                 let mut ctx = room(&r, w, h);
                 Chain::new().then(dress(r.floor, d.clone())).run(&mut ctx, RunSeed(s)).unwrap();
@@ -956,7 +956,7 @@ mod tests {
         let place = || {
             let mut ctx = BaseContext::blank(40, 9, r.tiles.clone(), r.wall);
             for (index, x) in [1, 9, 17, 25, 33].into_iter().enumerate() {
-                let bounds = Rect::new(x, 1, 5, 5);
+                let bounds = GridRect::new(x, 1, 5, 5);
                 for c in bounds.cells() {
                     ctx.terrain_mut().set(c, r.floor);
                 }
@@ -967,7 +967,7 @@ mod tests {
                 let shape = if index < 4 { "room" } else { "run" };
                 ctx.emit(Area { index, shape: shape.into(), district: "d".into(), cells: bounds.cells().collect(), bounds, inner: bounds, entries });
             }
-            ctx.emit(Stamped { bounds: Rect::new(10, 2, 1, 1), marks: Vec::new(), prefab: None });
+            ctx.emit(Stamped { bounds: GridRect::new(10, 2, 1, 1), marks: Vec::new(), prefab: None });
             ctx.emit(DressAt { dressing: "given".into(), area: 0 });
             ctx
         };
@@ -1031,14 +1031,14 @@ mod tests {
         let (mut r, _, rubble) = tiles();
         let shore = r.tiles.register(TileProps::floor("shore")).unwrap();
         let mut ctx = room(&r, 12, 9);
-        let banks: Vec<Point> = Rect::new(2, 3, 12, 9).cells().filter(|p| (p.x + p.y) % 3 == 0).collect();
+        let banks: Vec<Point> = GridRect::new(2, 3, 12, 9).cells().filter(|p| (p.x + p.y) % 3 == 0).collect();
         for p in &banks {
             ctx.terrain_mut().set(*p, shore);
         }
         let d = dressing("heaps", vec![Thing { glyph: 'h', stands: Stand::Tile(rubble), at: Spread::Scatter, density_pct: 100 }], None);
         Chain::new().then(dress(r.floor, d)).run(&mut ctx, RunSeed(3)).unwrap();
         assert!(banks.iter().all(|p| ctx.terrain().get(*p) == Some(shore)), "a shore cell was painted over");
-        assert!(Rect::new(2, 3, 12, 9).cells().any(|p| ctx.terrain().get(p) == Some(rubble)), "the floor between took the heaps");
+        assert!(GridRect::new(2, 3, 12, 9).cells().any(|p| ctx.terrain().get(p) == Some(rubble)), "the floor between took the heaps");
     }
 
     /// A repaint takes its share of the floor left clear, and never a cell
@@ -1050,7 +1050,7 @@ mod tests {
         let d = dressing("dust", vec![slot('w', Spread::Walls, 50)], Some((rubble, 25)));
         Chain::new().then(dress(r.floor, d)).run(&mut ctx, RunSeed(5)).unwrap();
         let got: Vec<Point> = slots(&ctx).into_iter().map(|(_, p)| p).collect();
-        let painted: Vec<Point> = Rect::new(2, 3, 20, 12).cells().filter(|p| ctx.terrain().get(*p) == Some(rubble)).collect();
+        let painted: Vec<Point> = GridRect::new(2, 3, 20, 12).cells().filter(|p| ctx.terrain().get(*p) == Some(rubble)).collect();
         assert_eq!(painted.len(), (240 - got.len() + 2) / 4, "a quarter of the bare floor, rounded");
         assert!(painted.iter().all(|p| !got.contains(p)));
     }

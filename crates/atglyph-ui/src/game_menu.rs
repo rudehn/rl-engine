@@ -30,7 +30,7 @@
 use crate::app::UiApp;
 use atglyph_bevy::prelude::*;
 use atglyph_bevy::{Ending, Outcome, Restart, world_is_shown};
-use atglyph_core::{Direction, Rect};
+use atglyph_core::{Direction, GridRect};
 use atglyph_render::{Cell, Terminal};
 use bevy::prelude::*;
 
@@ -62,7 +62,7 @@ impl Default for MenuKeys {
 pub(crate) struct MenuLayout {
     /// The most of the terminal it may occupy; it is drawn from the
     /// top-left down only as far as its rows need.
-    pub rect: Rect,
+    pub rect: GridRect,
     /// The top border while playing.
     pub title: String,
     /// The top border when the run ended in death.
@@ -141,7 +141,7 @@ impl GameMenuPanel {
     /// The menu in `rect`, from its top-left corner down only as far as
     /// its rows need: the rectangle is the most it may take, so one size
     /// serves both the short pause menu and the ending's longer screen.
-    pub fn new(rect: Rect) -> Self {
+    pub fn new(rect: GridRect) -> Self {
         Self(MenuLayout { rect, title: "Menu".into(), died: "You died.".into(), won: "You have won.".into(), abandoned: "The run is over.".into() })
     }
 
@@ -413,10 +413,10 @@ pub(crate) fn draw_game_menu(mut terminal: ResMut<Terminal>, screen: MenuScreen)
     }
     words.truncate(room);
     let height = ((words.len() + items.len()) as i32 + 2).min(rect.height);
-    let rect = Rect::new(rect.x, rect.y, rect.width, height);
+    let rect = GridRect::new(rect.x, rect.y, rect.width, height);
     clear(&mut terminal, rect, palette);
     frame(&mut terminal, rect, title, &hints, palette);
-    let inner = Rect::new(rect.x + 2, rect.y + 1, rect.width - 4, rect.height - 2);
+    let inner = GridRect::new(rect.x + 2, rect.y + 1, rect.width - 4, rect.height - 2);
     let surface = palette.get(Tones::SURFACE);
     let mut y = inner.y;
     for (line, tone) in &words {
@@ -432,7 +432,7 @@ pub(crate) fn draw_game_menu(mut terminal: ResMut<Terminal>, screen: MenuScreen)
         }
         let selected = i == menu.selected.min(items.len() - 1);
         let bg = if selected { palette.get(Tones::SELECT) } else { surface };
-        terminal.fill(Rect::new(inner.x, y, inner.width, 1), Cell::new(' ', palette.get(Tones::TEXT)).on(bg));
+        terminal.fill(GridRect::new(inner.x, y, inner.width, 1), Cell::new(' ', palette.get(Tones::TEXT)).on(bg));
         terminal.print_on(inner.x, y, &clip(item.label(), width), palette.get(Tones::TEXT), bg);
         y += 1;
     }
@@ -446,7 +446,7 @@ mod tests {
     use atglyph_core::DiceRoll;
 
     fn staged() -> Stage {
-        let mut stage = Stage::new((GameMenuPanel::new(Rect::new(0, 0, 40, 12)), crate::SheetViewPlugin)).screen(40, 12);
+        let mut stage = Stage::new((GameMenuPanel::new(GridRect::new(0, 0, 40, 12)), crate::SheetViewPlugin)).screen(40, 12);
         stage.tick();
         stage
     }
@@ -477,7 +477,7 @@ mod tests {
     /// nothing picked out, opens the menu.
     #[test]
     fn escape_lets_go_of_what_is_picked_out_before_it_opens_the_menu() {
-        let mut stage = Stage::new((GameMenuPanel::new(Rect::new(0, 0, 40, 12)), crate::NearbyViewPlugin)).screen(40, 12);
+        let mut stage = Stage::new((GameMenuPanel::new(GridRect::new(0, 0, 40, 12)), crate::NearbyViewPlugin)).screen(40, 12);
         stage.actor("them", 't', 2, 0);
         stage.tick();
         stage.press(KeyCode::Tab);
@@ -584,7 +584,7 @@ mod tests {
     /// seed stands first under the title, with no blank row above it.
     #[test]
     fn the_players_death_opens_the_ending_and_shows_what_the_game_had_to_say() {
-        let mut stage = Stage::new((GameMenuPanel::new(Rect::new(0, 0, 44, 20)).died("You are dead."), crate::SheetViewPlugin)).screen(44, 20);
+        let mut stage = Stage::new((GameMenuPanel::new(GridRect::new(0, 0, 44, 20)).died("You are dead."), crate::SheetViewPlugin)).screen(44, 20);
         stage.app.add_systems(Update, note_the_haul.in_set(crate::ViewSet::Annotate));
         die(&mut stage);
         assert!(stage.row(0).contains(" You are dead. "), "{:?}", stage.row(0));
@@ -603,7 +603,7 @@ mod tests {
     /// instead.
     #[test]
     fn an_ending_too_long_for_its_frame_keeps_every_choice_and_cuts_its_words() {
-        let mut stage = Stage::new((GameMenuPanel::new(Rect::new(0, 0, 44, 12)).died("You are dead."), crate::SheetViewPlugin)).screen(44, 12);
+        let mut stage = Stage::new((GameMenuPanel::new(GridRect::new(0, 0, 44, 12)).died("You are dead."), crate::SheetViewPlugin)).screen(44, 12);
         stage.app.add_systems(
             Update,
             (|mut view: ResMut<EndingView>| {
@@ -627,7 +627,7 @@ mod tests {
     /// something of.
     #[test]
     fn a_cut_ending_never_keeps_a_heading_without_a_line_of_its_own() {
-        let mut stage = Stage::new((GameMenuPanel::new(Rect::new(0, 0, 44, 13)).died("You are dead."), crate::SheetViewPlugin)).screen(44, 13);
+        let mut stage = Stage::new((GameMenuPanel::new(GridRect::new(0, 0, 44, 13)).died("You are dead."), crate::SheetViewPlugin)).screen(44, 13);
         stage.app.add_systems(
             Update,
             (|mut view: ResMut<EndingView>| {
@@ -649,7 +649,7 @@ mod tests {
     /// records list will say of the run, said here first.
     #[test]
     fn the_ending_says_the_runs_own_line_under_its_title() {
-        let mut stage = Stage::new((GameMenuPanel::new(Rect::new(0, 0, 44, 20)).died("You are dead."), crate::SheetViewPlugin)).screen(44, 20);
+        let mut stage = Stage::new((GameMenuPanel::new(GridRect::new(0, 0, 44, 20)).died("You are dead."), crate::SheetViewPlugin)).screen(44, 20);
         stage.app.add_systems(Update, (|mut view: ResMut<EndingView>| view.summary = "Eaten on the second floor".into()).in_set(crate::ViewSet::Annotate));
         die(&mut stage);
         assert!(stage.row(0).contains(" You are dead. "), "{:?}", stage.row(0));
@@ -663,7 +663,7 @@ mod tests {
     /// whichever order the executor happens to run the two in.
     #[test]
     fn the_first_frame_of_the_ending_shows_the_runs_record() {
-        let mut stage = Stage::new((GameMenuPanel::new(Rect::new(0, 0, 44, 20)).died("You are dead."), RecordsPlugin)).screen(44, 20);
+        let mut stage = Stage::new((GameMenuPanel::new(GridRect::new(0, 0, 44, 20)).died("You are dead."), RecordsPlugin)).screen(44, 20);
         let summary = || "Eaten on the second floor".to_string();
         stage.app.add_systems(OnEnter(EngineState::Over), move |mut records: MessageWriter<RecordRun>| {
             records.write(RecordRun { score: 12, summary: summary(), sections: vec![RecordSection { heading: "Score".into(), body: "12".into() }] });
@@ -687,7 +687,7 @@ mod tests {
 
     /// The menu over a run in a game with a title, both in `rect`, and the
     /// game's start counted.
-    fn titled(rect: Rect) -> Stage {
+    fn titled(rect: GridRect) -> Stage {
         let mut stage = Stage::new((GameMenuPanel::new(rect), crate::TitlePanel::new(rect))).screen(rect.width, rect.height);
         // The stage plays its run without the title's door, which would
         // have lowered the hold the panel raised; lowered here, so only
@@ -710,7 +710,7 @@ mod tests {
 
     #[test]
     fn with_a_title_the_pause_menu_offers_main_menu_and_taking_it_leaves_the_run() {
-        let mut stage = titled(Rect::new(0, 0, 40, 12));
+        let mut stage = titled(GridRect::new(0, 0, 40, 12));
         stage.press(KeyCode::Escape);
         let rows: Vec<String> = (1..6).map(|y| inside(&stage, y)).collect();
         assert_eq!(rows, ["Back to the run", "A new run", "This seed again", "Main menu", "Quit"], "the way back to the title, above Quit");
@@ -734,7 +734,7 @@ mod tests {
     /// way back only leaves it, and the title is up in its place.
     #[test]
     fn taking_main_menu_on_the_end_screen_leaves_the_run_and_begins_no_other() {
-        let mut stage = titled(Rect::new(0, 0, 44, 20));
+        let mut stage = titled(GridRect::new(0, 0, 44, 20));
         die(&mut stage);
         let body: Vec<String> = (1..19).map(|y| inside(&stage, y)).collect();
         let rows: Vec<&str> = body.iter().map(String::as_str).filter(|row| ["A new run", "This seed again", "Main menu", "Quit"].contains(row)).collect();

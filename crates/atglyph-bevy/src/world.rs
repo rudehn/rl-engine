@@ -6,7 +6,7 @@
 
 use std::collections::BTreeMap;
 
-use atglyph_core::{Grid2D, Point, Rect};
+use atglyph_core::{Grid2D, GridRect, Point};
 use atglyph_grid::{BitGrid, CostSource, OpacitySource, TileId, TileTables};
 use bevy::prelude::*;
 
@@ -255,8 +255,8 @@ impl WorldMap {
     }
 
     /// The current place's whole bounds; empty while no place is current.
-    pub fn window_tiles(&self) -> Rect {
-        self.active_place().map_or(Rect::new(0, 0, 0, 0), |place| place.terrain.bounds())
+    pub fn window_tiles(&self) -> GridRect {
+        self.active_place().map_or(GridRect::new(0, 0, 0, 0), |place| place.terrain.bounds())
     }
 
     /// Changes whenever the current map changes.

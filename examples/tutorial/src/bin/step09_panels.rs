@@ -16,7 +16,6 @@
 use std::sync::Arc;
 
 use atglyph::prelude::*;
-use atglyph::primitives::Rect;
 use atglyph::rand::Rng;
 use atglyph::rules::ai::{Repertoire, Standard};
 use atglyph::rules::faction::FactionDef;
@@ -70,14 +69,14 @@ fn name_of(floor: u32) -> &'static str {
 /// `panel::split_*` cut anything else, a rectangle and a size into both
 /// halves.
 struct Screen {
-    map: Rect,
-    log: Rect,
-    vitals: Rect,
-    nearby: Rect,
-    inspect: Rect,
-    scrollback: Rect,
-    controls: Rect,
-    hint: Rect,
+    map: GridRect,
+    log: GridRect,
+    vitals: GridRect,
+    nearby: GridRect,
+    inspect: GridRect,
+    scrollback: GridRect,
+    controls: GridRect,
+    hint: GridRect,
 }
 
 impl Screen {
@@ -87,7 +86,7 @@ impl Screen {
         let rail = RailLayout::new(COLS, ROWS, RAIL).log(LOG_ROWS).vitals(9).hint().cut();
         let map = rail.map;
         // Over the map, because a modal covers what it is about.
-        let inspect = Rect::new(map.x + 2, map.bottom() - 10, map.width.min(46), 9);
+        let inspect = GridRect::new(map.x + 2, map.bottom() - 10, map.width.min(46), 9);
         Self { map, log: rail.log, vitals: rail.vitals, nearby: rail.nearby, inspect, scrollback: map.inflate(-2), controls: rail.controls(), hint: rail.hint }
     }
 }
@@ -133,7 +132,7 @@ fn main() -> AppExit {
         // ANCHOR_END: narrator
         // Escape opens the menu. The run's end opens it by itself, under these
         // words, offering a new run or the same seed again.
-        .add_plugins(GameMenuPanel::new(Rect::new(COLS / 2 - 20, 8, 40, 12)).died("The warren keeps you."))
+        .add_plugins(GameMenuPanel::new(GridRect::new(COLS / 2 - 20, 8, 40, 12)).died("The warren keeps you."))
         .add_systems(NewRun, start)
         // Once a frame, before the turns: whatever the player pressed becomes
         // at most one intent, however many passes the turn loop then runs.

@@ -16,7 +16,6 @@
 //! and what is left on a floor is what they left.
 
 use atglyph::prelude::*;
-use atglyph::primitives::Rect;
 use atglyph::rand::Rng;
 use bevy::prelude::*;
 
@@ -141,7 +140,7 @@ pub fn groups_on(floor: u32) -> u32 {
 /// so on ground that is nearly all taken this comes in under `target`,
 /// never over it. Each group comes back as its own list, so a caller can
 /// tell how many groups landed and not only how many monsters.
-pub fn plan(spawns: Spawns, bounds: Rect, entry: Point, target: u32, free: &mut impl FnMut(Point) -> bool, rng: &mut impl Rng) -> Groups {
+pub fn plan(spawns: Spawns, bounds: GridRect, entry: Point, target: u32, free: &mut impl FnMut(Point) -> bool, rng: &mut impl Rng) -> Groups {
     // Every cell one could stand on, kept sorted, so whether a cell is still
     // open is a search, and a cell taken is gone for every later group.
     let mut open: Vec<Point> = bounds.cells().filter(|p| geometry::chebyshev(*p, entry) >= MIN_DISTANCE_FROM_ENTRY && free(*p)).collect();
@@ -412,7 +411,7 @@ fn place_captive(commands: &mut Commands, stocked: &Stocked, site: &Site, free: 
 /// feeding ground, a patrol or a captive is placed on.
 struct Site {
     map: MapId,
-    bounds: Rect,
+    bounds: GridRect,
     entry: Point,
     floor: u32,
 }
@@ -706,8 +705,8 @@ mod tests {
 
     /// A floor's worth of open ground, larger than any floor, with nothing
     /// in the way: what `plan` does with no map to fall short on.
-    fn open_ground() -> (Rect, Point) {
-        (Rect::new(0, 0, 80, 50), Point::new(40, 25))
+    fn open_ground() -> (GridRect, Point) {
+        (GridRect::new(0, 0, 80, 50), Point::new(40, 25))
     }
 
     fn bestiary() -> Bestiary {

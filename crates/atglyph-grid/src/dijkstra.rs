@@ -16,7 +16,7 @@
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
 
-use atglyph_core::{Direction, Grid2D, Point, Rect};
+use atglyph_core::{Direction, Grid2D, GridRect, Point};
 
 use crate::astar::{PathRules, step_cost};
 use crate::terrain::CostSource;
@@ -27,7 +27,7 @@ pub const UNREACHED: i32 = i32::MAX;
 /// A grid of costs-to-goal over a region of a larger map.
 #[derive(Debug, Clone)]
 pub struct DijkstraMap {
-    region: Rect,
+    region: GridRect,
     values: Vec<i32>,
     heap: BinaryHeap<Reverse<(i32, u64, u32)>>,
     /// The rules the last flood stepped by, so descending takes only the
@@ -57,7 +57,7 @@ pub struct DijkstraMap {
 
 impl DijkstraMap {
     /// An unreached map over `region`.
-    pub fn new(region: Rect) -> Self {
+    pub fn new(region: GridRect) -> Self {
         let cells = region.area().max(0) as usize;
         Self { region, values: vec![UNREACHED; cells], heap: BinaryHeap::new(), rules: PathRules::default(), past: vec![false; cells] }
     }
@@ -68,7 +68,7 @@ impl DijkstraMap {
     }
 
     /// Moves the map to a new region, resizing if needed. Values are reset.
-    pub fn reset(&mut self, region: Rect) {
+    pub fn reset(&mut self, region: GridRect) {
         self.region = region;
         let cells = region.area().max(0) as usize;
         self.values.clear();
@@ -123,7 +123,7 @@ impl DijkstraMap {
     /// changed them. The standard use is a safety map:
     ///
     /// ```
-    /// # use atglyph_core::{Point, Rect};
+    /// # use atglyph_core::{Point, GridRect};
     /// # use atglyph_grid::{DijkstraMap, PathRules, Terrain, TileRegistry};
     /// # let registry = TileRegistry::standard();
     /// # let terrain = Terrain::filled(10, 10, registry.expect("floor"));
@@ -493,7 +493,7 @@ mod tests {
                 let goals: Vec<Point> = (0..rng.random_range(1..4)).map(|_| p(rng.random_range(0..20), rng.random_range(0..15))).collect();
                 // A region short of the whole grid as well, so a flood
                 // bounded to part of a map is held to the same.
-                for region in [source.bounds(), Rect::new(2, 1, 15, 12)] {
+                for region in [source.bounds(), GridRect::new(2, 1, 15, 12)] {
                     let mut map = DijkstraMap::new(region);
                     map.build(&source, goals.iter().copied(), rules);
                     for (from, value) in map.iter().collect::<Vec<_>>() {
@@ -610,14 +610,14 @@ mod tests {
         let rows = vec![".".repeat(20); 20];
         let (t, r) = parse(&rows.iter().map(String::as_str).collect::<Vec<_>>());
         let view = t.view(&r);
-        let mut map = DijkstraMap::new(Rect::new(5, 5, 6, 6));
+        let mut map = DijkstraMap::new(GridRect::new(5, 5, 6, 6));
         map.build(&view, [p(7, 7)], PathRules::default());
         assert_eq!(map.value(p(7, 7)), Some(0));
         assert!(map.value(p(10, 10)).is_some());
         assert_eq!(map.value(p(11, 11)), None);
         assert_eq!(map.value(p(0, 0)), None);
         assert_eq!(map.iter().count(), 36);
-        map.reset(Rect::new(0, 0, 2, 2));
+        map.reset(GridRect::new(0, 0, 2, 2));
         assert_eq!(map.iter().count(), 0);
     }
 

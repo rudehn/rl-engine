@@ -18,7 +18,7 @@
 //! places. A fresh look starts where the game put it.
 
 use atglyph_bevy::PresentSet;
-use atglyph_core::{Point, Rect};
+use atglyph_core::{GridRect, Point};
 use atglyph_render::{MapView, Terminal};
 use atglyph_rules::forecast::Outlook;
 use bevy::prelude::*;
@@ -36,11 +36,11 @@ use crate::view::{InspectView, InspectViewPlugin, WorkRow};
 #[derive(Resource, Debug, Clone)]
 pub(crate) struct InspectLayout {
     /// The terminal cells it occupies, border included.
-    pub rect: Rect,
+    pub rect: GridRect,
     /// Where it goes while the cursor is under `rect`. `None` mirrors
     /// `rect` top for bottom within the map, which suits a panel along
     /// either edge; a game names a place when its panel is not there.
-    pub elsewhere: Option<Rect>,
+    pub elsewhere: Option<GridRect>,
     /// The title in the top border.
     pub title: String,
     /// The key hints in the bottom border.
@@ -69,7 +69,7 @@ pub struct InspectPanel(InspectLayout);
 
 impl InspectPanel {
     /// An inspect panel in `rect`.
-    pub fn new(rect: Rect) -> Self {
+    pub fn new(rect: GridRect) -> Self {
         Self(InspectLayout {
             rect,
             elsewhere: None,
@@ -85,7 +85,7 @@ impl InspectPanel {
 
     /// Sets where the panel goes while the cursor is under its rectangle,
     /// in place of the mirror of it.
-    pub fn else_at(mut self, rect: Rect) -> Self {
+    pub fn else_at(mut self, rect: GridRect) -> Self {
         self.0.elsewhere = Some(rect);
         self
     }
@@ -158,7 +158,7 @@ pub(crate) fn outlook_tone(outlook: Outlook) -> ToneId {
 /// Where the inspect panel is drawn this frame: `None` while the look
 /// cursor is down, and otherwise its rectangle or the place it moved to.
 #[derive(Resource, Debug, Clone, Default, PartialEq)]
-pub struct InspectPlacement(pub Option<Rect>);
+pub struct InspectPlacement(pub Option<GridRect>);
 
 /// Picks where the panel goes this frame, moving it off the cursor.
 ///
@@ -225,7 +225,7 @@ pub(crate) fn draw_inspect(
     }
     clear(&mut terminal, rect, &palette);
     frame(&mut terminal, rect, &layout.title, &layout.hints, &palette);
-    let inner = Rect::new(rect.x + 2, rect.y + 1, rect.width - 4, rect.height - 2);
+    let inner = GridRect::new(rect.x + 2, rect.y + 1, rect.width - 4, rect.height - 2);
     let bg = palette.get(Tones::SURFACE);
     let width = inner.width.max(0) as usize;
     // The ground, always, so a burnt cell says what it burnt to.
@@ -391,8 +391,8 @@ mod tests {
     /// A stage with the map drawn under the panel, so the pointers land on
     /// real cells.
     fn staged() -> Stage {
-        Stage::new_with(InspectPanel::new(Rect::new(0, 21, 40, 8)), |app| {
-            app.add_plugins(atglyph_render::MapViewPlugin::new(Rect::new(0, 0, 40, 20)));
+        Stage::new_with(InspectPanel::new(GridRect::new(0, 21, 40, 8)), |app| {
+            app.add_plugins(atglyph_render::MapViewPlugin::new(GridRect::new(0, 0, 40, 20)));
         })
         .screen(40, 30)
     }
@@ -431,8 +431,8 @@ mod tests {
     /// is, so they stand as far from the cell looked at on either side.
     #[test]
     fn on_a_map_of_wide_tiles_the_ticks_stand_centred_on_the_four_tiles_round_the_cursor() {
-        let mut stage = Stage::new_with(InspectPanel::new(Rect::new(0, 21, 40, 8)), |app| {
-            app.add_plugins(atglyph_render::MapViewPlugin::new(Rect::new(0, 0, 40, 20)).across(2));
+        let mut stage = Stage::new_with(InspectPanel::new(GridRect::new(0, 21, 40, 8)), |app| {
+            app.add_plugins(atglyph_render::MapViewPlugin::new(GridRect::new(0, 0, 40, 20)).across(2));
         })
         .screen(40, 30);
         stage.actor("crab", 'c', 2, 0);
@@ -452,8 +452,8 @@ mod tests {
     /// the tile beside it moves off it, as one over the first would.
     #[test]
     fn on_a_map_of_wide_tiles_a_panel_over_half_of_a_tile_round_the_cursor_moves_off_it() {
-        let mut stage = Stage::new_with(InspectPanel::new(Rect::new(23, 5, 14, 10)).else_at(Rect::new(23, 12, 14, 8)), |app| {
-            app.add_plugins(atglyph_render::MapViewPlugin::new(Rect::new(0, 0, 40, 20)).across(2));
+        let mut stage = Stage::new_with(InspectPanel::new(GridRect::new(23, 5, 14, 10)).else_at(GridRect::new(23, 12, 14, 8)), |app| {
+            app.add_plugins(atglyph_render::MapViewPlugin::new(GridRect::new(0, 0, 40, 20)).across(2));
         })
         .screen(40, 20);
         let east = stage.app.world().resource::<MapView>().cells(stage.at.offset(1, 0)).collect::<Vec<_>>();
@@ -464,8 +464,8 @@ mod tests {
 
     /// The panel over the bottom of the map, where every game puts it.
     fn overlaid() -> Stage {
-        Stage::new_with(InspectPanel::new(Rect::new(1, 12, 30, 7)), |app| {
-            app.add_plugins(atglyph_render::MapViewPlugin::new(Rect::new(0, 0, 40, 20)));
+        Stage::new_with(InspectPanel::new(GridRect::new(1, 12, 30, 7)), |app| {
+            app.add_plugins(atglyph_render::MapViewPlugin::new(GridRect::new(0, 0, 40, 20)));
         })
         .screen(40, 20)
     }
@@ -519,8 +519,8 @@ mod tests {
     /// A game that wants the panel somewhere other than the mirror says so.
     #[test]
     fn a_game_can_name_where_the_panel_goes_instead() {
-        let mut stage = Stage::new_with(InspectPanel::new(Rect::new(1, 12, 30, 7)).else_at(Rect::new(8, 3, 30, 7)), |app| {
-            app.add_plugins(atglyph_render::MapViewPlugin::new(Rect::new(0, 0, 40, 20)));
+        let mut stage = Stage::new_with(InspectPanel::new(GridRect::new(1, 12, 30, 7)).else_at(GridRect::new(8, 3, 30, 7)), |app| {
+            app.add_plugins(atglyph_render::MapViewPlugin::new(GridRect::new(0, 0, 40, 20)));
         })
         .screen(40, 20);
         stage.actor("crab", 'c', 0, 5);
@@ -533,8 +533,8 @@ mod tests {
     /// The ground is named whether or not something stands on it.
     #[test]
     fn the_chance_to_hit_and_what_shaped_it_are_printed_under_the_forecast() {
-        let mut stage = Stage::new_with(InspectPanel::new(Rect::new(0, 21, 40, 12)), |app| {
-            app.add_plugins(atglyph_render::MapViewPlugin::new(Rect::new(0, 0, 40, 20)));
+        let mut stage = Stage::new_with(InspectPanel::new(GridRect::new(0, 21, 40, 12)), |app| {
+            app.add_plugins(atglyph_render::MapViewPlugin::new(GridRect::new(0, 0, 40, 20)));
             app.insert_resource(atglyph_bevy::HitRules(Box::new(atglyph_rules::Percent::new(5, 16, 30))));
         })
         .screen(40, 34);
@@ -595,8 +595,8 @@ mod tests {
     /// A stage looking at a crab the game says `facets` about, in a panel
     /// `height` rows tall and thirty wide, and the panel's inner rows.
     fn looked_at_with(facets: &'static [&'static str], height: i32) -> (Stage, Vec<String>) {
-        let mut stage = Stage::new_with(InspectPanel::new(Rect::new(0, 21, 30, height)), |app| {
-            app.add_plugins(atglyph_render::MapViewPlugin::new(Rect::new(0, 0, 40, 20)));
+        let mut stage = Stage::new_with(InspectPanel::new(GridRect::new(0, 21, 30, height)), |app| {
+            app.add_plugins(atglyph_render::MapViewPlugin::new(GridRect::new(0, 0, 40, 20)));
         })
         .screen(40, 21 + height);
         let annotate = move |mut view: ResMut<InspectView>| {
@@ -714,7 +714,7 @@ mod tests {
     #[test]
     fn the_working_line_reads_as_a_sentence_and_counts_turns_right() {
         let work = |target: Option<&str>, left| crate::view::WorkRow { doing: "mending".into(), target: target.map(String::from), left };
-        let layout = InspectPanel::new(Rect::new(0, 0, 30, 12)).0;
+        let layout = InspectPanel::new(GridRect::new(0, 0, 30, 12)).0;
         assert_eq!(working_line(&layout.working, &work(Some("rag doll"), 4)), "Mending the rag doll, 4 turns left");
         assert_eq!(working_line(&layout.working, &work(Some("rag doll"), 1)), "Mending the rag doll, 1 turn left");
         assert_eq!(working_line(&layout.working_alone, &work(None, 2)), "Mending, 2 turns left");

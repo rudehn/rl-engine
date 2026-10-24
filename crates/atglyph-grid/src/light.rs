@@ -29,7 +29,7 @@
 //! cast so the order they arrived in cannot leak into the result.
 
 #[cfg(test)]
-use atglyph_core::Rect;
+use atglyph_core::GridRect;
 use atglyph_core::{Grid, Grid2D, Point};
 
 use crate::bitgrid::BitGrid;
@@ -403,7 +403,7 @@ impl LightField {
     /// a lake of something glowing, where casting from every tile would
     /// cost a shadowcast each for no visible difference.
     #[cfg(test)]
-    pub(crate) fn flood(&mut self, area: Rect, light: Light) {
+    pub(crate) fn flood(&mut self, area: GridRect, light: Light) {
         for p in area.cells() {
             self.add(p, light);
         }
@@ -700,7 +700,7 @@ mod tests {
         assert_eq!(out.at(Point::new(0, 0)).intensity, screen(screen(100, 100), 20));
         assert_eq!(out.at(Point::new(1, 0)).intensity, 255);
         assert_eq!(out.at(Point::new(2, 0)).intensity, 20);
-        out.flood(Rect::new(0, 0, 3, 1), Light::white(255));
+        out.flood(GridRect::new(0, 0, 3, 1), Light::white(255));
         assert_eq!(out.at(Point::new(2, 0)).intensity, 255);
     }
 }

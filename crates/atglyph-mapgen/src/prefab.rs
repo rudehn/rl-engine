@@ -37,7 +37,7 @@
 //! place through the cells its legend draws as [`PrefabCell::Entry`], and it
 //! emits its [`Stamped`] like any stamp, so its marks are filled the same.
 
-use atglyph_core::{Direction, Grid, Grid2D, Point, Rect};
+use atglyph_core::{Direction, Grid, Grid2D, GridRect, Point};
 use atglyph_grid::TileId;
 use rand::{Rng, RngCore};
 
@@ -479,7 +479,7 @@ const MARGIN_PCT: i32 = 15;
 /// for one against an edge, and across the map's longer side for one in
 /// the middle or anywhere, so a route between them crosses the piece's
 /// band.
-pub(crate) fn on_map(at: Placement, facings: &[(Facing, (i32, i32))], bounds: Rect, rng: &mut dyn RngCore) -> Option<(usize, Point, Sides)> {
+pub(crate) fn on_map(at: Placement, facings: &[(Facing, (i32, i32))], bounds: GridRect, rng: &mut dyn RngCore) -> Option<(usize, Point, Sides)> {
     let (w, h) = (bounds.width, bounds.height);
     let any = |rng: &mut dyn RngCore, among: &[usize]| among[if among.len() > 1 { rng.random_range(0..among.len()) } else { 0 }];
     let across = if w >= h { Sides::WestEast } else { Sides::NorthSouth };
@@ -614,7 +614,7 @@ impl Orient {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Stamped {
     /// The cells it covers.
-    pub bounds: Rect,
+    pub bounds: GridRect,
     /// Its marks, in map coordinates.
     pub marks: Vec<(char, Point)>,
     /// The stamped piece's [`Prefab::key`], so whoever fills its marks finds
@@ -663,7 +663,7 @@ impl Pass for StampPrefab {
             }
         };
         let (w, h) = (prefab.width(), prefab.height());
-        let placed = Rect::new(origin.x, origin.y, w, h);
+        let placed = GridRect::new(origin.x, origin.y, w, h);
         if placed.intersection(&bounds) != Some(placed) {
             return Err(BuildError::new(self.name, format!("{placed:?} is off the map")));
         }
@@ -680,12 +680,12 @@ impl StampPrefab {
     fn in_place(&self, ctx: &mut BaseContext, prefab: &Prefab) -> Result<Point, BuildError> {
         let (w, h) = (prefab.width(), prefab.height());
         let bounds = ctx.terrain().bounds();
-        let centred = |r: Rect| Point::new(r.x + (r.width - w) / 2, r.y + (r.height - h) / 2);
+        let centred = |r: GridRect| Point::new(r.x + (r.width - w) / 2, r.y + (r.height - h) / 2);
         // A room must exceed the piece by a cell on every side, so the
         // piece is laid with the room's floor all round it: one exactly
         // its size would put its walls on the room's edge, over the room's
         // doorways, with an opening that may face the room's own wall.
-        let fits = |r: &Rect| r.width >= w + 2 && r.height >= h + 2;
+        let fits = |r: &GridRect| r.width >= w + 2 && r.height >= h + 2;
         Ok(match self.at {
             Placement::Center => centred(bounds),
             Placement::At(p) => p,
@@ -700,9 +700,9 @@ impl StampPrefab {
                 centred(room)
             }
             Placement::AnyRoom => {
-                let taken: Vec<Rect> = ctx.outputs().iter::<Stamped>().map(|s| s.bounds).collect();
-                let free = |r: &Rect| taken.iter().all(|t| r.intersection(t).is_none());
-                let rooms: Vec<Rect> = ctx.outputs().iter::<Room>().map(|r| r.0).filter(fits).filter(free).collect();
+                let taken: Vec<GridRect> = ctx.outputs().iter::<Stamped>().map(|s| s.bounds).collect();
+                let free = |r: &GridRect| taken.iter().all(|t| r.intersection(t).is_none());
+                let rooms: Vec<GridRect> = ctx.outputs().iter::<Room>().map(|r| r.0).filter(fits).filter(free).collect();
                 if rooms.is_empty() {
                     return Err(BuildError::new(self.name, format!("no free room holds {w}x{h} with a cell of floor all round")));
                 }
@@ -806,8 +806,8 @@ impl Pass for StampEachRoom {
         let facings: Vec<Vec<Prefab>> = self.choices.iter().map(|(p, _)| self.orient.facings(p)).collect();
         let keep: Vec<Point> =
             ctx.outputs().iter::<crate::passes::StartPoint>().map(|s| s.0).chain(ctx.outputs().iter::<crate::dungeon::ExitPoint>().map(|e| e.0)).collect();
-        let taken: Vec<Rect> = ctx.outputs().iter::<Stamped>().map(|s| s.bounds).collect();
-        let rooms: Vec<Rect> = ctx.outputs().iter::<Room>().map(|r| r.0).filter(|r| taken.iter().all(|t| r.intersection(t).is_none())).collect();
+        let taken: Vec<GridRect> = ctx.outputs().iter::<Stamped>().map(|s| s.bounds).collect();
+        let rooms: Vec<GridRect> = ctx.outputs().iter::<Room>().map(|r| r.0).filter(|r| taken.iter().all(|t| r.intersection(t).is_none())).collect();
         for room in rooms {
             // What could go here: each candidate with weight, and the
             // facings of it that fit, each with where it would be laid.
@@ -829,7 +829,7 @@ impl Pass for StampEachRoom {
             let (piece, origin) = faces[ctx.rng().random_range(0..faces.len())];
             piece.stamp(ctx.terrain_mut(), origin);
             let marks = piece.marks().iter().map(|(c, p)| (*c, origin + *p)).collect();
-            ctx.emit(Stamped { bounds: Rect::new(origin.x, origin.y, piece.width(), piece.height()), marks, prefab: piece.key() });
+            ctx.emit(Stamped { bounds: GridRect::new(origin.x, origin.y, piece.width(), piece.height()), marks, prefab: piece.key() });
         }
         Ok(())
     }
@@ -902,7 +902,7 @@ pub(crate) fn grown_facings(name: &str, prefab: &Prefab, orient: Orient) -> Resu
 /// says them.
 fn body_and_sites(prefab: &Prefab) -> (Vec<Point>, Vec<(Point, Direction)>) {
     let (w, h) = (prefab.width(), prefab.height());
-    let bounds = Rect::new(0, 0, w, h);
+    let bounds = GridRect::new(0, 0, w, h);
     let marked = |p: Point| prefab.entries().contains(&p) || prefab.marks().iter().any(|(_, m)| *m == p);
     let mut outside = Grid::filled(w, h, false);
     let mut stack: Vec<Point> = bounds.border().collect();
@@ -944,7 +944,7 @@ impl Shape for PrefabShape {
 /// the centre that paints and marks none of `keep`, always with a cell of
 /// the room all round it. `None` when the room is too small or every
 /// position paints or marks something kept.
-pub(crate) fn laid_in(room: Rect, piece: &Prefab, keep: &[Point]) -> Option<Point> {
+pub(crate) fn laid_in(room: GridRect, piece: &Prefab, keep: &[Point]) -> Option<Point> {
     let (w, h) = (piece.width(), piece.height());
     if room.width < w + 2 || room.height < h + 2 {
         return None;
@@ -955,7 +955,7 @@ pub(crate) fn laid_in(room: Rect, piece: &Prefab, keep: &[Point]) -> Option<Poin
     let clear = |o: &Point| {
         keep.iter().all(|k| {
             let local = Point::new(k.x - o.x, k.y - o.y);
-            !Rect::new(0, 0, w, h).contains(local) || (piece.tile(local).is_none() && piece.marks().iter().all(|(_, m)| *m != local))
+            !GridRect::new(0, 0, w, h).contains(local) || (piece.tile(local).is_none() && piece.marks().iter().all(|(_, m)| *m != local))
         })
     };
     let xs = room.x + 1..=room.x + room.width - w - 1;
@@ -1364,7 +1364,7 @@ pub(crate) mod tests {
         let mut c = BaseContext::blank(20, 20, tiles, wall);
         let off = StampPrefab { name: "off", prefab: vault(wall, floor), at: Placement::At(Point::new(18, 18)), orient: Orient::Fixed };
         assert!(Chain::new().then(off).run(&mut c, RunSeed(1)).is_err());
-        c.emit(Room(Rect::new(2, 2, 3, 3)));
+        c.emit(Room(GridRect::new(2, 2, 3, 3)));
         let small = StampPrefab { name: "small", prefab: vault(wall, floor), at: Placement::AnyRoom, orient: Orient::Fixed };
         assert!(Chain::new().then(small).run(&mut c, RunSeed(1)).is_err());
     }
@@ -1379,7 +1379,7 @@ pub(crate) mod tests {
     fn a_piece_laid_in_a_room_has_floor_all_round_it_and_a_room_its_own_size_is_refused() {
         let tiles = TileRegistry::standard();
         let (wall, floor) = (tiles.expect("wall"), tiles.expect("floor"));
-        let room = |c: &mut BaseContext, r: Rect| {
+        let room = |c: &mut BaseContext, r: GridRect| {
             for p in r.cells() {
                 c.terrain_mut().set(p, floor);
             }
@@ -1389,18 +1389,18 @@ pub(crate) mod tests {
         // short of a cell on one side each way, are both refused.
         for (w, h) in [(5, 4), (6, 5), (7, 5), (6, 6)] {
             let mut c = BaseContext::blank(30, 20, tiles.clone(), wall);
-            room(&mut c, Rect::new(2, 2, w, h));
+            room(&mut c, GridRect::new(2, 2, w, h));
             let any = StampPrefab { name: "any", prefab: vault(wall, floor), at: Placement::AnyRoom, orient: Orient::Fixed };
             assert!(Chain::new().then(any).run(&mut c, RunSeed(1)).is_err(), "AnyRoom took a {w}x{h} room for a 5x4 piece");
             let one = StampPrefab { name: "one", prefab: vault(wall, floor), at: Placement::InRoom(0), orient: Orient::Fixed };
             assert!(Chain::new().then(one).run(&mut c, RunSeed(1)).is_err(), "InRoom took a {w}x{h} room for a 5x4 piece");
         }
         let mut c = BaseContext::blank(30, 20, tiles.clone(), wall);
-        room(&mut c, Rect::new(2, 2, 7, 6));
+        room(&mut c, GridRect::new(2, 2, 7, 6));
         let any = StampPrefab { name: "any", prefab: vault(wall, floor), at: Placement::AnyRoom, orient: Orient::Fixed };
         Chain::new().then(any).run(&mut c, RunSeed(1)).expect("a 7x6 room holds a 5x4 piece with a cell to spare all round");
         let placed = c.outputs().first::<Stamped>().unwrap().bounds;
-        let ring = Rect::new(placed.x - 1, placed.y - 1, placed.width + 2, placed.height + 2);
+        let ring = GridRect::new(placed.x - 1, placed.y - 1, placed.width + 2, placed.height + 2);
         for p in ring.cells().filter(|p| !placed.contains(*p)) {
             assert_eq!(c.terrain().get(p), Some(floor), "the ring cell {p:?} around the piece is floor");
         }
@@ -1560,7 +1560,7 @@ pub(crate) mod tests {
                 .then(StampPrefab { name: "c", prefab: piece('c'), at: Placement::AnyRoom, orient: Orient::Fixed })
                 .run(&mut c, RunSeed(seed))
                 .unwrap_or_else(|e| panic!("seed {seed}: {e}"));
-            let bounds: Vec<Rect> = c.outputs().iter::<Stamped>().map(|s| s.bounds).collect();
+            let bounds: Vec<GridRect> = c.outputs().iter::<Stamped>().map(|s| s.bounds).collect();
             for i in 0..bounds.len() {
                 for j in (i + 1)..bounds.len() {
                     assert!(bounds[i].intersection(&bounds[j]).is_none(), "seed {seed}: stamps {i} and {j} overlap: {:?} and {:?}", bounds[i], bounds[j]);
@@ -1571,7 +1571,7 @@ pub(crate) mod tests {
 
     /// A blank map with floor carved for each of `rooms`, each emitted as
     /// a [`Room`], for a test that needs rooms of an exact size.
-    fn with_rooms(rooms: &[Rect]) -> (BaseContext, TileId, TileId) {
+    fn with_rooms(rooms: &[GridRect]) -> (BaseContext, TileId, TileId) {
         let tiles = TileRegistry::standard();
         let (wall, floor) = (tiles.expect("wall"), tiles.expect("floor"));
         let mut c = BaseContext::blank(40, 30, tiles, wall);
@@ -1610,7 +1610,7 @@ pub(crate) mod tests {
                 .then(StampEachRoom { name: "each", choices: vec![(block(wall, 'a'), 1), (block(wall, 'b'), 1)], orient: Orient::Fixed })
                 .run(&mut c, RunSeed(seed))
                 .unwrap_or_else(|e| panic!("seed {seed}: {e}"));
-            let stamps: Vec<Rect> = c.outputs().iter::<Stamped>().map(|s| s.bounds).collect();
+            let stamps: Vec<GridRect> = c.outputs().iter::<Stamped>().map(|s| s.bounds).collect();
             for room in c.outputs().iter::<Room>() {
                 let inside = stamps.iter().filter(|b| room.0.intersection(b).is_some()).count();
                 assert_eq!(inside, 1, "seed {seed}: room {:?} holds {inside} pieces", room.0);
@@ -1623,11 +1623,11 @@ pub(crate) mod tests {
     /// missing required piece is a broken one.
     #[test]
     fn a_room_nothing_fits_is_left_alone_without_failing_the_chain() {
-        let (mut c, wall, floor) = with_rooms(&[Rect::new(2, 2, 4, 4), Rect::new(10, 2, 5, 5)]);
+        let (mut c, wall, floor) = with_rooms(&[GridRect::new(2, 2, 4, 4), GridRect::new(10, 2, 5, 5)]);
         Chain::new().then(StampEachRoom { name: "each", choices: vec![(block(wall, 'a'), 1)], orient: Orient::Fixed }).run(&mut c, RunSeed(1)).unwrap();
-        let stamps: Vec<Rect> = c.outputs().iter::<Stamped>().map(|s| s.bounds).collect();
-        assert_eq!(stamps, vec![Rect::new(11, 3, 3, 3)], "only the 5x5 room takes the 3x3 piece");
-        assert!(Rect::new(2, 2, 4, 4).cells().all(|p| c.terrain().get(p) == Some(floor)), "the 4x4 room is untouched");
+        let stamps: Vec<GridRect> = c.outputs().iter::<Stamped>().map(|s| s.bounds).collect();
+        assert_eq!(stamps, vec![GridRect::new(11, 3, 3, 3)], "only the 5x5 room takes the 3x3 piece");
+        assert!(GridRect::new(2, 2, 4, 4).cells().all(|p| c.terrain().get(p) == Some(floor)), "the 4x4 room is untouched");
     }
 
     /// A piece that fits a room only when turned is laid turned when the
@@ -1635,7 +1635,7 @@ pub(crate) mod tests {
     #[test]
     fn a_piece_that_fits_only_turned_is_laid_turned_and_a_fixed_one_is_not_laid() {
         let bar = |wall: TileId| Prefab::parse(&["#####"], |c| (c == '#').then_some(wall)).unwrap();
-        let tall = Rect::new(2, 2, 3, 7);
+        let tall = GridRect::new(2, 2, 3, 7);
         let (mut c, wall, _) = with_rooms(&[tall]);
         Chain::new().then(StampEachRoom { name: "each", choices: vec![(bar(wall), 1)], orient: Orient::Fixed }).run(&mut c, RunSeed(1)).unwrap();
         assert_eq!(c.outputs().iter::<Stamped>().count(), 0, "a fixed 5x1 bar does not fit a room 3 wide");
@@ -1650,7 +1650,7 @@ pub(crate) mod tests {
     /// not, so the room is still furnished and nothing lands on a wall.
     #[test]
     fn a_piece_never_covers_the_start_or_the_exit_and_slides_off_them() {
-        let room = Rect::new(2, 2, 9, 9);
+        let room = GridRect::new(2, 2, 9, 9);
         let (mut c, wall, _) = with_rooms(&[room]);
         // The centre of the room, which a centred 3x3 piece would cover.
         let start = Point::new(6, 6);
@@ -1667,12 +1667,12 @@ pub(crate) mod tests {
     /// touches.
     #[test]
     fn a_piece_stays_centred_over_the_start_when_it_leaves_that_cell_showing() {
-        let room = Rect::new(2, 2, 7, 7);
+        let room = GridRect::new(2, 2, 7, 7);
         let (mut c, wall, _) = with_rooms(&[room]);
         c.emit(crate::passes::StartPoint(Point::new(5, 5)));
         let ring = Prefab::parse(&["###", "# #", "###"], |c| (c == '#').then_some(wall)).unwrap();
         Chain::new().then(StampEachRoom { name: "each", choices: vec![(ring, 1)], orient: Orient::Fixed }).run(&mut c, RunSeed(1)).unwrap();
-        assert_eq!(c.outputs().first::<Stamped>().expect("the room is furnished").bounds, Rect::new(4, 4, 3, 3));
+        assert_eq!(c.outputs().first::<Stamped>().expect("the room is furnished").bounds, GridRect::new(4, 4, 3, 3));
     }
 
     /// A candidate with no weight is never laid, and a list where nothing
@@ -1680,12 +1680,12 @@ pub(crate) mod tests {
     #[test]
     fn an_unweighted_piece_is_never_laid_and_a_list_with_no_weight_fails() {
         for seed in 0..40 {
-            let (mut c, wall, _) = with_rooms(&[Rect::new(2, 2, 5, 5), Rect::new(10, 2, 5, 5), Rect::new(2, 10, 5, 5)]);
+            let (mut c, wall, _) = with_rooms(&[GridRect::new(2, 2, 5, 5), GridRect::new(10, 2, 5, 5), GridRect::new(2, 10, 5, 5)]);
             let choices = vec![(block(wall, 'a'), 1), (block(wall, 'z'), 0)];
             Chain::new().then(StampEachRoom { name: "each", choices, orient: Orient::Fixed }).run(&mut c, RunSeed(seed)).unwrap();
             assert!(c.outputs().iter::<Stamped>().all(|s| s.marks[0].0 == 'a'), "seed {seed}: the unweighted piece was laid");
         }
-        let (mut c, wall, _) = with_rooms(&[Rect::new(2, 2, 5, 5)]);
+        let (mut c, wall, _) = with_rooms(&[GridRect::new(2, 2, 5, 5)]);
         let none = StampEachRoom { name: "each", choices: vec![(block(wall, 'a'), 0)], orient: Orient::Fixed };
         assert!(Chain::new().then(none).run(&mut c, RunSeed(1)).is_err());
     }

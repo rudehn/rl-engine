@@ -833,7 +833,7 @@ pub(crate) mod tests {
         let tiles = TileRegistry::standard();
         let (wall, floor) = (tiles.expect("wall"), tiles.expect("floor"));
         let mut ctx = BaseContext::blank(15, 13, tiles, wall);
-        let bounds = atglyph_core::Rect::new(2, 3, 9, 7);
+        let bounds = atglyph_core::GridRect::new(2, 3, 9, 7);
         for c in bounds.cells().chain([Point::new(6, 2), Point::new(6, 1)]) {
             ctx.terrain_mut().set(c, floor);
         }

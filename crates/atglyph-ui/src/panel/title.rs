@@ -17,7 +17,7 @@
 //! [`LeaveRun`] raises the hold again, and the menu with it.
 
 use atglyph_bevy::prelude::*;
-use atglyph_core::{Direction, Rect};
+use atglyph_core::{Direction, GridRect};
 use atglyph_render::{Cell, Terminal};
 use bevy::prelude::*;
 
@@ -169,7 +169,7 @@ pub fn title_is_up(hold: Option<Res<HoldStart>>, state: Res<State<EngineState>>)
 #[derive(Resource, Debug, Clone)]
 struct TitleLayout {
     /// The rectangle the rows are drawn in, from its top down.
-    rect: Rect,
+    rect: GridRect,
     /// What the rows and the question say.
     words: TitleWords,
 }
@@ -177,7 +177,7 @@ struct TitleLayout {
 /// Where the game put the settings screen for a run, kept while the title
 /// has it standing over its own menu instead.
 #[derive(Resource, Default)]
-struct SettingsAside(Option<Rect>);
+struct SettingsAside(Option<GridRect>);
 
 /// The title screen's menu, and the hold on the first run while it is up.
 ///
@@ -193,7 +193,7 @@ pub struct TitlePanel(TitleLayout);
 impl TitlePanel {
     /// The menu in `menu`: its rows drawn from the top down, centred
     /// across it, and the question New Game asks in their place.
-    pub fn new(menu: Rect) -> Self {
+    pub fn new(menu: GridRect) -> Self {
         Self(TitleLayout { rect: menu, words: TitleWords::default() })
     }
 
@@ -419,7 +419,7 @@ fn stand_settings_over_title(
     let (menu, in_run) = (title.rect, layout.rect);
     aside.0 = Some(in_run);
     let Some(terminal) = terminal else {
-        layout.rect = Rect::new((menu.x + (menu.width - in_run.width) / 2).max(0), menu.y, in_run.width, in_run.height);
+        layout.rect = GridRect::new((menu.x + (menu.width - in_run.width) / 2).max(0), menu.y, in_run.width, in_run.height);
         return;
     };
     let (columns, rows) = (terminal.width(), terminal.height());
@@ -429,7 +429,7 @@ fn stand_settings_over_title(
     // the game made it, and on the terminal from its top row to its foot.
     let tall = declared.as_deref().map_or(in_run.height, rows_drawn).min(in_run.height).min(rows);
     let y = menu.y.min(rows - tall).max(0);
-    layout.rect = Rect::new(x, y, width, in_run.height.min(rows - y));
+    layout.rect = GridRect::new(x, y, width, in_run.height.min(rows - y));
 }
 
 /// Gives back what the title borrowed, as a run begins: the settings
@@ -496,7 +496,7 @@ fn draw_rows(terminal: &mut Terminal, title: &TitleLayout, menu: &TitleMenu, pal
     for (y, (row, takes)) in (rect.y..rect.bottom()).zip(&menu.drawn) {
         let label = clip(row.label(&title.words), room);
         if picked == Some(*row) {
-            terminal.fill(Rect::new(x, y, band, 1), Cell::new(' ', text).on(select));
+            terminal.fill(GridRect::new(x, y, band, 1), Cell::new(' ', text).on(select));
             terminal.print_on(x + 1, y, &label, text, select);
         } else {
             terminal.print(x + 1, y, &label, palette.get(if *takes { Tones::TEXT } else { Tones::MUTED }));
@@ -524,7 +524,7 @@ fn draw_question(terminal: &mut Terminal, title: &TitleLayout, yes: bool, palett
     for (word, picked) in answers {
         let cells = word.chars().count() as i32 + 2;
         if picked {
-            terminal.fill(Rect::new(x, y, cells, 1), Cell::new(' ', text).on(select));
+            terminal.fill(GridRect::new(x, y, cells, 1), Cell::new(' ', text).on(select));
             terminal.print_on(x + 1, y, word, text, select);
         } else {
             terminal.print(x + 1, y, word, text);
@@ -596,12 +596,12 @@ mod tests {
     /// The title over the whole of the small terminal, over a slot holding
     /// `saved`.
     fn title_over(saved: SavedRun, setup: impl FnOnce(&mut App)) -> App {
-        titled(TitlePanel::new(Rect::new(0, 0, 40, 12)), Some(saved), setup)
+        titled(TitlePanel::new(GridRect::new(0, 0, 40, 12)), Some(saved), setup)
     }
 
     /// A settings screen with one setting on it, `glow`, which is `Off`.
     fn with_settings(app: &mut App) {
-        app.add_plugins(SettingsPanel::new(Rect::new(0, 0, 40, 12)));
+        app.add_plugins(SettingsPanel::new(GridRect::new(0, 0, 40, 12)));
         app.add_setting(Setting::new("glow", "Display", "Glow", ["Off", "On"]));
     }
 
@@ -668,7 +668,7 @@ mod tests {
     /// and New Game has no save to ask about.
     #[test]
     fn a_game_that_keeps_no_save_slot_is_offered_no_continue() {
-        let mut app = titled(TitlePanel::new(Rect::new(0, 0, 40, 12)), None, |_| {});
+        let mut app = titled(TitlePanel::new(GridRect::new(0, 0, 40, 12)), None, |_| {});
         assert_eq!(drawn(&app), ["New Game", "Exit"], "no Continue row, dim or otherwise");
         assert_eq!(picked(&app), TitleRow::NewGame);
         press(&mut app, KeyCode::Enter);
@@ -926,8 +926,8 @@ mod tests {
 
     #[test]
     fn the_settings_screen_stands_over_the_menu_while_the_title_is_up_and_goes_back_when_a_run_begins() {
-        let in_run = Rect::new(28, 6, 44, 13);
-        let mut app = titled(TitlePanel::new(Rect::new(30, 30, 40, 8)), Some(SavedRun::Empty), |app| {
+        let in_run = GridRect::new(28, 6, 44, 13);
+        let mut app = titled(TitlePanel::new(GridRect::new(30, 30, 40, 8)), Some(SavedRun::Empty), |app| {
             app.insert_resource(Terminal::new(100, 40, Vec2::ONE));
             app.add_plugins(SettingsPanel::new(in_run));
             app.add_setting(Setting::new("glow", "Display", "Glow", ["Off", "On"]));
@@ -935,7 +935,7 @@ mod tests {
         // Centred on the menu, from its top, as wide as the game made it,
         // and stopping at the terminal's foot rather than running past it:
         // its four rows fit under the menu's top, so it has no need to rise.
-        let over_the_menu = Rect::new(28, 30, 44, 10);
+        let over_the_menu = GridRect::new(28, 30, 44, 10);
         assert_eq!(app.world().resource::<SettingsLayout>().rect, over_the_menu);
         press(&mut app, KeyCode::Enter);
         assert_eq!(seen(&app).begun, 1, "New Game began a run");
@@ -954,15 +954,15 @@ mod tests {
     /// twelve rows, two more than the ten from the menu's top down.
     #[test]
     fn a_settings_screen_too_tall_for_the_room_under_the_menu_rises_to_show_every_row() {
-        let in_run = Rect::new(28, 6, 44, 13);
-        let mut app = titled(TitlePanel::new(Rect::new(30, 30, 40, 8)), Some(SavedRun::Empty), |app| {
+        let in_run = GridRect::new(28, 6, 44, 13);
+        let mut app = titled(TitlePanel::new(GridRect::new(30, 30, 40, 8)), Some(SavedRun::Empty), |app| {
             app.insert_resource(Terminal::new(100, 40, Vec2::ONE));
             app.add_plugins(SettingsPanel::new(in_run));
             for n in 1..=9 {
                 app.add_setting(Setting::new(format!("s{n}"), "Display", format!("Setting {n}"), ["Off", "On"]));
             }
         });
-        assert_eq!(app.world().resource::<SettingsLayout>().rect, Rect::new(28, 28, 44, 12), "two rows up, and as tall as its rows");
+        assert_eq!(app.world().resource::<SettingsLayout>().rect, GridRect::new(28, 28, 44, 12), "two rows up, and as tall as its rows");
         press(&mut app, KeyCode::ArrowDown);
         press(&mut app, KeyCode::Enter);
         let rows = screen(&app);
@@ -976,7 +976,7 @@ mod tests {
     #[test]
     fn the_rows_line_up_centred_across_the_menu_in_the_games_own_words() {
         let words = TitleWords { new_game: "Descend".into(), ..TitleWords::default() };
-        let app = titled(TitlePanel::new(Rect::new(0, 0, 40, 12)).words(words), Some(SavedRun::Empty), |_| {});
+        let app = titled(TitlePanel::new(GridRect::new(0, 0, 40, 12)).words(words), Some(SavedRun::Empty), |_| {});
         let rows = screen(&app);
         // The widest word is eight cells, so the band is ten, from column
         // fifteen, and every word starts at sixteen.

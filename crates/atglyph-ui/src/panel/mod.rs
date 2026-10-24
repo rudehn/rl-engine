@@ -57,7 +57,7 @@ pub use title::{TitleMenu, TitlePanel, TitleRow, TitleSet, TitleWords, title_is_
 pub use trade::{TradeMenu, TradePanel, TradeSide, TradeWords, trade_modal};
 pub use vitals::VitalsPanel;
 
-use atglyph_core::{Point, Rect};
+use atglyph_core::{GridRect, Point};
 use atglyph_render::{Cell, MapView, Terminal};
 use bevy::prelude::Color;
 
@@ -66,13 +66,13 @@ use crate::tone::{Palette, ToneId, Tones, readable};
 
 /// Clears `rect` to the surface colour. Every panel starts here: a shorter
 /// line must not leave the tail of a longer one behind it.
-pub fn clear(terminal: &mut Terminal, rect: Rect, palette: &Palette) {
+pub fn clear(terminal: &mut Terminal, rect: GridRect, palette: &Palette) {
     terminal.fill(rect, Cell::new(' ', palette.get(Tones::TEXT)).on(palette.get(Tones::SURFACE)));
 }
 
 /// Draws a single-line box around the edge of `rect`, with `title` in the
 /// top border and `hints` in the bottom one. Either may be empty.
-pub fn frame(terminal: &mut Terminal, rect: Rect, title: &str, hints: &str, palette: &Palette) {
+pub fn frame(terminal: &mut Terminal, rect: GridRect, title: &str, hints: &str, palette: &Palette) {
     if rect.width < 2 || rect.height < 2 {
         return;
     }
@@ -117,7 +117,7 @@ pub fn odds_tone(percent: u32) -> ToneId {
 ///
 /// `count` is printed right-aligned on the same row when it is `Some`,
 /// which is how a heading carries a live tally without a second row.
-pub fn section(terminal: &mut Terminal, rect: Rect, y: i32, title: &str, count: Option<usize>, palette: &Palette) {
+pub fn section(terminal: &mut Terminal, rect: GridRect, y: i32, title: &str, count: Option<usize>, palette: &Palette) {
     let bg = palette.get(Tones::SURFACE);
     terminal.print_on(rect.x, y, title, palette.get(Tones::TITLE), bg);
     if let Some(n) = count {
@@ -159,13 +159,13 @@ pub fn tint(terminal: &mut Terminal, map: &MapView, cell: Point, tone: ToneId, p
 /// bottom within `map`, so a panel along the bottom edge lands along the
 /// top one the same distance in. Shared by the look panel and the offers
 /// screen, so the two move the same way and a game learns one rule.
-pub(crate) fn other_place(rect: Rect, elsewhere: Option<Rect>, map: Rect) -> Rect {
-    elsewhere.unwrap_or_else(|| Rect::new(rect.x, map.y + map.bottom() - rect.bottom(), rect.width, rect.height))
+pub(crate) fn other_place(rect: GridRect, elsewhere: Option<GridRect>, map: GridRect) -> GridRect {
+    elsewhere.unwrap_or_else(|| GridRect::new(rect.x, map.y + map.bottom() - rect.bottom(), rect.width, rect.height))
 }
 
 /// Whether `rect` covers any of `cells`, terminal cells a panel over the
 /// map must keep in sight.
-pub(crate) fn hides(rect: Rect, cells: &[Point]) -> bool {
+pub(crate) fn hides(rect: GridRect, cells: &[Point]) -> bool {
     cells.iter().any(|&p| rect.contains(p))
 }
 
@@ -316,23 +316,23 @@ pub fn runs_of(entry: &LogEntry, width: usize) -> Vec<Vec<Segment>> {
 
 /// Splits `rect` into everything left of a column `width` wide and that
 /// column. For a game laying a rail beside the map.
-pub fn split_right(rect: Rect, width: i32) -> (Rect, Rect) {
+pub fn split_right(rect: GridRect, width: i32) -> (GridRect, GridRect) {
     let width = width.clamp(0, rect.width);
-    (Rect::new(rect.x, rect.y, rect.width - width, rect.height), Rect::new(rect.right() - width, rect.y, width, rect.height))
+    (GridRect::new(rect.x, rect.y, rect.width - width, rect.height), GridRect::new(rect.right() - width, rect.y, width, rect.height))
 }
 
 /// Splits `rect` into everything above a strip `height` tall and that
 /// strip. For a game laying a log under the map.
-pub fn split_bottom(rect: Rect, height: i32) -> (Rect, Rect) {
+pub fn split_bottom(rect: GridRect, height: i32) -> (GridRect, GridRect) {
     let height = height.clamp(0, rect.height);
-    (Rect::new(rect.x, rect.y, rect.width, rect.height - height), Rect::new(rect.x, rect.bottom() - height, rect.width, height))
+    (GridRect::new(rect.x, rect.y, rect.width, rect.height - height), GridRect::new(rect.x, rect.bottom() - height, rect.width, height))
 }
 
 /// Splits `rect` into a strip `height` tall and everything below it. For a
 /// game laying a status line over the map.
-pub fn split_top(rect: Rect, height: i32) -> (Rect, Rect) {
+pub fn split_top(rect: GridRect, height: i32) -> (GridRect, GridRect) {
     let height = height.clamp(0, rect.height);
-    (Rect::new(rect.x, rect.y, rect.width, height), Rect::new(rect.x, rect.y + height, rect.width, rect.height - height))
+    (GridRect::new(rect.x, rect.y, rect.width, height), GridRect::new(rect.x, rect.y + height, rect.width, rect.height - height))
 }
 
 #[cfg(test)]
@@ -376,7 +376,7 @@ mod tests {
 
     #[test]
     fn splitting_a_rectangle_loses_no_cells_and_survives_a_width_it_cannot_give() {
-        let whole = Rect::new(0, 0, 100, 40);
+        let whole = GridRect::new(0, 0, 100, 40);
         let (left, right) = split_right(whole, 24);
         assert_eq!(left.width + right.width, whole.width);
         assert_eq!(right.x, 76);

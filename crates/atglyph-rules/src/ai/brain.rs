@@ -3,7 +3,7 @@
 use std::any::Any;
 use std::fmt::Debug;
 
-use atglyph_core::{Point, Rect};
+use atglyph_core::{GridRect, Point};
 use rand::rngs::StdRng;
 
 use crate::ability::AbilityId;
@@ -197,7 +197,7 @@ pub struct TacticCtx<'a, A: Copy> {
     /// ability resolver bursts by.
     pub blocks_burst: &'a dyn Fn(Point) -> bool,
     /// The tiles a shape may be resolved within.
-    pub bounds: Rect,
+    pub bounds: GridRect,
     /// This actor's stream for the turn.
     pub rng: &'a mut StdRng,
 }

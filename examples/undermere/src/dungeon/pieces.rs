@@ -81,7 +81,7 @@ impl Pass for PieceLook {
     fn apply(&self, ctx: &mut BaseContext) -> Result<(), BuildError> {
         let bosses: Vec<&str> = MINI_BOSSES.iter().map(|b| b.name).chain(FINAL_BOSSES.iter().map(|b| b.piece)).collect();
         let grown: Vec<&Area> = ctx.outputs().iter::<Area>().filter(|a| a.entries.is_some() && !bosses.contains(&a.shape.as_str())).collect();
-        let (pieces, entries): (Vec<Rect>, Vec<Point>) =
+        let (pieces, entries): (Vec<GridRect>, Vec<Point>) =
             (grown.iter().map(|a| a.bounds).collect(), grown.iter().flat_map(|a| a.entries.iter().flatten().copied()).collect());
         let tables = ctx.tiles().tables();
         for at in entries {
@@ -106,7 +106,7 @@ impl Pass for PieceLook {
             }
         }
         for b in pieces {
-            let around = Rect::new(b.x - 1, b.y - 1, b.width + 2, b.height + 2);
+            let around = GridRect::new(b.x - 1, b.y - 1, b.width + 2, b.height + 2);
             for p in around.cells() {
                 match ctx.terrain().get(p) {
                     Some(t) if t == self.piece_wall => {

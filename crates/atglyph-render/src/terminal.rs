@@ -3,7 +3,7 @@
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 
-use atglyph_core::{Point, Rect};
+use atglyph_core::{GridRect, Point};
 use bevy::prelude::*;
 use bevy::sprite::Anchor;
 use bevy::text::{FontSize, FontSmoothing, FontSource};
@@ -193,8 +193,8 @@ impl Terminal {
     }
 
     /// The whole grid as a rectangle of cells.
-    pub fn bounds(&self) -> Rect {
-        Rect::new(0, 0, self.width, self.height)
+    pub fn bounds(&self) -> GridRect {
+        GridRect::new(0, 0, self.width, self.height)
     }
 
     /// Size of the grid in pixels.
@@ -211,7 +211,7 @@ impl Terminal {
     }
 
     /// Fills a rectangle with `cell`, clipped, each a cell of its own.
-    pub fn fill(&mut self, rect: Rect, cell: Cell) {
+    pub fn fill(&mut self, rect: GridRect, cell: Cell) {
         for p in rect.cells() {
             self.set(p.x, p.y, cell);
         }
@@ -767,7 +767,7 @@ mod tests {
         for write in [
             |t: &mut Terminal| t.set(1, 1, Cell::default()),
             |t: &mut Terminal| t.print_on(1, 1, "a", Color::WHITE, Color::BLACK),
-            |t: &mut Terminal| t.fill(Rect::new(1, 1, 1, 1), Cell::default()),
+            |t: &mut Terminal| t.fill(GridRect::new(1, 1, 1, 1), Cell::default()),
             |t: &mut Terminal| t.clear(Color::BLACK),
         ] {
             t.set_wide(0, 1, 2, wide);
@@ -906,16 +906,16 @@ mod tests {
     #[test]
     fn with_no_window_a_pointer_set_by_hand_stays() {
         use crate::pointer::Pointer;
-        use atglyph_core::{Point, Rect};
+        use atglyph_core::{GridRect, Point};
         let mut app = App::new();
         app.add_plugins(MinimalPlugins).add_plugins(TerminalPlugin::new(8, 4, Vec2::new(10.0, 20.0), 16.0));
         app.insert_resource(Pointer::at(Point::new(5, 2)));
         app.update();
         let pointer = *app.world().resource::<Pointer>();
         assert_eq!(pointer.cell(), Some(Point::new(5, 2)));
-        assert_eq!(pointer.within(Rect::new(4, 0, 4, 4)), Some(Point::new(5, 2)), "inside a panel's rectangle");
-        assert_eq!(pointer.within(Rect::new(0, 0, 4, 4)), None, "and outside another's");
-        let mut view = crate::map_view::MapView::new(Rect::new(2, 1, 6, 3));
+        assert_eq!(pointer.within(GridRect::new(4, 0, 4, 4)), Some(Point::new(5, 2)), "inside a panel's rectangle");
+        assert_eq!(pointer.within(GridRect::new(0, 0, 4, 4)), None, "and outside another's");
+        let mut view = crate::map_view::MapView::new(GridRect::new(2, 1, 6, 3));
         view.origin = Point::new(100, 50);
         assert_eq!(pointer.tile(&view), Some(Point::new(103, 51)), "the tile the map draws there");
         assert_eq!(Pointer::at(Point::new(0, 0)).tile(&view), None, "and none where the map is not drawn");
@@ -940,7 +940,7 @@ mod tests {
     /// colour, the rest stay glyphs, and turning it off is glyphs again.
     #[test]
     fn a_tileset_draws_pictures_for_the_glyphs_it_names_where_it_covers_and_glyphs_everywhere_else() {
-        use atglyph_core::Rect;
+        use atglyph_core::GridRect;
         let mut app = App::new();
         app.add_plugins(MinimalPlugins).add_plugins(TerminalPlugin::new(8, 4, Vec2::new(10.0, 20.0), 16.0));
         let red = Color::srgb(1.0, 0.0, 0.0);
@@ -956,7 +956,7 @@ mod tests {
         assert!(app.world().resource::<CellEntities>().picture.is_empty(), "and no sprite is spawned for pictures nobody has");
 
         // Covering the top three rows, with a picture for '#' alone.
-        app.insert_resource(Tileset::new(Handle::default(), Handle::default()).within(Rect::new(0, 0, 8, 3)).with('#', 5));
+        app.insert_resource(Tileset::new(Handle::default(), Handle::default()).within(GridRect::new(0, 0, 8, 3)).with('#', 5));
         app.update();
         assert_eq!(shows(&app, 1, 1), (" ".to_string(), Some((5, red))), "the picture, in the cell's colour, and no glyph under it");
         assert_eq!(shows(&app, 2, 1), ("x".to_string(), None), "a character with no picture stays a glyph");

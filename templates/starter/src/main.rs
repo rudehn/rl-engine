@@ -24,7 +24,6 @@
 use std::sync::Arc;
 
 use atglyph::prelude::*;
-use atglyph::primitives::Rect;
 use atglyph::rand::Rng;
 use atglyph::rules::ai::tactics::{Hunt, MeleeAdjacent, SearchLastKnown, Wander};
 use atglyph::rules::damage::DamageKindId;
@@ -62,7 +61,7 @@ fn main() -> AppExit {
     // between the status row and the log, and the base every panel needs;
     // or, with `--tty`, all of it in the text terminal you started the game
     // in, which plays over SSH too.
-    let map = Rect::new(0, 1, COLS, ROWS - 1 - LOG_ROWS);
+    let map = GridRect::new(0, 1, COLS, ROWS - 1 - LOG_ROWS);
     if std::env::args().any(|arg| arg == "--tty") {
         app.add_plugins(TtyRoguelikePlugins::new(COLS, ROWS).map(map));
     } else {
@@ -78,20 +77,16 @@ fn main() -> AppExit {
         // the same seed again, or quitting, and opens by itself when you die.
         .add_plugins((
             NarratorPlugin::default(),
-            GameMenuPanel::new(Rect::new(COLS / 2 - 20, 8, 40, 12))
+            GameMenuPanel::new(GridRect::new(COLS / 2 - 20, 8, 40, 12))
                 .died("The dark closes over you."),
         ))
         .add_plugins((
             // The status row and the log keep a cell of margin at either end.
-            VitalsPanel::new(Rect::new(1, 0, COLS - 14, 1)),
-            LogPanel::new(Rect::new(1, ROWS - LOG_ROWS, COLS - 2, LOG_ROWS)),
-            InspectPanel::new(Rect::new(2, ROWS - LOG_ROWS - 11, 50, 10)),
-            ControlsPanel::new(Rect::new(4, 3, COLS - 8, ROWS - LOG_ROWS - 6)).hint(Rect::new(
-                COLS - 13,
-                0,
-                12,
-                1,
-            )),
+            VitalsPanel::new(GridRect::new(1, 0, COLS - 14, 1)),
+            LogPanel::new(GridRect::new(1, ROWS - LOG_ROWS, COLS - 2, LOG_ROWS)),
+            InspectPanel::new(GridRect::new(2, ROWS - LOG_ROWS - 11, 50, 10)),
+            ControlsPanel::new(GridRect::new(4, 3, COLS - 8, ROWS - LOG_ROWS - 6))
+                .hint(GridRect::new(COLS - 13, 0, 12, 1)),
         ))
         // `--seed 7` replays a run; without it every run is new.
         .insert_resource(Seed::from_args());
@@ -539,7 +534,7 @@ struct Stock {
 /// A cell for each thing on a floor, no two on one cell and none on
 /// `entry`, where you arrive.
 fn stock(
-    bounds: Rect,
+    bounds: GridRect,
     entry: Point,
     walkable: impl Fn(Point) -> bool,
     rng: &mut impl Rng,
@@ -564,7 +559,7 @@ fn stock(
 /// or `None` when a fair number of tries finds none.
 fn open_cell(
     walkable: impl Fn(Point) -> bool,
-    bounds: Rect,
+    bounds: GridRect,
     from: Point,
     away: i32,
     taken: &[Point],

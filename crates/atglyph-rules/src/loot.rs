@@ -33,7 +33,7 @@
 //! is, and so what a kill or a place's loot may never nudge, is the Bevy
 //! layer's to decide.
 
-use atglyph_core::{Id, Point, Rect, geometry};
+use atglyph_core::{GridRect, Id, Point, geometry};
 use rand::Rng;
 use serde::Deserialize;
 
@@ -499,7 +499,7 @@ pub struct Layout<'a> {
     /// The place's marks, in the game's own numbering.
     pub marks: &'a [(u32, Point)],
     /// The floor a loose item may be put anywhere on.
-    pub bounds: Rect,
+    pub bounds: GridRect,
 }
 
 /// Plans a place's loot at `band`: `rules`' count beside each of the
@@ -678,7 +678,7 @@ mod tests {
     fn a_scatter_lands_only_on_free_cells_one_to_a_cell_beside_its_marks() {
         let t = table(rows());
         let rules = ScatterRules::new().at_spot('A' as u32, 1).at_spot('L' as u32, 2).loose(3, 3).per_band(1);
-        let bounds = Rect::new(0, 0, 30, 20);
+        let bounds = GridRect::new(0, 0, 30, 20);
         let marks = [('A' as u32, Point::new(5, 5)), ('L' as u32, Point::new(20, 10)), ('L' as u32, Point::new(10, 15))];
         for seed in 0..32u64 {
             let wall = |p: Point| p.x == 15 && p.y != 10;

@@ -16,7 +16,7 @@
 
 use std::collections::BTreeMap;
 
-use atglyph_core::{Point, Rect};
+use atglyph_core::{GridRect, Point};
 use bevy::prelude::*;
 
 /// The pictures drawn in place of glyphs, and where.
@@ -30,7 +30,7 @@ pub struct Tileset {
     image: Handle<Image>,
     layout: Handle<TextureAtlasLayout>,
     /// The cells it covers; `None` is the whole terminal.
-    region: Option<Rect>,
+    region: Option<GridRect>,
     /// The picture each character is drawn as, by its index in the sheet.
     /// Ordered, so a tileset is one thing whatever order it was built in.
     pictures: BTreeMap<char, usize>,
@@ -46,7 +46,7 @@ impl Tileset {
 
     /// Only within `region`, in terminal cells: the map's rectangle, for a
     /// game whose panels stay text.
-    pub fn within(mut self, region: Rect) -> Self {
+    pub fn within(mut self, region: GridRect) -> Self {
         self.region = Some(region);
         self
     }
@@ -107,7 +107,7 @@ mod tests {
 
     #[test]
     fn a_glyph_is_a_picture_only_where_the_tileset_covers_and_only_when_it_names_one() {
-        let mut tiles = Tileset::new(Handle::default(), Handle::default()).within(Rect::new(0, 1, 4, 3)).with('#', 7).with_all([('.', 2), ('@', 9)]);
+        let mut tiles = Tileset::new(Handle::default(), Handle::default()).within(GridRect::new(0, 1, 4, 3)).with('#', 7).with_all([('.', 2), ('@', 9)]);
         assert_eq!(tiles.picture('#', Point::new(1, 1)), Some(7));
         assert_eq!(tiles.picture('@', Point::new(3, 3)), Some(9));
         assert_eq!(tiles.picture('#', Point::new(1, 0)), None, "above what it covers");

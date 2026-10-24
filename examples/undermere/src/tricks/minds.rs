@@ -288,7 +288,6 @@ impl Tactic<Entity> for Patrol {
 
 #[cfg(test)]
 mod tests {
-    use atglyph::primitives::Rect;
     use atglyph::rand::SeedableRng;
 
     use super::*;
@@ -309,7 +308,7 @@ mod tests {
                 can_step: &|_| true,
                 blocks_shot: &|_| false,
                 blocks_burst: &|_| false,
-                bounds: Rect::new(-20, -20, 40, 40),
+                bounds: GridRect::new(-20, -20, 40, 40),
                 rng: &mut rng,
             };
             if (Flit { chance_pct: 33 }).evaluate(ctx).is_some() {

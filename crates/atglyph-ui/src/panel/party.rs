@@ -14,7 +14,7 @@
 //! so it spans the row now and the words lie over it.
 
 use atglyph_bevy::PresentSet;
-use atglyph_core::Rect;
+use atglyph_core::GridRect;
 use atglyph_render::Terminal;
 use bevy::prelude::*;
 
@@ -27,7 +27,7 @@ use crate::view::{PartyView, PartyViewPlugin, Row};
 #[derive(Resource, Debug, Clone)]
 pub(crate) struct PartyLayout {
     /// The terminal cells it occupies.
-    pub rect: Rect,
+    pub rect: GridRect,
     /// The heading over the rows, drawn only while someone follows. Empty
     /// draws none.
     pub heading: String,
@@ -53,7 +53,7 @@ impl PartyPanel {
     /// A rail in `rect`, headed `Party`, with a follower on another map
     /// marked `elsewhere`: the engine's words for what the rows are,
     /// plain enough to ship with and to replace.
-    pub fn new(rect: Rect) -> Self {
+    pub fn new(rect: GridRect) -> Self {
         Self(PartyLayout { rect, heading: "Party".into(), elsewhere: "elsewhere".into(), beneath: Vec::new() })
     }
 
@@ -112,13 +112,13 @@ pub(crate) fn draw_party(mut terminal: ResMut<Terminal>, layout: Res<PartyLayout
         if y >= rect.bottom() {
             break;
         }
-        draw_row(&mut terminal, Rect::new(rect.x, y, rect.width, 1), row, view.is_elsewhere(row), &layout, &beneath, &palette);
+        draw_row(&mut terminal, GridRect::new(rect.x, y, rect.width, 1), row, view.is_elsewhere(row), &layout, &beneath, &palette);
         let base = palette.get(Tones::SURFACE);
         y = paint_beneath(&mut terminal, rect, y + 1, rect.bottom(), &beneath.lines(row, compact), base, &palette);
     }
 }
 
-fn draw_row(terminal: &mut Terminal, line: Rect, row: &Row, elsewhere: bool, layout: &PartyLayout, beneath: &Beneath, palette: &Palette) {
+fn draw_row(terminal: &mut Terminal, line: GridRect, row: &Row, elsewhere: bool, layout: &PartyLayout, beneath: &Beneath, palette: &Palette) {
     // What the game says of a follower, its order, is the row's point, so
     // the facets and the elsewhere mark are kept whole and the name gives
     // way: a long name read as `Dagdis Longsh… · fighting freely` still
@@ -166,7 +166,7 @@ mod tests {
 
     #[test]
     fn with_nobody_following_the_rail_draws_nothing_not_even_its_heading() {
-        let mut stage = Stage::new(PartyPanel::new(Rect::new(0, 0, 24, 6))).screen(24, 6);
+        let mut stage = Stage::new(PartyPanel::new(GridRect::new(0, 0, 24, 6))).screen(24, 6);
         stage.actor("stranger", 's', 2, 0);
         stage.tick();
         assert!(stage.rows().iter().all(|r| r.is_empty()), "{:?}", stage.rows());
@@ -177,7 +177,7 @@ mod tests {
     /// the same health in, and the name lies over it.
     #[test]
     fn a_follower_is_a_line_under_the_heading_and_its_row_is_its_health_bar_in_the_vitals_tones() {
-        let mut stage = Stage::new(PartyPanel::new(Rect::new(0, 0, 24, 6))).screen(24, 6);
+        let mut stage = Stage::new(PartyPanel::new(GridRect::new(0, 0, 24, 6))).screen(24, 6);
         let hale = party(&mut stage, "hale", 'h', 2);
         let hurt = party(&mut stage, "hurt", 'u', 3);
         let worn = party(&mut stage, "worn", 'w', 4);
@@ -205,7 +205,7 @@ mod tests {
 
     #[test]
     fn a_follower_on_another_map_is_muted_and_marked_in_the_games_word_and_keeps_its_bar() {
-        let panel = PartyPanel::new(Rect::new(0, 0, 30, 4)).heading("Company").elsewhere("below");
+        let panel = PartyPanel::new(GridRect::new(0, 0, 30, 4)).heading("Company").elsewhere("below");
         let mut stage = Stage::new(panel).screen(30, 4);
         let left = party(&mut stage, "left", 'l', 2);
         stage.app.world_mut().entity_mut(left).insert(OnMap(MapId(3)));
@@ -225,7 +225,7 @@ mod tests {
                 row.facets.push(crate::Facet::new("order", "hold"));
             }
         }
-        let mut stage = Stage::new(PartyPanel::new(Rect::new(0, 0, 24, 4))).screen(24, 4);
+        let mut stage = Stage::new(PartyPanel::new(GridRect::new(0, 0, 24, 4))).screen(24, 4);
         stage.app.add_systems(Update, order.in_set(crate::ViewSet::Annotate));
         party(&mut stage, "kit", 'k', 2);
         stage.tick();
@@ -241,7 +241,7 @@ mod tests {
                 row.facets.push(crate::Facet::new("order", "fighting freely"));
             }
         }
-        let mut stage = Stage::new(PartyPanel::new(Rect::new(0, 0, 36, 4))).screen(36, 4);
+        let mut stage = Stage::new(PartyPanel::new(GridRect::new(0, 0, 36, 4))).screen(36, 4);
         stage.app.add_systems(Update, order.in_set(crate::ViewSet::Annotate));
         party(&mut stage, "Dagdisorvan Longshankson", 'h', 2);
         stage.tick();
@@ -264,7 +264,7 @@ mod tests {
     /// name in its own tone, and the one it does not stays after the name.
     #[test]
     fn a_facet_put_beneath_is_wrapped_under_the_name_and_the_rest_stay_after_it() {
-        let mut stage = Stage::new(PartyPanel::new(Rect::new(0, 0, 24, 8)).beneath("kit")).screen(24, 8);
+        let mut stage = Stage::new(PartyPanel::new(GridRect::new(0, 0, 24, 8)).beneath("kit")).screen(24, 8);
         stage.app.add_systems(Update, kit_and_order.in_set(crate::ViewSet::Annotate));
         party(&mut stage, "kit", 'k', 2);
         stage.tick();
@@ -280,7 +280,7 @@ mod tests {
     /// first one's.
     #[test]
     fn with_no_room_to_wrap_every_followers_notes_each_keeps_one_clipped_line() {
-        let mut stage = Stage::new(PartyPanel::new(Rect::new(0, 0, 24, 6)).beneath("kit")).screen(24, 6);
+        let mut stage = Stage::new(PartyPanel::new(GridRect::new(0, 0, 24, 6)).beneath("kit")).screen(24, 6);
         stage.app.add_systems(Update, kit_and_order.in_set(crate::ViewSet::Annotate));
         party(&mut stage, "kit", 'k', 2);
         party(&mut stage, "tam", 't', 3);
@@ -297,7 +297,7 @@ mod tests {
     /// than leaving a line for someone no longer there.
     #[test]
     fn the_last_follower_leaving_blanks_the_rail() {
-        let mut stage = Stage::new(PartyPanel::new(Rect::new(0, 0, 24, 4))).screen(24, 4);
+        let mut stage = Stage::new(PartyPanel::new(GridRect::new(0, 0, 24, 4))).screen(24, 4);
         let kit = party(&mut stage, "kit", 'k', 2);
         stage.tick();
         assert_eq!(stage.rows()[0], "Party");

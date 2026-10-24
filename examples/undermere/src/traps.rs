@@ -23,7 +23,6 @@ use atglyph::mapgen::dungeon::{ExitPoint, Room};
 use atglyph::mapgen::passes::StartPoint;
 use atglyph::mapgen::{Area, HideOpenings, Join, Opening, SecretCell, Surveyed};
 use atglyph::prelude::*;
-use atglyph::primitives::Rect;
 use atglyph::rand::Rng;
 use atglyph::rand::seq::{IndexedRandom, SliceRandom};
 use bevy::prelude::*;
@@ -365,7 +364,7 @@ impl Pass for LayHidden {
 
 /// Stamps a one-cell mark `glyph` at `at`, for no piece.
 fn mark(ctx: &mut BaseContext, glyph: char, at: Point) {
-    ctx.emit(Stamped { bounds: Rect::new(at.x, at.y, 1, 1), marks: vec![(glyph, at)], prefab: None });
+    ctx.emit(Stamped { bounds: GridRect::new(at.x, at.y, 1, 1), marks: vec![(glyph, at)], prefab: None });
 }
 
 /// What [`LayHidden`] reads of a floor: copied out of the context, so the
@@ -390,7 +389,7 @@ struct Ground {
     /// ones and a piece's own left out.
     doorways: Vec<Point>,
     /// The bounds of every stamp.
-    stamps: Vec<Rect>,
+    stamps: Vec<GridRect>,
 }
 
 impl Ground {
@@ -401,7 +400,7 @@ impl Ground {
         let entry = ctx.outputs().first::<StartPoint>()?.0;
         let exit = ctx.outputs().first::<ExitPoint>().map(|e| e.0);
         let tables = ctx.tiles().tables();
-        let stamps: Vec<Rect> = ctx.outputs().iter::<Stamped>().map(|s| s.bounds).collect();
+        let stamps: Vec<GridRect> = ctx.outputs().iter::<Stamped>().map(|s| s.bounds).collect();
         let marks: BTreeSet<Point> = ctx.outputs().iter::<Stamped>().flat_map(|s| s.marks.iter().map(|(_, p)| *p)).collect();
         let painted: BTreeSet<Point> = ctx.outputs().iter::<Area>().filter(|a| a.entries.is_some()).flat_map(|a| a.cells.iter().copied()).collect();
         let plain = |p: Point| {
@@ -417,7 +416,7 @@ impl Ground {
             .filter(|p| *p != entry && exit.is_none_or(|e| geometry::chebyshev(*p, e) > 1))
             .collect();
         let far = clear.iter().copied().filter(|p| geometry::chebyshev(*p, entry) > MIN_DISTANCE_FROM_ENTRY).collect();
-        let rooms: Vec<Rect> = ctx.outputs().iter::<Room>().map(|r| r.0).collect();
+        let rooms: Vec<GridRect> = ctx.outputs().iter::<Room>().map(|r| r.0).collect();
         let areas: Vec<Area> = ctx.outputs().iter::<Area>().filter(|a| a.entries.is_none()).cloned().collect();
         let room = areas.iter().map(|a| a.cells.iter().any(|c| rooms.iter().any(|r| r.contains(*c)))).collect();
         let facts = |a: &Area, read: fn(&atglyph::mapgen::AreaFacts) -> bool| survey.areas.get(a.index).is_some_and(read);
@@ -686,15 +685,15 @@ mod tests {
             let block = |x0: i32, x1: i32| -> Vec<Point> { (x0..x1).flat_map(|x| (1..11).map(move |y| Point::new(x, y))).collect() };
             let area = |index: usize, shape: &str, cells: Vec<Point>| {
                 let (x0, x1) = (cells.iter().map(|p| p.x).min().unwrap_or(0), cells.iter().map(|p| p.x).max().unwrap_or(0));
-                let bounds = Rect::new(x0, 1, x1 - x0 + 1, 10);
+                let bounds = GridRect::new(x0, 1, x1 - x0 + 1, 10);
                 Area { index, shape: shape.into(), district: "d".into(), cells, bounds, inner: bounds, entries: None }
             };
             let corridor: Vec<Point> = (15..45).map(|x| Point::new(x, 5)).collect();
             ctx.emit(area(0, "cave", block(0, 15)));
             ctx.emit(area(1, "corridor", corridor.clone()));
             ctx.emit(area(2, "cave", block(45, 60)));
-            ctx.emit(Room(Rect::new(0, 1, 15, 10)));
-            ctx.emit(Room(Rect::new(45, 1, 15, 10)));
+            ctx.emit(Room(GridRect::new(0, 1, 15, 10)));
+            ctx.emit(Room(GridRect::new(45, 1, 15, 10)));
             ctx.emit(Opening { cells: vec![Point::new(14, 5)], facing: Direction::East, areas: (0, 1), join: Join::Arch });
             ctx.emit(Opening { cells: vec![Point::new(45, 5)], facing: Direction::East, areas: (1, 2), join: Join::Arch });
             let facts = |dead_end: bool| AreaFacts { openings: 1, dead_end, chokepoint: false, junction: false, seclusion: 0 };
@@ -872,7 +871,7 @@ mod tests {
         let block = |x0: i32, x1: i32| -> Vec<Point> { (x0..x1).flat_map(|x| (1..11).map(move |y| Point::new(x, y))).collect() };
         let corridor: Vec<Point> = (15..25).map(|x| Point::new(x, 5)).collect();
         let area = |index: usize, shape: &str, cells: Vec<Point>| {
-            let bounds = Rect::new(cells[0].x, 1, cells.last().map_or(1, |p| p.x - cells[0].x + 1), 10);
+            let bounds = GridRect::new(cells[0].x, 1, cells.last().map_or(1, |p| p.x - cells[0].x + 1), 10);
             Area { index, shape: shape.into(), district: "d".into(), cells, bounds, inner: bounds, entries: None }
         };
         ctx.emit(area(0, "cave", block(0, 15)));

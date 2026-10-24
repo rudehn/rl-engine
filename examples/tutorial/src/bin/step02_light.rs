@@ -10,7 +10,6 @@
 //! the lantern, `.` to wait, `q` to quit.
 
 use atglyph::prelude::*;
-use atglyph::primitives::Rect;
 use bevy::prelude::*;
 
 /// The terminal, in cells.
@@ -27,7 +26,7 @@ fn main() -> AppExit {
     let mut app = App::new();
     // What every game adds: the window and the glyph terminal, the turn
     // loop, sight, the map in everything but the status row and the log, and the UI base.
-    app.add_plugins(RoguelikePlugins::new("Warren", COLS, ROWS).map(Rect::new(0, 1, COLS, ROWS - 1 - LOG_ROWS)))
+    app.add_plugins(RoguelikePlugins::new("Warren", COLS, ROWS).map(GridRect::new(0, 1, COLS, ROWS - 1 - LOG_ROWS)))
         // Without this the world is lit everywhere and sight is geometry
         // alone. With it, `visible` shrinks to what a light reaches.
         .add_plugins(LightingPlugin)
@@ -35,8 +34,8 @@ fn main() -> AppExit {
         .insert_resource(Seed(RunSeed(7)))
         // Two panels: the vitals strip on the top row, the log along the
         // bottom. Each draws itself; neither needs a system of yours.
-        .add_plugins(VitalsPanel::new(Rect::new(0, 0, COLS, 1)).hints("[t]orch  [.]wait  [q]uit"))
-        .add_plugins(LogPanel::new(Rect::new(0, ROWS - LOG_ROWS, COLS, LOG_ROWS)))
+        .add_plugins(VitalsPanel::new(GridRect::new(0, 0, COLS, 1)).hints("[t]orch  [.]wait  [q]uit"))
+        .add_plugins(LogPanel::new(GridRect::new(0, ROWS - LOG_ROWS, COLS, LOG_ROWS)))
         .add_systems(NewRun, start)
         // Once a frame, before the turns: the lantern is a key of Warren's
         // own, read beside the standard ones.

@@ -13,7 +13,7 @@
 //! thrown thing all fly this one way, so none of them lands where another
 //! would not.
 
-use atglyph_core::{Point, Rect, geometry};
+use atglyph_core::{GridRect, Point, geometry};
 use serde::{Deserialize, Serialize};
 
 /// The shape of a target.
@@ -88,7 +88,7 @@ pub struct Footprint {
 /// stops on whoever stands in its way, and a burst goes round them and
 /// stops only at a wall, which is also the one thing nothing comes to rest
 /// inside. See [`burst`].
-pub fn footprint(mode: TargetMode, origin: Point, aim: Point, bounds: Rect, blocks: impl Fn(Point) -> bool, walls: impl Fn(Point) -> bool) -> Footprint {
+pub fn footprint(mode: TargetMode, origin: Point, aim: Point, bounds: GridRect, blocks: impl Fn(Point) -> bool, walls: impl Fn(Point) -> bool) -> Footprint {
     let inside = |p: Point| bounds.contains(p);
     match mode {
         TargetMode::Own => Footprint { cells: vec![origin], path: Vec::new(), reached: Some(origin), landing: Some(origin) },
@@ -145,7 +145,7 @@ pub fn footprint(mode: TargetMode, origin: Point, aim: Point, bounds: Rect, bloc
 /// difference between a burst and a projectile. A burst centred on a wall
 /// reaches only that cell. The line is the integer one [`geometry::line`]
 /// draws, so which cells a corner shadows is the same on every run.
-pub fn burst(center: Point, radius: i32, bounds: Rect, walls: impl Fn(Point) -> bool) -> Vec<Point> {
+pub fn burst(center: Point, radius: i32, bounds: GridRect, walls: impl Fn(Point) -> bool) -> Vec<Point> {
     if walls(center) {
         return if bounds.contains(center) { vec![center] } else { Vec::new() };
     }
@@ -211,7 +211,7 @@ fn step_towards(from: Point, to: Point) -> Point {
 /// Whether a projectile from `origin` reaches `target` within `range`
 /// with nothing in between that `blocks`. The target cell itself may
 /// block: a standing actor is what a bolt is for.
-pub fn clear_shot(origin: Point, target: Point, range: i32, bounds: Rect, blocks: impl Fn(Point) -> bool) -> bool {
+pub fn clear_shot(origin: Point, target: Point, range: i32, bounds: GridRect, blocks: impl Fn(Point) -> bool) -> bool {
     let fp = footprint(TargetMode::Bolt { range }, origin, target, bounds, blocks, |_| false);
     fp.reached == Some(target)
 }
@@ -220,8 +220,8 @@ pub fn clear_shot(origin: Point, target: Point, range: i32, bounds: Rect, blocks
 mod tests {
     use super::*;
 
-    fn bounds() -> Rect {
-        Rect::new(0, 0, 20, 20)
+    fn bounds() -> GridRect {
+        GridRect::new(0, 0, 20, 20)
     }
 
     #[test]

@@ -1531,7 +1531,7 @@ mod tests {
         let (mut app, player, hunter, start) = among_props(Brain::new().then(Hunt), false, &[]);
         waiting(&mut app, player, 1);
         let marked = (vec![Point::new(-99, -99)], MovementProfile::default(), false, false, false);
-        app.world_mut().resource_mut::<FlowFields>().fields.insert(marked.clone(), DijkstraMap::new(atglyph_core::Rect::new(0, 0, 1, 1)));
+        app.world_mut().resource_mut::<FlowFields>().fields.insert(marked.clone(), DijkstraMap::new(atglyph_core::GridRect::new(0, 0, 1, 1)));
         let before = app.world().get::<Position>(hunter).unwrap().0;
         waiting(&mut app, player, 2);
         assert_ne!(app.world().get::<Position>(hunter).unwrap().0, before, "the hunter walked");
@@ -1545,7 +1545,7 @@ mod tests {
     fn an_actor_stepping_throws_no_field_away_and_something_standing_that_goes_does() {
         let mut fields = FlowFields::default();
         fields.see_standing(vec![Point::new(3, 3)]);
-        fields.fields.insert((vec![Point::ZERO], MovementProfile::default(), false, false, false), DijkstraMap::new(atglyph_core::Rect::new(0, 0, 1, 1)));
+        fields.fields.insert((vec![Point::ZERO], MovementProfile::default(), false, false, false), DijkstraMap::new(atglyph_core::GridRect::new(0, 0, 1, 1)));
         fields.see_standing(vec![Point::new(3, 3)]);
         let held = (vec![Point::ZERO], MovementProfile::default(), false, false, false);
         assert!(fields.fields.get(&held).is_some(), "the same cells stand: the field is kept");

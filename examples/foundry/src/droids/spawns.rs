@@ -11,7 +11,6 @@
 //! deepest band on the way back up, and spawns what the plan says.
 
 use atglyph::prelude::*;
-use atglyph::primitives::Rect;
 use atglyph::rand::Rng;
 use bevy::prelude::*;
 
@@ -40,7 +39,7 @@ pub(crate) const MIN_DISTANCE_FROM_ENTRY: i32 = 7;
 fn plan_population(
     table: &BandedTable<Id<MonsterDef>>,
     band: i32,
-    bounds: Rect,
+    bounds: GridRect,
     entry: Point,
     target: u32,
     walkable: &mut impl FnMut(Point) -> bool,
@@ -136,8 +135,8 @@ mod tests {
     /// target, and no terrain to fall short on: `plan_population`'s own
     /// contract, tested with nothing but the predicate the caller passes,
     /// so a shortfall can only mean the logic, never a map.
-    fn open_ground() -> (Rect, Point) {
-        (Rect::new(0, 0, 80, 60), Point::new(40, 30))
+    fn open_ground() -> (GridRect, Point) {
+        (GridRect::new(0, 0, 80, 60), Point::new(40, 30))
     }
 
     #[test]

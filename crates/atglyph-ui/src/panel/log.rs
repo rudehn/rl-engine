@@ -1,7 +1,7 @@
 //! The message log, newest at the bottom.
 
 use atglyph_bevy::PresentSet;
-use atglyph_core::Rect;
+use atglyph_core::GridRect;
 use atglyph_render::Terminal;
 use bevy::prelude::*;
 
@@ -13,7 +13,7 @@ use crate::tone::{Palette, Tones};
 #[derive(Resource, Debug, Clone)]
 pub(crate) struct LogLayout {
     /// The terminal cells it occupies.
-    pub rect: Rect,
+    pub rect: GridRect,
     /// Newest line at the bottom, which is where a player's eye rests
     /// after an action. `false` puts it at the top.
     pub newest_last: bool,
@@ -24,7 +24,7 @@ pub struct LogPanel(LogLayout);
 
 impl LogPanel {
     /// A log in `rect`, newest at the bottom.
-    pub fn new(rect: Rect) -> Self {
+    pub fn new(rect: GridRect) -> Self {
         Self(LogLayout { rect, newest_last: true })
     }
 
@@ -66,7 +66,7 @@ mod tests {
 
     #[test]
     fn the_newest_line_is_at_the_bottom_and_a_shorter_one_leaves_no_tail() {
-        let mut stage = Stage::new(LogPanel::new(Rect::new(0, 0, 40, 3))).screen(40, 3);
+        let mut stage = Stage::new(LogPanel::new(GridRect::new(0, 0, 40, 3))).screen(40, 3);
         stage.app.world_mut().resource_mut::<MessageLog>().push_at("a long line that fills the row", Tones::TEXT, 0);
         stage.tick();
         assert_eq!(stage.row(2), "a long line that fills the row");
@@ -79,7 +79,7 @@ mod tests {
 
     #[test]
     fn a_repeated_line_shows_its_count_rather_than_filling_the_panel() {
-        let mut stage = Stage::new(LogPanel::new(Rect::new(0, 0, 40, 3))).screen(40, 3);
+        let mut stage = Stage::new(LogPanel::new(GridRect::new(0, 0, 40, 3))).screen(40, 3);
         for _ in 0..3 {
             stage.app.world_mut().resource_mut::<MessageLog>().push_at("the crab nips you", Tones::BAD, 1);
         }
@@ -92,7 +92,7 @@ mod tests {
     /// rest of the line stays in its tone.
     #[test]
     fn a_span_is_drawn_in_its_own_colour_and_the_rest_in_the_tone() {
-        let mut stage = Stage::new(LogPanel::new(Rect::new(0, 0, 40, 3))).screen(40, 3);
+        let mut stage = Stage::new(LogPanel::new(GridRect::new(0, 0, 40, 3))).screen(40, 3);
         let green = Color::srgb(0.2, 0.9, 0.3);
         stage.app.world_mut().resource_mut::<MessageLog>().push_spans(
             "the slime nips you",
@@ -110,7 +110,7 @@ mod tests {
 
     #[test]
     fn a_line_is_drawn_in_the_tone_it_was_logged_in() {
-        let mut stage = Stage::new(LogPanel::new(Rect::new(0, 0, 40, 3))).screen(40, 3);
+        let mut stage = Stage::new(LogPanel::new(GridRect::new(0, 0, 40, 3))).screen(40, 3);
         stage.app.world_mut().resource_mut::<MessageLog>().push_at("bad news", Tones::BAD, 1);
         stage.tick();
         let cell = stage.app.world().resource::<atglyph_render::Terminal>().get(0, 2).unwrap();

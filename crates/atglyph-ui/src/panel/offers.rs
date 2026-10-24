@@ -43,7 +43,7 @@
 
 use atglyph_bevy::prelude::*;
 use atglyph_bevy::{Bumped, EngineSet, PresentSet};
-use atglyph_core::{Direction, Rect};
+use atglyph_core::{Direction, GridRect};
 use atglyph_render::{Cell, MapView, Terminal};
 use bevy::prelude::*;
 
@@ -61,12 +61,12 @@ pub(crate) const OFFERS_MODAL: &str = "offers";
 #[derive(Resource, Debug, Clone)]
 pub(crate) struct OffersLayout {
     /// The terminal cells it occupies.
-    pub rect: Rect,
+    pub rect: GridRect,
     /// Where it goes while the one choosing, or what offers a row, stands
     /// under `rect`. `None` mirrors `rect` top for bottom within the map,
     /// which suits a screen along either edge; a game names a place when
     /// its screen is not there.
-    pub elsewhere: Option<Rect>,
+    pub elsewhere: Option<GridRect>,
     /// Drawn in the top border.
     pub title: String,
     /// The answer to an asking offer's question that takes it up.
@@ -120,13 +120,13 @@ pub struct OffersPanel(OffersLayout);
 
 impl OffersPanel {
     /// The screen in `rect`.
-    pub fn new(rect: Rect) -> Self {
+    pub fn new(rect: GridRect) -> Self {
         Self(OffersLayout { rect, elsewhere: None, title: "Here".into(), yes: "Yes".into(), no: "No".into() })
     }
 
     /// Sets where the screen goes while what it is about stands under its
     /// rectangle, in place of the mirror of it.
-    pub fn else_at(mut self, rect: Rect) -> Self {
+    pub fn else_at(mut self, rect: GridRect) -> Self {
         self.0.elsewhere = Some(rect);
         self
     }
@@ -321,7 +321,7 @@ impl HereScreen<'_, '_> {
     /// afresh each frame rather than kept, since nothing walks while the
     /// screen is up and a map resized under it takes it to the new mirror.
     /// Without a [`MapView`] nothing is drawn under it to keep clear.
-    fn rect(&self) -> Rect {
+    fn rect(&self) -> GridRect {
         let here = self.layout.rect;
         let Some(map) = &self.map else { return here };
         let about = self.view.actor.into_iter().chain(self.view.rows.iter().map(|r| r.target));
@@ -362,7 +362,7 @@ pub(crate) fn draw_offers(mut terminal: ResMut<Terminal>, mut menu: ResMut<Offer
     let hints = format!("{} do it \u{2022} {} never mind", key_name(bindings.cursor.confirm), key_name(bindings.cursor.close));
     clear(&mut terminal, rect, palette);
     frame(&mut terminal, rect, &layout.title, &hints, palette);
-    let inner = Rect::new(rect.x + 2, rect.y + 1, rect.width - 4, rect.height - 2);
+    let inner = GridRect::new(rect.x + 2, rect.y + 1, rect.width - 4, rect.height - 2);
     let surface = palette.get(Tones::SURFACE);
     let rows = (inner.height.max(0) as usize).min(view.rows.len());
     let first = menu.selected.saturating_sub(rows.saturating_sub(1)).min(view.rows.len().saturating_sub(rows));
@@ -371,7 +371,7 @@ pub(crate) fn draw_offers(mut terminal: ResMut<Terminal>, mut menu: ResMut<Offer
         let selected = i == menu.selected;
         let bg = if selected { palette.get(Tones::SELECT) } else { surface };
         let fg = palette.get(if row.open() { Tones::TEXT } else { Tones::MUTED });
-        terminal.fill(Rect::new(inner.x, y, inner.width, 1), Cell::new(' ', fg).on(bg));
+        terminal.fill(GridRect::new(inner.x, y, inner.width, 1), Cell::new(' ', fg).on(bg));
         let said = match (&row.refused, row.price) {
             (Some(why), _) => format!("{} - {why}", row.label),
             (None, Some(price)) => format!("{} ({}, {})", row.label, cost(row.time), crate::view::sum_of(&view.currency, price)),
@@ -389,13 +389,13 @@ pub(crate) fn draw_offers(mut terminal: ResMut<Terminal>, mut menu: ResMut<Offer
 /// than the answers, which keep to the bottom, and the empty line goes
 /// before the words do, so a screen too short for both still asks
 /// something.
-fn draw_question(terminal: &mut Terminal, screen: &HereScreen, rect: Rect, question: &str, yes: bool) {
+fn draw_question(terminal: &mut Terminal, screen: &HereScreen, rect: GridRect, question: &str, yes: bool) {
     let HereScreen { layout, keys, palette, .. } = screen;
     let bindings = keys.bindings();
     let hints = format!("{} answer \u{2022} {} never mind", key_name(bindings.cursor.confirm), key_name(bindings.cursor.close));
     clear(terminal, rect, palette);
     frame(terminal, rect, &layout.title, &hints, palette);
-    let inner = Rect::new(rect.x + 2, rect.y + 1, rect.width - 4, rect.height - 2);
+    let inner = GridRect::new(rect.x + 2, rect.y + 1, rect.width - 4, rect.height - 2);
     let (text, surface, select) = (palette.get(Tones::TEXT), palette.get(Tones::SURFACE), palette.get(Tones::SELECT));
     let room = (inner.height - 3).max((inner.height - 2).min(1)).max(0) as usize;
     let lines = wrap(question, inner.width.max(0) as usize);
@@ -408,7 +408,7 @@ fn draw_question(terminal: &mut Terminal, screen: &HereScreen, rect: Rect, quest
     for (i, (word, picked)) in answers.into_iter().enumerate() {
         let y = first + i as i32;
         let bg = if picked { select } else { surface };
-        terminal.fill(Rect::new(inner.x, y, inner.width, 1), Cell::new(' ', text).on(bg));
+        terminal.fill(GridRect::new(inner.x, y, inner.width, 1), Cell::new(' ', text).on(bg));
         terminal.print_on(inner.x, y, &clip(word, inner.width.max(0) as usize), text, bg);
     }
 }
@@ -424,7 +424,7 @@ mod tests {
     /// A bench beside the player offering two things, and a crate beside
     /// it offering one.
     fn stage() -> (Stage, Entity) {
-        let mut stage = Stage::new_with(OffersPanel::new(Rect::new(8, 4, 40, 8)), |app| {
+        let mut stage = Stage::new_with(OffersPanel::new(GridRect::new(8, 4, 40, 8)), |app| {
             app.add_plugins(PropsPlugin);
             app.insert_resource(Seed(TEST_SEED));
             app.add_verb("strip");
@@ -497,7 +497,7 @@ mod tests {
     /// screen opens and says what it wants.
     #[test]
     fn walking_into_something_locked_says_what_it_wants() {
-        let mut stage = Stage::new_with(OffersPanel::new(Rect::new(8, 4, 40, 8)), |app| {
+        let mut stage = Stage::new_with(OffersPanel::new(GridRect::new(8, 4, 40, 8)), |app| {
             app.add_plugins(PropsPlugin);
             app.insert_resource(Seed(TEST_SEED));
             let tags = atglyph_rules::Registry::from_defs(vec![atglyph_rules::TagDef::new("cutter")]).expect("one tag");
@@ -652,7 +652,7 @@ mod tests {
     /// A stage with Mirela beside the player offering one thing, `tip`,
     /// for two turns, that asks first; every `Interacted` heard kept.
     fn asking() -> (Stage, Entity) {
-        let mut stage = Stage::new_with(OffersPanel::new(Rect::new(8, 4, 40, 8)), |app| {
+        let mut stage = Stage::new_with(OffersPanel::new(GridRect::new(8, 4, 40, 8)), |app| {
             app.add_plugins(PropsPlugin);
             app.insert_resource(Seed(TEST_SEED));
             app.add_verb("tip");
@@ -678,7 +678,7 @@ mod tests {
     /// the screen's title is drawn on.
     fn opened_over_the_map(panel: OffersPanel) -> Option<usize> {
         let mut stage = Stage::new_with(panel, |app| {
-            app.add_plugins((PropsPlugin, atglyph_render::MapViewPlugin::new(Rect::new(0, 0, 40, 20))));
+            app.add_plugins((PropsPlugin, atglyph_render::MapViewPlugin::new(GridRect::new(0, 0, 40, 20))));
             app.insert_resource(Seed(TEST_SEED));
             app.add_verb("tip");
         })
@@ -702,9 +702,9 @@ mod tests {
     /// stands under it.
     #[test]
     fn the_screen_moves_off_the_player_and_its_offerer_to_its_mirror_or_where_the_game_says() {
-        assert_eq!(opened_over_the_map(OffersPanel::new(Rect::new(1, 12, 38, 7))), Some(12), "clear of them, where the game put it");
-        assert_eq!(opened_over_the_map(OffersPanel::new(Rect::new(1, 10, 38, 7))), Some(3), "over them, so mirrored top for bottom");
-        let named = OffersPanel::new(Rect::new(1, 10, 38, 7)).else_at(Rect::new(1, 1, 38, 7));
+        assert_eq!(opened_over_the_map(OffersPanel::new(GridRect::new(1, 12, 38, 7))), Some(12), "clear of them, where the game put it");
+        assert_eq!(opened_over_the_map(OffersPanel::new(GridRect::new(1, 10, 38, 7))), Some(3), "over them, so mirrored top for bottom");
+        let named = OffersPanel::new(GridRect::new(1, 10, 38, 7)).else_at(GridRect::new(1, 1, 38, 7));
         assert_eq!(opened_over_the_map(named), Some(1), "or where the game names");
     }
 

@@ -8,7 +8,7 @@
 //! cell means is the game's; the buttons are Bevy's own
 //! `ButtonInput<MouseButton>`.
 
-use atglyph_core::{Point, Rect};
+use atglyph_core::{GridRect, Point};
 use bevy::prelude::*;
 
 use crate::layout::fit;
@@ -38,7 +38,7 @@ impl Pointer {
 
     /// The cell under the cursor when it is inside `rect`: how a panel
     /// asks whether the mouse is over it, and where.
-    pub fn within(&self, rect: Rect) -> Option<Point> {
+    pub fn within(&self, rect: GridRect) -> Option<Point> {
         self.cell.filter(|cell| rect.contains(*cell))
     }
 

@@ -21,7 +21,7 @@ use crate::app::UiApp;
 use crate::controls::{ControlInput, EngineKey, key_name};
 use crate::cursor::CursorKeys;
 use atglyph_bevy::{EngineSet, PresentSet};
-use atglyph_core::Rect;
+use atglyph_core::GridRect;
 use atglyph_render::Terminal;
 use bevy::prelude::*;
 
@@ -82,7 +82,7 @@ impl Default for ScrollbackKeys {
 #[derive(Resource, Debug, Clone)]
 pub(crate) struct ScrollbackLayout {
     /// The terminal cells it occupies, border included.
-    pub rect: Rect,
+    pub rect: GridRect,
     /// The title in the top border. The filter's name is appended to it
     /// while one is on, so the reader can see why lines are missing.
     pub title: String,
@@ -104,7 +104,7 @@ pub struct ScrollbackPanel(ScrollbackLayout);
 
 impl ScrollbackPanel {
     /// A scrollback in `rect`.
-    pub fn new(rect: Rect) -> Self {
+    pub fn new(rect: GridRect) -> Self {
         Self(ScrollbackLayout { rect, title: "Messages".into(), hints: None, empty: "Nothing has happened yet.".into(), turn_rules: true })
     }
 
@@ -299,7 +299,7 @@ pub(crate) fn draw_scrollback(
     let hints = layout.hints.clone().unwrap_or_else(|| binds.log.map(|log| hints_for(log, binds.cursor)).unwrap_or_default());
     frame(&mut terminal, rect, &title, &hints, &palette);
 
-    let inner = Rect::new(rect.x + 2, rect.y + 1, rect.width - 4, rect.height - 2);
+    let inner = GridRect::new(rect.x + 2, rect.y + 1, rect.width - 4, rect.height - 2);
     let bg = palette.get(Tones::SURFACE);
     let width = inner.width.max(0) as usize;
     let lines = lines_of(&log, &scrollback, layout.turn_rules, width);
@@ -336,7 +336,7 @@ mod tests {
 
     /// A stage with a scrollback and `n` numbered lines already logged.
     fn stage(n: u32) -> Stage {
-        let mut stage = Stage::new(ScrollbackPanel::new(Rect::new(0, 0, 40, 8)).without_turn_rules()).screen(40, 8);
+        let mut stage = Stage::new(ScrollbackPanel::new(GridRect::new(0, 0, 40, 8)).without_turn_rules()).screen(40, 8);
         for i in 0..n {
             stage.app.world_mut().resource_mut::<MessageLog>().push_at(format!("line {i}"), Tones::TEXT, 0);
         }
@@ -420,7 +420,7 @@ mod tests {
 
     #[test]
     fn the_filter_cycles_only_the_tones_the_log_holds_and_back_to_all() {
-        let mut stage = Stage::new(ScrollbackPanel::new(Rect::new(0, 0, 40, 8)).without_turn_rules()).screen(40, 8);
+        let mut stage = Stage::new(ScrollbackPanel::new(GridRect::new(0, 0, 40, 8)).without_turn_rules()).screen(40, 8);
         {
             let mut log = stage.app.world_mut().resource_mut::<MessageLog>();
             log.push_at("a plain line", Tones::TEXT, 0);
@@ -446,7 +446,7 @@ mod tests {
 
     #[test]
     fn a_line_too_wide_for_the_screen_is_wrapped_and_not_cut() {
-        let mut stage = Stage::new(ScrollbackPanel::new(Rect::new(0, 0, 24, 8)).without_turn_rules()).screen(24, 8);
+        let mut stage = Stage::new(ScrollbackPanel::new(GridRect::new(0, 0, 24, 8)).without_turn_rules()).screen(24, 8);
         stage.app.world_mut().resource_mut::<MessageLog>().push_at("the cutthroat runs you through with a rusty blade", Tones::TEXT, 0);
         stage.tick();
         open(&mut stage);
@@ -458,7 +458,7 @@ mod tests {
 
     #[test]
     fn each_turn_is_ruled_off_with_its_number() {
-        let mut stage = Stage::new(ScrollbackPanel::new(Rect::new(0, 0, 40, 8))).screen(40, 8);
+        let mut stage = Stage::new(ScrollbackPanel::new(GridRect::new(0, 0, 40, 8))).screen(40, 8);
         {
             let mut log = stage.app.world_mut().resource_mut::<MessageLog>();
             log.push_at("you step east", Tones::TEXT, 4);

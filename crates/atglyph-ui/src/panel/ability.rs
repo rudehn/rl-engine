@@ -16,7 +16,7 @@
 use crate::app::UiApp;
 use atglyph_bevy::EngineApp;
 use atglyph_bevy::{EngineSet, PresentSet};
-use atglyph_core::{Direction, Rect};
+use atglyph_core::{Direction, GridRect};
 use atglyph_grid::TargetMode;
 use atglyph_render::{Cell, Terminal};
 use atglyph_rules::ability::Aim;
@@ -50,7 +50,7 @@ impl Default for AbilityKeys {
 #[derive(Resource, Debug, Clone)]
 pub(crate) struct AbilityLayout {
     /// The terminal cells it occupies.
-    pub rect: Rect,
+    pub rect: GridRect,
     /// Drawn in the top border. The engine has no word for a spellbook.
     pub title: String,
     /// The heading over what is being described, on the controls screen
@@ -87,7 +87,7 @@ pub struct AbilityPanel(AbilityLayout);
 
 impl AbilityPanel {
     /// The menu in `rect`.
-    pub fn new(rect: Rect) -> Self {
+    pub fn new(rect: GridRect) -> Self {
         Self(AbilityLayout { rect, title: "Abilities".into(), what: "abilities".into() })
     }
 
@@ -254,7 +254,7 @@ pub(crate) fn draw_abilities(
     let hints = format!("\u{2191}\u{2193} pick \u{2022} {} aim \u{2022} {} close", key_name(bindings.cursor.confirm), key_name(bindings.cursor.close));
     clear(&mut terminal, rect, &palette);
     frame(&mut terminal, rect, &layout.title, &hints, &palette);
-    let inner = Rect::new(rect.x + 2, rect.y + 1, rect.width - 4, rect.height - 2);
+    let inner = GridRect::new(rect.x + 2, rect.y + 1, rect.width - 4, rect.height - 2);
     let surface = palette.get(Tones::SURFACE);
     let width = inner.width.max(0) as usize;
 
@@ -273,7 +273,7 @@ pub(crate) fn draw_abilities(
         let selected = i == menu.selected;
         let bg = if selected { palette.get(Tones::SELECT) } else { surface };
         let fg = palette.get(if row.ready() { Tones::TEXT } else { Tones::MUTED });
-        terminal.fill(Rect::new(inner.x, y, inner.width, 1), Cell::new(' ', fg).on(bg));
+        terminal.fill(GridRect::new(inner.x, y, inner.width, 1), Cell::new(' ', fg).on(bg));
         let tag = row.why.first().cloned().unwrap_or_default();
         terminal.print_on(inner.x, y, &clip(&row.label, width.saturating_sub(tag.chars().count() + 1)), fg, bg);
         if !tag.is_empty() {
@@ -299,7 +299,7 @@ mod tests {
     use atglyph_bevy::{AbilitiesPlugin, Intent, Use};
 
     fn staged() -> Stage {
-        let mut stage = Stage::new_with((AbilitiesPlugin, crate::TargetViewPlugin, AbilityPanel::new(Rect::new(0, 0, 44, 16)).title("Knacks")), |app| {
+        let mut stage = Stage::new_with((AbilitiesPlugin, crate::TargetViewPlugin, AbilityPanel::new(GridRect::new(0, 0, 44, 16)).title("Knacks")), |app| {
             app.add_engine_effects();
             abilities(app);
         })

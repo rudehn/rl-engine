@@ -27,7 +27,7 @@
 //! styles cannot drift apart, and [`CursorMap`] what a presenter borrows
 //! to draw it: the map, and who the map drew, whom a tick leaves showing.
 
-use atglyph_core::{Direction, Point, Rect};
+use atglyph_core::{Direction, GridRect, Point};
 use atglyph_render::{DrawnActors, Terminal};
 use bevy::color::Mix;
 use bevy::prelude::*;
@@ -247,7 +247,7 @@ pub(crate) fn shifted(input: &ButtonInput<KeyCode>) -> bool {
 ///
 /// A direction key held down steps again at the pace `repeats` says, the
 /// same pace a held key walks at.
-pub(crate) fn steer(at: &mut Point, focus: &mut Focus, keyed: &Keyed<'_>, bounds: Rect, candidates: impl FnOnce() -> Vec<Sighting>) -> Steer {
+pub(crate) fn steer(at: &mut Point, focus: &mut Focus, keyed: &Keyed<'_>, bounds: GridRect, candidates: impl FnOnce() -> Vec<Sighting>) -> Steer {
     let Keyed { input, keys, steps, repeats } = *keyed;
     if input.just_pressed(keys.close) {
         return Steer::Close;
@@ -316,7 +316,7 @@ impl CursorInput<'_> {
     }
 
     /// [`steer`], over this frame's keys.
-    pub(crate) fn steer(&self, at: &mut Point, focus: &mut Focus, bounds: Rect, candidates: impl FnOnce() -> Vec<Sighting>) -> Steer {
+    pub(crate) fn steer(&self, at: &mut Point, focus: &mut Focus, bounds: GridRect, candidates: impl FnOnce() -> Vec<Sighting>) -> Steer {
         steer(at, focus, &Keyed { input: &self.input, keys: &self.keys, steps: &self.steps, repeats: &self.repeats }, bounds, candidates)
     }
 }
@@ -325,7 +325,7 @@ impl CursorInput<'_> {
 ///
 /// Stopping rather than clamping: a cursor at the edge that slides along
 /// it when pushed outwards reads as the cursor moving on its own.
-pub(crate) fn stepped(at: Point, step: Direction, bounds: Rect) -> Point {
+pub(crate) fn stepped(at: Point, step: Direction, bounds: GridRect) -> Point {
     let moved = at + step.offset();
     if bounds.contains(moved) { moved } else { at }
 }
@@ -336,7 +336,7 @@ mod tests {
 
     #[test]
     fn a_step_that_would_leave_the_window_leaves_the_cursor_alone() {
-        let bounds = Rect::new(0, 0, 10, 10);
+        let bounds = GridRect::new(0, 0, 10, 10);
         assert_eq!(stepped(Point::new(5, 5), Direction::East, bounds), Point::new(6, 5));
         assert_eq!(stepped(Point::new(9, 5), Direction::East, bounds), Point::new(9, 5), "held at the edge");
         assert_eq!(stepped(Point::new(9, 5), Direction::NorthEast, bounds), Point::new(9, 5), "not slid along it");
@@ -365,7 +365,7 @@ mod tests {
         }
         let (mut at, mut focus, mut asked) = (at, focus, false);
         let keyed = Keyed { input: &input, keys: &CursorKeys::default(), steps: &DirectionKeys::default(), repeats: &Repeats::default() };
-        let steer = steer(&mut at, &mut focus, &keyed, Rect::new(0, 0, 10, 10), || {
+        let steer = steer(&mut at, &mut focus, &keyed, GridRect::new(0, 0, 10, 10), || {
             asked = true;
             candidates.to_vec()
         });
@@ -382,7 +382,7 @@ mod tests {
         repeats.advance(Some((Direction::East, false)), false, &pace, 0.2);
         let (mut at, mut focus) = (Point::new(5, 5), Focus::default());
         let keyed = Keyed { input: &input, keys: &CursorKeys::default(), steps: &DirectionKeys::default(), repeats: &repeats };
-        let steer = steer(&mut at, &mut focus, &keyed, Rect::new(0, 0, 10, 10), Vec::new);
+        let steer = steer(&mut at, &mut focus, &keyed, GridRect::new(0, 0, 10, 10), Vec::new);
         assert_eq!((at, steer), (Point::new(6, 5), Steer::Moved));
     }
 
@@ -441,14 +441,14 @@ mod style_tests {
     use super::*;
     use crate::harness::Stage;
     use crate::panel::NearbyPanel;
-    use atglyph_core::Rect;
+    use atglyph_core::GridRect;
 
     /// What each style does to the map: a glow washes the cell and leaves
     /// what stands there, ticks leave the cell alone and mark around it.
     #[test]
     fn a_glow_washes_the_cell_and_ticks_frame_it_without_covering_it() {
-        let mut stage = Stage::new_with(NearbyPanel::new(Rect::new(40, 0, 20, 20)), |app| {
-            app.add_plugins(atglyph_render::MapViewPlugin::new(Rect::new(0, 0, 40, 20)));
+        let mut stage = Stage::new_with(NearbyPanel::new(GridRect::new(40, 0, 20, 20)), |app| {
+            app.add_plugins(atglyph_render::MapViewPlugin::new(GridRect::new(0, 0, 40, 20)));
         })
         .screen(60, 24);
         stage.actor("crab", 'c', 2, 0);
@@ -480,8 +480,8 @@ mod style_tests {
     /// map shows next to what it points at.
     #[test]
     fn ticks_leave_someone_standing_beside_the_cell_drawn_and_frame_the_other_sides() {
-        let mut stage = Stage::new_with(NearbyPanel::new(Rect::new(40, 0, 20, 20)), |app| {
-            app.add_plugins(atglyph_render::MapViewPlugin::new(Rect::new(0, 0, 40, 20)));
+        let mut stage = Stage::new_with(NearbyPanel::new(GridRect::new(40, 0, 20, 20)), |app| {
+            app.add_plugins(atglyph_render::MapViewPlugin::new(GridRect::new(0, 0, 40, 20)));
         })
         .screen(60, 24);
         stage.actor("crab", 'c', 2, 0);
@@ -504,8 +504,8 @@ mod style_tests {
     /// stays drawn: a cursor is never invisible.
     #[test]
     fn ticks_round_a_cell_with_someone_on_every_side_wash_the_cell_instead() {
-        let mut stage = Stage::new_with(NearbyPanel::new(Rect::new(40, 0, 20, 20)), |app| {
-            app.add_plugins(atglyph_render::MapViewPlugin::new(Rect::new(0, 0, 40, 20)));
+        let mut stage = Stage::new_with(NearbyPanel::new(GridRect::new(40, 0, 20, 20)), |app| {
+            app.add_plugins(atglyph_render::MapViewPlugin::new(GridRect::new(0, 0, 40, 20)));
         })
         .screen(60, 24);
         stage.actor("crab", 'c', 2, 0);
@@ -534,7 +534,7 @@ mod style_tests {
     /// tone itself, whatever the clock reads.
     #[test]
     fn a_style_breathes_only_when_it_was_given_something_to_breathe_toward() {
-        let mut stage = Stage::new(NearbyPanel::new(Rect::new(40, 0, 20, 20)));
+        let mut stage = Stage::new(NearbyPanel::new(GridRect::new(40, 0, 20, 20)));
         stage.tick();
         let palette = stage.app.world().resource::<Palette>().clone();
         let still = CursorStyle::glow(Tones::SELECT);

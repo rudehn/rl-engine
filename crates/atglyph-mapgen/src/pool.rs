@@ -9,7 +9,7 @@
 //! `atglyph-rules`'s; this pass reads only what growth, the
 //! [`Survey`](crate::Survey) and the secrets published.
 
-use atglyph_core::{Point, Rect};
+use atglyph_core::{GridRect, Point};
 use rand::Rng;
 
 use crate::accrete::Area;
@@ -128,7 +128,7 @@ impl Pass for StampPicks {
         let start = ctx.outputs().first::<StartPoint>().ok_or_else(|| err("no start point emitted before it".into()))?.0;
         let keep: Vec<Point> = std::iter::once(start).chain(ctx.outputs().first::<ExitPoint>().map(|e| e.0)).collect();
         let areas: Vec<Area> = ctx.outputs().iter::<Area>().cloned().collect();
-        let rooms: Vec<Rect> = ctx.outputs().iter::<Room>().map(|r| r.0).collect();
+        let rooms: Vec<GridRect> = ctx.outputs().iter::<Room>().map(|r| r.0).collect();
         // A room on an area's floor, and not its inner rectangle, since a
         // lake measures that again and leaves the room as growth emitted
         // it; pieces' floors never share a cell, so the room is the area's.
@@ -153,7 +153,7 @@ impl Pass for StampPicks {
                 Lay::Stamp(prefab) => self.orient.facings(prefab),
                 Lay::Dress(_) => Vec::new(),
             };
-            let taken: Vec<Rect> = ctx.outputs().iter::<Stamped>().map(|s| s.bounds).collect();
+            let taken: Vec<GridRect> = ctx.outputs().iter::<Stamped>().map(|s| s.bounds).collect();
             // Each area it may go in, with every facing that fits there and
             // where that facing would be laid; none for a dressing.
             let fits: Vec<(&Area, Vec<(&Prefab, Point)>)> = areas
@@ -190,7 +190,7 @@ impl Pass for StampPicks {
                     let (piece, origin) = faces[ctx.rng().random_range(0..faces.len())];
                     piece.stamp(ctx.terrain_mut(), origin);
                     let marks = piece.marks().iter().map(|(c, p)| (*c, origin + *p)).collect();
-                    ctx.emit(Stamped { bounds: Rect::new(origin.x, origin.y, piece.width(), piece.height()), marks, prefab: piece.key() });
+                    ctx.emit(Stamped { bounds: GridRect::new(origin.x, origin.y, piece.width(), piece.height()), marks, prefab: piece.key() });
                 }
             }
         }
@@ -221,7 +221,7 @@ mod tests {
         let mut ctx = BaseContext::blank(25, 13, tiles, wall);
         let corners = [(1, 1), (7, 1), (13, 1), (19, 1), (1, 7), (13, 7)];
         for (index, (x, y)) in corners.into_iter().enumerate() {
-            let bounds = Rect::new(x, y, 5, 5);
+            let bounds = GridRect::new(x, y, 5, 5);
             let mut area = Area { index, shape: "room".into(), district: "d".into(), cells: bounds.cells().collect(), bounds, inner: bounds, entries: None };
             change(index, &mut area);
             for c in &area.cells {
@@ -291,7 +291,7 @@ mod tests {
     fn an_area_a_lake_measured_again_still_takes_a_pick() {
         let mut ctx = plain();
         for a in ctx.outputs_mut().iter_mut::<Area>().filter(|a| a.index == 3) {
-            a.inner = Rect::new(19, 1, 5, 4);
+            a.inner = GridRect::new(19, 1, 5, 4);
         }
         assert_eq!(landed(ctx, vec![pick("p", 2, Prefer::Secluded, true)], 0).unwrap(), vec![3]);
     }
@@ -309,7 +309,7 @@ mod tests {
             let narrow = place(
                 |i, a| {
                     if i == 3 {
-                        *a = Area { inner: Rect::new(19, 1, 4, 5), ..a.clone() }
+                        *a = Area { inner: GridRect::new(19, 1, 4, 5), ..a.clone() }
                     }
                 },
                 Join::Door,

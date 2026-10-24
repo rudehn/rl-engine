@@ -745,7 +745,7 @@ mod tests {
     use crate::dungeon::Rooms;
     use crate::loops::OpenLoops;
     use crate::testing::{first_seeds, par_seeds, seeds};
-    use atglyph_core::{Rect, RunSeed};
+    use atglyph_core::{GridRect, RunSeed};
     use atglyph_grid::{Terrain, TileProps, TileRegistry};
     use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
 
@@ -1040,7 +1040,7 @@ mod tests {
         let r = rig_with_water();
         let banded = || {
             let mut ctx = BaseContext::blank(14, 5, r.tiles.clone(), r.wall);
-            for p in atglyph_core::Rect::new(1, 1, 12, 3).cells() {
+            for p in atglyph_core::GridRect::new(1, 1, 12, 3).cells() {
                 ctx.terrain_mut().set(p, if (5..9).contains(&p.x) { r.water } else { r.tiles.expect("floor") });
             }
             ctx
@@ -1338,12 +1338,12 @@ mod tests {
             let dry = roomed(s, |c, _| c).unwrap();
             let Ok(wet) = roomed(s, |c, r| c.then(islands(r))) else { return };
             assert!(wet.outputs().first::<Area>().is_none(), "seed {s}: this rig has no areas");
-            let before: Vec<Rect> = dry.outputs().iter::<Room>().map(|r| r.0).collect();
-            let after: Vec<Rect> = wet.outputs().iter::<Room>().map(|r| r.0).collect();
+            let before: Vec<GridRect> = dry.outputs().iter::<Room>().map(|r| r.0).collect();
+            let after: Vec<GridRect> = wet.outputs().iter::<Room>().map(|r| r.0).collect();
             // Each room left lies in a distinct earlier one, in order.
             let mut at = 0;
             for room in &after {
-                let inside = |b: &Rect| b.contains(room.origin()) && b.contains(Point::new(room.right() - 1, room.bottom() - 1));
+                let inside = |b: &GridRect| b.contains(room.origin()) && b.contains(Point::new(room.right() - 1, room.bottom() - 1));
                 let found = before[at..].iter().position(inside);
                 at += found.unwrap_or_else(|| panic!("seed {s}: room {room:?} is in none of {before:?} after the ones before it")) + 1;
                 let under = room.cells().find(|c| !passable[wet.terrain().get(*c).unwrap().index()]);

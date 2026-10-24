@@ -13,7 +13,7 @@
 use crate::app::UiApp;
 use atglyph_bevy::EngineApp;
 use atglyph_bevy::{EngineSet, PresentSet};
-use atglyph_core::Rect;
+use atglyph_core::GridRect;
 use atglyph_render::Terminal;
 use bevy::prelude::*;
 
@@ -44,12 +44,12 @@ pub(crate) struct ControlsScreen {
 #[derive(Resource, Debug, Clone)]
 pub(crate) struct ControlsLayout {
     /// The terminal cells the screen occupies, border included.
-    pub rect: Rect,
+    pub rect: GridRect,
     /// The title in the top border.
     pub title: String,
     /// One row the hint is printed in, right-aligned, while nothing is
     /// open. `None` prints no hint.
-    pub hint: Option<Rect>,
+    pub hint: Option<GridRect>,
     /// The word after the key in the hint.
     pub hint_word: String,
 }
@@ -59,7 +59,7 @@ pub struct ControlsPanel(ControlsLayout);
 
 impl ControlsPanel {
     /// A screen in `rect`.
-    pub fn new(rect: Rect) -> Self {
+    pub fn new(rect: GridRect) -> Self {
         Self(ControlsLayout { rect, title: "Controls".into(), hint: None, hint_word: "controls".into() })
     }
 
@@ -71,7 +71,7 @@ impl ControlsPanel {
 
     /// Prints the hint that opens the screen, right-aligned in `rect`, while
     /// nothing is open: the key and a word, `? controls` by default.
-    pub fn hint(mut self, rect: Rect) -> Self {
+    pub fn hint(mut self, rect: GridRect) -> Self {
         self.0.hint = Some(rect);
         self
     }
@@ -198,7 +198,7 @@ fn width_of(line: &Line) -> usize {
 ///
 /// A heading never ends a column, and no column opens on a blank: both
 /// read as a slip of the hand.
-fn paginate(lines: &[Line], inner: Rect) -> Vec<Vec<Vec<Line>>> {
+fn paginate(lines: &[Line], inner: GridRect) -> Vec<Vec<Vec<Line>>> {
     let height = inner.height.max(1) as usize;
     let column_width = lines.iter().map(width_of).max().unwrap_or(0) as i32;
     let per_page = ((inner.width + GUTTER) / (column_width + GUTTER).max(1)).max(1) as usize;
@@ -226,8 +226,8 @@ fn paginate(lines: &[Line], inner: Rect) -> Vec<Vec<Vec<Line>>> {
 }
 
 /// The cells inside the frame.
-fn inner_of(rect: Rect) -> Rect {
-    Rect::new(rect.x + 2, rect.y + 1, rect.width - 4, rect.height - 2)
+fn inner_of(rect: GridRect) -> GridRect {
+    GridRect::new(rect.x + 2, rect.y + 1, rect.width - 4, rect.height - 2)
 }
 
 /// Prints the hint that opens the screen, while nothing is open.
@@ -310,8 +310,8 @@ mod tests {
 
     /// A screen over a game that declared its own walking and two keys,
     /// with the look cursor for an engine control.
-    fn stage(rect: Rect) -> Stage {
-        Stage::new_with((crate::InspectViewPlugin, ControlsPanel::new(rect).hint(Rect::new(0, 39, 40, 1))), |app| {
+    fn stage(rect: GridRect) -> Stage {
+        Stage::new_with((crate::InspectViewPlugin, ControlsPanel::new(rect).hint(GridRect::new(0, 39, 40, 1))), |app| {
             app.add_control("Move", "walk", crate::controls::Keys::Directions { shift: false });
             app.add_control("Act", "pick up", [KeyCode::KeyG, KeyCode::Comma]);
             app.add_control("Act", "smother the brand", Chord::shift(KeyCode::KeyL));
@@ -325,7 +325,7 @@ mod tests {
 
     #[test]
     fn the_hint_names_the_key_that_opens_the_screen_and_goes_while_it_is_open() {
-        let mut stage = stage(Rect::new(0, 0, 40, 30));
+        let mut stage = stage(GridRect::new(0, 0, 40, 30));
         assert_eq!(stage.row(39), format!("{:>40}", "? controls"), "right-aligned in its row");
         open(&mut stage);
         assert!(stage.app.world().resource::<Modals>().any_open());
@@ -340,7 +340,7 @@ mod tests {
     /// the rest and the border names the key that works.
     #[test]
     fn a_rebound_close_key_closes_the_controls_screen_and_the_old_one_no_longer_does() {
-        let mut stage = stage(Rect::new(0, 0, 40, 30));
+        let mut stage = stage(GridRect::new(0, 0, 40, 30));
         stage.app.world_mut().resource_mut::<crate::cursor::CursorKeys>().close = KeyCode::KeyQ;
         open(&mut stage);
         assert!(stage.row(29).contains("q close"), "the border names the rebound key: {:?}", stage.row(29));
@@ -359,7 +359,7 @@ mod tests {
 
     #[test]
     fn the_screen_lists_the_games_keys_under_their_headings_and_the_engines_beside_them() {
-        let mut stage = stage(Rect::new(0, 0, 50, 30));
+        let mut stage = stage(GridRect::new(0, 0, 50, 30));
         open(&mut stage);
         let rows = stage.rows();
         let find = |needle: &str| rows.iter().position(|r| r.contains(needle)).unwrap_or_else(|| panic!("no {needle:?} in {rows:#?}"));
@@ -380,7 +380,7 @@ mod tests {
     /// row of its own there.
     #[test]
     fn two_controls_of_one_group_on_the_same_keys_are_one_row_and_another_groups_stays_its_own() {
-        let mut stage = Stage::new_with(ControlsPanel::new(Rect::new(0, 0, 60, 30)), |app| {
+        let mut stage = Stage::new_with(ControlsPanel::new(GridRect::new(0, 0, 60, 30)), |app| {
             app.add_control("Act", "drink a potion", KeyCode::KeyD);
             app.add_control("Act", "wait a turn", KeyCode::Period);
             app.add_control("Act", "dig", KeyCode::KeyD);
@@ -401,7 +401,7 @@ mod tests {
 
     #[test]
     fn a_rebound_engine_key_is_listed_as_rebound() {
-        let mut stage = stage(Rect::new(0, 0, 50, 30));
+        let mut stage = stage(GridRect::new(0, 0, 50, 30));
         stage.app.world_mut().resource_mut::<crate::CursorKeys>().look = KeyCode::KeyV;
         open(&mut stage);
         let rows = stage.rows();
@@ -412,7 +412,7 @@ mod tests {
     fn a_screen_too_short_for_one_column_flows_into_columns_and_then_pages() {
         // Sixteen lines of controls over ten rows of screen is two columns,
         // and at sixty cells wide only one column of forty fits a page.
-        let mut narrow = stage(Rect::new(0, 0, 60, 12));
+        let mut narrow = stage(GridRect::new(0, 0, 60, 12));
         open(&mut narrow);
         let first = narrow.rows();
         assert!(first[0].contains(" Controls 1/2 "), "{:?}", first[0]);
@@ -428,7 +428,7 @@ mod tests {
 
         // Wide enough for both columns, it is one page, the game's groups
         // first however late the game declared them.
-        let mut wide = stage(Rect::new(0, 0, 120, 12)).screen(120, 12);
+        let mut wide = stage(GridRect::new(0, 0, 120, 12)).screen(120, 12);
         open(&mut wide);
         let rows = wide.rows();
         assert!(rows[0].contains(" Controls \u{2500}"), "{:?}", rows[0]);
@@ -440,14 +440,14 @@ mod tests {
     fn a_heading_never_ends_a_column_and_no_column_opens_blank() {
         let lines =
             vec![Line::Heading("A".into()), Line::Row("a".into(), "one".into()), Line::Blank, Line::Heading("B".into()), Line::Row("b".into(), "two".into())];
-        let pages = paginate(&lines, Rect::new(0, 0, 80, 3));
+        let pages = paginate(&lines, GridRect::new(0, 0, 80, 3));
         let columns: Vec<Vec<Line>> = pages.into_iter().flatten().collect();
         assert_eq!(columns.len(), 2, "{columns:#?}");
         assert_eq!(columns[0], lines[..2], "the blank and B's heading moved on together, and the blank was dropped");
         assert_eq!(columns[1], lines[3..]);
-        let pages = paginate(&lines, Rect::new(0, 0, 80, 4));
+        let pages = paginate(&lines, GridRect::new(0, 0, 80, 4));
         assert_eq!(pages.len(), 1);
         assert_eq!(pages[0].len(), 2, "still two columns: B and its row would not both fit under the blank");
-        assert_eq!(paginate(&lines, Rect::new(0, 0, 80, 5)), vec![vec![lines.clone()]], "and at five rows it is one column");
+        assert_eq!(paginate(&lines, GridRect::new(0, 0, 80, 5)), vec![vec![lines.clone()]], "and at five rows it is one column");
     }
 }

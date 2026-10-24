@@ -54,7 +54,7 @@
 use crate::app::UiApp;
 use atglyph_bevy::prelude::*;
 use atglyph_bevy::{EngineSet, PresentSet};
-use atglyph_core::{Direction, Rect};
+use atglyph_core::{Direction, GridRect};
 use atglyph_render::{Cell, Terminal};
 use bevy::prelude::*;
 
@@ -110,7 +110,7 @@ impl Default for InventoryKeys {
 #[derive(Resource, Debug, Clone)]
 pub(crate) struct InventoryLayout {
     /// The terminal cells it occupies.
-    pub rect: Rect,
+    pub rect: GridRect,
     /// Drawn in the top border. The engine has no word for a sea chest.
     pub title: String,
     /// What the bag is called where the engine names it, on the controls
@@ -262,7 +262,7 @@ pub struct InventoryPanel(InventoryLayout);
 
 impl InventoryPanel {
     /// The bag in `rect`.
-    pub fn new(rect: Rect) -> Self {
+    pub fn new(rect: GridRect) -> Self {
         Self(InventoryLayout { rect, title: "Inventory".into(), what: "inventory".into(), empty: "Nothing.".into(), never_mind: "never mind".into() })
     }
 
@@ -771,7 +771,7 @@ pub(crate) fn draw_inventory(mut terminal: ResMut<Terminal>, mut menu: ResMut<In
     };
     clear(&mut terminal, rect, palette);
     frame(&mut terminal, rect, &title, &hints, palette);
-    let inner = Rect::new(rect.x + 2, rect.y + 1, rect.width - 4, rect.height - 2);
+    let inner = GridRect::new(rect.x + 2, rect.y + 1, rect.width - 4, rect.height - 2);
     let surface = palette.get(Tones::SURFACE);
     let width = inner.width.max(0) as usize;
 
@@ -798,7 +798,7 @@ pub(crate) fn draw_inventory(mut terminal: ResMut<Terminal>, mut menu: ResMut<In
             (false, false) => Tones::TEXT,
         };
         let fg = palette.get(tone);
-        terminal.fill(Rect::new(inner.x, y, inner.width, 1), Cell::new(' ', fg).on(bg));
+        terminal.fill(GridRect::new(inner.x, y, inner.width, 1), Cell::new(' ', fg).on(bg));
         // The row's letter, then the item's own glyph in its own colour,
         // then its name; a stack says how many. A row past the letters
         // keeps their room, so every name starts in one column.
@@ -863,7 +863,7 @@ mod tests {
     /// and the bag drawn in a small frame.
     fn staged() -> (Stage, Entity, Entity, Entity) {
         let mut stage =
-            Stage::new_with((ThrowingPlugin, crate::TargetViewPlugin, InventoryPanel::new(Rect::new(0, 0, 52, 14)).title("Bag").empty("Lint.")), |app| {
+            Stage::new_with((ThrowingPlugin, crate::TargetViewPlugin, InventoryPanel::new(GridRect::new(0, 0, 52, 14)).title("Bag").empty("Lint.")), |app| {
                 app.world_mut().resource_mut::<Registries>().slots = Registry::from_defs(vec![SlotDef::new("hand"), SlotDef::new("head")]).unwrap();
             })
             .screen(52, 14);
@@ -899,7 +899,7 @@ mod tests {
     /// since putting it on empties that hand too.
     #[test]
     fn a_thing_that_takes_a_second_slot_says_so_in_the_bag_and_worn() {
-        let mut stage = Stage::new_with(InventoryPanel::new(Rect::new(0, 0, 52, 14)).title("Bag"), |app| {
+        let mut stage = Stage::new_with(InventoryPanel::new(GridRect::new(0, 0, 52, 14)).title("Bag"), |app| {
             app.world_mut().resource_mut::<Registries>().slots = Registry::from_defs(vec![SlotDef::new("main hand"), SlotDef::new("off hand")]).unwrap();
         })
         .screen(52, 14);
@@ -934,7 +934,7 @@ mod tests {
     fn a_bag_taller_than_its_rectangle_marks_the_rows_out_of_view_and_keeps_the_picked_row_in_it() {
         // Eight rows inside the frame: four to the list, the rule on the
         // fifth row from the top.
-        let mut stage = Stage::new(InventoryPanel::new(Rect::new(0, 0, 40, 10)).title("Bag")).screen(40, 10);
+        let mut stage = Stage::new(InventoryPanel::new(GridRect::new(0, 0, 40, 10)).title("Bag")).screen(40, 10);
         let player = stage.player;
         let pebbles: Vec<Entity> = (0..10).map(|i| stage.app.world_mut().spawn((Item, Name::new(format!("pebble {i}")))).id()).collect();
         stage.app.world_mut().get_mut::<Inventory>(player).unwrap().items = pebbles;
@@ -1027,7 +1027,7 @@ mod tests {
     /// A player carrying `n` plain things named by their place, in a bag
     /// frame of the usual size.
     fn carrying(n: usize) -> Stage {
-        let mut stage = Stage::new(InventoryPanel::new(Rect::new(0, 0, 52, 14)).title("Bag")).screen(52, 14);
+        let mut stage = Stage::new(InventoryPanel::new(GridRect::new(0, 0, 52, 14)).title("Bag")).screen(52, 14);
         let items = (0..n).map(|i| stage.app.world_mut().spawn((Item, Name::new(format!("thing {i}")))).id()).collect();
         let player = stage.player;
         stage.app.world_mut().entity_mut(player).insert(Inventory { items });
@@ -1304,7 +1304,7 @@ mod tests {
     /// A bag whose items carry `triggers`, built the way a game's loader
     /// builds them, through the registered moments and effect kinds.
     fn with_triggers(triggers: &str) -> (Stage, atglyph_bevy::Triggers) {
-        let stage = Stage::new_with((atglyph_bevy::EffectsPlugin, InventoryPanel::new(Rect::new(0, 0, 52, 14)).title("Bag")), |app| {
+        let stage = Stage::new_with((atglyph_bevy::EffectsPlugin, InventoryPanel::new(GridRect::new(0, 0, 52, 14)).title("Bag")), |app| {
             app.add_engine_effects();
         })
         .screen(52, 14);
@@ -1447,7 +1447,7 @@ mod tests {
     /// its bolt on the foe it was pointed at and not on whoever used it.
     #[test]
     fn a_use_aimed_from_the_bag_and_put_away_spends_nothing_and_confirmed_lands_where_it_was_pointed() {
-        let mut stage = Stage::new_with((atglyph_bevy::EffectsPlugin, crate::TargetViewPlugin, InventoryPanel::new(Rect::new(0, 0, 52, 14))), |app| {
+        let mut stage = Stage::new_with((atglyph_bevy::EffectsPlugin, crate::TargetViewPlugin, InventoryPanel::new(GridRect::new(0, 0, 52, 14))), |app| {
             app.add_engine_effects();
         })
         .screen(52, 14);
@@ -1516,7 +1516,7 @@ mod tests {
     /// with the effects and charges a use resolves through, and the
     /// targeting cursor, which a game's own use key reaches.
     fn chooser() -> (Stage, Entity, Entity, Entity, Entity) {
-        let plugins = (atglyph_bevy::EffectsPlugin, crate::TargetViewPlugin, InventoryPanel::new(Rect::new(0, 0, 52, 14)).title("Bag"));
+        let plugins = (atglyph_bevy::EffectsPlugin, crate::TargetViewPlugin, InventoryPanel::new(GridRect::new(0, 0, 52, 14)).title("Bag"));
         let mut stage = Stage::new_with(plugins, |app| {
             app.add_engine_effects();
             atglyph_bevy::EngineApp::add_effect::<Mark>(app);
@@ -1651,8 +1651,11 @@ mod tests {
     /// and a polish, in that order. Returns the stage, Mirela, the stone
     /// and the polish.
     fn giving() -> (Stage, Entity, Entity, Entity) {
-        let plugins =
-            (atglyph_bevy::PropsPlugin, crate::OffersPanel::new(Rect::new(0, 0, 52, 14)), InventoryPanel::new(Rect::new(0, 0, 52, 14)).never_mind("keep it"));
+        let plugins = (
+            atglyph_bevy::PropsPlugin,
+            crate::OffersPanel::new(GridRect::new(0, 0, 52, 14)),
+            InventoryPanel::new(GridRect::new(0, 0, 52, 14)).never_mind("keep it"),
+        );
         let mut stage = Stage::new_with(plugins, |app| {
             app.insert_resource(atglyph_bevy::Seed(atglyph_bevy::testing::TEST_SEED));
             app.add_verb("give");
@@ -1828,7 +1831,7 @@ mod tests {
     /// reads `unknown`.
     #[test]
     fn what_a_game_says_an_unknown_thing_seems_is_said_in_place_of_unknown() {
-        let mut stage = Stage::new_with(InventoryPanel::new(Rect::new(0, 0, 52, 14)).title("Bag"), |app| {
+        let mut stage = Stage::new_with(InventoryPanel::new(GridRect::new(0, 0, 52, 14)).title("Bag"), |app| {
             app.world_mut().resource_mut::<Registries>().slots = Registry::from_defs(vec![SlotDef::new("body")]).unwrap();
         })
         .screen(52, 14);
