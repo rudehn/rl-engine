@@ -140,19 +140,21 @@ They cross: fire and a web, lightning and water, a dominated ogre and a horn tha
 
 ## The town
 
-Mereholt, for part 5: the Sunken Lantern tavern where mercenaries are hired and rumours about this run's dungeon are heard; a smithy for weapons and armor; an apothecary for potions and scrolls; a curio shop with rare, expensive stock; a temple that heals, lifts curses and identifies, for a price; townsfolk with a line each; and the Drowned Gate.
-Gold is found below and spent here; shop stock is drawn per run.
-The skeleton's town is the map, its lamps and the gate, with nobody to talk to yet.
+Mereholt, as part 5 built it: the Sunken Lantern tavern, where mercenaries are hired and the innkeeper tells rumours of this run's dungeon, always true and never exact; a smithy for weapons and armor; an apothecary for potions and scrolls; a curio shop with rare, expensive stock; a temple whose priest mends, unbinds and names for gold; townsfolk, each a role with a name drawn for the run and lines to say; and the Drowned Gate.
+Gold is found below and spent here: each keeper is the engine's trader, selling a shelf drawn from `assets/wares.ron` at the tier the adventurer has reached, drawn again when they come back from deeper, and buying at a quarter of a thing's worth.
+The temple's rites are priced offers rather than wares, so nothing is bought only to be used at once.
+A waystone carried down calls the gate to whoever kneels with it for ten quiet turns, and the gate then leads back down to where they knelt.
 Part 5's spec, `docs/superpowers/specs/2026-10-08-undermere-town-design.md`, is the content sheet: the keepers, their stock and prices, the temple's rites, the townsfolk's lines, this run's rumours, and the waystone.
 
 ## Mercenaries
 
-For part 6: hired at the tavern from a few candidates drawn each visit, each with a generated name and a kit rolled from a data file: a weapon, armor, perhaps a consumable, at levels that may make it weak or stacked, and a fee that follows what it carries.
-Kinds of mercenary and tempers are left for later.
+As part 6 built them: hired at the tavern from three candidates seated each visit, each with a drawn name and a kit rolled from `assets/mercenaries.ron`: a weapon, armor, perhaps a consumable, at levels that may make it weak or stacked, and a fee that follows what it carries.
+There is one kind of mercenary; kinds and tempers are left for later.
 At most two at once.
-A mercenary follows, fights what the party fights, runs when badly hurt, drinks its own potions, picks up and wears gear better than its own, and follows the adventurer down every stair and through the gate.
-A simple order key switches between follow, hold and fight freely.
-They die for good, and the end screen remembers them.
+A mercenary follows, fights what the party fights, runs when badly hurt, uses its own kit, fetches and puts on gear it is better off wearing, uses anything else only once the adventurer knows it, and goes where the adventurer goes, down every stair, through the gate and home on a waystone's call.
+One key cycles the party's order between follow, hold and fight freely, without spending a turn.
+A mercenary can be handed a thing, and dismissed back to the tavern to wait to be hired again.
+One that dies is gone for good: the log says so as the adventurer's own loss, and the end screen lists it among the fallen.
 
 ## Score
 
@@ -216,5 +218,7 @@ The title screen is a painting that breathes: the black lake under stars, mist o
    It left the engine faults that the soak found for the next engine slice: a mind's movement field cannot see blocking furniture, so a mind boxed in by a post stands, and a game that wants a walking distance floods its own; and the narrator reads a game's line after the pass's own events, so Undermere words a trap's line in the past tense.
    It left braziers, rubble and glowcaps going by band and not by biome, a magic-mapped floor drawn in one cold remembered colour, the archipelago reading as ponds more than islands, since the lakes that would make islands are the ones bridges cannot rejoin, and the sweep of every piece in every recipe over seeds 0 to 200, which has not been finished on a quiet machine; its 0 to 2 version passes.
 5. **Town**: shops and gold, townsfolk, the temple, and whether the gate goes back.
+   On `main` by 2026-10-10, as `docs/superpowers/specs/2026-10-08-undermere-town-design.md` set out: the keepers and their shelves, the temple's rites, the townsfolk and their lines, the innkeeper's rumours, and the waystone and its gate mark, with the engine's trade, priced offers and offers that ask first built for it.
 6. **Mercenaries**: hiring, following, deciding, travelling.
+   On `main` by 2026-10-10, as `docs/superpowers/specs/2026-10-08-undermere-mercenaries-design.md` set out: the tavern's candidates, the hired party under its three orders, giving, dismissing and the fallen, and the party going where the adventurer goes, with the engine's name sets and party panel built for it.
 7. **Polish**: a pass over everything for the look, the feel and the balance.
