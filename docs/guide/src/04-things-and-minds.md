@@ -19,12 +19,12 @@ Bread that mends, rocks that fly, and monsters clever enough to use both.
 /// What the floor is littered with: bread that mends, rocks that fly.
 fn litter(commands: &mut Commands, rats: &Rats, p: Point, bread: bool) {
     if bread {
-        commands.spawn((Item, Crust(8), Name::new("a crust of bread"), Position(p), Glyph::new('%', Color::srgb(0.85, 0.72, 0.40)).on_layer(2)));
+        commands.spawn((Item, Crust(8), Name::new("crust of bread"), Position(p), Glyph::new('%', Color::srgb(0.85, 0.72, 0.40)).on_layer(2)));
     } else {
         commands.spawn((
             Item,
             Throwable::new(7, Some((rats.bite, DiceRoll::new(1, 4)))),
-            Name::new("a rock"),
+            Name::new("rock"),
             Position(p),
             Glyph::new('*', Color::srgb(0.66, 0.66, 0.70)).on_layer(2),
         ));
@@ -46,48 +46,41 @@ A throw is both an item and a blow, so it is its own plugin: the rock leaves the
 /// The player, but only while it is holding the turn, and what it carries.
 type PlayerTurn<'w, 's> = Query<'w, 's, (Entity, Option<&'static Inventory>), (With<Player>, With<MyTurn>)>;
 
-/// Keys to intents. Writing an intent is the whole of asking to act: the
-/// engine claims the turn, charges it, and refuses what cannot be done.
+/// The standard keys. Walking, picking up and waiting are the same in
+/// every roguelike, so they are the engine's `PlayerKeysPlugin`. A walk
+/// key writes a [`Bump`], which the engine resolves to a step, a blow at a
+/// foe, or opening a door, whichever is in the way.
+fn declare_controls(app: &mut App) {
+    app.add_plugins(PlayerKeysPlugin::new().walk("Move", "walk, or strike whoever is there").pick_up("Act", "pick up what is here").wait("Act", "wait a turn"));
+}
+
+/// Warren's own keys to intents. Writing an intent is the whole of asking
+/// to act: the engine claims the turn, charges it, and refuses what cannot
+/// be done.
 ///
-/// The walk keys write a [`Bump`], which the engine resolves to a step, a
-/// blow at a foe, or opening a door, whichever is in the way. `r` writes no
-/// intent at all: it opens the engine's aiming cursor, and the throw is
-/// written when the cursor is committed.
-fn player_input(
-    keys: Res<ButtonInput<KeyCode>>,
-    dirs: Res<DirectionKeys>,
-    repeats: Res<Repeats>,
-    player: PlayerTurn,
-    carried: Carried,
-    mut intents: PlayerIntents,
-) {
+/// `r` writes no intent at all: it opens the engine's aiming cursor, and
+/// the throw is written when the cursor is committed.
+fn player_input(keys: Res<ButtonInput<KeyCode>>, player: PlayerTurn, carried: Carried, mut intents: PlayerIntents) {
     if keys.just_pressed(KeyCode::KeyQ) {
         intents.exit.write(AppExit::Success);
         return;
     }
     // No turn in hand means it is somebody else's move; the key is dropped.
     let Ok((entity, bag)) = player.single() else { return };
-    // A press walks, and a key held down keeps walking: `Repeats` is the
-    // engine's hold, already advanced before input is read.
-    if let Some(dir) = dirs.just_pressed(&keys).or_else(|| repeats.firing_any().map(|(d, _)| d)) {
-        intents.bumps.write(Intent::new(entity, Bump(dir)));
-    } else if keys.just_pressed(KeyCode::KeyG) {
-        intents.pick_ups.write(Intent::new(entity, PickUp));
-    } else if keys.just_pressed(KeyCode::KeyE) {
+    if keys.just_pressed(KeyCode::KeyE) {
         if let Some(crust) = bag.into_iter().flat_map(|b| b.items.iter().copied()).find(|i| carried.crusts.contains(*i)) {
             intents.uses.write(Intent::new(entity, UseItem(crust)));
         }
-    } else if keys.just_pressed(KeyCode::KeyR) {
-        if let Some(rock) = bag.into_iter().flat_map(|b| b.items.iter().copied()).find(|i| carried.rocks.contains(*i)) {
-            intents.aims.write(AimThrow { user: entity, item: rock });
-        }
-    } else if keys.just_pressed(KeyCode::Period) || keys.just_pressed(KeyCode::Numpad5) {
-        intents.waits.write(Intent::new(entity, Wait));
+    } else if keys.just_pressed(KeyCode::KeyR)
+        && let Some(rock) = bag.into_iter().flat_map(|b| b.items.iter().copied()).find(|i| carried.rocks.contains(*i))
+    {
+        intents.aims.write(AimThrow { user: entity, item: rock });
     }
 }
 ```
 
-`g` and `e` write intents, the same as walking does.
+`g` is the standard pick-up, named to `PlayerKeysPlugin` beside walking and waiting, and it asks for an `ItemsPlugin`.
+`e` is Warren's own, and writes a `UseItem` intent the same way.
 `r` writes no intent at all.
 It writes an `AimThrow`, and the engine opens its targeting cursor, previews the flight with the same function the resolver throws with, and writes the throw when you commit.
 The cells you are shown are the cells the rock will fly through.
@@ -121,6 +114,12 @@ In the drawing phase it would land a blow too late.
 
 <!-- include: ../../../examples/tutorial/src/bin/step04_things.rs:populate -->
 ```rust,no_run
+/// The stream the rats are placed from, named once and drawn from each
+/// floor's own seed: a spawner added later draws from a stream of its own
+/// and cannot shift what this one places, and the floors may be entered in
+/// any order.
+const RATS: SeedDomain = SeedDomain::new(b"warren.rats");
+
 /// Fills the floor the one time it is built. `PlaceEntered::first` is
 /// true only on that arrival, so coming back does not restock it.
 fn populate(mut commands: Commands, mut entered: MessageReader<PlaceEntered>, rats: Res<Rats>, map: Res<WorldMap>, seed: Res<Seed>) {
@@ -130,9 +129,7 @@ fn populate(mut commands: Commands, mut entered: MessageReader<PlaceEntered>, ra
         }
         let Some(place) = map.place(ev.map) else { continue };
         let bounds = place.terrain.bounds();
-        // A stream of its own, keyed by name: adding another spawner later
-        // cannot shift the numbers this one draws.
-        let mut rng = seed.stream(b"warren.rats", ev.map.0 as u64);
+        let mut rng = seed.place(ev.map).rng(RATS, 0);
         let mut placed = 0;
         while placed < 16 {
             let p = Point::new(rng.random_range(bounds.x..bounds.right()), rng.random_range(bounds.y..bounds.bottom()));
@@ -181,6 +178,9 @@ fn populate(mut commands: Commands, mut entered: MessageReader<PlaceEntered>, ra
     }
 }
 ```
+
+The rats are placed from a stream of Warren's own, a `SeedDomain` drawn from the floor's own seed through `seed.place(map)`.
+A spawner added later draws from a stream of its own and cannot shift what this one places.
 
 `Intelligence` is a set of wits, and it decides what a mind is allowed to consider.
 `Wits::MINDLESS` fights to the death and forgets what it cannot see.

@@ -85,7 +85,7 @@ That is the same shape as throwing a rock in [chapter 4](04-things-and-minds.md)
 ## The one a monster uses
 
 The ratlings get a knack too, and it is how they eat.
-`gnaw` costs `Item("bread", 1)` and mends what it heals, so a ratling that carries a crust can spend it to patch itself up.
+`gnaw` costs `Item("bread", 1)` and mends `1d6`, so a ratling that carries a crust can spend it to patch itself up.
 The cost is paid from the bag by tag, which is what the `Tagged` component on the crust is for.
 
 Their brain gains `UseAbility`, which scores what an ability's footprint would land on rather than learning what any particular ability does.

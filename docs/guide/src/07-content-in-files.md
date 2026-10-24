@@ -176,7 +176,7 @@ Weight zero keeps an entry out of the table, which is how the king lives in the 
 
 ## The tiles too
 
-The largest block of Rust in [chapter 1](01-a-map-and-walking.md) was three lines of colour literals.
+The largest block of Rust in [chapter 2](02-sight-and-light.md) was three lines of colour literals.
 Colour is content as well, so it goes in a file of the same shape:
 
 <!-- include: ../../../examples/tutorial/assets/tiles.ron -->

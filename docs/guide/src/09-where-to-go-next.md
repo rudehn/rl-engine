@@ -1,6 +1,6 @@
 # Where to go next
 
-Warren is a complete roguelike in about 450 lines and uses maybe a third of the engine.
+Warren is a complete roguelike in under 700 lines before its tests, and uses maybe a third of the engine.
 The Systems pages are the reference for the rest, one per system, and each teaser below links to the page that covers it.
 
 ## Lighting
@@ -50,7 +50,7 @@ The Systems pages are the reference for the rest, one per system, and each tease
 - **Add** `FactsPlugin`.
 - **You supply** facts with a kind, a subject, an object and an amount, and objectives over them.
 - **You get** `Quests` with prerequisite chains and a victory flag, and `Counters`, a ledger of named tallies.
-  It is the grown-up version of [chapter 6](06-two-floors.md)'s `if the king died`.
+  It is the grown-up version of the `if` that ends the run at the daylight in [chapter 6](06-two-floors.md).
 - **Reference** [Statuses](systems/statuses.md), where `FactsPlugin` sits beside the statuses it shares a page with.
 
 ## Saving
@@ -107,7 +107,7 @@ No example game has a flag that prints it yet.
 
 ## Panels, past the two you have
 
-Warren uses a status strip and a log, added in [chapter 3](03-blows-and-the-log.md) when there was something to put in them.
+Warren uses a status strip and a log, added in [chapter 2](02-sight-and-light.md) when there was something to put in them.
 The engine has four more views and the machinery behind all of them.
 
 A panel is split in three, and the split is why any of it belongs in an engine.
@@ -122,7 +122,7 @@ That gives five places to stop, and you can stop at any of them: add the panel a
 - **Colours** are never passed to a widget. Every widget takes a `ToneId`, a semantic role the `Palette` turns into a colour, and `add_tone` declares a role and colours it in one call.
 - **Screens** are a stack of interned ids in `Modals`, with `no_modal` and `modal_is` as run conditions, so one gate on your input covers every screen you ever add.
 - **Keys** can be declared once in a `Controls` registry and read back by name, which is what lets `ControlsPanel` show exactly the keys the game reads.
-  The keys every roguelike reads alike, walking, the stairs, waiting, picking up, firing and throwing, are `PlayerKeysPlugin`, named in your own words; step 10 takes four of them and keeps the shove and the crusts in its own system.
+  The keys every roguelike reads alike, walking, the stairs, waiting, picking up, firing and throwing, are `PlayerKeysPlugin`, named in your own words; step 9 takes four of them and keeps the shove and the crusts in its own system.
 - **Two presenters over one view**: `LogPanel` draws the last few lines along the bottom and `ScrollbackPanel` draws all of them on a screen, over the same log, and neither knows the other exists.
 - **The forecast** in the look cursor is not the panel's arithmetic. `atglyph::rules::forecast` runs the average roll through the same mitigation pipeline a real blow goes through, so it cannot drift from the fight.
 - **The screen** is cut once, and `RailLayout` cuts the usual one, a map with the log under it and a rail down the right, from a few numbers; its `RailScreen` hands back every rectangle, and `panels()` the rail's panels as a group you edit.
@@ -134,8 +134,43 @@ That gives five places to stop, and you can stop at any of them: add the panel a
 
 The engine ships the test kit it uses itself, in `atglyph::ecs::testing`, and a game's tests use the same copy.
 
-A headless app is `MinimalPlugins`, states and `CorePlugin`, plus the engine plugins your game uses and your own systems, exactly as `main` does minus the three that draw.
+A headless app is the engine with no window, plus the engine plugins your game uses and your own systems, exactly as `main` adds them minus what draws.
 Two `update` calls start a run and deal the player its first turn; after that it is one per action.
+
+<!-- include: ../../../examples/tutorial/src/bin/step09_panels.rs:headless -->
+```rust,no_run
+    /// The warren with no window: the engine plugins the game uses, the
+    /// game's own systems, and nothing that needs a screen.
+    fn headless(seed: u64) -> App {
+        // Someone to read what `populate` tells, and the plugins `main` adds.
+        let narrator = NarratorPlugin::default().phrase(Phrase::HitsYou, "{Who} bites you for {n}.", Tones::BAD);
+        let mut app = atglyph::testing::headless(RunSeed(seed), narrator, (CombatPlugin, MindsPlugin, ItemsPlugin));
+        app.places(Warren::new())
+            .add_choice::<Shove>()
+            .add_message::<Shoved>()
+            .add_systems(NewRun, start)
+            .add_systems(Turn, resolve_shoves.in_set(ResolveSet::Act))
+            .add_systems(Turn, (populate, eat).in_set(TurnSet::React))
+            .add_systems(Update, narrate.in_set(PresentSet::Narrate));
+        app
+    }
+
+    /// A started run: two frames is enough for the warp to build floor one
+    /// and the scheduler to deal the player its first turn.
+    fn started(seed: u64) -> (App, Entity) {
+        let mut app = headless(seed);
+        app.update();
+        app.update();
+        let player = app.world_mut().query_filtered::<Entity, With<Player>>().single(app.world()).unwrap();
+        (app, player)
+    }
+
+    fn act<A: Action>(app: &mut App, actor: Entity, action: A) {
+        app.world_mut().write_message(Intent::new(actor, action));
+        app.update();
+    }
+```
+
 Writing an intent is how the game plays itself, and a suite like Warren's runs in about forty milliseconds.
 
 - `KeyScriptPlugin` and `press(&mut app, key)` play a key the way a keyboard does, so a test drives your real input system instead of writing intents by hand.
@@ -150,17 +185,25 @@ Test the refusal as well as the action: a wrong refusal crashes nothing, it sile
 The test module of `step09_panels.rs` is the worked example.
 
 
+## In a text terminal
+
+- **Add** `TtyRoguelikePlugins::new(cols, rows)` in place of `RoguelikePlugins`, with the same `map` and `across`.
+- **You supply** nothing else: the same game plugins and panels run unchanged.
+- **You get** the glyph grid written to the terminal the game was started in, locally or at the end of an SSH login, with only the cells that changed written each frame and the keys typed read back as Bevy's keys.
+  It is desktop only, and it has no window, no fullscreen setting and no typeface of its own.
+- **Worked example** the starter template, whose `main` picks `TtyRoguelikePlugins` when it is run with `--tty`.
+
 ## The crates
 
 | Tier | Crates | Bevy |
 |---|---|---|
 | 0 | `atglyph-core` | no |
 | 1 | `atglyph-grid`, `atglyph-mapgen`, `atglyph-rules` | no |
-| 2 | `atglyph-bevy`, `atglyph-render`, `atglyph-ui`, `atglyph-save` | yes |
+| 2 | `atglyph-bevy`, `atglyph-render`, `atglyph-ui`, `atglyph-save`, `atglyph-tty` | yes |
 | 3 | `atglyph` | facade |
 
 Map generation, field of view, pathfinding, the damage pipeline and the AI brains are tier 1.
-They run headless, test in milliseconds and build for WebAssembly, so the tests in [chapter 9](09-where-to-go-next.md) cost milliseconds, and CI enforces the boundary.
+They run headless, test in milliseconds and build for WebAssembly, so the property tests above cost milliseconds, and CI enforces the boundary.
 A tool that needs only one of them can depend on that crate alone and never compile Bevy.
 
 ## The examples
@@ -168,7 +211,7 @@ A tool that needs only one of them can depend on that crate alone and never comp
 | Example | What it shows |
 |---|---|
 | `foundry` | Ten decks of a droid foundry; combat depth, with guns that run hot or dry, droids that shoot back, and a probe that shouts for them |
-| `terminal` | A walk through generated rooms in a terminal on the Bevy-free crates alone, the way a toolkit is used when the game owns its loop |
+| `terminal` | A walk through generated rooms and a fight with the rats in them, in a terminal, on the Bevy-free crates alone, the way a toolkit is used when the game owns its loop |
 | `undermere` | A delve from a lakeside town down ten floors to a drowned king, written as a whole game; the engine's title and records, monsters written as traits, and square tiles |
 
 ## Reading further
@@ -176,7 +219,7 @@ A tool that needs only one of them can depend on that crate alone and never comp
 - [`docs/OVERVIEW.md`](https://github.com/rudehn/rl-engine/blob/main/docs/OVERVIEW.md), the inventory of what exists and what does not.
 - [`docs/PLAN.md`](https://github.com/rudehn/rl-engine/blob/main/docs/PLAN.md), why, decision by decision.
 - [`docs/design/`](https://github.com/rudehn/rl-engine/tree/main/docs/design), one file per subsystem: how it works and why it is shaped that way.
-  Twenty of them, and among those this chapter has not sent you to already are
+  Twenty-two of them, and among those this chapter has not sent you to already are
   [fields](https://github.com/rudehn/rl-engine/blob/main/docs/design/fields.md) (fire and gas),
   [minds](https://github.com/rudehn/rl-engine/blob/main/docs/design/minds.md) (how a non-player decides),
   [noise](https://github.com/rudehn/rl-engine/blob/main/docs/design/noise.md) (what a sound is and who hears it),

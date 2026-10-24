@@ -52,13 +52,12 @@ Actors on other maps are skipped by the scheduler instead of simulated, so a dee
 /// How a floor is built. The engine calls this once, the first time
 /// something enters the map, and keeps what comes back.
 impl PlaceRules for Warren {
-    fn build(&self, map: MapId) -> Result<PlaceBuild, BuildError> {
+    fn build(&self, map: MapId, seed: PlaceSeed) -> Result<PlaceBuild, BuildError> {
         let depth = floor_of(map);
         let (wall, open, roots) = (self.tiles.expect("earth"), self.tiles.expect("dirt"), self.tiles.expect("roots"));
         let mut ctx = BaseContext::blank(84, 42, self.tiles.clone(), wall);
-        // A stream per floor, so the second floor is the same whether or
-        // not you dawdled on the first.
-        let seed = RunSeed(self.seed.0 ^ (depth as u64) << 32);
+        // `seed` is this floor's own, handed in by the engine, so the second
+        // floor is the same whether or not you dawdled on the first.
         let chain = match depth {
             // Dug rooms near the surface.
             1 => Chain::new().then(dungeon::Rooms { floor: open, attempts: 40, min_size: 5, max_size: 10, min_rooms: 6 }).then(dungeon::Doors { door: roots }),
@@ -69,6 +68,10 @@ impl PlaceRules for Warren {
         // allows: the stairs down on the first, the way out on the second.
         chain.then(dungeon::RandomStart).then(dungeon::FarthestExit).run(&mut ctx, seed)?;
         PlaceBuild::from_context(ctx)
+    }
+
+    fn tiles(&self) -> TileTables {
+        self.tiles.tables()
     }
 
     /// The floors, top first, and how their stairs look. The engine lays a
@@ -86,13 +89,19 @@ impl PlaceRules for Warren {
 `build` is handed the `MapId`, so the shape of the run is a `match`, and `ladder` says the floors stand one under the other and how their stairs look.
 Dug rooms near the surface, a gnawed-out cave under them, and `KeepLargestRegion` after the cave because cave generators produce islands and an unreachable half is a floor whose stairs are sometimes unreachable.
 
-The seed is derived per floor, so the second floor is the same whether or not you dawdled on the first.
-Derive from the run seed and the thing being built, never from a counter the player can move.
+The `PlaceSeed` the engine hands `build` is derived from the run's seed and the map's number alone, so the second floor is the same whether or not you dawdled on the first.
+`populate` draws from the same floor's seed through `seed.place(map)`, never from a counter the player can move.
 
 ## Stairs are entities
 
 <!-- include: ../../../examples/tutorial/src/bin/step06_descent.rs:populate -->
 ```rust,no_run
+/// The stream the rats are placed from, named once and drawn from each
+/// floor's own seed: a spawner added later draws from a stream of its own
+/// and cannot shift what this one places, and the floors may be entered in
+/// any order.
+const RATS: SeedDomain = SeedDomain::new(b"warren.rats");
+
 /// Fills the floor the one time it is built. `PlaceEntered::first` is
 /// true only on that arrival, so coming back does not restock it.
 fn populate(mut commands: Commands, mut entered: MessageReader<PlaceEntered>, rats: Res<Rats>, map: Res<WorldMap>, seed: Res<Seed>) {
@@ -102,9 +111,7 @@ fn populate(mut commands: Commands, mut entered: MessageReader<PlaceEntered>, ra
         }
         let Some(place) = map.place(ev.map) else { continue };
         let bounds = place.terrain.bounds();
-        // A stream of its own, keyed by name: adding another spawner later
-        // cannot shift the numbers this one draws.
-        let mut rng = seed.stream(b"warren.rats", ev.map.0 as u64);
+        let mut rng = seed.place(ev.map).rng(RATS, 0);
         let mut placed = 0;
         while placed < 16 {
             let p = Point::new(rng.random_range(bounds.x..bounds.right()), rng.random_range(bounds.y..bounds.bottom()));
@@ -118,13 +125,7 @@ fn populate(mut commands: Commands, mut entered: MessageReader<PlaceEntered>, ra
             // the floor: `Scavenge` fetches gear and missiles, not meals.
             let supper = clever.then(|| {
                 commands
-                    .spawn((
-                        Item,
-                        Crust(6),
-                        Tagged(vec![rats.bread]),
-                        Name::new("a crust of bread"),
-                        Glyph::new('%', Color::srgb(0.85, 0.72, 0.40)).on_layer(2),
-                    ))
+                    .spawn((Item, Crust(6), Tagged(vec![rats.bread]), Name::new("crust of bread"), Glyph::new('%', Color::srgb(0.85, 0.72, 0.40)).on_layer(2)))
                     .id()
             });
             let mut e = commands.spawn((
@@ -158,7 +159,7 @@ fn populate(mut commands: Commands, mut entered: MessageReader<PlaceEntered>, ra
         // the ladder is ours: the way out, at the last floor's far point,
         // an entity standing on a cell and nothing more.
         if let Some(far) = ev.exit.filter(|_| floor_of(ev.map) == FLOORS) {
-            commands.spawn((Position(far), WayOut, Name::new("a crack of daylight"), Glyph::new('<', Color::srgb(1.0, 0.95, 0.70)).on_layer(1)));
+            commands.spawn((Position(far), WayOut, Name::new("crack of daylight"), Glyph::new('<', Color::srgb(1.0, 0.95, 0.70)).on_layer(1)));
         }
         // Bread to mend with and rocks to throw, scattered the same way.
         let mut dropped = 0;
@@ -177,7 +178,9 @@ fn populate(mut commands: Commands, mut entered: MessageReader<PlaceEntered>, ra
 There is no stairs table and no special tile flag.
 The engine lays the stairs from the ladder when each floor is built: a stair up at its start, but the first floor's, and a stair down at its far point, but the last floor's.
 Each is an entity with a `Transition`, which names where it leads and how you arrive, and `GoThrough` takes the one you are standing on.
-The bottom of the ladder is yours, so `populate` puts the daylight at the last floor's far point, and nothing stops you putting a `Transition` on a rat.
+`PlayerKeysPlugin` gains `go_through`, which binds it to Enter, `>` and `<`.
+`LadderEnd::Game` says the bottom of the ladder is a way of the game's own rather than nothing.
+So `populate` puts the daylight at the last floor's far point, and nothing stops you putting a `Transition` on a rat.
 
 ## Winning
 

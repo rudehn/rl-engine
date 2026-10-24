@@ -32,11 +32,12 @@ To try the engine first, the guide's first six steps run in the browser with not
 ## Features
 
 - **Procedural map generation**: a chain of seeded passes with rooms and corridors, BSP, cellular automata caves, doors, largest-region cleanup and ASCII prefabs.
-- **Places grown by accretion**: rooms, halls and passages attached piece by piece so they share walls, districts that differ across one map, loops cut through the longest detours, a survey of every area (dead end, chokepoint, junction, how far off the direct route), and recipes in RON that a place is held to and rebuilt until it meets.
+- **Places grown by accretion**: rooms, halls and passages attached piece by piece so they share walls, districts that differ across one map, loops cut through the longest detours, a landmark laid first with the floor grown out from it, caves, lakes and islands joined by bridges, barriers growth goes round, openings walled over to be found, a survey of every area (dead end, chokepoint, junction, how far off the direct route), and recipes in RON that a place is held to and rebuilt until it meets.
 - **Field of view**: symmetric shadowcasting over any `OpacitySource`, plus line of fire and targeting shapes for bolts, balls, beams and cones.
 - **Pathfinding**: A* with reusable scratch buffers, region-bounded Dijkstra maps, flee maps and flow fields per movement profile.
-- **Monster AI**: tactic-priority brains with hunt, melee, flee-when-hurt, wander, using what is carried, following a leader and exploring by a chart of what has been seen that a party shares and can hand on, reading snapshots of what each actor can see; a monster can answer its own moments too, a bite that poisons, a death that bursts, an aura that spares its bearer.
-- **Work across many turns**: an actor rebuilding, charging or digging over turns it spends one at a time, broken off when it is hurt, dies or loses its reach, with its row saying what it is doing and how long it has left, so a busy actor never reads as a stuck one.
+- **Places that are kept**: a floor, a level or a map built the first time something enters it, from a seed of its own so the floors may be entered in any order, and kept whole after; the stairs between a ladder of floors laid by the engine; and each place with its own ambient light, peace where nothing is harmed, and the cells it hid until someone finds them.
+- **Monster AI**: tactic-priority brains with hunt, melee, flee-when-hurt, wander, using what is carried, following a leader, exploring and stepping round a trap anyone can see, built from a standard chain a game switches parts of on and off or written tactic by tactic, reading snapshots of what each actor can see; a monster can answer its own moments too, a bite that poisons, a death that bursts, an aura that spares its bearer.
+- **Work across many turns**: an actor rebuilding, charging or digging over turns it spends one at a time, the player's long actions among them, broken off when it is hurt, dies or loses its reach, with its row saying what it is doing and how long it has left, so a busy actor never reads as a stuck one.
 - **A turn loop the engine owns**: an integer-clock energy scheduler, speed-scaled action costs and every due turn resolved inside one frame.
 - **A run nobody plays**: an onlooker in place of a player, a sight that sees the whole map, and a pace that deals so much game time a second, so two sides of minds fight while someone watches, or a thousand fights run headless.
 - **RPG rules**: stats and modifiers, a staged damage pipeline with resistances, status effects that tick by the turn, hold an actor's turns, change its speed or hold it asleep until harm, a noise or a noticed foe wakes it, factions, equipment slots, item levels written as authored parts a game types its own items with, blows that sweep round the wielder or pierce through the target, sneak attacks on whoever has not noticed the attacker, and a to-hit roll shaped by range and light whose model is the game's to choose.
@@ -45,17 +46,20 @@ To try the engine first, the guide's first six steps run in the browser with not
 - **Loot the engine places**: a floor scattered when a place is first built, drops rolled where the dead fall, and containers that ask for a kind of thing by tag and draw it at the band they stand on, so one locker holds better gear deeper; every draw from a stream of its own, and every item made by the game through one trait, since what an item is stays the game's.
 - **Prefabs as data**: a piece of a place written in RON as rows of glyphs and a legend, one thing to a cell, with slots for props, for items named or drawn by tag and for monsters named or drawn by role from the game's own spawn table, each drawn at the depth of the place it was stamped in from a stream of its own cell, and a monster put at a slot holding it as its post, walking back when it has nothing better to do; a coverage report says, for every drawn slot at every depth, whether it finds something.
 - **Abilities and targeting**: what an actor can spend a turn on as data in RON, with costs against a pool, health or a tagged item, requirements over statuses, slots and stats, cooldowns on the turn clock, effects as types a game extends, and one cursor that previews through the call the resolver lands with.
-- **Stealth and awareness**: a roll to notice by sight and light, memory of who has noticed whom, waking on a blow, and minds that act only on what they have noticed and search where they last saw it, and statuses that make their holder unseen until it strikes.
+- **Stealth and awareness**: a roll to notice by sight and light, memory of who has noticed whom, waking on a blow, and minds that act only on what they have noticed and search where they last saw it, statuses that make their holder unseen until it strikes, and actors the player cannot make out outside the light.
 - **Noise and hearing**: every engine action makes its own sound, loudness spent walking through what a tile is made of, and a listener that hears a place rather than who made it and walks to it as a trail.
 - **Fire and gas**: a value per tile stepped a turn at a time, gas whose kinds are a game's content and fire whose rules are the engine's, both writing into what stops sight and light.
 - **Props and remains**: a crate, a lever or a console as content rather than a component and an action in every game, containers with a screen the engine runs end to end, an actor that offers a verb too, a captive to free or someone to talk to, and the dead left where they fell as the entity that died, which a game can stand back up as it was.
 - **Names from syllables**: a file of name sets, pools of syllables and weighted patterns, every drawn name checked against libtcod's rejections and drawn again a bounded number of times, and never one a run has already given.
 - **Data-driven content**: tiles, monsters, items, statuses and quests are registries loaded from RON files, with weighted spawn tables by depth band.
-- **Quests and events**: facts about what happened, named counters, and quests as objectives over those facts with prerequisites and a victory condition.
-- **Save and load**: file, memory and browser storage backends, a versioned save schema and entity remapping.
-- **Lighting**: point sources cast through the same shadows as sight, one component for props, actors and items, fuel that burns down, dark sight, a viewshed cut to what is lit, and three bands, dark, dim and lit, that stealth and the to-hit roll read; opt-in per game, with ambient a value the game writes.
+- **Quests and events**: facts about what happened, named counters, and quests as objectives over those facts with prerequisites, read from a file, a quest marked `victory` ending the run won.
+- **Companions and trade**: followers who come through a way after their leader and a rail that lists them, and two actors trading over a screen of each side's goods, with a price on any offer and a purse on either side.
+- **Save and load**: file, memory and browser storage backends, a versioned save schema and entity remapping, a saved run continued by the engine, and each user's saves kept apart on a shared server.
+- **Lighting**: point sources cast through the same shadows as sight, one component for props, actors and items, tiles and props that shed the light their definitions say, fuel that burns down, dark sight, a viewshed cut to what is lit, and three bands, dark, dim and lit, that stealth and the to-hit roll read; opt-in per game, with each place's ambient set where it is built.
 - **Glyphs or pictures**: a diffed glyph grid renderer, drawn in a font the game ships so it looks the same on every platform and in a browser, and a tileset that draws a picture in place of any glyph it names with nothing else changing, so one game is letters or sprites at the flick of a setting; a map view where every cell is its own shade of its tile, light colours the background as well as the glyph, flames flicker and water shimmers, and memory, the stairs and things last seen as well as the ground, fades to a cold blue; animations played from what the turns cued, with the turns held so a bolt is seen to arrive before it hurts; which cell and which map tile the mouse is over, in a window of any size; and a capture tool that plays keys and photographs the window.
-- **UI you can take apart**: seventeen panels, each a view of plain data, a collector that refills it and a presenter you may replace or drop, with colours named as roles in a palette rather than written into a widget, a narrator that says what a turn did through a phrasebook a game rewords, and a controls screen built from the registry every key is declared in.
+- **UI you can take apart**: nineteen panels, each a view of plain data, a collector that refills it and a presenter you may replace or drop, with colours named as roles in a palette rather than written into a widget, a narrator that says what a turn did through a phrasebook a game rewords, a controls screen built from the registry every key is declared in, the keys every roguelike reads alike declared once and named in the game's words, and the usual play screen, a map, a log and a rail, cut from a few numbers.
+- **A window or a text terminal**: the same game and the same panels in a window, in a browser, or in the text terminal it was started in, locally or over SSH.
+- **Tests without a window**: the test kit the engine uses itself, a headless game, keys played through the real input, and helpers that stand someone where a test needs them and read the screen and the log back.
 - **Settings a player keeps**: a registry a game adds its own choices to, a screen that lists them, and a file that remembers them between launches, with fullscreen declared by the engine and a glyph grid that is laid out for its window, so text is sharp windowed, maximized or filling the screen.
 - **A title screen**: the engine's menu over a game's own picture, holding the first run back until the player picks Continue, New Game, Records, Settings or Exit, asking before a saved run is given up, and offered again from the pause and end menus, with a run left there written down to be continued.
 - **Records of every run**: a run ends in a record in the game's own words, a score, a line and its sections, filed best first and a hundred deep, kept between launches, and shown on the screen the run ends on and on a records screen the title opens.
@@ -85,7 +89,7 @@ cargo run -p terminal   # arrows or hjklyubn to move, q, Esc or Ctrl-C to quit
 
 ### The framework
 
-`atglyph-bevy`, `atglyph-render`, `atglyph-ui` and `atglyph-save`, behind the `atglyph` facade, own the loop: the turn order, the systems in a fixed sequence, the plugins, the panels and the saves.
+`atglyph-bevy`, `atglyph-render`, `atglyph-ui`, `atglyph-save` and `atglyph-tty`, behind the `atglyph` facade, own the loop: the turn order, the systems in a fixed sequence, the plugins, the panels and the saves.
 A game adds `RoguelikePlugins` and then the subsystems it wants by name.
 The tutorial, Undermere and Foundry are the worked examples.
 
@@ -136,7 +140,7 @@ App::new()
     .run();
 ```
 
-That compiles and opens a window, and then play refuses to begin until the game supplies a map, tile looks and a player, which the engine says at startup by listing everything missing at once.
+That compiles and opens a window onto nothing: play begins once the game names its places with `app.places`, and then anything else it is missing, here the `Seed` the places are built from and the `CombatRules` and `Registries` that combat reads, is listed at once with how to make each.
 The template is the smallest version that actually plays, and [the guide's first chapter](docs/guide/src/01-a-map-and-walking.md) writes it out line by line.
 
 A tool or a server that needs no window depends on the tier-0 and tier-1 crates it uses, such as `atglyph-grid` alone for field of view and pathfinding, and never compiles Bevy.
@@ -211,6 +215,7 @@ Each crate declares its tier in its `Cargo.toml`, and `scripts/check-tiers.sh` f
 | 2 | `atglyph-render` | the glyph grid renderer and the world view |
 | 2 | `atglyph-save` | save backends, the versioned schema policy, entity remapping, the engine's state as a save |
 | 2 | `atglyph-ui` | theme tokens, widgets, key hints, the log view |
+| 2 | `atglyph-tty` | the glyph grid written to a text terminal, and its keys read back |
 | 3 | `atglyph` | facade and prelude |
 
 ## Example games
@@ -286,7 +291,7 @@ The window opens above the others without taking focus, and the screen must be u
 - **[The guide](docs/guide/src/introduction.md)** builds a small roguelike in nine runnable chapters, from a map on screen to an action of your own. Start here, at [rudehn.github.io/rl-engine](https://rudehn.github.io/rl-engine/) for the sidebar and the search. Every chapter is a binary in `examples/tutorial`, so the code in the guide is code that compiles.
 - **[The systems reference](docs/guide/src/systems/)** is the same book's page per subsystem, checked against the code it documents: what it is, its plugins, and where to read the source.
 - [**docs/OVERVIEW.md**](docs/OVERVIEW.md) is the inventory of what exists and what is not built yet, kept current, with a table of every plugin and every panel.
-- [**docs/design/**](docs/design/) is how one subsystem works and why, a page each for twenty-one of them, from abilities, fire and gas, lighting and minds to run records, stealth and the UI, listed in [the docs index](docs/README.md).
+- [**docs/design/**](docs/design/) is how one subsystem works and why, a page each for twenty-two of them, from abilities, fire and gas, lighting and minds to run records, stealth and the UI, listed in [the docs index](docs/README.md).
 - [**docs/PLAN.md**](docs/PLAN.md) is the design: what was decided, why, and which milestone each piece lands in.
 - [**docs/TODO.md**](docs/TODO.md) is the work that has been found and not started.
 - [**docs/reviews/**](docs/reviews/) holds the code reviews of the three repos the engine was extracted from, with `path:line` citations for every claim in the plan.

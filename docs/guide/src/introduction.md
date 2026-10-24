@@ -4,10 +4,11 @@ This guide builds a roguelike called Warren: a rat warren under a granary, two f
 
 ![Warren: a dug room lit by sight, remembered corridors in cold blue, two rats closing in, and the log counting their bites](images/warren.png)
 
-Six steps, each a complete program you can run, and each one playable in this page without installing anything.
+Nine steps, each a complete program you can run, and the first six playable in this page without installing anything.
 CI compiles every one of them, so the code in these pages is code that builds.
 
 Each step is the one before it plus a single new thing, and the sixth is a small game with floors, fighting, items, an ability and a way to win.
+The last three move the monsters into a file, add an action the engine has never heard of, and fill a rail of panels down the side.
 
 ## Two rules the API follows
 
@@ -31,6 +32,9 @@ To build and run the steps yourself, or to start a game of your own from the tem
 
 Each chapter takes the previous step and adds one thing.
 Code in the text is pulled from the step's source, and the full file is linked at the top of every chapter.
+
+Every step imports `atglyph::prelude::*`, the names a first game uses.
+From [chapter 4](04-things-and-minds.md) on, a step also imports the topic modules it needs beside it, such as `atglyph::prelude::{combat::*, items::*}`.
 
 Panels arrive when there is something to put in them rather than all at once, and the last chapter says where the rest of the engine is.
 

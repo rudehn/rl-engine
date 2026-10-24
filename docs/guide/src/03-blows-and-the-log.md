@@ -20,7 +20,7 @@ fn main() -> AppExit {
     let mut app = App::new();
     // What every game adds: the window and the glyph terminal, the turn
     // loop, sight, the map in everything but the status row and the log, and the UI base.
-    app.add_plugins(RoguelikePlugins::new("Warren", COLS, ROWS).map(Rect::new(0, 1, COLS, ROWS - 1 - LOG_ROWS)))
+    app.add_plugins(RoguelikePlugins::new("Warren", COLS, ROWS).map(GridRect::new(0, 1, COLS, ROWS - 1 - LOG_ROWS)))
         // Without this the world is lit everywhere and sight is geometry
         // alone. With it, `visible` shrinks to what a light reaches.
         .add_plugins((CombatPlugin, MindsPlugin, LightingPlugin))
@@ -28,57 +28,48 @@ fn main() -> AppExit {
         .insert_resource(Seed(RunSeed(7)))
         // Two panels: the vitals strip on the top row, the log along the
         // bottom. Each draws itself; neither needs a system of yours.
-        .add_plugins(VitalsPanel::new(Rect::new(0, 0, COLS, 1)).hints("[t]orch  [.]wait  [q]uit"))
-        .add_plugins(LogPanel::new(Rect::new(0, ROWS - LOG_ROWS, COLS, LOG_ROWS)))
+        .add_plugins(VitalsPanel::new(GridRect::new(0, 0, COLS, 1)).hints("[t]orch  [.]wait  [q]uit"))
+        .add_plugins(LogPanel::new(GridRect::new(0, ROWS - LOG_ROWS, COLS, LOG_ROWS)))
         // The engine narrates blows, deaths and pickups into the log, naming
         // things in their own colours. Warren changes one phrase: what a rat
         // does to you is a bite.
         .add_plugins(NarratorPlugin::default().phrase(Phrase::HitsYou, "{Who} bites you for {n}.", Tones::BAD))
         // Escape opens the menu, and the run's end opens it by itself.
-        .add_plugins(GameMenuPanel::new(Rect::new(COLS / 2 - 20, 8, 40, 12)).died("The warren keeps you."))
+        .add_plugins(GameMenuPanel::new(GridRect::new(COLS / 2 - 20, 8, 40, 12)).died("The warren keeps you."))
         .add_systems(NewRun, start)
         // A floor fills the first time it is entered, inside the turn.
         .add_systems(Turn, populate.in_set(TurnSet::React))
-        // Once a frame, before the turns: whatever the player pressed becomes
-        // at most one intent, however many passes the turn loop then runs.
-        .add_systems(Update, (player_input, tend_lantern).in_set(EngineSet::Input))
+        // Once a frame, before the turns: the lantern is a key of Warren's
+        // own, read beside the standard ones.
+        .add_systems(Update, tend_lantern.in_set(EngineSet::Input))
         .add_systems(Update, note_explored.in_set(ViewSet::Annotate));
+    // The floors, handed over once: the engine builds each the first time
+    // something enters it, from that floor's own seed.
+    let warren = Warren::new();
+    app.insert_resource(warren.appearance()).places(warren);
+    declare_controls(&mut app);
     app.run()
 }
 ```
 
 Deciding where to move and deciding whom to hit are the same decision, asked of the same priority list.
 `MindsPlugin` owns that decision and `CombatPlugin` owns what a blow does once it is struck, so a monster that thinks needs both.
-Forget `MindsPlugin` and the first monster spawned says so in the log, instead of standing still all run.
-
-Two panels arrive here, and neither needs a system of yours.
-`VitalsPanel` reads health, armor, the turn and the position off the player and prints them along the top row; `LogPanel` prints the log along the bottom.
-Each is a plugin holding the rectangle it draws in, the way the map view is.
+Forget `MindsPlugin` and the first monster spawned says so in an error naming the plugin, instead of standing still all run in silence.
 
 ## What a hit passes through
 
 <!-- include: ../../../examples/tutorial/src/bin/step03_blows.rs:start -->
 ```rust,no_run
-/// Hands the engine the map rules and the player, then warps the player in.
-fn start(
-    mut commands: Commands,
-    seed: Res<Seed>,
-    mut warps: MessageWriter<WarpRequest>,
-    mut log: ResMut<MessageLog>,
-    mut next: ResMut<NextState<EngineState>>,
-) {
-    let warren = Warren::new(seed.0);
-
+/// Hands the engine what combat reads, then spawns the player into the
+/// warren, at the first floor's entry.
+fn start(mut commands: Commands, seed: Res<Seed>, mut log: Log) {
     // The two registries combat reads: what damage can be, and who hates
     // whom. Both are the game's content, named nowhere in the engine.
     let kinds = Registry::from_defs(vec![DamageKind::new("bite"), DamageKind::new("kick")]).unwrap();
     let sides = Registry::from_defs(vec![FactionDef::new("you"), FactionDef::new("vermin")]).unwrap();
     let (you, vermin) = (sides.expect("you"), sides.expect("vermin"));
-    commands.insert_resource(CombatRules::new(&sides).hostile(you, vermin));
+    commands.insert_resource(CombatRules::new().hostile(you, vermin));
     commands.insert_resource(Registries { damage_kinds: kinds.clone(), factions: sides, ..default() });
-    // What a hit passes through on its way to the target. One stage here;
-    // resistances, a shield, a critical rule would each be another.
-    commands.insert_resource(DamageStages(vec![Box::new(SubtractArmor)]));
     commands.insert_resource(Rats {
         // Asked in order, first that answers wins: bite what is next to
         // you, run when badly hurt, chase what you can see, else mill about.
@@ -87,21 +78,15 @@ fn start(
         faction: vermin,
     });
 
-    commands.insert_resource(warren.appearance());
-    commands.insert_resource(WorldMap::new(warren.tiles.tables()));
-    commands.insert_resource(PlaceRulesRes(Box::new(warren)));
-
-    let player = commands
-        .spawn((
-            (Actor, Player, Blocks, Position(Point::ZERO)),
+    commands.spawn_player(
+        WARREN,
+        (
             (Viewshed::new(9), RevealsMap, LANTERN, Faction(you), Glyph::new('@', Color::WHITE).on_layer(10)),
             (Health::full(24), Armor(1), MeleeAttack::new(kinds.expect("kick"), DiceRoll::new(1, 6))),
-        ))
-        .id();
-    warps.write(WarpRequest::into_place(player, WARREN));
-    log.push(format!("Seed {}. You squeeze into the warren.", seed.0.0), Tones::NOTICE, 0);
-    log.push("Something is scratching in the dark.", Tones::MUTED, 0);
-    next.set(EngineState::Playing);
+        ),
+    );
+    log.push(format!("Seed {}. You squeeze into the warren.", seed.0.0), Tones::NOTICE);
+    log.push("Something is scratching in the dark.", Tones::MUTED);
 }
 ```
 
@@ -110,7 +95,7 @@ They go in `Registries`, the one resource every subsystem reads its registries f
 `CombatRules` is only who is hostile to whom, held as a matrix over pairs instead of a flag on a monster, so a three-way war costs nothing extra.
 
 `DamageStages` is what a hit passes through on its way to the target.
-Warren has one stage, `SubtractArmor`.
+Its default is one stage, `SubtractArmor`, and Warren keeps it.
 Resistances by damage kind, a shield that eats the first hit each turn, a critical rule reading the attacker's stats: each is another entry in that list, in the order you put them.
 
 Combat rolls from a stream the engine derives from the run's `Seed`, which `main` inserted in [chapter 1](01-a-map-and-walking.md).
@@ -141,8 +126,9 @@ It asks the engine for the way toward the enemies it sees, and the engine keeps 
 
 ## One key, three actions
 
-The walk keys no longer write a `Step`.
-They write a `Bump`, and the engine decides what a bump comes to: a step onto open ground, a blow at a foe standing there, or the door in the way opened.
+The walk keys have written a `Bump` since [chapter 1](01-a-map-and-walking.md), and only now is there anyone to strike.
+The engine decides what a bump comes to: a step onto open ground, a blow at a foe standing there, or the door in the way opened.
+Warren renames the verb `walk, or strike whoever is there`, and nothing else about the keys changes.
 That is an alternate action, read in `ResolveSet::Redirect`, the stage before any resolver claims the turn.
 
 ## The narrator

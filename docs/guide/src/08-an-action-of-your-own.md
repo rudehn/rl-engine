@@ -47,6 +47,9 @@ There is no `enum Action` for it to be added to.
 Warren says `add_choice`, which does everything `add_action` does and one thing more, for the hog at the end of this chapter.
 Forget the resolver and you get a warning naming the type, not a frozen game with the player holding a turn nothing will spend.
 
+The key is Shift and a direction, which writes an `Intent<Shove>` the way a direction alone writes an `Intent<Bump>`.
+This step reads every key in an input system of its own against the engine's `DirectionKeys`, and step 9 hands the standard ones back to `PlayerKeysPlugin` and declares the shove as a chord beside them.
+
 ## What a resolver owes
 
 <!-- include: ../../../examples/tutorial/src/bin/step08_shove.rs:resolver -->
@@ -157,4 +160,4 @@ A game that decides a monster's whole turn itself claims it with `acting.claim_d
 - Delete `resolve_shoves` and press the key. Read the warning.
 - Give the rat king `shoves: true` and stand beside it.
 
-Next: [panels](09-where-to-go-next.md).
+Next: [where to go next](09-where-to-go-next.md).
