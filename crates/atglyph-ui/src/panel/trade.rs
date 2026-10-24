@@ -3,8 +3,9 @@
 //! A modal the engine runs end to end, like the container screen: it opens
 //! itself when the engine opens a trade, the direction keys walk the rows
 //! and cross between the two sides, the cursors' confirm key deals one of
-//! the row picked out, one key deals the whole of it, and the cursors'
-//! close key puts it away and ends the trade. A game binds nothing.
+//! the row picked out, [`TradeKeys::whole`] deals the whole of it, and the
+//! cursors' close key puts it away and ends the trade. A game binds
+//! nothing, and rebinds the one key of its own with a `TradeKeys`.
 //!
 //! The trader's wares are on the left and the customer's pack on the
 //! right, so the key that takes from the container screen buys from the
@@ -40,10 +41,12 @@ pub(crate) const TRADE_MODAL: &str = "trade";
 /// and close.
 ///
 /// A default, not a rule: a game that wants another key inserts its own
-/// `TradeKeys`. `a` because it is the container screen's key for all of
-/// it, and on this screen all of it is the whole of a stack.
+/// `TradeKeys`, before or after the panel is added, and the screen's
+/// bottom border names the key it holds. `a` because it is the container
+/// screen's key for all of it, and on this screen all of it is the whole
+/// of a stack.
 #[derive(Resource, Debug, Clone)]
-pub(crate) struct TradeKeys {
+pub struct TradeKeys {
     /// Deals the whole of the row picked out.
     pub whole: Chord,
 }
@@ -259,7 +262,7 @@ pub struct Counter<'w> {
 ///
 /// A deal is written whether or not the row says it would be refused, so
 /// the engine's resolver stays the one judge of it: a refused one is
-/// answered with `TradeRefused`, for a game that wants a line saying
+/// answered with [`TradeRefused`](atglyph_bevy::TradeRefused), for a game that wants a line saying
 /// why, over the row the screen already greys.
 pub(crate) fn trade_keys(keys: ControlInput, mut screen: Counter, mut buys: MessageWriter<Buy>, mut sells: MessageWriter<Sell>) {
     let Counter { binds, view, menu, modals, trading } = &mut screen;
@@ -518,6 +521,31 @@ mod tests {
         stage.tick();
         assert!(!is_up(&stage), "the close key puts it away");
         assert!(stage.app.world().resource::<Trading>().open().is_none(), "and ends the trade");
+    }
+
+    /// A game's own `TradeKeys` moves the whole-row key: its key deals the
+    /// whole of a row, `a` no longer does, and the screen's border names
+    /// the key it holds.
+    #[test]
+    fn a_games_own_trade_keys_move_the_whole_row_key_and_the_border_names_it() {
+        let (mut stage, trader) = stage();
+        stage.app.insert_resource(TradeKeys { whole: Chord::key(KeyCode::KeyW) });
+        stage.press(KeyCode::ArrowRight);
+        stage.tick();
+        stage.press(KeyCode::KeyA);
+        stage.tick();
+        assert_eq!(stage_pack(&stage), vec!["awl"], "the old key deals nothing");
+        stage.press(KeyCode::KeyW);
+        stage.tick();
+        assert_eq!(stage_pack(&stage), Vec::<String>::new(), "the game's key sold the awl");
+        assert!(stage.app.world().get::<Inventory>(trader).is_some_and(|b| b.items.len() == 3), "to the trader");
+        let rows = stage.rows();
+        assert!(rows[16].contains(" w all "), "the border names the game's key:\n{}", rows.join("\n"));
+    }
+
+    /// The labels of the customer's side, in order.
+    fn stage_pack(stage: &Stage) -> Vec<String> {
+        stage.app.world().resource::<TradeView>().pack.iter().map(|r| r.row.label.clone()).collect()
     }
 
     /// The trader's name heads the screen with the game's line under it,

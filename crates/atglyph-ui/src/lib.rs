@@ -164,8 +164,9 @@ pub use narrate::{Called, MassNoun, NarrationView, NarrationViewPlugin, Narrator
 pub use panel::{
     AbilityKeys, AbilityPanel, ActivityWords, AlertWords, Choosing, ChoosingFor, Confirming, ContainerPanel, ControlsPanel, GearPanel, InspectPanel,
     InventoryKeys, InventoryMenu, InventoryPanel, LogPanel, NearbyPanel, OfferChoice, OffersPanel, PartyPanel, RecordsPanel, ScrollbackKeys, ScrollbackPanel,
-    SettingsPanel, SheetKeys, SheetPanel, TargetPanel, TitleMenu, TitlePanel, TitleRow, TitleSet, TitleWords, TradePanel, TradeSide, TradeWords, VitalsPanel,
-    ability_modal, container_modal, controls_modal, inventory_modal, offers_modal, records_modal, settings_modal, sheet_modal, title_is_up, trade_modal,
+    SettingsPanel, SheetKeys, SheetPanel, TargetPanel, TitleMenu, TitlePanel, TitleRow, TitleSet, TitleWords, TradeKeys, TradePanel, TradeSide, TradeWords,
+    VitalsPanel, ability_modal, container_modal, controls_modal, inventory_modal, offers_modal, records_modal, settings_modal, sheet_modal, title_is_up,
+    trade_modal,
 };
 pub use player_keys::{Declined, Otherwise, PlayerKeysPlugin, PlayerKeysSet, PlayerVerb};
 pub use replay::ReplayPlugin;
@@ -348,9 +349,9 @@ pub mod prelude {
     pub use crate::panel::{
         AbilityKeys, AbilityPanel, ActivityWords, AlertWords, Choosing, ChoosingFor, Confirming, ContainerPanel, ControlsPanel, GearPanel, InspectPanel,
         InventoryKeys, InventoryMenu, InventoryPanel, LogPanel, NearbyPanel, OfferChoice, OffersPanel, PartyPanel, RecordsPanel, ScrollbackKeys,
-        ScrollbackPanel, SettingsPanel, SheetKeys, SheetPanel, TargetPanel, TitleMenu, TitlePanel, TitleRow, TitleSet, TitleWords, TradePanel, TradeWords,
-        VitalsPanel, ability_modal, container_modal, controls_modal, inventory_modal, offers_modal, records_modal, settings_modal, sheet_modal, title_is_up,
-        trade_modal,
+        ScrollbackPanel, SettingsPanel, SheetKeys, SheetPanel, TargetPanel, TitleMenu, TitlePanel, TitleRow, TitleSet, TitleWords, TradeKeys, TradePanel,
+        TradeWords, VitalsPanel, ability_modal, container_modal, controls_modal, inventory_modal, offers_modal, records_modal, settings_modal, sheet_modal,
+        title_is_up, trade_modal,
     };
 
     pub use crate::tone::{Palette, ToneId, Tones, readable};

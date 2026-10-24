@@ -5,7 +5,7 @@
             crates/atglyph-bevy/src/props.rs
             crates/atglyph-ui/src/view/trade.rs
             crates/atglyph-ui/src/panel/trade.rs
-     fingerprint: ad2c41d6 -->
+     fingerprint: f1599438 -->
 
 # Trade
 
@@ -34,7 +34,7 @@ Taking up the offer opens a trade the player's screen reads from `Trading`, whos
 A trade is the player's only, and is closed in any pass where either side is out of the other's reach, dead or gone, so a screen never deals with someone who has walked off.
 A mind that trades writes the deals itself.
 `Buy { customer, trader, item, count }` buys from what the trader carries and `Sell` sells from what the customer carries, `count` capped at what a stack holds.
-Each is dropped without a word when it could not be meant, and otherwise answered with `Traded { customer, trader, deal, item, count, price }`, `item` as its new holder carries it, or refused with nothing changing hands.
+Each is dropped without a word when it could not be meant, and otherwise answered with `Traded { customer, trader, deal, item, count, price }`, `item` as its new holder carries it, or with `TradeRefused { customer, trader, deal, item, why }`, nothing changing hands, for a game's line saying why.
 `Trader::each` is what one of a `Ware` changes hands for, its worth bought and the trader's share of it sold, and `Trader::quote` is what a count comes to or the `TradeRefusal` it is refused for: worn, sold to a trader that does not buy its kind, no worth, or a short purse, checked in that order.
 `quote` is the one rule the resolver strikes every deal by, public so a screen greys a row by the same rule.
 `pay(world, payer, payee, amount, currency)` moves currency from one bag to the other, drawing the payer's pieces down in the order they are carried, and is the one way the engine spends it, a deal's price and a priced offer's alike.
@@ -43,7 +43,7 @@ A payee with no pack is given one, a payee that is gone is paid nothing, and `pa
 The wares are what the trader carries with a price and not worn, so its own gear is never offered; the pack is what the customer carries but its currency, priced at what the trader would pay.
 A `TradeRow` is a shared `Row`, the `count`, the price of one as `each` and the `refused` reason, with `price` for the whole row and `open` saying whether one could change hands now.
 `TradeView::rows_mut` walks every row on both sides, for a game annotating what it recognises.
-The screen shows the wares on the left and the pack on the right: the direction keys walk the rows and cross the sides, confirm deals one of the row picked out, `a` deals the whole of it, and close puts the screen away and ends the trade.
+The screen shows the wares on the left and the pack on the right: the direction keys walk the rows and cross the sides, confirm deals one of the row picked out, `TradeKeys::whole`, `a` by default and rebound by inserting a `TradeKeys`, deals the whole of it, and close puts the screen away and ends the trade.
 A deal is written whether or not its row is greyed, so the resolver stays the one judge of it, and dealing never closes the screen, since a shop is usually more than one deal.
 `TradeMenu` is where the cursor is, a `TradeSide` and a row on each side, and `trade_modal` is the modal's id for a game gating its own systems.
 `TradeWords` is every word the screen draws that is not a name or the game's line, from the side headings to what each refusal is called on the side it is struck from.
@@ -81,7 +81,7 @@ The game decides every price: `Worth` is its, because only the game knows what a
 It decides who trades, what each trader buys and what share it pays, what the currency is, and what a trader stocks and when it restocks.
 Its words are its own too: the screen's title is the trader's `Name`, the line under it is the game's facet, and the currency is named by its own `Name`.
 A service, a rite or a mending, is an offer with a price rather than a trade: `Offering::priced` is paid by the same `pay` before the game hears of it in `Interacted`.
-What a deal means beyond the exchange, such as knowing the kind of a thing bought, is the game's, read off `Traded`.
+What a deal means beyond the exchange, such as knowing the kind of a thing bought, is the game's, read off `Traded`, and what a refusal is called in the log is the game's, read off `TradeRefused`.
 
 ## Where it lives
 

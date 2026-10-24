@@ -54,7 +54,7 @@ pub use settings::{SettingsPanel, settings_modal};
 pub use sheet::{SheetKeys, SheetPanel, plain_op, sheet_modal};
 pub use target::TargetPanel;
 pub use title::{TitleMenu, TitlePanel, TitleRow, TitleSet, TitleWords, title_is_up};
-pub use trade::{TradeMenu, TradePanel, TradeSide, TradeWords, trade_modal};
+pub use trade::{TradeKeys, TradeMenu, TradePanel, TradeSide, TradeWords, trade_modal};
 pub use vitals::VitalsPanel;
 
 use atglyph_core::{GridRect, Point};

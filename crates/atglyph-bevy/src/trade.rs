@@ -7,7 +7,7 @@
 //! opens a trade the player's screen reads from [`Trading`]. Inside it,
 //! a [`Buy`] or a [`Sell`] is resolved at once and takes no turn, since a
 //! trade is a screen and not a place, and nothing that could act on the
-//! time is in it. Each is answered with [`Traded`] or `TradeRefused`.
+//! time is in it. Each is answered with [`Traded`] or [`TradeRefused`].
 //!
 //! What is for sale is what the trader carries: its [`Inventory`] is its
 //! stock, so the stock is saved with the run the way any actor's pack is,
@@ -221,8 +221,13 @@ pub struct Traded {
 }
 
 /// A deal refused, with the reason, and nothing changed hands.
+///
+/// For a game's line saying why, such as "You cannot afford it": the
+/// trade screen greys a row the resolver would refuse, but says nothing
+/// when one is asked for anyway, since what a refusal is called is the
+/// game's. Written in the same pass as the deal, as [`Traded`] is.
 #[derive(Message, Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct TradeRefused {
+pub struct TradeRefused {
     /// Who came to trade.
     pub customer: Entity,
     /// Who carries the [`Trader`].

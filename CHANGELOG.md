@@ -30,6 +30,9 @@ A game on 0.3 moves in the order of the list below, then reads each `To change: 
 
 Every change, newest first:
 
+- A game reacts to a refused trade and rebinds the trade screen's key: the `TradeRefused { customer, trader, deal, item, why }` message, written when a `Buy` or `Sell` is refused, and `TradeKeys`, whose `whole` deals the whole of a row, are public, where both were crate-private, as `SheetKeys` and `ScrollbackKeys` are, and both are in `atglyph::prelude::extras`.
+  To change: nothing.
+
 - A game's own rule stops work: `Works::stop(actor)` at once and the `StopWork(actor)` message, read at the head of every pass, are public, where both were crate-private, so `BreakReason::Stopped` is a reason a game can reach. `Works::leave_off` stays the worker's own choice, read as `LeftOff`.
   To change: nothing.
 

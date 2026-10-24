@@ -259,11 +259,11 @@ pub mod save {
 pub mod extras {
     pub use atglyph_bevy::ability::{Reflected, Reflects};
     pub use atglyph_bevy::records::{RecordOutcome, RecordRun, RecordSection, RecordsPlugin, RunRecord, RunRecords};
-    pub use atglyph_bevy::trade::{Buy, Currency, Deal, Parties, Sell, TRADE, TradePlugin, TradeRefusal, Traded, Trader, Trading, Ware, Worth};
+    pub use atglyph_bevy::trade::{Buy, Currency, Deal, Parties, Sell, TRADE, TradePlugin, TradeRefusal, TradeRefused, Traded, Trader, Trading, Ware, Worth};
     pub use atglyph_mapgen::lakes::{Bridges, Lakes};
     pub use atglyph_rules::balance::{BandRow, Report, ThreatSubject, threat};
     pub use atglyph_rules::namegen::{NameBook, NameSet};
-    pub use atglyph_ui::panel::{PartyPanel, RecordsPanel, SheetKeys, SheetPanel, TradePanel, TradeWords, records_modal, sheet_modal, trade_modal};
+    pub use atglyph_ui::panel::{PartyPanel, RecordsPanel, SheetKeys, SheetPanel, TradeKeys, TradePanel, TradeWords, records_modal, sheet_modal, trade_modal};
     pub use atglyph_ui::view::{PartyView, PartyViewPlugin, SheetView, SheetViewPlugin, TradeRow, TradeView, TradeViewPlugin};
 }
 

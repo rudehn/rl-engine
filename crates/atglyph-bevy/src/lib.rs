@@ -162,7 +162,7 @@ pub use status::{ActiveStatuses, ApplyStatus, RemoveStatus, SideWas, StatBlock, 
 pub use stealth::{Aware, Notice, Noticed, Stealth, StealthPlugin, Unseen, Watchers};
 pub use throwing::{Flight, Throw, Throwable, ThrowingPlugin, flight};
 pub use title::{AbandonRun, ContinueRun, HoldStart, LeaveRun, SavedRun, begin_afresh, begin_run};
-pub use trade::{Buy, Currency, Deal, Parties, Sell, TRADE, TradePlugin, TradeRefusal, Traded, Trader, Trading, Ware, Worth, pay};
+pub use trade::{Buy, Currency, Deal, Parties, Sell, TRADE, TradePlugin, TradeRefusal, TradeRefused, Traded, Trader, Trading, Ware, Worth, pay};
 pub use turn::{Acting, Action, ActionDone, ActionRefused, Intent, Occupancy, Resolution, Speeds, Step, Stepped, TurnEnd, TurnRules, Turns, Wait};
 pub use work::{BeginWork, BreakReason, StopWork, WorkBegan, WorkBroken, WorkDone, WorkKinds, WorkPace, Working, Works};
 pub use world::{PlaceMap, PlaceSave, WindowView, WorldMap, WorldMapSave};
@@ -239,7 +239,7 @@ pub mod prelude {
     pub use crate::stealth::{Aware, Notice, Noticed, Stealth, StealthPlugin, Unseen, Watchers};
     pub use crate::throwing::{Throw, Throwable, ThrowingPlugin};
     pub use crate::title::{AbandonRun, ContinueRun, HoldStart, LeaveRun, SavedRun, begin_run};
-    pub use crate::trade::{Buy, Currency, Deal, Parties, Sell, TRADE, TradePlugin, TradeRefusal, Traded, Trader, Trading, Ware, Worth};
+    pub use crate::trade::{Buy, Currency, Deal, Parties, Sell, TRADE, TradePlugin, TradeRefusal, TradeRefused, Traded, Trader, Trading, Ware, Worth};
 
     pub use crate::turn::{Acting, Action, ActionDone, ActionRefused, Intent, Occupancy, Resolution, Speeds, Step, Stepped, TurnEnd, TurnRules, Turns, Wait};
 
