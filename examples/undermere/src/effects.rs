@@ -33,7 +33,7 @@ pub mod minds;
 pub mod moving;
 pub mod senses;
 
-use atglyph::prelude::*;
+use atglyph::prelude::all::*;
 use bevy::prelude::*;
 
 /// The things whose use, this pass, showed nothing anybody could see: a

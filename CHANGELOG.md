@@ -6,6 +6,9 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- `atglyph::prelude` holds the 77 names a first game uses, what the guide's first three steps name, where it held every crate's prelude, over 700 names (722 when the review counted); the rest are in one topic module each, `atglyph::prelude::combat`, `items`, `minds`, `world`, `mapgen`, `ui`, `save` and `extras`, and `atglyph::prelude::all` is every one. `scripts/check-prelude.py`, in `scripts/gate.sh` and CI, keeps the core to 80 names and each name in one module. `TtyRoguelikePlugins` is in `prelude::ui`. `Airborne`, `Lands`, `Marksmanship`, `SideWas`, `TurnQueue` and `DequeueOutcome`, which only the engine's own systems need, are in none and stay at their crates' paths.
+  To change: breaking: `use atglyph::prelude::*;` becomes `use atglyph::prelude::all::*;`, then narrow at leisure to `atglyph::prelude::*` and the topic modules a file uses, `use atglyph::prelude::{items::*, ui::*};`; a game that named `Marksmanship`, `SideWas` or `Airborne` imports it from `atglyph::ecs`.
+
 - The grid's rectangle is `GridRect`, where it was `Rect`, so it no longer fights Bevy's `Rect` and is in `atglyph::prelude` beside it; its fields and methods are unchanged, and it is `atglyph::primitives::GridRect` (`atglyph_core::GridRect` used alone).
   To change: breaking: `atglyph::primitives::Rect` becomes `GridRect`, and a game that globs `atglyph::prelude::*` may drop its `use atglyph::primitives::Rect;` line.
 

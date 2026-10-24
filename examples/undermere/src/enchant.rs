@@ -16,7 +16,7 @@
 //! was, so a cursed ring worth wearing anyway can be kept and still taken
 //! off.
 
-use atglyph::prelude::*;
+use atglyph::prelude::all::*;
 use atglyph::primitives::noun::plural;
 use atglyph::rules::ability::RawValue;
 use bevy::prelude::*;

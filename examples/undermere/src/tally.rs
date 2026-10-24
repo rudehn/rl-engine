@@ -16,7 +16,7 @@
 
 use std::collections::BTreeMap;
 
-use atglyph::prelude::*;
+use atglyph::prelude::all::*;
 use atglyph::primitives::noun::with_article;
 use bevy::ecs::message::MessageCursor;
 use bevy::prelude::*;

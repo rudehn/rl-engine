@@ -1,7 +1,7 @@
 //! What a sword for hire carries and asks: `assets/mercenaries.ron` read
 //! against the armory, a kit rolled from it at a band, and its fee.
 
-use atglyph::prelude::*;
+use atglyph::prelude::all::*;
 use atglyph::rand::Rng;
 use atglyph::rules::loot::{LootRow, LootTable};
 use bevy::prelude::*;

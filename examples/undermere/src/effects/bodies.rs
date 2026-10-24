@@ -10,7 +10,7 @@
 //! him, not by making him a rat or two kings.
 
 use atglyph::ecs::EffectRng;
-use atglyph::prelude::*;
+use atglyph::prelude::all::*;
 use atglyph::rand::Rng;
 use atglyph::rules::ability::{AbilityDef, RawValue, read_args};
 use bevy::prelude::*;

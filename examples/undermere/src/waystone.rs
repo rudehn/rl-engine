@@ -34,7 +34,7 @@
 //! walk away, and a call from beside it would only spend a stone.
 
 use atglyph::ecs::{BreakReason, Spent, WorkBroken, Works};
-use atglyph::prelude::*;
+use atglyph::prelude::all::*;
 use atglyph::primitives::turn::BASE_ACTION_COST;
 use atglyph::rules::ability::RawValue;
 use atglyph::rules::work::Work;

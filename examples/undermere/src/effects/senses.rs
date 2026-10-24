@@ -9,7 +9,7 @@
 //! of a floor is the engine's [`Knowledge`], the cells they have seen,
 //! which the map draws as remembered; magic mapping marks the rest.
 
-use atglyph::prelude::*;
+use atglyph::prelude::all::*;
 use atglyph::rules::GasId;
 use atglyph::rules::ability::{RawValue, read_args};
 use bevy::prelude::*;

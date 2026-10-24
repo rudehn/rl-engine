@@ -12,7 +12,7 @@
 //! Registered by [`FoundryPlugin`](crate::plugin::FoundryPlugin), not by
 //! `main.rs`, so a test presses the same keys the player does.
 
-use atglyph::prelude::*;
+use atglyph::prelude::all::*;
 use bevy::prelude::*;
 
 use crate::heat::Heat;

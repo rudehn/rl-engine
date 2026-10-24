@@ -21,7 +21,7 @@ mod spawns;
 
 use std::sync::Arc;
 
-use atglyph::prelude::*;
+use atglyph::prelude::all::*;
 use atglyph::rules::ai::Standard;
 use atglyph::rules::ai::hearing::HearingStats;
 use atglyph::rules::ai::tactics::{Hover, Keep};

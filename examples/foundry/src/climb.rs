@@ -7,7 +7,7 @@
 //! the core is charged finishes the mission's last quest, and that wins
 //! the run.
 
-use atglyph::prelude::*;
+use atglyph::prelude::all::*;
 use bevy::prelude::*;
 
 /// The deepest deck this run has stood on, one at the start.

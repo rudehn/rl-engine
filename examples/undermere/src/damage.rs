@@ -13,7 +13,7 @@
 //! lands every hit on anyone standing in it as nothing, a blow, a shot, a
 //! tick of fire or of poison alike, after every stage here has answered.
 
-use atglyph::prelude::*;
+use atglyph::prelude::all::*;
 use atglyph::rules::damage::{DamageKind, DamageStage, Defender, Hit, Resistances};
 
 /// Armor's floor against an armored kind: never more than half of the

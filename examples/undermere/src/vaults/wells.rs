@@ -16,7 +16,7 @@
 //! offers again what was not used and nothing that was.
 
 use atglyph::ecs::props::{OfferChooser, OfferFilter, Scenery, spawn_prop};
-use atglyph::prelude::*;
+use atglyph::prelude::all::*;
 use bevy::prelude::*;
 
 use crate::armory::{Armory, ItemKind};

@@ -21,7 +21,7 @@ pub fn scatter_rules() -> ScatterRules {
 
 #[cfg(test)]
 mod tests {
-    use atglyph::prelude::*;
+    use atglyph::prelude::all::*;
     use atglyph::primitives::RunSeed;
     use bevy::prelude::*;
 

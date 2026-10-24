@@ -5,7 +5,7 @@
 //! things are staffs and which wands is their tags, so the scroll finds
 //! them in its reader's pack as the bag shows them.
 
-use atglyph::prelude::*;
+use atglyph::prelude::all::*;
 use atglyph::rules::ability::RawValue;
 use bevy::prelude::*;
 

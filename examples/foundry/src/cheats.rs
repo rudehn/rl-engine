@@ -21,7 +21,7 @@
 //! the world's keys stand down while it is up, and `esc` puts away the top
 //! screen, which is how the search steps back to the menu.
 
-use atglyph::prelude::*;
+use atglyph::prelude::all::*;
 use atglyph::primitives::Id;
 use bevy::prelude::*;
 

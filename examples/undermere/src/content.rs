@@ -21,7 +21,7 @@
 //! [`turn_rules`] names the speed to the turn loop, and the rest are
 //! Undermere's own to read.
 
-use atglyph::prelude::*;
+use atglyph::prelude::all::*;
 use atglyph::rules::faction::FactionDef;
 use bevy::prelude::*;
 

@@ -11,7 +11,7 @@
 //! Registered by [`UndermerePlugin`](crate::plugin::UndermerePlugin), not
 //! by the binary, so a test presses the same keys the player does.
 
-use atglyph::prelude::*;
+use atglyph::prelude::all::*;
 use bevy::prelude::*;
 
 /// Every key of Undermere's own, by name.

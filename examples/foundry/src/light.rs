@@ -16,7 +16,7 @@
 //! lamp starts lit.
 
 use atglyph::grid::Rgb;
-use atglyph::prelude::*;
+use atglyph::prelude::all::*;
 use bevy::prelude::*;
 
 use crate::input::Binds;

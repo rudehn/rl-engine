@@ -10,6 +10,7 @@
 //! `r` throw a rock, `t` lantern, `.` wait, `q` quit.
 
 use atglyph::prelude::*;
+use atglyph::prelude::{combat::*, items::*, minds::*, ui::*, world::*};
 use atglyph::rand::Rng;
 use atglyph::rules::AbilityId;
 use atglyph::rules::TagDef;

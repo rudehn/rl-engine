@@ -13,7 +13,7 @@
 
 use std::collections::BTreeSet;
 
-use atglyph::prelude::*;
+use atglyph::prelude::all::*;
 use atglyph::rand::Rng;
 use atglyph::rules::ability::{RawValue, read_args};
 use bevy::prelude::*;

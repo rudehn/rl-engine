@@ -22,7 +22,7 @@ use atglyph::grid::{Terrain, TileId, TileTables};
 use atglyph::mapgen::dungeon::{ExitPoint, Room};
 use atglyph::mapgen::passes::StartPoint;
 use atglyph::mapgen::{Area, HideOpenings, Join, Opening, SecretCell, Surveyed};
-use atglyph::prelude::*;
+use atglyph::prelude::all::*;
 use atglyph::rand::Rng;
 use atglyph::rand::seq::{IndexedRandom, SliceRandom};
 use bevy::prelude::*;

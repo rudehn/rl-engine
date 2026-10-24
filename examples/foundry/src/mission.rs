@@ -10,7 +10,7 @@
 //! reactor console on the `R` mark of any deck that reports one, beside the
 //! loot the engine scatters on the same arrival
 
-use atglyph::prelude::*;
+use atglyph::prelude::all::*;
 use bevy::prelude::*;
 
 const QUESTS_RON: &str = include_str!("../assets/quests.ron");

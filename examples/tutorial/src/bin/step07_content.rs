@@ -12,6 +12,7 @@
 use std::sync::Arc;
 
 use atglyph::prelude::*;
+use atglyph::prelude::{combat::*, items::*, mapgen::*, ui::*, world::*};
 use atglyph::rand::Rng;
 use atglyph::rules::ai::{Repertoire, Standard};
 use atglyph::rules::faction::FactionDef;

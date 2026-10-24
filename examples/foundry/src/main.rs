@@ -14,7 +14,7 @@
 //! seed as rows of glyphs: `#` solid, `.` open, `+` a hatch, `<` the way in
 //! and `>` the way down.
 
-use atglyph::prelude::*;
+use atglyph::prelude::all::*;
 use bevy::prelude::*;
 use foundry::cheats::CheatPanel;
 use foundry::plugin::FoundryPlugin;

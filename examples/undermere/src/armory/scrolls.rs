@@ -4,7 +4,7 @@
 //! As `magic` and `draughts` do, these play the run that ships, the
 //! adventurer reading things made by the armory as a floor's own are.
 
-use atglyph::prelude::*;
+use atglyph::prelude::all::*;
 use bevy::prelude::*;
 
 use crate::content::DISCORDANT;

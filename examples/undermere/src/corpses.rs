@@ -15,7 +15,7 @@
 //! in life, which a test checks. The engine's twin of the living actor is
 //! taken before this runs, so a revived body is drawn as it was.
 
-use atglyph::prelude::*;
+use atglyph::prelude::all::*;
 use bevy::prelude::*;
 
 /// The glyph of every body, the feeding ground's prey with them.

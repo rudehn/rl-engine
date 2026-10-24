@@ -27,7 +27,7 @@
 //! radar at all still hears a probe's klaxon, since hearing is not seeing.
 
 use atglyph::ecs::{Thinking, WorkBegan, WorkDone, WorkKinds};
-use atglyph::prelude::*;
+use atglyph::prelude::all::*;
 use atglyph::rules::ability::ParticleLook;
 use atglyph::rules::ai::{Decision, Tactic, TacticCtx};
 use atglyph::rules::work::{Work, WorkKindId};

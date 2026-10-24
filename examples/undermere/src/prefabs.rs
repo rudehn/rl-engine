@@ -23,7 +23,7 @@
 //! `assets/roles.ron`. Two more thrones, the Mother Below's cave and the
 //! Ember Wyrm's hall, stand beside the Drowned King's own.
 
-use atglyph::prelude::*;
+use atglyph::prelude::all::*;
 use atglyph::rules::dressing;
 use atglyph::rules::layout::LayoutDef;
 use atglyph::rules::pool::{self, Pool};

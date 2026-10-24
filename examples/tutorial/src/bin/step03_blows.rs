@@ -12,7 +12,6 @@
 use atglyph::prelude::*;
 use atglyph::rand::Rng;
 use atglyph::rules::ai::tactics::{FleeWhenHurt, Hunt, MeleeAdjacent, Wander};
-use atglyph::rules::faction::FactionDef;
 use bevy::prelude::*;
 use std::sync::Arc;
 

@@ -22,7 +22,7 @@
 use std::sync::Arc;
 
 use atglyph::ecs::{DEFAULT_PERCEPTION, Inflict, TriggerKindId};
-use atglyph::prelude::*;
+use atglyph::prelude::all::*;
 use atglyph::rules::ability::EffectSpec;
 use atglyph::rules::ai::tactics::Keep;
 use atglyph::rules::ai::{Repertoire, Standard};

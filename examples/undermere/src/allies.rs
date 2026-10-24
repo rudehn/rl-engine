@@ -12,7 +12,7 @@
 //! as [`vanish`] takes it: out of play without a death, since nothing
 //! killed it.
 
-use atglyph::prelude::*;
+use atglyph::prelude::all::*;
 use bevy::prelude::*;
 
 use crate::bestiary::{Bestiary, Kind};

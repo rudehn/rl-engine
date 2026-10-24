@@ -24,6 +24,7 @@
 use std::sync::Arc;
 
 use atglyph::prelude::*;
+use atglyph::prelude::{items::*, minds::*, ui::*};
 use atglyph::rand::Rng;
 use atglyph::rules::ai::tactics::{Hunt, MeleeAdjacent, SearchLastKnown, Wander};
 use atglyph::rules::damage::DamageKindId;
@@ -609,6 +610,7 @@ fn drink(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use atglyph::prelude::{combat::*, world::*};
     use atglyph::testing::{KeyScriptPlugin, press};
 
     /// The game with no window: the same `Starter` plugin `main` adds, and

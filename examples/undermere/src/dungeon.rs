@@ -37,7 +37,7 @@ use atglyph::mapgen::Prefer;
 use atglyph::mapgen::dungeon::{ExitPoint, FarthestExit, MarkedStart, RandomStart, Stairs};
 use atglyph::mapgen::passes::StartPoint;
 use atglyph::mapgen::{Area, DistrictDressings, Opening};
-use atglyph::prelude::*;
+use atglyph::prelude::all::*;
 use atglyph::rand::Rng;
 use atglyph::rand::seq::SliceRandom;
 use atglyph::render::TileAppearance;

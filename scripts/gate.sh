@@ -3,7 +3,8 @@
 #
 #   scripts/gate.sh          the packages the branch touched and every package
 #                            that depends on one, their fast tests only, and
-#                            every public type name declared once
+#                            every public type name declared once, and the
+#                            prelude holding each name once
 #   scripts/gate.sh --all    the code half of CI: the whole workspace with its
 #                            slow tests, the tier boundary and the wasm build,
 #                            for a branch's end and before it merges
@@ -52,6 +53,7 @@ if [ "${1:-}" = "--all" ]; then
     step scripts/check-tiers.sh
     step scripts/check-tiers.sh --wasm
     step scripts/check-names.sh
+    step scripts/check-prelude.py
     echo "gate: the whole workspace passed"
     exit 0
 fi
@@ -106,6 +108,7 @@ print(" ".join(sorted(affected)))
 
 step cargo fmt --all --check
 step scripts/check-names.sh
+step scripts/check-prelude.py
 step cargo clippy --workspace --all-targets -- -D warnings
 if [ -z "$packages" ]; then
     echo "gate: the branch touches no package, so no tests run"

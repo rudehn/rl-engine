@@ -10,7 +10,7 @@
 //! change that means to move it re-baselines the number on purpose and
 //! says so in a `CHANGELOG.md` line.
 
-use atglyph::prelude::*;
+use atglyph::prelude::all::*;
 use atglyph::primitives::{Direction, RunSeed};
 use bevy::prelude::*;
 use foundry::heat::Heat;

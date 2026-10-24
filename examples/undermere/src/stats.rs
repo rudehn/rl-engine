@@ -10,7 +10,7 @@
 //! regeneration health back over time, by [`regenerate`], and awareness
 //! how easily what is hidden is spotted, by [`keep_keen`].
 
-use atglyph::prelude::*;
+use atglyph::prelude::all::*;
 use bevy::prelude::*;
 
 use crate::content::{FOOTFALL, QUIET, STEALTH};
@@ -168,6 +168,7 @@ mod tests {
     use super::*;
     use crate::content::{LIGHT, MENDING};
     use crate::testing::{adventurer, at, clear_monsters, equip, headless, lay_floor, make, monster, pass_turns, settle};
+    use atglyph::ecs::Marksmanship;
 
     /// Puts `op` on `who`'s stat `name`, as a status or a ring would.
     fn change(app: &mut App, who: Entity, name: &str, op: Op) {

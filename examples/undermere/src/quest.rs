@@ -14,7 +14,7 @@
 //! run's progress when the run ends, so the next run's quest is open again
 //! without being read again.
 
-use atglyph::prelude::*;
+use atglyph::prelude::all::*;
 use bevy::prelude::*;
 
 use crate::bestiary::{Bestiary, Kind};

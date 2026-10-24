@@ -41,7 +41,7 @@ use atglyph::ecs::prefabs::Prefabs;
 use atglyph::ecs::props::spawn_prop;
 use atglyph::ecs::world::PlaceMap;
 use atglyph::grid::{TileRegistry, TileTables};
-use atglyph::prelude::*;
+use atglyph::prelude::all::*;
 use atglyph::rand::Rng;
 use atglyph::rules::prefab::Slot;
 use bevy::prelude::*;

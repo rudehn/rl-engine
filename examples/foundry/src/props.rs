@@ -15,7 +15,7 @@
 //! `mission`, because reporting a fact the quest tracker counts is the
 //! one thing no effect can say.
 
-use atglyph::prelude::*;
+use atglyph::prelude::all::*;
 use atglyph::primitives::{Direction, Point};
 use atglyph::rules::prefab::Slot;
 use bevy::prelude::*;

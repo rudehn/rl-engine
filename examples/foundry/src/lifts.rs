@@ -9,7 +9,7 @@
 //! leads nowhere the engine could take anyone and is answered by
 //! [`ride_out`].
 
-use atglyph::prelude::*;
+use atglyph::prelude::all::*;
 use bevy::prelude::*;
 
 use crate::decks::{DECKS, deck_of};

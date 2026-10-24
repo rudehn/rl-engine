@@ -1,7 +1,7 @@
 //! The candidates at the Sunken Lantern's tables: who waits each visit,
 //! what each says of itself, and `hire` kept off while the party is full.
 
-use atglyph::prelude::*;
+use atglyph::prelude::all::*;
 use atglyph::primitives::noun::{Countability, counted_as, with_the};
 use atglyph::ui::view::offers::OffersView;
 use atglyph::ui::view::sum_of;

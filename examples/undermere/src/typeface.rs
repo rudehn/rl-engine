@@ -26,7 +26,7 @@ pub(crate) fn face() -> ttf_parser::Face<'static> {
 
 #[cfg(test)]
 mod tests {
-    use atglyph::prelude::*;
+    use atglyph::prelude::all::*;
     use atglyph::primitives::RunSeed;
     use atglyph::render::map_view::FieldAppearance;
     use bevy::prelude::*;

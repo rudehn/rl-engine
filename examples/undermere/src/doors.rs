@@ -22,7 +22,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use atglyph::grid::TileId;
-use atglyph::prelude::*;
+use atglyph::prelude::all::*;
 use atglyph::primitives::Point;
 use atglyph::save::SaveableState;
 use atglyph::ui::{CursorMap, CursorStyle, Tones};

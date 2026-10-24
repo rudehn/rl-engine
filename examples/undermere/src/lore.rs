@@ -40,8 +40,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use atglyph::ecs::effects::UseLanding;
-use atglyph::ecs::{Aimed, Bystanders, area_cells};
-use atglyph::prelude::*;
+use atglyph::ecs::{Aimed, Airborne, Bystanders, area_cells};
+use atglyph::prelude::all::*;
 use atglyph::primitives::noun::{plural, with_article};
 use atglyph::rand::Rng;
 use atglyph::rand::seq::SliceRandom;

@@ -11,7 +11,7 @@
 //! in `items.ron`'s own `consumable` refills on its own clock,
 //! [`refill_chalice`].
 
-use atglyph::prelude::*;
+use atglyph::prelude::all::*;
 use bevy::prelude::*;
 
 use crate::armory::{Armory, ItemKind};

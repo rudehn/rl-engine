@@ -11,6 +11,7 @@
 //! `t` lantern, `.` wait, `q` quit.
 
 use atglyph::prelude::*;
+use atglyph::prelude::{combat::*, items::*, minds::*, ui::*, world::*};
 use atglyph::rand::Rng;
 use atglyph::rules::Wits;
 use atglyph::rules::ai::tactics::{FleeWhenHurt, Hunt, MeleeAdjacent, Wander};

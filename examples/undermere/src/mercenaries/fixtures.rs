@@ -1,7 +1,7 @@
 //! What the mercenaries' tests share: a run in Mereholt, its candidates,
 //! taking up an offer, and a mercenary hired on the spot.
 
-use atglyph::prelude::*;
+use atglyph::prelude::all::*;
 use atglyph::primitives::RunSeed;
 use bevy::prelude::*;
 

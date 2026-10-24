@@ -35,7 +35,7 @@ use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
-use atglyph::prelude::*;
+use atglyph::prelude::all::*;
 use atglyph::rand::Rng;
 use atglyph::rules::ai::brain::Tactic;
 use atglyph::rules::namegen::{self, NameBook, NameSet};

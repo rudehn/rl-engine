@@ -21,7 +21,7 @@
 
 use std::iter::once;
 
-use atglyph::prelude::*;
+use atglyph::prelude::all::*;
 use atglyph::primitives::RunSeed;
 use bevy::prelude::*;
 use serde::Deserialize;

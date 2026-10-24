@@ -7,7 +7,7 @@
 //! the droid it was.
 
 use atglyph::ecs::{ReviveCommands, Sight, Thinking, WorkDone, WorkKinds};
-use atglyph::prelude::*;
+use atglyph::prelude::all::*;
 use atglyph::primitives::Point;
 use atglyph::rules::ai::{Decision, Tactic, TacticCtx};
 use atglyph::rules::work::{Work, WorkKindId, in_reach};
@@ -109,7 +109,7 @@ pub fn rebuild_wrecks(
 mod tests {
     use crate::droids::Roster;
     use crate::testing::{clear_droids, droid_down_a_lane, headless, settle};
-    use atglyph::prelude::*;
+    use atglyph::prelude::all::*;
     use bevy::ecs::world::CommandQueue;
     use bevy::prelude::*;
 

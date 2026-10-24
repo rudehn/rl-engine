@@ -18,7 +18,7 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use atglyph::ecs::EffectRng;
 use atglyph::ecs::props::spawn_prop;
 use atglyph::ecs::turn::Turns;
-use atglyph::prelude::*;
+use atglyph::prelude::all::*;
 use atglyph::rand::Rng;
 use atglyph::save::SaveableState;
 use bevy::prelude::*;

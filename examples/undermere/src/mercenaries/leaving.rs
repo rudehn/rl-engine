@@ -1,7 +1,7 @@
 //! A mercenary out of the party: let go, back to waiting to be hired, or
 //! fallen, for good.
 
-use atglyph::prelude::*;
+use atglyph::prelude::all::*;
 use atglyph::primitives::noun::{Countability, counted_as};
 use bevy::prelude::*;
 

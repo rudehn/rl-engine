@@ -30,7 +30,7 @@
 //! reads or rewrites the number inside, so the bonus rides along through a
 //! lock or a dry spell for free.
 
-use atglyph::prelude::*;
+use atglyph::prelude::all::*;
 use bevy::prelude::*;
 
 /// What finishing the first objective may give, one of three, kept for the

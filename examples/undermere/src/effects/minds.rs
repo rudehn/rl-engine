@@ -11,7 +11,7 @@
 //! stealth's [`Aware`], which a shriek fills in.
 
 use atglyph::ecs::EffectRng;
-use atglyph::prelude::*;
+use atglyph::prelude::all::*;
 use atglyph::rand::Rng;
 use atglyph::rules::StatusId;
 use atglyph::rules::ability::RawValue;

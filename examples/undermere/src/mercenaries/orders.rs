@@ -3,7 +3,7 @@
 
 use std::sync::Arc;
 
-use atglyph::prelude::*;
+use atglyph::prelude::all::*;
 use atglyph::rules::ai::Standard;
 use atglyph::rules::ai::tactics::{Hunt, Keep, Leashed, OutOfSight, Scavenge, UseCarried};
 use bevy::prelude::*;

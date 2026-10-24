@@ -2,7 +2,7 @@
 //! as they leave a map is sent after them, and one that was not waits.
 
 use atglyph::grid::{OpacitySource, Terrain, fov};
-use atglyph::prelude::*;
+use atglyph::prelude::all::*;
 use atglyph::primitives::Grid2D;
 use bevy::prelude::*;
 

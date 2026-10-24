@@ -15,7 +15,7 @@
 //! arrival that built it; the way back up is the way the adventurer came,
 //! and what is left on a floor is what they left.
 
-use atglyph::prelude::*;
+use atglyph::prelude::all::*;
 use atglyph::rand::Rng;
 use bevy::prelude::*;
 

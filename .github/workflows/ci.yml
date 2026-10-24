@@ -50,6 +50,8 @@ jobs:
         run: python3 scripts/rename-to-atglyph.py --check
       - name: every public type name is declared once
         run: scripts/check-names.sh
+      - name: the prelude names each thing once
+        run: scripts/check-prelude.py
       - name: the guide's links into the code
         if: inputs.docs
         run: scripts/check-guide.sh

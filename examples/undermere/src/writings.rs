@@ -24,7 +24,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use atglyph::ecs::PlaceMap;
 use atglyph::ecs::places::{PlaceEntered, Spot};
 use atglyph::ecs::prefabs::Prefabs;
-use atglyph::prelude::*;
+use atglyph::prelude::all::*;
 use atglyph::rand::Rng;
 use atglyph::rules::prefab::Slot;
 use bevy::prelude::*;

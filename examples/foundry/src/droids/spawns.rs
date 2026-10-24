@@ -10,7 +10,7 @@
 //! the real map at the deck's own band on the way down and at the run's
 //! deepest band on the way back up, and spawns what the plan says.
 
-use atglyph::prelude::*;
+use atglyph::prelude::all::*;
 use atglyph::rand::Rng;
 use bevy::prelude::*;
 

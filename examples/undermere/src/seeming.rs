@@ -32,7 +32,7 @@
 //! long it must still be worn to tell it. Nothing of the true level is
 //! read, so nothing of it shows.
 
-use atglyph::prelude::*;
+use atglyph::prelude::all::*;
 use atglyph::primitives::DiceRoll;
 use bevy::prelude::*;
 

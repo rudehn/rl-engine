@@ -35,7 +35,7 @@ mod tests {
     use bevy::ecs::system::RunSystemOnce;
     use bevy::ecs::world::CommandQueue;
 
-    use atglyph::prelude::*;
+    use atglyph::prelude::all::*;
     use bevy::prelude::*;
 
     use crate::armory::Armory;

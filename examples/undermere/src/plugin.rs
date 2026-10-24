@@ -21,10 +21,9 @@
 //! first run back, so the binary adds it with the panels and a headless
 //! run, which has none, begins at startup.
 
-use atglyph::ecs::EngineApp;
 use atglyph::ecs::plugin::{CleanupSet, NewRun, PrepareRun, ReactSet, RunResumed, Turn, TurnSet};
 use atglyph::ecs::{AmmoSet, FactSet, FirePlugin, LootPlugin, LootSet, NoiseRules, PrefabPlugin, PrefabSet, PropsPlugin};
-use atglyph::prelude::*;
+use atglyph::prelude::all::*;
 use bevy::prelude::*;
 
 use crate::armory::Armory;

@@ -6,7 +6,7 @@
 //! the armory as a floor's own are, drunk and thrown by the adventurer
 //! through the pack's own actions.
 
-use atglyph::prelude::*;
+use atglyph::prelude::all::*;
 use bevy::prelude::*;
 
 use crate::content::{CONFUSED, DARKNESS, FIREPROOF, HASTED, PARALYSED, SHROUDED, SPEED, STEALTH};

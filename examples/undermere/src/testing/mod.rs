@@ -13,7 +13,7 @@
 //! below: things made by its armory, monsters by its bestiary, the town's
 //! people, its ways through, and the arena its fights are staged in.
 
-use atglyph::prelude::*;
+use atglyph::prelude::all::*;
 use atglyph::primitives::RunSeed;
 use bevy::ecs::world::CommandQueue;
 use bevy::prelude::*;

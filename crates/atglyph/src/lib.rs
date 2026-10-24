@@ -18,7 +18,9 @@
 //! roguelikes: procedural dungeon generation, field of view, A*
 //! and Dijkstra-map pathfinding, monster AI, combat, items, quests, saves
 //! and an ASCII glyph renderer. This facade re-exports every one of them,
-//! so a game depends on this crate and imports `atglyph::prelude::*`.
+//! so a game depends on this crate and imports `atglyph::prelude::*`, the
+//! names a first game uses, and the [`prelude`]'s topic modules as it
+//! takes up their topics.
 //!
 //! Four of the crates never depend on Bevy: `atglyph-core`
 //! (`atglyph::primitives`), `atglyph-grid` (`atglyph::grid`),
@@ -61,6 +63,7 @@
 
 #![deny(missing_docs)]
 
+pub mod prelude;
 pub mod testing;
 
 use bevy::app::PluginGroupBuilder;
@@ -104,6 +107,7 @@ pub use atglyph_ui as ui;
 /// ```no_run
 /// use bevy::prelude::*;
 /// use atglyph::prelude::*;
+/// use atglyph::prelude::ui::CapturePlugin;
 ///
 /// App::new()
 ///     .add_plugins(RoguelikePlugins::new("Warren", 80, 40).map(GridRect::new(0, 1, 80, 34)).build().disable::<CapturePlugin>())
@@ -239,7 +243,7 @@ impl PluginGroup for RoguelikePlugins {
 ///
 /// ```no_run
 /// use bevy::prelude::*;
-/// use atglyph::prelude::*;
+/// use atglyph::prelude::{*, ui::TtyRoguelikePlugins};
 ///
 /// App::new().add_plugins(TtyRoguelikePlugins::new(80, 40).map(GridRect::new(0, 1, 80, 34))).add_plugins((CombatPlugin, MindsPlugin)).run();
 /// ```
@@ -294,58 +298,9 @@ impl PluginGroup for TtyRoguelikePlugins {
     }
 }
 
-/// The curated set of names a game needs most of the time.
-/// Everything a game reaches for, in one glob.
-///
-/// ```
-/// use bevy::prelude::*;
-/// use atglyph::prelude::*;
-/// ```
-///
-/// The grid's rectangle is [`GridRect`](atglyph_core::GridRect), so it sits
-/// beside Bevy's own `Rect` and neither glob shadows the other; the doc
-/// test below names both, which is what keeps it that way.
-///
-/// ```
-/// use bevy::prelude::*;
-/// use atglyph::prelude::*;
-///
-/// // One name from each crate the prelude covers, named rather than
-/// // glob-imported, so a future collision with Bevy fails here.
-/// fn takes(_: Point, _: GridRect, _: Rect, _: Direction, _: TileId, _: Terrain, _: Chain) {}
-/// fn rules(_: Registry<StatDef>, _: NameRef<StatDef>, _: Names, _: Brain<Entity>, _: Ledger, _: MovementProfile) {}
-/// fn bevy_side(_: Position, _: Player, _: Health, _: Intent<Step>, _: MapId, _: EngineSet, _: PresentSet) {}
-/// fn title(_: HoldStart, _: SavedRun, _: ContinueRun, _: AbandonRun, _: LeaveRun) {}
-/// let _begin: fn(&mut World) = begin_run;
-/// fn records(_: RunRecord, _: RunRecords, _: RecordOutcome, _: RecordSection, _: RecordRun, _: RecordsPlugin, _: RecordsPanel) {}
-/// fn drawn(_: Glyph, _: Cell, _: Terminal, _: MapView, _: Palette, _: MessageLog, _: Log, _: Saves) {}
-/// // Bevy's own names a game uses beside the engine's: the shape a mesh
-/// // is made from, which a grown place's shapes must not shadow.
-/// fn bevy_own(_: Rectangle, _: Circle) {}
-/// fn panels(_: NearbyView, _: VitalsView, _: GearView, _: InspectView, _: Row, _: Facet, _: ModalId, _: ViewSet) {}
-/// fn title_screen(_: TitlePanel, _: TitleWords, _: TitleMenu, _: TitleRow, _: TitleSet) {}
-/// let _up = title_is_up;
-/// ```
-pub mod prelude {
-    pub use crate::RoguelikePlugins;
-    #[cfg(not(target_arch = "wasm32"))]
-    pub use crate::TtyRoguelikePlugins;
-    pub use atglyph_bevy::prelude::*;
-    pub use atglyph_core::prelude::{
-        BASE_ACTION_COST, DequeueOutcome, DiceRoll, Direction, Grid, Grid2D, GridRect, Id, Interner, PlaceSeed, Point, RunSeed, SeedDomain, Steps, TurnQueue,
-        geometry,
-    };
-    pub use atglyph_grid::prelude::*;
-    pub use atglyph_mapgen::prelude::*;
-    pub use atglyph_render::prelude::*;
-    pub use atglyph_rules::prelude::*;
-    pub use atglyph_save::prelude::*;
-    pub use atglyph_ui::prelude::*;
-}
-
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
-    use super::prelude::*;
+    use super::prelude::all::*;
     use super::*;
     use std::sync::{Arc, Mutex};
 

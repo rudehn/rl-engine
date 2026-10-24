@@ -26,7 +26,7 @@
 //! puts the people back.
 
 use atglyph::ecs::Source;
-use atglyph::prelude::*;
+use atglyph::prelude::all::*;
 use atglyph::ui::view::offers::OffersView;
 use atglyph::ui::view::{NamedPieces, currency_name, sum_of};
 use bevy::ecs::message::MessageCursor;

@@ -27,7 +27,7 @@
 use std::collections::BTreeMap;
 
 use atglyph::mapgen::{Area, Opening};
-use atglyph::prelude::*;
+use atglyph::prelude::all::*;
 use atglyph::rand::Rng;
 use atglyph::rand::seq::SliceRandom;
 

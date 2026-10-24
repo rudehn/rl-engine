@@ -2,7 +2,7 @@
 //! freely, and anything else, which it uses only once the adventurer
 //! knows it, so nothing it does tells the adventurer what they do not.
 
-use atglyph::prelude::*;
+use atglyph::prelude::all::*;
 use atglyph::primitives::noun::{Countability, counted_as};
 use atglyph::rules::ai::brain::Tactic;
 use atglyph::rules::equip;

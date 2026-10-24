@@ -11,7 +11,7 @@
 //! would have been, and a monster's step into one does the same, so a moth
 //! holds up nobody.
 
-use atglyph::prelude::*;
+use atglyph::prelude::all::*;
 
 /// How a bump goes in the Undermere: an ally is swapped with, and so is
 /// wildlife, by the adventurer and by every mind.

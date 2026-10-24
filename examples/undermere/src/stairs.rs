@@ -21,7 +21,7 @@
 //! whole town into what they remember, [`know_the_town`], where a floor
 //! below is learned only as it is seen.
 
-use atglyph::prelude::*;
+use atglyph::prelude::all::*;
 use bevy::prelude::*;
 
 use crate::dungeon::{FLOORS, TOWN, floor_of, map_of};

@@ -8,7 +8,7 @@
 //! made by the armory as a floor's own are, so a line in `items.ron` is
 //! held to what it does.
 
-use atglyph::prelude::*;
+use atglyph::prelude::all::*;
 use bevy::prelude::*;
 
 use crate::allies::{Ally, Fades};

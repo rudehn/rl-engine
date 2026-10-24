@@ -38,7 +38,7 @@
 
 use std::ops::RangeInclusive;
 
-use atglyph::prelude::*;
+use atglyph::prelude::all::*;
 use atglyph::primitives::noun::listed;
 use atglyph::rand::Rng;
 use atglyph::rand::rngs::StdRng;

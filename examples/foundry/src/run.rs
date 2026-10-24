@@ -6,7 +6,7 @@
 //! the same way `testing::headless` does, through the crate the `tests/`
 //! directory links against.
 
-use atglyph::prelude::*;
+use atglyph::prelude::all::*;
 use atglyph::rules::Percent;
 use atglyph::rules::ai::hearing::HearingStats;
 use atglyph::rules::damage::{ApplyResistance, SubtractArmor};

@@ -3,7 +3,7 @@
 
 use std::sync::Arc;
 
-use atglyph::prelude::*;
+use atglyph::prelude::all::*;
 use bevy::prelude::*;
 
 use super::fixtures::{beside, in_mereholt, offered, take, waiting};

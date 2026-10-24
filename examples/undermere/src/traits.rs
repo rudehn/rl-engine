@@ -24,7 +24,7 @@
 
 use std::fmt;
 
-use atglyph::prelude::*;
+use atglyph::prelude::all::*;
 use atglyph::rules::parts::KeepAway;
 use serde::Deserialize;
 

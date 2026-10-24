@@ -17,7 +17,7 @@
 //! `foundry --prefabs`.
 
 use atglyph::grid::TileRegistry;
-use atglyph::prelude::*;
+use atglyph::prelude::all::*;
 use atglyph::primitives::RunSeed;
 use atglyph::rules::prefab::{self, Coverage, Sources};
 use atglyph::rules::role;

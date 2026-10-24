@@ -22,7 +22,7 @@ pub const SLEEPING: &str = "asleep";
 
 #[cfg(test)]
 mod tests {
-    use atglyph::prelude::*;
+    use atglyph::prelude::all::*;
     use atglyph::ui::view::Alert;
     use bevy::prelude::*;
 

@@ -28,7 +28,7 @@
 //! one water his hall holds, a black pool.
 
 use atglyph::ecs::EffectRng;
-use atglyph::prelude::*;
+use atglyph::prelude::all::*;
 use atglyph::rand::Rng;
 use atglyph::rules::ability::RawValue;
 use atglyph::rules::ai::brain::Tactic;

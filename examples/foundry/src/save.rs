@@ -22,8 +22,7 @@
 //! the save up through the engine's `AbandonRun`, which `SavePlugin`
 //! answers by deleting the slot.
 
-use atglyph::prelude::*;
-use atglyph::save::SaveApp;
+use atglyph::prelude::all::*;
 use atglyph::save::{SavePlugin, Saveable, SaveableActor, SaveableItem, SaveableState};
 use bevy::ecs::world::CommandQueue;
 use bevy::prelude::*;

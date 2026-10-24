@@ -15,7 +15,7 @@
 //! innkeeper's rumours hint at what lies deeper and older
 //! (`assets/rumours.ron`).
 
-use atglyph::prelude::*;
+use atglyph::prelude::all::*;
 use bevy::prelude::*;
 
 use super::{FLOORS, TOWN, floor_of, map_of};

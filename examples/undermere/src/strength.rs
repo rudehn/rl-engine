@@ -19,7 +19,7 @@
 //! adventurer pays: a goblin's strength is never read, and what it wears
 //! it wears as well as anyone.
 
-use atglyph::prelude::*;
+use atglyph::prelude::all::*;
 use atglyph::rules::ability::RawValue;
 use atglyph::rules::stats::ModifierSource;
 use bevy::prelude::*;
@@ -243,6 +243,7 @@ mod tests {
 
     use super::*;
     use crate::testing::{adventurer, at, clear_monsters, equip, find, give, headless, lay_floor, make, monster, said, use_thing};
+    use atglyph::ecs::Marksmanship;
 
     /// `who`'s value of the stat `name`.
     fn stat(app: &App, who: Entity, name: &str) -> i32 {

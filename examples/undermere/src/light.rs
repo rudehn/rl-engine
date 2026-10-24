@@ -20,7 +20,7 @@
 //! [`LIGHT_INTENSITY`](crate::content::LIGHT_INTENSITY): what tells a lamp
 //! from a glowcap is how far it reaches and its colour.
 
-use atglyph::prelude::*;
+use atglyph::prelude::all::*;
 use bevy::prelude::*;
 
 use std::collections::BTreeMap;

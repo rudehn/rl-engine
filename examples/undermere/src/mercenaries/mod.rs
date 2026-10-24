@@ -111,7 +111,7 @@ pub use travel::*;
 #[cfg(doc)]
 use crate::armory::Armory;
 #[cfg(doc)]
-use atglyph::prelude::*;
+use atglyph::prelude::all::*;
 #[cfg(doc)]
 use atglyph::rules::loot::LootTable;
 

@@ -12,7 +12,7 @@
 //! one component the moment a wearer took a jammed helmet off or swapped
 //! it for another, since neither knew the other existed.
 
-use atglyph::prelude::*;
+use atglyph::prelude::all::*;
 use bevy::prelude::*;
 
 /// How many whole turns an ion hit blinds a sensor for.

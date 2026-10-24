@@ -6,7 +6,7 @@
 //! that ships, the adventurer swinging at monsters made as a floor's own
 //! are, so a weapon's line in `items.ron` is held to what it does.
 
-use atglyph::prelude::*;
+use atglyph::prelude::all::*;
 use atglyph::rules::ai::hearing::HearingStats;
 use bevy::ecs::system::RunSystemOnce;
 use bevy::prelude::*;

@@ -18,7 +18,7 @@
 //! the stairs beside them.
 
 use atglyph::ecs::{BreakReason, WorkBroken, Works};
-use atglyph::prelude::*;
+use atglyph::prelude::all::*;
 use atglyph::primitives::turn::BASE_ACTION_COST;
 use atglyph::rules::work::Work;
 use bevy::prelude::*;

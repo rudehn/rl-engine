@@ -22,7 +22,7 @@
 //! room is a fight the party can fall in, and the end screen that names the
 //! fallen is that fight lost.
 
-use atglyph::prelude::*;
+use atglyph::prelude::all::*;
 use atglyph::primitives::RunSeed;
 use bevy::prelude::*;
 use undermere::plugin::UndermerePlugin;

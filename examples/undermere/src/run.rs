@@ -6,7 +6,7 @@
 //! begins and continues a run the way the window does, through
 //! [`UndermerePlugin`](crate::plugin::UndermerePlugin).
 
-use atglyph::prelude::*;
+use atglyph::prelude::all::*;
 use atglyph::rules::ai::hearing::HearingStats;
 use atglyph::rules::damage::{ApplyResistance, SubtractArmor};
 use bevy::ecs::world::CommandQueue;

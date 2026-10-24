@@ -27,7 +27,7 @@
 
 use std::ops::RangeInclusive;
 
-use atglyph::prelude::*;
+use atglyph::prelude::all::*;
 use atglyph::rand::Rng;
 use bevy::prelude::*;
 

@@ -14,7 +14,7 @@
 //! numbers the engine already counts with, so a refill is the engine's as
 //! every other is.
 
-use atglyph::prelude::*;
+use atglyph::prelude::all::*;
 use bevy::prelude::*;
 
 use crate::armory::{Armory, ItemKind};

@@ -115,7 +115,7 @@ Read it at [rudehn.github.io/rl-engine](https://rudehn.github.io/rl-engine/), or
 ## Add it to a project you already have
 
 Depend on it by version, as the template does.
-The `atglyph` crate is the facade that re-exports every other crate, and `atglyph::prelude::*` brings in what a game reaches for, alongside `bevy::prelude::*`.
+The `atglyph` crate is the facade that re-exports every other crate, and `atglyph::prelude::*` brings in what a first game names, alongside `bevy::prelude::*`; the rest is in its topic modules, `atglyph::prelude::combat`, `items`, `minds`, `world`, `mapgen`, `ui`, `save` and `extras`, and `atglyph::prelude::all` is every one.
 
 ```toml
 [dependencies]

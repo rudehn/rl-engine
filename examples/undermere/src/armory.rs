@@ -46,7 +46,7 @@
 
 use std::sync::Arc;
 
-use atglyph::prelude::*;
+use atglyph::prelude::all::*;
 use atglyph::rules::parts::{self, Level};
 use bevy::prelude::*;
 use serde::Deserialize;
