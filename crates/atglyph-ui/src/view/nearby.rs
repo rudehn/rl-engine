@@ -181,7 +181,7 @@ impl Plugin for NearbyViewPlugin {
     }
 
     fn finish(&self, app: &mut App) {
-        atglyph_bevy::depends_on::<crate::UiPlugin>(app, "NearbyViewPlugin");
+        app.depends_on::<crate::UiPlugin>("NearbyViewPlugin");
         // After the game's own, so its groups are listed first.
         crate::focus::declare_focus_controls(app);
     }
@@ -634,7 +634,7 @@ mod tests {
     #[test]
     fn a_row_says_what_an_actor_is_working_on_and_how_long_it_has_left() {
         let mut stage = Stage::new_with(NearbyViewPlugin, |app| {
-            atglyph_bevy::AddWork::add_work(app, "mending");
+            atglyph_bevy::EngineApp::add_work(app, "mending");
         });
         let kind = stage.app.world().resource::<atglyph_bevy::WorkKinds>().get("mending").unwrap();
         let mender = stage.actor("mender", 'm', 2, 0);

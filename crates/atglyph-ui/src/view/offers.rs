@@ -79,8 +79,8 @@ impl Plugin for OffersViewPlugin {
     }
 
     fn finish(&self, app: &mut App) {
-        atglyph_bevy::depends_on::<crate::UiPlugin>(app, "OffersViewPlugin");
-        atglyph_bevy::depends_on::<PropsPlugin>(app, "OffersViewPlugin");
+        app.depends_on::<crate::UiPlugin>("OffersViewPlugin");
+        app.depends_on::<PropsPlugin>("OffersViewPlugin");
     }
 }
 

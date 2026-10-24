@@ -8,7 +8,7 @@
 //! freezes actors on other maps and the readers of the current map do not
 //! see them.
 //!
-//! A game hands its rules over once with [`AddPlaces::places`], and each
+//! A game hands its rules over once with [`EngineApp::places`](crate::app::EngineApp::places), and each
 //! place is built from its own [`PlaceSeed`], so the order places are
 //! built in changes none of them. [`SpawnPlayer::spawn_player`] puts the
 //! player at a place's entry in one call.
@@ -106,32 +106,16 @@ pub struct Stair {
 
 /// The game's place builder.
 ///
-/// Inserted by [`AddPlaces::places`] once, with the game, or by a start
+/// Inserted by [`EngineApp::places`](crate::app::EngineApp::places) once, with the game, or by a start
 /// that makes its rules again for every run.
 #[derive(Resource)]
 pub struct PlaceRulesRes(pub Box<dyn PlaceRules>);
 
-/// Hands the engine a game's place rules.
-pub trait AddPlaces {
-    /// Builds every place of the game by `rules`, and the run's
-    /// [`WorldMap`] over their [`tiles`](PlaceRules::tiles) when a start
-    /// makes none.
-    ///
-    /// Once, where the game is put together, rather than in every run's
-    /// start: the rules are handed each place's seed, so nothing in them
-    /// changes from run to run. Says the game needs a
-    /// [`Seed`](crate::seed::Seed), since a place is built from one, so a
-    /// game that forgot it is told when play begins rather than at its
-    /// first warp.
-    fn places(&mut self, rules: impl PlaceRules + 'static) -> &mut Self;
-}
-
-impl AddPlaces for App {
-    fn places(&mut self, rules: impl PlaceRules + 'static) -> &mut Self {
-        use crate::plugin::Needs;
-        self.insert_resource(PlaceRulesRes(Box::new(rules)))
-            .needs::<crate::seed::Seed>("places", "`Seed(RunSeed(n))`, the run's seed every stream derives from, or `Seed::from_args()` for `--seed`")
-    }
+/// The body of [`EngineApp::places`](crate::app::EngineApp::places).
+pub(crate) fn places(app: &mut App, rules: impl PlaceRules + 'static) -> &mut App {
+    use crate::app::EngineApp;
+    app.insert_resource(PlaceRulesRes(Box::new(rules)))
+        .needs::<crate::seed::Seed>("places", "`Seed(RunSeed(n))`, the run's seed every stream derives from, or `Seed::from_args()` for `--seed`")
 }
 
 /// Spawns the player into a place.
@@ -502,6 +486,7 @@ pub(crate) fn tag_new_positions(mut commands: Commands, map: Res<WorldMap>, fres
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::app::EngineApp;
     use crate::components::{MyTurn, RevealsMap};
     use crate::items::{DropItem, Inventory, Item, ItemEvent, PickUp};
     use crate::state::EngineState;

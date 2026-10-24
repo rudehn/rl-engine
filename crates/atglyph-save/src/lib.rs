@@ -45,7 +45,7 @@ pub use engine::EngineSave;
 pub use records::RECORDS_SLOT;
 pub use remap::SaveId;
 pub use run::{
-    AddSaveable, EntityState, KindSave, RunSave, SavePlugin, SaveSlot, Saveable, SaveableActor, SaveableItem, SaveableState, SavedBurning, load_run, save_run,
+    EntityState, KindSave, RunSave, SaveApp, SavePlugin, SaveSlot, Saveable, SaveableActor, SaveableItem, SaveableState, SavedBurning, load_run, save_run,
 };
 pub use unload::Stash;
 
@@ -56,7 +56,7 @@ pub mod prelude {
     pub use crate::engine::EngineSave;
     pub use crate::remap::SaveId;
 
-    pub use crate::run::{AddSaveable, RunSave, SavePlugin, Saveable, SaveableActor, SaveableItem, SaveableState, load_run, save_run};
+    pub use crate::run::{RunSave, SaveApp, SavePlugin, Saveable, SaveableActor, SaveableItem, SaveableState, load_run, save_run};
 
     pub use crate::unload::Stash;
 }

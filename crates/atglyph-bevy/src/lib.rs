@@ -20,6 +20,7 @@ pub mod accuracy;
 #[cfg(test)]
 mod ambiguity;
 pub mod ammo;
+pub mod app;
 pub mod bump;
 pub mod combat;
 pub mod components;
@@ -67,6 +68,7 @@ pub use ability::{
 };
 pub use accuracy::{Attempt, HitRules, Marksmanship, Missed};
 pub use ammo::{Ammo, AmmoChanged, AmmoPlugin, AmmoSet, Dry};
+pub use app::EngineApp;
 pub use atglyph_grid::LightBand;
 pub use bump::{Bump, BumpRules, Bumped, OnAlly, Swapped};
 pub use combat::{
@@ -74,13 +76,12 @@ pub use combat::{
     DeathEvent, Faction, Heal, Healed, Health, Invulnerable, Loadout, MeleeAttack, RangedAttack, Resists, Struck, line_of_fire, shot,
 };
 pub use components::{Actor, Blocks, MyTurn, Player, Position, RevealsMap, Speed, Viewshed};
-pub use consumable::{AddSpending, Attuned, Consumable, Recharge, SpendingMoments, Spent, WhenEmpty};
-pub use cue::{AddAirborne, Airborne, Anchor, Cue, CueWait, Cued, Lands, LookOf};
+pub use consumable::{Attuned, Consumable, Recharge, SpendingMoments, Spent, WhenEmpty};
+pub use cue::{Airborne, Anchor, Cue, CueWait, Cued, Lands, LookOf};
 pub use doors::{Close, DoorEvent, Open};
 pub use effects::{
-    AddEffect, AddEngineEffects, AddTriggerKind, Cleanse, Effect, EffectBonus, EffectKinds, EffectRng, EffectWorld, Effects, EffectsPlugin, Emit, Fired,
-    FiredOn, FromArgs, Harm, Ignite, Inflict, KeepOnRemnant, Landing, LandsAsItself, Mend, Noise, Pull, Remnant, RemnantKeeps, Shove, Source, Trigger,
-    TriggerKind, TriggerKindId, TriggerKinds, Triggers, area_cells,
+    Cleanse, Effect, EffectBonus, EffectKinds, EffectRng, EffectWorld, Effects, EffectsPlugin, Emit, Fired, FiredOn, FromArgs, Harm, Ignite, Inflict, Landing,
+    LandsAsItself, Mend, Noise, Pull, Remnant, RemnantKeeps, Shove, Source, Trigger, TriggerKind, TriggerKindId, TriggerKinds, Triggers, area_cells,
 };
 pub use events::{Counters, FactSet, FactsPlugin, Happened, QuestChange, Quests};
 pub use fields::SavedField;
@@ -97,40 +98,40 @@ pub use lighting::{
 };
 pub use loot::{Drops, Found, ItemMaker, LootArea, LootPlugin, LootRng, LootSet, Provenance};
 pub use minds::{
-    AddChoice, CameFrom, DEFAULT_PERCEPTION, FlowFields, Intelligence, JoinStamp, LastTactic, Leader, Mind, MindChose, MindsPlugin, Perception, Post, Profile,
-    Sight, Thinking,
+    CameFrom, DEFAULT_PERCEPTION, FlowFields, Intelligence, JoinStamp, LastTactic, Leader, Mind, MindChose, MindsPlugin, Perception, Post, Profile, Sight,
+    Thinking,
 };
-pub use noise::{AddSound, Footfall, Heard, Hearing, MakeNoise, NoiseHeard, NoisePlugin, NoiseRules, NoiseRunning, Sound, SoundId, SoundNames, Sounds};
+pub use noise::{Footfall, Heard, Hearing, MakeNoise, NoiseHeard, NoisePlugin, NoiseRules, NoiseRunning, Sound, SoundId, SoundNames, Sounds};
 pub use parts::{ActorParts, Attacks, ItemLevel, ItemParts, LightWhen, innate_statuses, insert_parts};
 pub use places::{
-    AddPlaces, Arrive, Climb, Destination, GoThrough, Ladder, LadderEnd, LadderStair, Lock, MapChanged, MapId, OnMap, PlaceBuild, PlaceEntered, PlaceRules,
-    PlaceRulesRes, SpawnPlayer, Spot, Stair, StairLook, Transition, Travelled, WarpRequest,
+    Arrive, Climb, Destination, GoThrough, Ladder, LadderEnd, LadderStair, Lock, MapChanged, MapId, OnMap, PlaceBuild, PlaceEntered, PlaceRules, PlaceRulesRes,
+    SpawnPlayer, Spot, Stair, StairLook, Transition, Travelled, WarpRequest,
 };
 pub use plugin::{
-    CleanupSet, ContinueSaved, CorePlugin, DecideSet, EndOfFrame, EndRun, EngineSet, FieldSet, LandSet, Needs, NewRun, PerceiveSet, PrepareRun, PresentSet,
-    ReactSet, Reads, ResetsOnNewRun, ResolveSet, RunResumed, Turn, TurnSet, clear_run, depends_on,
+    CleanupSet, ContinueSaved, CorePlugin, DecideSet, EndOfFrame, EndRun, EngineSet, FieldSet, LandSet, NewRun, PerceiveSet, PrepareRun, PresentSet, ReactSet,
+    ResolveSet, RunResumed, Turn, TurnSet, clear_run,
 };
 pub use prefabs::{ActorMaker, PrefabPlugin, PrefabSet, Prefabs};
 pub use props::{
-    AddVerb, AsksFirst, Container, Emptied, FillContainer, Finding, Hidden, Interact, Interacted, Offer, OfferChooser, OfferFilter, OfferedHere, Offering,
-    Offers, PendingFires, Prop, PropEffects, PropKind, PropRng, PropSet, PropsPlugin, Refused, Scenery, SpotBonus, SpotRules, Spotted, Stocked, Take, Verb,
-    VerbId, Verbs, spawn_prop,
+    AsksFirst, Container, Emptied, FillContainer, Finding, Hidden, Interact, Interacted, Offer, OfferChooser, OfferFilter, OfferedHere, Offering, Offers,
+    PendingFires, Prop, PropEffects, PropKind, PropRng, PropSet, PropsPlugin, Refused, Scenery, SpotBonus, SpotRules, Spotted, Stocked, Take, Verb, VerbId,
+    Verbs, spawn_prop,
 };
 pub use records::{RecordOutcome, RecordRun, RecordSection, RecordsPlugin, RunRecord, RunRecords};
 pub use registries::Registries;
 pub use remains::{LeavesRemains, Remains, RemainsLeft, RemainsNaming, RemainsPlugin, RevivalRules, RevivalTwin, ReviveCommands, Revived, revive};
 pub use replay::{Pressed, Recording};
 pub use secrets::Secret;
-pub use seed::{AddStream, ENGINE_DOMAINS, LaunchArgs, RunRng, Seed, Stream, StreamDomain};
-pub use settings::{AddSettings, Setting, SettingId, Settings};
+pub use seed::{ENGINE_DOMAINS, LaunchArgs, RunRng, Seed, Stream, StreamDomain};
+pub use settings::{Setting, SettingId, Settings};
 pub use state::{Ending, EngineState, Outcome, Restart, RunOver, world_is_shown};
 pub use status::{ActiveStatuses, ApplyStatus, RemoveStatus, SideWas, StatBlock, StatusEvent};
 pub use stealth::{Aware, Notice, Noticed, Stealth, StealthPlugin, Unseen, Watchers};
 pub use throwing::{Flight, Throw, Throwable, ThrowingPlugin, flight};
 pub use title::{AbandonRun, ContinueRun, HoldStart, LeaveRun, SavedRun, begin_afresh, begin_run};
 pub use trade::{Buy, Currency, Deal, Parties, Sell, TRADE, TradePlugin, TradeRefusal, Traded, Trader, Trading, Ware, Worth, pay};
-pub use turn::{Acting, Action, ActionDone, ActionRefused, AddAction, Intent, Occupancy, Resolution, Speeds, Step, Stepped, TurnEnd, TurnRules, Turns, Wait};
-pub use work::{AddWork, BeginWork, BreakReason, WorkBegan, WorkBroken, WorkDone, WorkKinds, WorkPace, Working, Works};
+pub use turn::{Acting, Action, ActionDone, ActionRefused, Intent, Occupancy, Resolution, Speeds, Step, Stepped, TurnEnd, TurnRules, Turns, Wait};
+pub use work::{BeginWork, BreakReason, WorkBegan, WorkBroken, WorkDone, WorkKinds, WorkPace, Working, Works};
 pub use world::{PlaceMap, PlaceSave, WindowView, WorldMap, WorldMapSave};
 
 /// The names a game writes.
@@ -144,6 +145,7 @@ pub mod prelude {
     pub use crate::ability::{Abilities, AbilitiesPlugin, AbilityEvent, Cooldowns, Grants, Known, Pools, Reflected, Reflects, Use};
     pub use crate::accuracy::{Attempt, HitRules, Marksmanship, Missed};
     pub use crate::ammo::{Ammo, AmmoChanged, AmmoPlugin, AmmoSet, Dry};
+    pub use crate::app::EngineApp;
     pub use crate::bump::{Bump, BumpRules, Bumped, OnAlly, Swapped};
 
     pub use crate::combat::{
@@ -151,14 +153,11 @@ pub mod prelude {
         DeathEvent, Faction, Heal, Healed, Health, Invulnerable, Loadout, MeleeAttack, RangedAttack, Resists, Struck, line_of_fire, shot,
     };
     pub use crate::components::{Actor, Blocks, MyTurn, Player, Position, RevealsMap, Speed, Viewshed};
-    pub use crate::consumable::{AddSpending, Attuned, Consumable, WhenEmpty};
-    pub use crate::cue::{AddAirborne, Airborne, Anchor, Cue, CueWait, Cued, Lands, LookOf};
+    pub use crate::consumable::{Attuned, Consumable, WhenEmpty};
+    pub use crate::cue::{Airborne, Anchor, Cue, CueWait, Cued, Lands, LookOf};
     pub use crate::doors::{Close, DoorEvent, Open};
 
-    pub use crate::effects::{
-        AddEffect, AddEngineEffects, AddTriggerKind, Effect, EffectBonus, EffectKinds, EffectWorld, Effects, EffectsPlugin, Fired, FromArgs, Landing,
-        TriggerKinds, Triggers,
-    };
+    pub use crate::effects::{Effect, EffectBonus, EffectKinds, EffectWorld, Effects, EffectsPlugin, Fired, FromArgs, Landing, TriggerKinds, Triggers};
     pub use crate::events::{Counters, FactSet, FactsPlugin, Happened, QuestChange, Quests};
     pub use crate::fire::{Burning, Fire, FireEvent, FirePlugin, FireRules, Flammable, Kindle};
 
@@ -176,31 +175,31 @@ pub mod prelude {
     };
 
     pub use crate::loot::{Drops, Found, ItemMaker, LootArea, LootPlugin, LootSet, Provenance};
-    pub use crate::minds::{AddChoice, Intelligence, JoinStamp, LastTactic, Leader, Mind, MindChose, MindsPlugin, Perception, Post, Profile, Thinking};
+    pub use crate::minds::{Intelligence, JoinStamp, LastTactic, Leader, Mind, MindChose, MindsPlugin, Perception, Post, Profile, Thinking};
 
-    pub use crate::noise::{AddSound, Footfall, Heard, Hearing, MakeNoise, NoiseHeard, NoisePlugin, NoiseRules, SoundId, SoundNames, Sounds};
+    pub use crate::noise::{Footfall, Heard, Hearing, MakeNoise, NoiseHeard, NoisePlugin, NoiseRules, SoundId, SoundNames, Sounds};
     pub use crate::parts::{ActorParts, Attacks, ItemLevel, ItemParts, LightWhen, innate_statuses, insert_parts};
 
     pub use crate::places::{
-        AddPlaces, Arrive, Climb, Destination, GoThrough, Ladder, LadderEnd, Lock, MapChanged, MapId, OnMap, PlaceBuild, PlaceEntered, PlaceRules,
-        PlaceRulesRes, SpawnPlayer, Spot, Stair, StairLook, Transition, Travelled, WarpRequest,
+        Arrive, Climb, Destination, GoThrough, Ladder, LadderEnd, Lock, MapChanged, MapId, OnMap, PlaceBuild, PlaceEntered, PlaceRules, PlaceRulesRes,
+        SpawnPlayer, Spot, Stair, StairLook, Transition, Travelled, WarpRequest,
     };
     pub use crate::plugin::{
-        CleanupSet, CorePlugin, DecideSet, EndOfFrame, EndRun, EngineSet, FieldSet, LandSet, Needs, NewRun, PerceiveSet, PrepareRun, PresentSet, ReactSet,
-        Reads, ResetsOnNewRun, ResolveSet, RunResumed, Turn, TurnSet, depends_on,
+        CleanupSet, CorePlugin, DecideSet, EndOfFrame, EndRun, EngineSet, FieldSet, LandSet, NewRun, PerceiveSet, PrepareRun, PresentSet, ReactSet, ResolveSet,
+        RunResumed, Turn, TurnSet,
     };
     pub use crate::prefabs::{ActorMaker, PrefabPlugin, PrefabSet, Prefabs};
     pub use crate::props::{
-        AddVerb, AsksFirst, Container, Emptied, FillContainer, Finding, Hidden, Interact, Interacted, Offer, OfferChooser, OfferFilter, OfferedHere, Offering,
-        Offers, Prop, PropKind, PropSet, PropsPlugin, Refused, Scenery, SpotBonus, SpotRules, Spotted, Take, VerbId, Verbs, spawn_prop,
+        AsksFirst, Container, Emptied, FillContainer, Finding, Hidden, Interact, Interacted, Offer, OfferChooser, OfferFilter, OfferedHere, Offering, Offers,
+        Prop, PropKind, PropSet, PropsPlugin, Refused, Scenery, SpotBonus, SpotRules, Spotted, Take, VerbId, Verbs, spawn_prop,
     };
     pub use crate::records::{RecordOutcome, RecordRun, RecordSection, RecordsPlugin, RunRecord, RunRecords};
 
     pub use crate::registries::Registries;
     pub use crate::remains::{LeavesRemains, Remains, RemainsLeft, RemainsNaming, RemainsPlugin, RevivalRules, ReviveCommands, Revived};
 
-    pub use crate::seed::{AddStream, LaunchArgs, Seed};
-    pub use crate::settings::{AddSettings, Setting, SettingId, Settings};
+    pub use crate::seed::{LaunchArgs, Seed};
+    pub use crate::settings::{Setting, SettingId, Settings};
     pub use crate::state::{Ending, EngineState, Outcome, Restart, RunOver};
     pub use crate::status::{ActiveStatuses, ApplyStatus, RemoveStatus, SideWas, StatBlock, StatusEvent};
 
@@ -209,11 +208,9 @@ pub mod prelude {
     pub use crate::title::{AbandonRun, ContinueRun, HoldStart, LeaveRun, SavedRun, begin_run};
     pub use crate::trade::{Buy, Currency, Deal, Parties, Sell, TRADE, TradePlugin, TradeRefusal, Traded, Trader, Trading, Ware, Worth};
 
-    pub use crate::turn::{
-        Acting, Action, ActionDone, ActionRefused, AddAction, Intent, Occupancy, Resolution, Speeds, Step, Stepped, TurnEnd, TurnRules, Turns, Wait,
-    };
+    pub use crate::turn::{Acting, Action, ActionDone, ActionRefused, Intent, Occupancy, Resolution, Speeds, Step, Stepped, TurnEnd, TurnRules, Turns, Wait};
 
-    pub use crate::work::{AddWork, WorkDone, WorkKinds, WorkPace, Working};
+    pub use crate::work::{WorkDone, WorkKinds, WorkPace, Working};
 
     pub use crate::world::WorldMap;
     pub use atglyph_grid::LightBand;

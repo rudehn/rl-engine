@@ -30,6 +30,7 @@
 //! Two games did all of this by hand before it moved here, and wrote it the
 //! same way; `docs/design/loot.md` has the reasoning.
 
+use crate::app::EngineApp;
 use std::collections::BTreeMap;
 use std::marker::PhantomData;
 
@@ -386,9 +387,9 @@ impl<M> Default for LootPlugin<M> {
 
 impl<M: ItemMaker> Plugin for LootPlugin<M> {
     fn build(&self, app: &mut App) {
-        use crate::plugin::{Needs, Reads, TurnSet};
+        use crate::app::EngineApp;
+        use crate::plugin::TurnSet;
         use crate::props::PropSet;
-        use crate::seed::AddStream;
         app.needs::<M>("LootPlugin", "the resource holding the game's items, implementing `ItemMaker`, inserted before play begins")
             .needs::<Registries>("LootPlugin", "`Registries`, whose props say what containers hold")
             .add_stream::<LootRng>("LootPlugin")
@@ -406,7 +407,7 @@ impl<M: ItemMaker> Plugin for LootPlugin<M> {
     }
 
     fn finish(&self, app: &mut App) {
-        crate::plugin::depends_on::<crate::plugin::CorePlugin>(app, "LootPlugin");
+        app.depends_on::<crate::plugin::CorePlugin>("LootPlugin");
     }
 }
 

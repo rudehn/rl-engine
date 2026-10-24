@@ -25,8 +25,9 @@ use atglyph_core::{Direction, Rect};
 use atglyph_render::{Cell, Terminal};
 use bevy::prelude::*;
 
+use crate::app::UiApp;
 use crate::controls::{Chord, ControlInput, key_name};
-use crate::modal::{AddModal, ModalId, Modals};
+use crate::modal::{ModalId, Modals};
 use crate::panel::{clear, clip, frame, section};
 use crate::tone::{Palette, Tones};
 use crate::view::trade::{TradeRow, TradeView, TradeViewPlugin};
@@ -208,8 +209,8 @@ impl Plugin for TradePanel {
     }
 
     fn finish(&self, app: &mut App) {
-        atglyph_bevy::depends_on::<crate::UiPlugin>(app, "TradePanel");
-        atglyph_bevy::depends_on::<TradePlugin>(app, "TradePanel");
+        app.depends_on::<crate::UiPlugin>("TradePanel");
+        app.depends_on::<TradePlugin>("TradePanel");
         // Nothing on the controls screen: the screen opens itself when a
         // trade is opened, and what it answers to is written along its own
         // bottom border, as the container screen's is.

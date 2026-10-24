@@ -87,7 +87,7 @@ impl Plugin for GearViewPlugin {
     }
 
     fn finish(&self, app: &mut App) {
-        atglyph_bevy::depends_on::<crate::UiPlugin>(app, "GearViewPlugin");
+        app.depends_on::<crate::UiPlugin>("GearViewPlugin");
     }
 }
 

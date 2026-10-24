@@ -210,7 +210,7 @@ impl Occupancy {
 /// items, [`Open`](crate::doors::Open) and `Close`
 /// in doors, [`GoThrough`](crate::places::GoThrough) in places. A game
 /// adds its own by implementing this on a type of its own, registering it
-/// with [`AddAction::add_action`], and resolving it in
+/// with [`EngineApp::add_action`](crate::app::EngineApp::add_action), and resolving it in
 /// [`TurnSet::Resolve`](crate::plugin::TurnSet::Resolve). There is no
 /// list of actions anywhere for a new one to be added to.
 ///
@@ -644,7 +644,7 @@ pub(crate) fn resolve_waits(mut intents: MessageReader<Intent<Wait>>, mut resolu
 
 /// Refuses an action nobody resolved.
 ///
-/// Registered once per action type by [`AddAction::add_action`]. Without
+/// Registered once per action type by [`EngineApp::add_action`](crate::app::EngineApp::add_action). Without
 /// it a game that registers an action and forgets its resolver leaves the
 /// player holding a turn nothing will ever spend, which reads as a frozen
 /// game rather than a mistake.
@@ -791,26 +791,16 @@ pub(crate) fn forget_removed_blockers(mut occupancy: ResMut<Occupancy>, mut remo
     }
 }
 
-/// Registers an action with the engine.
-pub trait AddAction {
-    /// Registers `A` as an action: its intents become a message, and an
-    /// intent nobody resolves is refused rather than left to hang. Once:
-    /// two plugins that both register the same action, as combat and the
-    /// minds both do for a blow, get one sweeper between them.
-    fn add_action<A: Action>(&mut self) -> &mut Self;
-}
-
-impl AddAction for App {
-    fn add_action<A: Action>(&mut self) -> &mut Self {
-        // The message alone is not proof of a sweeper: a plugin may
-        // register the message so it can write intents it does not resolve,
-        // as the minds do, so the sweeper is what is remembered.
-        if self.world().contains_resource::<Swept<A>>() {
-            return self;
-        }
-        self.insert_resource(Swept::<A>(std::marker::PhantomData));
-        self.add_message::<Intent<A>>().add_systems(crate::plugin::Turn, sweep_unclaimed::<A>.in_set(crate::plugin::TurnSet::Sweep))
+/// The body of [`EngineApp::add_action`](crate::app::EngineApp::add_action).
+pub(crate) fn add_action<A: Action>(app: &mut App) -> &mut App {
+    // The message alone is not proof of a sweeper: a plugin may
+    // register the message so it can write intents it does not resolve,
+    // as the minds do, so the sweeper is what is remembered.
+    if app.world().contains_resource::<Swept<A>>() {
+        return app;
     }
+    app.insert_resource(Swept::<A>(std::marker::PhantomData));
+    app.add_message::<Intent<A>>().add_systems(crate::plugin::Turn, sweep_unclaimed::<A>.in_set(crate::plugin::TurnSet::Sweep))
 }
 
 /// Present once `A` has a sweeper, so a second registration adds none.

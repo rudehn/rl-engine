@@ -22,6 +22,7 @@
 //! the game knows what a level, a kind or a sign of something wrong is
 //! worth, and a thing without one is neither sold nor bought.
 
+use crate::app::EngineApp;
 use atglyph_rules::TagId;
 pub use atglyph_rules::trade::{Deal, TradeRefusal};
 use atglyph_rules::trade::{TradeItem, draw_down};
@@ -465,8 +466,8 @@ pub struct TradePlugin;
 
 impl Plugin for TradePlugin {
     fn build(&self, app: &mut App) {
-        use crate::plugin::{EngineSet, Needs, Reads, ResetsOnNewRun, Turn, TurnSet};
-        use crate::props::AddVerb;
+        use crate::app::EngineApp;
+        use crate::plugin::{EngineSet, Turn, TurnSet};
         app.needs::<Currency>("TradePlugin", "`Currency(registries.tags.expect(\"...\"))`, the tag every piece of the currency carries")
             .add_verb(TRADE)
             .init_resource::<Trading>()
@@ -484,8 +485,8 @@ impl Plugin for TradePlugin {
     }
 
     fn finish(&self, app: &mut App) {
-        crate::plugin::depends_on::<crate::items::ItemsPlugin>(app, "TradePlugin");
-        crate::plugin::depends_on::<crate::props::PropsPlugin>(app, "TradePlugin");
+        app.depends_on::<crate::items::ItemsPlugin>("TradePlugin");
+        app.depends_on::<crate::props::PropsPlugin>("TradePlugin");
     }
 }
 

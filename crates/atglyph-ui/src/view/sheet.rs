@@ -166,7 +166,7 @@ impl Plugin for SheetViewPlugin {
     }
 
     fn finish(&self, app: &mut App) {
-        atglyph_bevy::depends_on::<crate::UiPlugin>(app, "SheetViewPlugin");
+        app.depends_on::<crate::UiPlugin>("SheetViewPlugin");
     }
 }
 

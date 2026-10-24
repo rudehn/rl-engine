@@ -17,7 +17,7 @@
 //! aimed use are seen the same way. [`EffectsPlugin`] is the
 //! whole of it, added by whichever of abilities, props or consumables a game
 //! adds first. A game's own effects sit beside the engine's through
-//! [`AddEffect::add_effect`], and nothing that lands them can tell the
+//! [`EngineApp::add_effect`](crate::app::EngineApp::add_effect), and nothing that lands them can tell the
 //! difference.
 
 mod engine;
@@ -349,7 +349,7 @@ impl EffectWorld<'_, '_> {
 
 /// One thing an ability does when it lands.
 ///
-/// A type per effect, registered with [`AddEffect::add_effect`], parsing
+/// A type per effect, registered with [`EngineApp::add_effect`](crate::app::EngineApp::add_effect), parsing
 /// its own arguments out of the RON the ability named it with. The engine
 /// ships one per subsystem it owns; a game's own sit beside them and the
 /// resolver cannot tell the difference.
@@ -446,18 +446,11 @@ impl EffectKinds {
     }
 }
 
-/// Registers an effect with the engine.
-pub trait AddEffect {
-    /// Registers `E` so abilities may name it in their RON.
-    fn add_effect<E: FromArgs>(&mut self) -> &mut Self;
-}
-
-impl AddEffect for App {
-    fn add_effect<E: FromArgs>(&mut self) -> &mut Self {
-        self.init_resource::<EffectKinds>();
-        self.world_mut().resource_mut::<EffectKinds>().declare::<E>();
-        self
-    }
+/// The body of [`EngineApp::add_effect`](crate::app::EngineApp::add_effect).
+pub(crate) fn add_effect<E: FromArgs>(app: &mut App) -> &mut App {
+    app.init_resource::<EffectKinds>();
+    app.world_mut().resource_mut::<EffectKinds>().declare::<E>();
+    app
 }
 
 /// One effect of a list, built, with the chance it lands.
@@ -592,10 +585,9 @@ struct EffectsBuilt;
 
 impl Plugin for EffectsPlugin {
     fn build(&self, app: &mut App) {
+        use crate::app::EngineApp;
         use crate::cue::AddAirborne;
-        use crate::plugin::Reads;
         use crate::plugin::{ResolveSet, Turn};
-        use crate::seed::AddStream;
         // Once, however many times it is added: every plugin that lands
         // effects adds it when it is missing, and a game that also adds it
         // by hand, after one of those, must not have its triggers landed

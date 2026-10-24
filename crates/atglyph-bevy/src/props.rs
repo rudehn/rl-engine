@@ -36,6 +36,7 @@
 //! [`Secret`](crate::secrets::Secret) alike, are all here.
 //! `docs/design/props.md` is the whole design.
 
+use crate::app::EngineApp;
 use atglyph_core::{Id, Interner, Point, geometry};
 use atglyph_rules::TagId;
 pub use atglyph_rules::prop::SpotRules;
@@ -133,7 +134,7 @@ pub type VerbId = Id<Verb>;
 /// Every verb in play, in the order they were first named.
 ///
 /// The engine's own are interned first, so their ids are the constants on
-/// this type, and a game adds its own with [`AddVerb::add_verb`]. Verbs
+/// this type, and a game adds its own with [`EngineApp::add_verb`]. Verbs
 /// are interned rather than free strings so that two games spell `open`
 /// the same way, and so the engine can say there is nothing here to open
 /// in its own words.
@@ -173,21 +174,11 @@ impl Default for Verbs {
     }
 }
 
-/// Declares a verb while the app is being built.
-///
-/// A prop's definition names its verbs in words; this is what turns one
-/// into the id a game filters [`Interacted`] by.
-pub trait AddVerb {
-    /// Declares the verb `name`. Look its id up again with [`Verbs::get`].
-    fn add_verb(&mut self, name: &str) -> &mut Self;
-}
-
-impl AddVerb for App {
-    fn add_verb(&mut self, name: &str) -> &mut Self {
-        self.init_resource::<Verbs>();
-        self.world_mut().resource_mut::<Verbs>().declare(name);
-        self
-    }
+/// The body of [`EngineApp::add_verb`](crate::app::EngineApp::add_verb).
+pub(crate) fn add_verb<'a>(app: &'a mut App, name: &str) -> &'a mut App {
+    app.init_resource::<Verbs>();
+    app.world_mut().resource_mut::<Verbs>().declare(name);
+    app
 }
 
 /// One thing the actor holding the turn could do with what it can reach,
@@ -1356,9 +1347,8 @@ impl PropsPlugin {
 
 impl Plugin for PropsPlugin {
     fn build(&self, app: &mut App) {
-        use crate::plugin::{DecideSet, Needs, Reads, ResolveSet, Turn};
-        use crate::seed::AddStream;
-        use crate::turn::AddAction;
+        use crate::app::EngineApp;
+        use crate::plugin::{DecideSet, ResolveSet, Turn};
         crate::effects::ensure(app);
         app.needs::<Registries>("PropsPlugin", "`Registries`, with `props` loaded from a `props.ron`")
             .init_resource::<Verbs>()
@@ -1417,7 +1407,7 @@ impl Plugin for PropsPlugin {
     }
 
     fn finish(&self, app: &mut App) {
-        crate::plugin::depends_on::<crate::plugin::CorePlugin>(app, "PropsPlugin");
+        app.depends_on::<crate::plugin::CorePlugin>("PropsPlugin");
     }
 }
 
@@ -1496,7 +1486,7 @@ mod tests {
         let mut app = headless_app();
         let rules = crate::noise::NoiseRules { step: 0, strike: 0, door: 0, landing: 0, door_muffle: 0 };
         app.add_plugins((crate::fov::FovPlugin, PropsPlugin, crate::noise::NoisePlugin::new(rules)));
-        crate::noise::AddSound::add_sound(&mut app, "chime");
+        crate::app::EngineApp::add_sound(&mut app, "chime");
         crate::testing::ground(&mut app);
         let text = r#"#![enable(implicit_some)] [(name: "alarm plate", glyph: '^', color: (r: 1, g: 2, b: 3),
             triggers: [(on: "entered", effects: [(kind: "Noise", args: (sound: "chime", loudness: 9))])])]"#;
@@ -2105,7 +2095,8 @@ mod actor_offers {
     /// the one interacted with, and a blow on the worker breaks it off.
     #[test]
     fn work_begun_from_an_actors_offer_is_broken_off_by_a_blow_on_the_worker() {
-        use crate::work::{AddWork, BreakReason, WorkKinds, Working};
+        use crate::app::EngineApp;
+        use crate::work::{BreakReason, WorkKinds, Working};
         let mut app = headless_app();
         app.add_plugins((crate::fov::FovPlugin, PropsPlugin, crate::combat::CombatPlugin));
         app.add_verb("free").add_work("freeing");
@@ -2358,9 +2349,9 @@ mod containers {
 #[cfg(test)]
 mod traps {
     use super::*;
+    use crate::app::EngineApp;
     use crate::combat::{CombatPlugin, DamageEvent, Health};
     use crate::components::{Actor, Blocks, Player, Viewshed};
-    use crate::effects::AddEngineEffects;
     use crate::state::EngineState;
     use crate::testing::headless_app;
     use crate::turn::{Intent, Step};

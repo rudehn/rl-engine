@@ -405,7 +405,7 @@ impl Plugin for ParticlesPlugin {
     }
 
     fn finish(&self, app: &mut App) {
-        atglyph_bevy::depends_on::<crate::map_view::MapViewPlugin>(app, "ParticlesPlugin");
+        app.depends_on::<crate::map_view::MapViewPlugin>("ParticlesPlugin");
     }
 }
 

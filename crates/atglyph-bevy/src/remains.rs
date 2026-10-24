@@ -41,6 +41,7 @@
 //! body to fade despawns it, because how long the dead linger is a rule
 //! about a world, not about an engine.
 
+use crate::app::EngineApp;
 use atglyph_core::Point;
 use bevy::ecs::component::ComponentId;
 use bevy::ecs::entity::EntityCloner;
@@ -531,7 +532,7 @@ impl Plugin for RemainsPlugin {
     }
 
     fn finish(&self, app: &mut App) {
-        crate::plugin::depends_on::<crate::combat::CombatPlugin>(app, "RemainsPlugin");
+        app.depends_on::<crate::combat::CombatPlugin>("RemainsPlugin");
     }
 }
 
@@ -1039,7 +1040,7 @@ mod tests {
     /// keeps both, for a revival.
     #[test]
     fn a_body_offers_nothing_and_dressed_as_a_prop_kind_is_armed_with_that_kinds_triggers() {
-        use crate::effects::AddEngineEffects;
+        use crate::app::EngineApp;
         use crate::props::{Offering, Offers, PropKind, PropsPlugin, Verbs};
         let (mut app, start, sides) = arena();
         app.add_plugins(PropsPlugin);

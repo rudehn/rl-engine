@@ -228,7 +228,8 @@ mod tests {
     use crate::harness::Stage;
     use crate::view::target::harness::{abilities, arm};
     use crate::view::target::{AimAt, AimFire};
-    use atglyph_bevy::{Abilities, AbilitiesPlugin, AddEngineEffects};
+    use atglyph_bevy::EngineApp;
+    use atglyph_bevy::{Abilities, AbilitiesPlugin};
 
     /// A stage with the map drawn under the overlay, so the test sees the
     /// same cells a player would.

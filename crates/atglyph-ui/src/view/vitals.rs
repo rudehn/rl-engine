@@ -147,7 +147,7 @@ impl Plugin for VitalsViewPlugin {
     }
 
     fn finish(&self, app: &mut App) {
-        atglyph_bevy::depends_on::<crate::UiPlugin>(app, "VitalsViewPlugin");
+        app.depends_on::<crate::UiPlugin>("VitalsViewPlugin");
     }
 }
 

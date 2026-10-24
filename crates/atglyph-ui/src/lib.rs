@@ -94,7 +94,7 @@
 //!    What an actor is working at is a [`WorkRow`] on its row, read by any
 //!    collector through `Workings`.
 //! 2. A collector system in [`ViewSet::Collect`], and a plugin that adds
-//!    it and declares what it needs with [`Needs::needs`](atglyph_bevy::Needs::needs),
+//!    it and declares what it needs with [`EngineApp::needs`],
 //!    saying how a game makes each piece.
 //! 3. Arithmetic that is really about the rules, in `atglyph-rules` where it can
 //!    be tested without an `App`. [`atglyph_rules::forecast`] is the example: the
@@ -127,6 +127,7 @@
 #[cfg(test)]
 pub(crate) mod harness;
 
+pub mod app;
 pub mod controls;
 pub mod cursor;
 pub mod facet;
@@ -147,7 +148,8 @@ pub mod testing;
 pub mod tone;
 pub mod view;
 
-pub use controls::{AddControls, Bindings, Chord, Control, ControlId, ControlInput, Controls, ControlsKeys, EngineKey, Keys, RepeatPace, Repeats};
+pub use app::UiApp;
+pub use controls::{Bindings, Chord, Control, ControlId, ControlInput, Controls, ControlsKeys, EngineKey, Keys, RepeatPace, Repeats};
 pub use cursor::{CursorKeys, CursorMap, CursorStyle, mark};
 pub use facet::Facet;
 pub use focus::{Focus, Sighted, Sighting};
@@ -157,7 +159,7 @@ pub use keys::DirectionKeys;
 pub use layout::{RailLayout, RailPanels, RailScreen};
 pub use log::{Log, LogEntry, MessageLog, Span};
 pub use menu::{ListMenu, MenuRow, draw_menu};
-pub use modal::{AddModal, Modal, ModalId, Modals, modal_is, modal_open, no_modal};
+pub use modal::{Modal, ModalId, Modals, modal_is, modal_open, no_modal};
 pub use narrate::{Called, MassNoun, NarrationView, NarrationViewPlugin, NarratorPlugin, Phrase, Phrasebook, Said, Tell, Words};
 pub use panel::{
     AbilityKeys, AbilityPanel, ActivityWords, AlertWords, Choosing, ChoosingFor, Confirming, ContainerPanel, ControlsPanel, GearPanel, InspectPanel,
@@ -167,7 +169,7 @@ pub use panel::{
 };
 pub use player_keys::{Declined, Otherwise, PlayerKeysPlugin, PlayerKeysSet, PlayerVerb};
 pub use replay::ReplayPlugin;
-pub use tone::{AddTone, Palette, Tone, ToneId, Tones, readable};
+pub use tone::{Palette, Tone, ToneId, Tones, readable};
 pub use view::{
     AbilityRow, AbilityView, AbilityViewPlugin, AimAt, AimFire, AimRange, AimThrow, AimUse, Asking, Bar, ContainerView, ContainerViewPlugin, EndingSection,
     EndingView, EndingViewPlugin, GearSlot, GearView, GearViewPlugin, InspectView, InspectViewPlugin, InventoryView, InventoryViewPlugin, ItemRow,
@@ -175,6 +177,7 @@ pub use view::{
     Seems, SheetView, SheetViewPlugin, TargetView, TargetViewPlugin, TradeRow, TradeView, TradeViewPlugin, VitalsView, VitalsViewPlugin, WorkRow, target_modal,
 };
 
+use atglyph_bevy::EngineApp;
 use bevy::prelude::*;
 
 /// When a view is filled, and when a game may add to it.
@@ -216,7 +219,7 @@ pub struct UiPlugin;
 
 impl Plugin for UiPlugin {
     fn build(&self, app: &mut App) {
-        use atglyph_bevy::Reads;
+        use atglyph_bevy::EngineApp;
         // The keys, so a headless game with no input plugin still has the
         // resource every reader here takes, and reads nothing pressed.
         app.init_resource::<ButtonInput<KeyCode>>()
@@ -281,7 +284,7 @@ impl Plugin for UiPlugin {
     }
 
     fn finish(&self, app: &mut App) {
-        atglyph_bevy::depends_on::<atglyph_bevy::CorePlugin>(app, "UiPlugin");
+        app.depends_on::<atglyph_bevy::CorePlugin>("UiPlugin");
         // The key that does what is here, in a game with props.
         interact::finish(app);
         // The key that stops the player's long action, listed only in a
@@ -319,7 +322,8 @@ fn forget_run(mut log: ResMut<MessageLog>, mut modals: ResMut<Modals>) {
 
 /// The names most callers want in scope.
 pub mod prelude {
-    pub use crate::controls::{AddControls, Chord, ControlId, ControlInput, Controls, ControlsKeys, EngineKey, Keys, RepeatPace, Repeats};
+    pub use crate::app::UiApp;
+    pub use crate::controls::{Chord, ControlId, ControlInput, Controls, ControlsKeys, EngineKey, Keys, RepeatPace, Repeats};
 
     pub use crate::cursor::{CursorKeys, CursorStyle};
     pub use crate::facet::Facet;
@@ -332,7 +336,7 @@ pub mod prelude {
     pub use crate::layout::{RailLayout, RailPanels, RailScreen};
     pub use crate::log::{Log, LogEntry, MessageLog, Span};
     pub use crate::menu::{ListMenu, MenuRow, draw_menu};
-    pub use crate::modal::{AddModal, ModalId, Modals, modal_is, modal_open, no_modal};
+    pub use crate::modal::{ModalId, Modals, modal_is, modal_open, no_modal};
 
     pub use crate::narrate::{MassNoun, NarrationView, NarratorPlugin, Phrase, Phrasebook, Said, Tell, Words};
     pub use crate::player_keys::{Declined, Otherwise, PlayerKeysPlugin, PlayerKeysSet, PlayerVerb};
@@ -349,7 +353,7 @@ pub mod prelude {
         trade_modal,
     };
 
-    pub use crate::tone::{AddTone, Palette, ToneId, Tones, readable};
+    pub use crate::tone::{Palette, ToneId, Tones, readable};
     pub use crate::view::{
         AbilityRow, AbilityView, AbilityViewPlugin, AimAt, AimFire, AimRange, AimThrow, AimUse, Asking, Bar, ContainerView, ContainerViewPlugin, EndingSection,
         EndingView, GearView, GearViewPlugin, InspectView, InspectViewPlugin, InventoryView, InventoryViewPlugin, ItemRow, NearbyFollowers, NearbyStatuses,

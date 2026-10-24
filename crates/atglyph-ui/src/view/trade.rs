@@ -96,8 +96,8 @@ impl Plugin for TradeViewPlugin {
     }
 
     fn finish(&self, app: &mut App) {
-        atglyph_bevy::depends_on::<crate::UiPlugin>(app, "TradeViewPlugin");
-        atglyph_bevy::depends_on::<TradePlugin>(app, "TradeViewPlugin");
+        app.depends_on::<crate::UiPlugin>("TradeViewPlugin");
+        app.depends_on::<TradePlugin>("TradeViewPlugin");
     }
 }
 

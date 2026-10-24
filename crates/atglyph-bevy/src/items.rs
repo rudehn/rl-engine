@@ -43,6 +43,7 @@
 //!
 //! Throwing one is [`throwing`](crate::throwing), which needs combat as well.
 
+use crate::app::EngineApp;
 use atglyph_core::Point;
 use atglyph_core::turn::BASE_ACTION_COST;
 use atglyph_rules::items::{ItemAsk, ItemFacts, ItemOutcome, ItemRefusal, resolve_item};
@@ -1176,8 +1177,8 @@ pub struct ItemsPlugin;
 
 impl Plugin for ItemsPlugin {
     fn build(&self, app: &mut App) {
+        use crate::app::EngineApp;
         use crate::plugin::{CleanupSet, ResolveSet, Turn, TurnSet};
-        use crate::turn::AddAction;
         app.init_resource::<ItemRules>()
             .add_message::<ItemEvent>()
             // Read to let the dead drop what they carried. A game without
@@ -1230,7 +1231,7 @@ impl Plugin for ItemsPlugin {
     }
 
     fn finish(&self, app: &mut App) {
-        crate::plugin::depends_on::<crate::plugin::CorePlugin>(app, "ItemsPlugin");
+        app.depends_on::<crate::plugin::CorePlugin>("ItemsPlugin");
     }
 }
 
@@ -1597,11 +1598,12 @@ mod tests {
 #[cfg(test)]
 mod aimed {
     use super::*;
+    use crate::app::EngineApp;
     use crate::combat::{CombatPlugin, Faction, Health};
     use crate::components::{Actor, Blocks, Player, RevealsMap, Viewshed};
     use crate::consumable::{Consumable, WhenEmpty};
     use crate::cue::{Anchor, Cue, CueWait, Cued, LookOf};
-    use crate::effects::{AddEngineEffects, EffectBonus, EffectKinds, TriggerKinds, Triggers};
+    use crate::effects::{EffectBonus, EffectKinds, TriggerKinds, Triggers};
     use crate::registries::Registries;
     use crate::state::EngineState;
     use crate::testing::TwoSides;
@@ -1958,9 +1960,10 @@ mod aimed {
 #[cfg(test)]
 mod chosen {
     use super::*;
+    use crate::app::EngineApp;
     use crate::components::{Actor, Blocks, Player, RevealsMap};
     use crate::consumable::{Consumable, WhenEmpty};
-    use crate::effects::{AddEffect, AddEngineEffects, Effect, EffectKinds, EffectWorld, FromArgs, Landing, TriggerKinds};
+    use crate::effects::{Effect, EffectKinds, EffectWorld, FromArgs, Landing, TriggerKinds};
     use crate::registries::Registries;
     use crate::state::EngineState;
     use crate::testing::headless_app;

@@ -69,7 +69,7 @@ impl Plugin for PartyViewPlugin {
     }
 
     fn finish(&self, app: &mut App) {
-        atglyph_bevy::depends_on::<crate::UiPlugin>(app, "PartyViewPlugin");
+        app.depends_on::<crate::UiPlugin>("PartyViewPlugin");
     }
 }
 

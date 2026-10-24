@@ -21,6 +21,7 @@
 //! for the actor holding the turn and only that one, so it costs a roll per
 //! subject per monster-turn and nothing per frame.
 
+use crate::app::EngineApp;
 use std::collections::BTreeMap;
 
 use atglyph_core::Point;
@@ -286,8 +287,8 @@ pub struct StealthPlugin;
 
 impl Plugin for StealthPlugin {
     fn build(&self, app: &mut App) {
-        use crate::plugin::{DecideSet, PerceiveSet, Reads, ResolveSet, Turn, TurnSet};
-        use crate::seed::AddStream;
+        use crate::app::EngineApp;
+        use crate::plugin::{DecideSet, PerceiveSet, ResolveSet, Turn, TurnSet};
         // The blows it wakes on, registered here as well so a game with
         // stealth and no combat has nothing to wake on rather than a panic.
         app.insert_resource(StealthAdded)
@@ -310,7 +311,7 @@ impl Plugin for StealthPlugin {
     }
 
     fn finish(&self, app: &mut App) {
-        crate::plugin::depends_on::<crate::minds::MindsPlugin>(app, "StealthPlugin");
+        app.depends_on::<crate::minds::MindsPlugin>("StealthPlugin");
     }
 }
 
@@ -1047,7 +1048,7 @@ mod tests {
     /// and touches nobody else, both granted to the player.
     fn armed_field(gap: i32) -> (Field, atglyph_rules::StatusId) {
         let mut field = Field::build(blind(), gap, 10, true, None, |app| {
-            use crate::effects::AddEngineEffects;
+            use crate::app::EngineApp;
             app.add_plugins((crate::items::ItemsPlugin, crate::throwing::ThrowingPlugin, crate::ability::AbilitiesPlugin));
             app.add_engine_effects();
             // `two_sides` registers `kinetic` as the only damage kind, so the
@@ -1181,7 +1182,7 @@ mod tests {
     /// with the thing.
     fn worn_hiding_field() -> (Field, Entity) {
         let mut field = Field::build(blind(), 1, 10, true, None, |app| {
-            use crate::effects::AddEngineEffects;
+            use crate::app::EngineApp;
             app.add_plugins((crate::items::ItemsPlugin, crate::effects::EffectsPlugin));
             app.add_engine_effects();
         });

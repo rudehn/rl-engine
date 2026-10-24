@@ -19,6 +19,7 @@
 //! [`atglyph_rules::events::quest::load`]; the game keeps only its list of what
 //! an objective counts.
 
+use crate::app::EngineApp;
 use atglyph_rules::Registry;
 use atglyph_rules::{Change, Fact, Ledger, QuestDef, Tracker};
 use bevy::ecs::message::MessageCursor;
@@ -156,7 +157,7 @@ impl Plugin for FactsPlugin {
     }
 
     fn finish(&self, app: &mut App) {
-        crate::plugin::depends_on::<crate::plugin::CorePlugin>(app, "FactsPlugin");
+        app.depends_on::<crate::plugin::CorePlugin>("FactsPlugin");
     }
 }
 

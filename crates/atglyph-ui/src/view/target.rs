@@ -48,8 +48,7 @@
 //! picks the first target, runs the cursor, and spends the turn. Nothing
 //! about which key does it is the engine's business.
 
-use crate::controls::AddControls;
-use crate::modal::AddModal;
+use crate::app::UiApp;
 use atglyph_bevy::prelude::*;
 use atglyph_bevy::{Aimed, Bystanders, Landed, Source, UsableAbilities, flight, shot};
 use atglyph_core::Point;
@@ -251,7 +250,7 @@ impl Plugin for TargetViewPlugin {
     }
 
     fn finish(&self, app: &mut App) {
-        atglyph_bevy::depends_on::<crate::UiPlugin>(app, "TargetViewPlugin");
+        app.depends_on::<crate::UiPlugin>("TargetViewPlugin");
         // After the game's own, so its groups are listed first.
         crate::focus::declare_cursor_controls(app);
         app.add_control(crate::focus::CURSOR_GROUP, "confirm an aim", crate::controls::EngineKey::Confirm);
@@ -915,7 +914,7 @@ mod tests {
     use super::*;
     use crate::harness::Stage;
     use crate::view::Seems;
-    use atglyph_bevy::AddEngineEffects;
+    use atglyph_bevy::EngineApp;
 
     fn staged() -> Stage {
         let mut stage = Stage::new_with((AbilitiesPlugin, TargetViewPlugin), |app| {
@@ -1643,7 +1642,8 @@ mod tests {
 mod uses {
     use super::*;
     use crate::harness::Stage;
-    use atglyph_bevy::{AddEffect, AddEngineEffects, EffectWorld, EffectsPlugin, FromArgs, Landing, TriggerKinds, Triggers};
+    use atglyph_bevy::EngineApp;
+    use atglyph_bevy::{EffectWorld, EffectsPlugin, FromArgs, Landing, TriggerKinds, Triggers};
     use atglyph_rules::Names;
     use atglyph_rules::ability::RawValue;
 

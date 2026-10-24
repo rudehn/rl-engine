@@ -354,8 +354,8 @@ mod tests {
             if minds {
                 app.add_plugins(crate::minds::MindsPlugin);
             }
-            crate::props::AddVerb::add_verb(&mut app, "free");
-            crate::props::AddVerb::add_verb(&mut app, "talk");
+            crate::app::EngineApp::add_verb(&mut app, "free");
+            crate::app::EngineApp::add_verb(&mut app, "talk");
             app.init_resource::<Heard>().add_systems(PostUpdate, hear);
             let start = crate::testing::ground(&mut app);
             let sides = crate::testing::two_sides(&mut app);

@@ -209,7 +209,7 @@ pub trait Lands: Send + Sync + 'static {}
 
 /// What one subsystem has in the air.
 ///
-/// Registered with [`AddAirborne::add_airborne`], which also has it put
+/// Registered by the subsystem that puts it in the air, which also has it put
 /// back when a run ends. Empty in a game with nothing watching the cues,
 /// since a resolver with no watcher lands what it did at once and puts
 /// nothing here.
@@ -268,7 +268,7 @@ impl<L: Lands> Airborne<L> {
 }
 
 /// Registers a kind of landing, and what a run's end does with it.
-pub trait AddAirborne {
+pub(crate) trait AddAirborne {
     /// Adds [`Airborne<L>`](Airborne) and has it emptied when a run ends,
     /// since what was in the air belonged to the run that ended.
     fn add_airborne<L: Lands>(&mut self) -> &mut Self;
@@ -276,7 +276,7 @@ pub trait AddAirborne {
 
 impl AddAirborne for App {
     fn add_airborne<L: Lands>(&mut self) -> &mut Self {
-        use crate::plugin::ResetsOnNewRun;
+        use crate::app::EngineApp;
         self.init_resource::<Airborne<L>>().reset_on_new_run::<Airborne<L>>()
     }
 }

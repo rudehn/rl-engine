@@ -33,7 +33,8 @@
 //! since the game keeps records with `RecordsPlugin`.
 
 use atglyph::prelude::*;
-use atglyph::save::{AddSaveable, SavePlugin, Saveable, SaveableActor, SaveableItem, SaveableState};
+use atglyph::save::SaveApp;
+use atglyph::save::{SavePlugin, Saveable, SaveableActor, SaveableItem, SaveableState};
 use bevy::ecs::world::CommandQueue;
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};

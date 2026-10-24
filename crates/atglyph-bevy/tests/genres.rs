@@ -10,9 +10,9 @@
 //! found, and that a missing one is refused at build rather than at the
 //! first key press, is the engine's.
 
+use atglyph_bevy::EngineApp;
 use atglyph_bevy::ability::Abilities;
-use atglyph_bevy::effects::AddEngineEffects;
-use atglyph_bevy::effects::{AddEffect, Effect, EffectKinds, EffectWorld, FromArgs, Landing};
+use atglyph_bevy::effects::{Effect, EffectKinds, EffectWorld, FromArgs, Landing};
 use atglyph_rules::ability::{RawValue, load};
 use atglyph_rules::damage::DamageKind;
 use atglyph_rules::{AbilityDef, Names, Registry, SlotDef, StatDef, StatusDef, TagDef};

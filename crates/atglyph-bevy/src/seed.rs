@@ -26,7 +26,8 @@ use rand::rngs::StdRng;
 
 use crate::places::MapId;
 
-use crate::plugin::{EngineSet, Needs};
+use crate::app::EngineApp;
+use crate::plugin::EngineSet;
 
 /// The seed the whole run derives from.
 ///
@@ -213,14 +214,6 @@ impl<D: StreamDomain> Stream for RunRng<D> {
     }
 }
 
-/// Registers a stream to be derived from the run's seed.
-pub trait AddStream {
-    /// Derives `S` from [`Seed`] before the first frame that needs it, and
-    /// again whenever the seed changes. `plugin` names who asked, for the
-    /// report when no seed was given.
-    fn add_stream<S: Stream>(&mut self, plugin: &'static str) -> &mut Self;
-}
-
 /// Present once `S` is being derived, so a second plugin asking for the
 /// same stream adds no second deriving system. Two subsystems may honestly
 /// want the same stream: a trap and an ability land the same effects, and
@@ -228,15 +221,14 @@ pub trait AddStream {
 #[derive(Resource)]
 struct Derived<S: Stream>(std::marker::PhantomData<S>);
 
-impl AddStream for App {
-    fn add_stream<S: Stream>(&mut self, plugin: &'static str) -> &mut Self {
-        derive_stream::<S>(self);
-        self.needs::<Seed>(plugin, "`Seed(RunSeed(n))`, the run's seed every stream derives from, or `Seed::from_args()` for `--seed`")
-    }
+/// The body of [`EngineApp::add_stream`](crate::app::EngineApp::add_stream).
+pub(crate) fn add_stream<'a, S: Stream>(app: &'a mut App, plugin: &'static str) -> &'a mut App {
+    derive_stream::<S>(app);
+    app.needs::<Seed>(plugin, "`Seed(RunSeed(n))`, the run's seed every stream derives from, or `Seed::from_args()` for `--seed`")
 }
 
 /// Derives `S` from [`Seed`] whenever one is given, as
-/// [`add_stream`](AddStream::add_stream) does, without saying the seed is
+/// [`add_stream`](crate::app::EngineApp::add_stream) does, without saying the seed is
 /// needed: for a subsystem that draws only for some content, which says
 /// when it needs the seed itself.
 pub(crate) fn derive_stream<S: Stream>(app: &mut App) {

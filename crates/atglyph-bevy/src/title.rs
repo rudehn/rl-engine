@@ -87,7 +87,7 @@ pub fn begin_run(world: &mut World) {
 /// begins a run through [`begin_run`].
 ///
 /// A game that named its places with
-/// [`places`](crate::places::AddPlaces::places) and whose start made no
+/// [`places`](crate::app::EngineApp::places) and whose start made no
 /// world gets one here, built over the places' tiles, since that world is
 /// the same in every such game. A start that made its own, from other
 /// tiles, keeps it. After `NewRun` rather than between the two schedules,
@@ -179,8 +179,8 @@ pub struct LeaveRun;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::app::EngineApp;
     use crate::components::{Actor, Blocks, Player, Position, RevealsMap, Viewshed};
-    use crate::places::AddPlaces;
     use crate::plugin::EndRun;
     use crate::seed::Seed;
     use crate::state::Restart;

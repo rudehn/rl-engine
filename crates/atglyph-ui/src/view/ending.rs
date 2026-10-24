@@ -14,6 +14,7 @@
 //! for one screen. Nothing read the file in play, so the sections are shown
 //! instead of stored, and the dependency is gone.
 
+use atglyph_bevy::EngineApp;
 use atglyph_bevy::{Ending, RunRecords};
 use bevy::prelude::*;
 
@@ -95,7 +96,7 @@ impl Plugin for EndingViewPlugin {
     }
 
     fn finish(&self, app: &mut App) {
-        atglyph_bevy::depends_on::<crate::UiPlugin>(app, "EndingViewPlugin");
+        app.depends_on::<crate::UiPlugin>("EndingViewPlugin");
     }
 }
 

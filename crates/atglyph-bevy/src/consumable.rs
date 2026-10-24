@@ -14,7 +14,7 @@
 //!
 //! **Which moments spend.** A use, a throw that comes to rest and an
 //! attack made with the thing, by default; a game marks its own with
-//! [`AddSpending::spends_on`]. A hit never spends: one shot can strike, and
+//! [`EngineApp::spends_on`](crate::app::EngineApp::spends_on). A hit never spends: one shot can strike, and
 //! a flaming blade is not used up by landing a blow.
 //!
 //! **Worn things.** Wearing is declarative and needs no effects:
@@ -112,21 +112,14 @@ impl SpendingMoments {
     }
 }
 
-/// Marks a moment as one that spends a charge.
-pub trait AddSpending {
-    /// Makes `moment` spend a charge from what it happens to.
-    fn spends_on(&mut self, moment: TriggerKindId) -> &mut Self;
-}
-
-impl AddSpending for App {
-    fn spends_on(&mut self, moment: TriggerKindId) -> &mut Self {
-        self.init_resource::<SpendingMoments>();
-        let mut spending = self.world_mut().resource_mut::<SpendingMoments>();
-        if !spending.0.contains(&moment) {
-            spending.0.push(moment);
-        }
-        self
+/// The body of [`EngineApp::spends_on`](crate::app::EngineApp::spends_on).
+pub(crate) fn spends_on(app: &mut App, moment: TriggerKindId) -> &mut App {
+    app.init_resource::<SpendingMoments>();
+    let mut spending = app.world_mut().resource_mut::<SpendingMoments>();
+    if !spending.0.contains(&moment) {
+        spending.0.push(moment);
     }
+    app
 }
 
 /// Spends one charge from every consumable whose moment spends.
@@ -268,9 +261,10 @@ pub(crate) fn build(app: &mut App) {
 mod tests {
     use super::*;
     use crate::ability::Known;
+    use crate::app::EngineApp;
     use crate::combat::Health;
     use crate::components::{Actor, Blocks, MyTurn, Player, Position, RevealsMap, Viewshed};
-    use crate::effects::{AddEngineEffects, EffectKinds, TriggerKinds, Triggers};
+    use crate::effects::{EffectKinds, TriggerKinds, Triggers};
     use crate::items::{Inventory, Item, ItemsPlugin, UseItem};
     use crate::registries::Registries;
     use crate::seed::Seed;

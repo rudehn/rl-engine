@@ -15,7 +15,7 @@
 //! finishes the same target; a game stops it with `Works::stop`, or by
 //! writing a `StopWork`, which `answer_stops` reads at the head of
 //! every pass. What a kind of work is called is interned by [`WorkKinds`]
-//! from the word a panel shows, through [`AddWork::add_work`].
+//! from the word a panel shows, through [`EngineApp::add_work`].
 //!
 //! The player works by the same [`Working`], begun by [`Works::begin`]
 //! from whatever the player did, and `work_for_player` spends its turns
@@ -43,13 +43,14 @@ pub use atglyph_rules::work::BreakReason;
 use atglyph_rules::work::{Progress, Work, WorkKind, WorkKindId, break_reason, in_reach, newly_sighted};
 use bevy::prelude::*;
 
+use crate::app::EngineApp;
 use crate::combat::{CombatRules, DamageDealt, Dead, DeathEvent, Faction};
 use crate::components::{Actor, MyTurn, Player, Position};
 use crate::lighting::{Concealed, PlayerSight};
 use crate::places::{MapId, OnMap};
-use crate::plugin::{DecideSet, EngineSet, Reads, ResetsOnNewRun, ResolveSet, Turn, TurnSet};
+use crate::plugin::{DecideSet, EngineSet, ResolveSet, Turn, TurnSet};
 use crate::stealth::Unseen;
-use crate::turn::{Acting, Action, ActionDone, AddAction, Intent, Resolution};
+use crate::turn::{Acting, Action, ActionDone, Intent, Resolution};
 
 /// Every kind of work in play, by the word a panel shows for it.
 ///
@@ -81,19 +82,11 @@ impl WorkKinds {
     }
 }
 
-/// Declares a kind of work while the app is being built.
-pub trait AddWork {
-    /// Declares the kind of work called `name`, the word a panel shows
-    /// while an actor does it. Look its id up with [`WorkKinds::get`].
-    fn add_work(&mut self, name: &str) -> &mut Self;
-}
-
-impl AddWork for App {
-    fn add_work(&mut self, name: &str) -> &mut Self {
-        self.init_resource::<WorkKinds>();
-        self.world_mut().resource_mut::<WorkKinds>().declare(name);
-        self
-    }
+/// The body of [`EngineApp::add_work`](crate::app::EngineApp::add_work).
+pub(crate) fn add_work<'a>(app: &'a mut App, name: &str) -> &'a mut App {
+    app.init_resource::<WorkKinds>();
+    app.world_mut().resource_mut::<WorkKinds>().declare(name);
+    app
 }
 
 /// The work an actor is in the middle of.

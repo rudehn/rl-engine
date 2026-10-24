@@ -31,6 +31,7 @@
 //! percent [`CombatRules::unaware`] or the blow names, and only where
 //! [`stealth`](crate::stealth) runs to say who has noticed whom.
 
+use crate::app::EngineApp;
 use atglyph_core::{DiceRoll, Point, geometry};
 use atglyph_rules::ability::ParticleLook;
 use atglyph_rules::damage::{DamageKindId, Defender, SubtractArmor};
@@ -1462,9 +1463,8 @@ pub(crate) fn perceive_reach(mut thinking: ResMut<crate::minds::Thinking>, loado
 
 impl Plugin for CombatPlugin {
     fn build(&self, app: &mut App) {
-        use crate::plugin::{CleanupSet, Needs, ResolveSet, Turn};
-        use crate::seed::AddStream;
-        use crate::turn::AddAction;
+        use crate::app::EngineApp;
+        use crate::plugin::{CleanupSet, ResolveSet, Turn};
         app.add_message::<DamageEvent>()
             .add_message::<DamageDealt>()
             .add_message::<Heal>()
@@ -1498,7 +1498,7 @@ impl Plugin for CombatPlugin {
     }
 
     fn finish(&self, app: &mut App) {
-        crate::plugin::depends_on::<crate::plugin::CorePlugin>(app, "CombatPlugin");
+        app.depends_on::<crate::plugin::CorePlugin>("CombatPlugin");
     }
 }
 
@@ -2173,7 +2173,7 @@ mod tests {
         use atglyph_rules::{EquipShape, Equipment, SlotId};
         let mut app = headless_app();
         app.add_plugins((crate::fov::FovPlugin, CombatPlugin, crate::items::ItemsPlugin, crate::effects::EffectsPlugin));
-        crate::effects::AddEngineEffects::add_engine_effects(&mut app);
+        crate::app::EngineApp::add_engine_effects(&mut app);
         let start = crate::testing::ground(&mut app);
         let sides = crate::testing::two_sides(&mut app);
         let hand = SlotId::from_raw(0);
@@ -2496,7 +2496,7 @@ mod tests {
     ) -> (App, Point, Entity, Vec<Entity>) {
         let (mut app, start, kind) = arena();
         app.add_plugins((crate::items::ItemsPlugin, crate::effects::EffectsPlugin));
-        crate::effects::AddEngineEffects::add_engine_effects(&mut app);
+        crate::app::EngineApp::add_engine_effects(&mut app);
         plugins(&mut app);
         let sides = Registry::from_defs(["ours", "theirs", "bystanders"].map(FactionDef::new).to_vec()).unwrap();
         app.insert_resource(CombatRules::new().hostile(OURS, THEIRS)).insert_resource(crate::seed::Seed(atglyph_core::RunSeed(seed)));

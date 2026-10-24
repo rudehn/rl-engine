@@ -10,7 +10,8 @@
 //! [`ControlsPanel::hint`] prints it wherever the game has a spare corner,
 //! from the key that really opens the screen.
 
-use crate::modal::AddModal;
+use crate::app::UiApp;
+use atglyph_bevy::EngineApp;
 use atglyph_bevy::{EngineSet, PresentSet};
 use atglyph_core::Rect;
 use atglyph_render::Terminal;
@@ -92,7 +93,7 @@ impl Plugin for ControlsPanel {
     }
 
     fn finish(&self, app: &mut App) {
-        atglyph_bevy::depends_on::<crate::UiPlugin>(app, "ControlsPanel");
+        app.depends_on::<crate::UiPlugin>("ControlsPanel");
         // After the game's own, so its groups are listed first.
         app.world_mut().resource_mut::<Controls>().add("Screens", "show the controls", EngineKey::ShowControls);
     }
@@ -303,7 +304,8 @@ pub(crate) fn draw_controls(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::controls::{AddControls, Chord};
+    use crate::app::UiApp;
+    use crate::controls::Chord;
     use crate::harness::Stage;
 
     /// A screen over a game that declared its own walking and two keys,

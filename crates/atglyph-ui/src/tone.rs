@@ -180,23 +180,12 @@ pub fn readable(color: Color, palette: &Palette) -> Color {
     own.mix(&text, share).into()
 }
 
-/// Declares a tone and its colour while the app is being built.
-pub trait AddTone {
-    /// Declares the tone `name` and colours it `color`, in one call.
-    ///
-    /// Look the id up again with [`Tones::get`] where it is used. Makes sure
-    /// [`Tones`] and [`Palette`] exist first, so it works whether it comes
-    /// before [`UiPlugin`](crate::UiPlugin) or after.
-    fn add_tone(&mut self, name: &str, color: Color) -> &mut Self;
-}
-
-impl AddTone for App {
-    fn add_tone(&mut self, name: &str, color: Color) -> &mut Self {
-        self.init_resource::<Tones>().init_resource::<Palette>();
-        let tone = self.world_mut().resource_mut::<Tones>().declare(name);
-        self.world_mut().resource_mut::<Palette>().set(tone, color);
-        self
-    }
+/// The body of [`UiApp::add_tone`](crate::app::UiApp::add_tone).
+pub(crate) fn add_tone<'a>(app: &'a mut App, name: &str, color: Color) -> &'a mut App {
+    app.init_resource::<Tones>().init_resource::<Palette>();
+    let tone = app.world_mut().resource_mut::<Tones>().declare(name);
+    app.world_mut().resource_mut::<Palette>().set(tone, color);
+    app
 }
 
 /// Warns once, when play begins, about tones nothing gave a colour.
@@ -213,6 +202,7 @@ pub(crate) fn report_unset_tones(tones: Res<Tones>, palette: Res<Palette>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::app::UiApp;
 
     #[test]
     fn a_tone_added_while_building_has_its_colour_and_keeps_the_built_ins() {

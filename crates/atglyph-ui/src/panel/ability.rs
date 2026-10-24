@@ -13,7 +13,8 @@
 //! it is ready again, what each effect does, and, when it cannot be used,
 //! why not in words the player can act on.
 
-use crate::modal::AddModal;
+use crate::app::UiApp;
+use atglyph_bevy::EngineApp;
 use atglyph_bevy::{EngineSet, PresentSet};
 use atglyph_core::{Direction, Rect};
 use atglyph_grid::TargetMode;
@@ -21,7 +22,7 @@ use atglyph_render::{Cell, Terminal};
 use atglyph_rules::ability::Aim;
 use bevy::prelude::*;
 
-use crate::controls::{AddControls, Chord, ControlInput, EngineKey, key_name};
+use crate::controls::{Chord, ControlInput, EngineKey, key_name};
 use crate::modal::{ModalId, Modals};
 use crate::panel::{clear, clip, frame, wrap};
 use crate::tone::{Palette, Tones};
@@ -117,7 +118,7 @@ impl Plugin for AbilityPanel {
     }
 
     fn finish(&self, app: &mut App) {
-        atglyph_bevy::depends_on::<crate::UiPlugin>(app, "AbilityPanel");
+        app.depends_on::<crate::UiPlugin>("AbilityPanel");
         // After the game's own, so its groups are listed first.
         app.add_control(crate::focus::SCREENS_GROUP, &format!("list your {}", self.0.what), EngineKey::ListAbilities);
     }
@@ -294,7 +295,8 @@ mod tests {
     use super::*;
     use crate::harness::Stage;
     use crate::view::target::harness::{abilities, arm};
-    use atglyph_bevy::{AbilitiesPlugin, AddEngineEffects, Intent, Use};
+    use atglyph_bevy::EngineApp;
+    use atglyph_bevy::{AbilitiesPlugin, Intent, Use};
 
     fn staged() -> Stage {
         let mut stage = Stage::new_with((AbilitiesPlugin, crate::TargetViewPlugin, AbilityPanel::new(Rect::new(0, 0, 44, 16)).title("Knacks")), |app| {

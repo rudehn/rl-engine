@@ -164,22 +164,10 @@ impl Modals {
     }
 }
 
-/// Declares a screen while the app is being built.
-pub trait AddModal {
-    /// Declares the modal `name`, so a key handler or a run condition can
-    /// look its id up by that name.
-    ///
-    /// Makes sure [`Modals`] exists first, so a plugin that declares a screen
-    /// works whether it was added before [`UiPlugin`](crate::UiPlugin) or
-    /// after.
-    fn add_modal(&mut self, name: &str) -> &mut Self;
-}
-
-impl AddModal for App {
-    fn add_modal(&mut self, name: &str) -> &mut Self {
-        self.init_resource::<Modals>().world_mut().resource_mut::<Modals>().declare(name);
-        self
-    }
+/// The body of [`UiApp::add_modal`](crate::app::UiApp::add_modal).
+pub(crate) fn add_modal<'a>(app: &'a mut App, name: &str) -> &'a mut App {
+    app.init_resource::<Modals>().world_mut().resource_mut::<Modals>().declare(name);
+    app
 }
 
 /// A run condition: true while `modal` is the screen on top.
@@ -218,6 +206,7 @@ pub fn no_modal(modals: Res<Modals>) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::app::UiApp;
 
     #[test]
     fn a_modal_added_while_building_is_found_by_name() {

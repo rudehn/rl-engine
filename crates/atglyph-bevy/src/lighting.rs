@@ -49,6 +49,7 @@
 //! the pass the stairs land, and in the frame. A game with nights writes
 //! the ambient itself; the engine has no clock hook and no notion of a day.
 
+use crate::app::EngineApp;
 use atglyph_core::{Grid2D, Point, Rect, geometry};
 use atglyph_grid::{BitGrid, Emitter, Glow, Light, LightBand, LightField, Rgb};
 use bevy::prelude::*;
@@ -681,7 +682,8 @@ pub struct LightingPlugin;
 
 impl Plugin for LightingPlugin {
     fn build(&self, app: &mut App) {
-        use crate::plugin::{DecideSet, EngineSet, ResetsOnNewRun, ResolveSet, Turn};
+        use crate::app::EngineApp;
+        use crate::plugin::{DecideSet, EngineSet, ResolveSet, Turn};
         app.add_message::<LightEvent>()
             .insert_resource(Lighting::dark())
             // Dark rather than the ambient the game chose: a new run writes
@@ -694,7 +696,7 @@ impl Plugin for LightingPlugin {
     }
 
     fn finish(&self, app: &mut App) {
-        crate::plugin::depends_on::<crate::plugin::CorePlugin>(app, "LightingPlugin");
+        app.depends_on::<crate::plugin::CorePlugin>("LightingPlugin");
     }
 }
 

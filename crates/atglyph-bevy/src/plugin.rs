@@ -4,12 +4,13 @@ use atglyph_core::RunSeed;
 use bevy::ecs::schedule::ScheduleLabel;
 use bevy::prelude::*;
 
+use crate::app::EngineApp;
 use crate::components::{Actor, MyTurn, Player, Position};
 use crate::cue::CueWait;
 use crate::knowledge::Knowledge;
 use crate::state::{EngineState, Restart, RunOver};
 use crate::title::{HoldStart, LeaveRun, begin_run};
-use crate::turn::{Acting, ActionDone, ActionRefused, AddAction, Occupancy, Pace, TurnEnd, Turns};
+use crate::turn::{Acting, ActionDone, ActionRefused, Occupancy, Pace, TurnEnd, Turns};
 use crate::world::WorldMap;
 use crate::{places, turn};
 
@@ -538,7 +539,7 @@ pub fn clear_run(world: &mut World) {
 /// A list rather than a line per subsystem in [`clear_run`], so a plugin
 /// that keeps something of the run says so where the resource is created
 /// and a plugin nobody added leaves nothing to put back. Filled through
-/// [`ResetsOnNewRun`].
+/// [`EngineApp::reset_on_new_run`](crate::app::EngineApp::reset_on_new_run).
 #[derive(Resource, Default)]
 pub(crate) struct RunResets(Vec<RunReset>);
 
@@ -551,47 +552,22 @@ struct RunReset {
     reset: Box<dyn Fn(&mut World) + Send + Sync>,
 }
 
-/// Declares a resource the engine puts back when a run ends.
-///
-/// The counterpart of [`Needs`] for what a subsystem keeps rather than
-/// what it requires: a `Fire` field, an airborne queue, what a mind was
-/// offered. A resource that is not there when the run ends is left alone,
-/// so this is safe to declare for something the game inserts.
-///
-/// What [`CorePlugin`] owns itself, the clock, the occupancy index and
-/// what has acted, is put back by [`clear_run`] directly, since it is
-/// there in every game and its absence would be a broken world rather than
-/// a plugin nobody added.
-pub trait ResetsOnNewRun {
-    /// Puts `R` back to its default when a run ends, if it is there.
-    fn reset_on_new_run<R: Resource + Default>(&mut self) -> &mut Self;
-
-    /// Puts `R` back to what `make` returns, for a resource whose empty
-    /// state is not its `Default`, or which has none.
-    fn reset_on_new_run_with<R: Resource>(&mut self, make: fn() -> R) -> &mut Self;
-}
-
-impl ResetsOnNewRun for App {
-    fn reset_on_new_run<R: Resource + Default>(&mut self) -> &mut Self {
-        self.reset_on_new_run_with::<R>(R::default)
+/// The body of [`EngineApp::reset_on_new_run_with`](crate::app::EngineApp::reset_on_new_run_with).
+pub(crate) fn reset_on_new_run_with<R: Resource>(app: &mut App, make: fn() -> R) -> &mut App {
+    let resource = std::any::type_name::<R>();
+    app.init_resource::<RunResets>();
+    let mut list = app.world_mut().resource_mut::<RunResets>();
+    // Once: a plugin added twice, or two plugins that share a
+    // resource, must not put it back twice.
+    if !list.0.iter().any(|e| e.resource == resource) {
+        let reset = move |world: &mut World| {
+            if world.contains_resource::<R>() {
+                world.insert_resource(make());
+            }
+        };
+        list.0.push(RunReset { resource, reset: Box::new(reset) });
     }
-
-    fn reset_on_new_run_with<R: Resource>(&mut self, make: fn() -> R) -> &mut Self {
-        let resource = std::any::type_name::<R>();
-        self.init_resource::<RunResets>();
-        let mut list = self.world_mut().resource_mut::<RunResets>();
-        // Once: a plugin added twice, or two plugins that share a
-        // resource, must not put it back twice.
-        if !list.0.iter().any(|e| e.resource == resource) {
-            let reset = move |world: &mut World| {
-                if world.contains_resource::<R>() {
-                    world.insert_resource(make());
-                }
-            };
-            list.0.push(RunReset { resource, reset: Box::new(reset) });
-        }
-        self
-    }
+    app
 }
 
 /// The stages of [`TurnSet::Decide`], in order.
@@ -769,44 +745,6 @@ pub enum CleanupSet {
     Requeue,
 }
 
-/// Says that this plugin reads a message another plugin writes, and that
-/// an empty queue is a perfectly good answer.
-///
-/// Bevy refuses a reader for a message nobody registered, so a system that
-/// reads what an optional plugin writes panics in every game that left
-/// that plugin out: a vitals panel that reads what the player heard breaks
-/// a game with no noise, a prop that bursts breaks one with no combat.
-/// Registering it here says the reading is optional and means it: with the
-/// writer's plugin added the queue fills, without it the queue stays
-/// empty, and the reader asks either way.
-///
-/// The opposite of [`Needs`]. `needs` is for what a plugin cannot work
-/// without, and fails loudly when play begins; this is for what it can
-/// work without, and says so once, where the reading is written.
-///
-/// ```
-/// # use bevy::prelude::*;
-/// # use atglyph_bevy::plugin::Reads;
-/// # #[derive(Message)]
-/// # struct Heard;
-/// # let mut app = App::new();
-/// // A panel that shows what was heard, in a game that may not have noise.
-/// app.reads::<Heard>();
-/// ```
-pub trait Reads {
-    /// Registers `M` unless it is already registered, because this plugin
-    /// reads it and an empty queue is an answer.
-    fn reads<M: Message>(&mut self) -> &mut Self;
-}
-
-impl Reads for App {
-    fn reads<M: Message>(&mut self) -> &mut Self {
-        // `add_message` is itself idempotent; this is about saying why, in
-        // one place, rather than five plugins each explaining themselves.
-        self.add_message::<M>()
-    }
-}
-
 /// Everything the added plugins cannot work without, checked together when
 /// play begins.
 ///
@@ -838,26 +776,18 @@ impl Requirements {
     }
 }
 
-/// Declares what a plugin cannot work without.
-pub trait Needs {
-    /// Records that `plugin` needs `R` inserted before play begins, with
-    /// `hint` saying how a game makes one.
-    fn needs<R: Resource>(&mut self, plugin: &'static str, hint: &'static str) -> &mut Self;
-}
-
-impl Needs for App {
-    fn needs<R: Resource>(&mut self, plugin: &'static str, hint: &'static str) -> &mut Self {
-        fn present<R: Resource>(world: &World) -> bool {
-            world.contains_resource::<R>()
-        }
-        let resource = std::any::type_name::<R>();
-        self.init_resource::<Requirements>();
-        let mut list = self.world_mut().resource_mut::<Requirements>();
-        if !list.0.iter().any(|r| r.plugin == plugin && r.resource == resource) {
-            list.0.push(Requirement { plugin, resource, hint, present: present::<R>, when: always });
-        }
-        self
+/// The body of [`EngineApp::needs`](crate::app::EngineApp::needs).
+pub(crate) fn needs<'a, R: Resource>(app: &'a mut App, plugin: &'static str, hint: &'static str) -> &'a mut App {
+    fn present<R: Resource>(world: &World) -> bool {
+        world.contains_resource::<R>()
     }
+    let resource = std::any::type_name::<R>();
+    app.init_resource::<Requirements>();
+    let mut list = app.world_mut().resource_mut::<Requirements>();
+    if !list.0.iter().any(|r| r.plugin == plugin && r.resource == resource) {
+        list.0.push(Requirement { plugin, resource, hint, present: present::<R>, when: always });
+    }
+    app
 }
 
 /// Records that `plugin` needs `R` only when `when` holds of the world as
@@ -873,7 +803,7 @@ pub(crate) fn needs_when<R: Resource>(app: &mut App, plugin: &'static str, hint:
     }
 }
 
-/// A requirement that always holds: what [`Needs::needs`] records.
+/// A requirement that always holds: what [`EngineApp::needs`](crate::app::EngineApp::needs) records.
 fn always(_: &World) -> bool {
     true
 }
@@ -903,11 +833,6 @@ fn warn_if_play_never_began(mut frames: Local<u32>, state: Res<State<EngineState
     if *frames == 120 {
         warn!("a WorldMap was inserted outside NewRun and EngineState is still Idle after 120 frames; play begins on its own only after a run's start");
     }
-}
-
-/// Asserts that a plugin this one depends on was added too.
-pub fn depends_on<P: Plugin>(app: &App, plugin: &'static str) {
-    assert!(app.is_plugin_added::<P>(), "{plugin} needs {} added as well", std::any::type_name::<P>());
 }
 
 #[cfg(test)]

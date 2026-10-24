@@ -15,9 +15,11 @@
 //! The title is one of them, the engine's `TitlePanel` with Foundry's
 //! picture painted under it, so a headless run has none and begins at
 //! startup.
-use atglyph::ecs::plugin::{EngineSet, NewRun, PerceiveSet, PrepareRun, ReactSet, ResetsOnNewRun, RunResumed, Turn, TurnSet};
-use atglyph::ecs::{AddSound, AddVerb, AddWork, AmmoPlugin, LootPlugin, LootSet, PrefabPlugin, PrefabSet, PropsPlugin, RemainsPlugin};
-use atglyph::ui::{AddModal, AimFire, AimThrow, NarrationViewPlugin, NarratorPlugin, Phrase, PlayerKeysSet, Tones, ViewSet};
+use atglyph::ecs::EngineApp;
+use atglyph::ecs::plugin::{EngineSet, NewRun, PerceiveSet, PrepareRun, ReactSet, RunResumed, Turn, TurnSet};
+use atglyph::ecs::{AmmoPlugin, LootPlugin, LootSet, PrefabPlugin, PrefabSet, PropsPlugin, RemainsPlugin};
+use atglyph::ui::UiApp;
+use atglyph::ui::{AimFire, AimThrow, NarrationViewPlugin, NarratorPlugin, Phrase, PlayerKeysSet, Tones, ViewSet};
 use bevy::prelude::*;
 
 /// The narrator as Foundry words it, for `main.rs` and
@@ -276,7 +278,7 @@ impl Plugin for FoundryPlugin {
     /// Every line Foundry says from inside a turn is a `Tell`, which only
     /// the engine's narrator collects and speaks.
     fn finish(&self, app: &mut App) {
-        atglyph::ecs::plugin::depends_on::<NarrationViewPlugin>(app, "FoundryPlugin");
+        app.depends_on::<NarrationViewPlugin>("FoundryPlugin");
     }
 }
 

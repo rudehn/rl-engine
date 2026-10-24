@@ -29,6 +29,7 @@
 //! sound; [`SoundNames`] puts the sounds in scope where effects are built,
 //! so a sound nobody declared fails the load rather than a throw.
 
+use crate::app::EngineApp;
 use atglyph_core::{Grid2D, Id, Interner, Point, Rect, geometry};
 use atglyph_grid::{CostSource, DijkstraMap, PathRules};
 use atglyph_rules::Names;
@@ -58,7 +59,7 @@ pub type SoundId = Id<Sound>;
 /// Every kind of sound in play, in the order they were first named.
 ///
 /// The engine's own are interned first, so their ids are the constants on
-/// this type; a game adds its own with [`AddSound::add_sound`].
+/// this type; a game adds its own with [`EngineApp::add_sound`].
 #[derive(Resource, Debug, Clone)]
 pub struct Sounds(Interner<Sound>);
 
@@ -101,26 +102,18 @@ impl Default for Sounds {
     }
 }
 
-/// Declares a sound while the app is being built.
-pub trait AddSound {
-    /// Declares the sound `name`. Look its id up again with [`Sounds::get`]
-    /// where it is made.
-    fn add_sound(&mut self, name: &str) -> &mut Self;
-}
-
-impl AddSound for App {
-    fn add_sound(&mut self, name: &str) -> &mut Self {
-        self.init_resource::<Sounds>();
-        self.world_mut().resource_mut::<Sounds>().declare(name);
-        self
-    }
+/// The body of [`EngineApp::add_sound`](crate::app::EngineApp::add_sound).
+pub(crate) fn add_sound<'a>(app: &'a mut App, name: &str) -> &'a mut App {
+    app.init_resource::<Sounds>();
+    app.world_mut().resource_mut::<Sounds>().declare(name);
+    app
 }
 
 /// Puts the sounds in play in scope for a content load, so an effect that
 /// makes one names it and a typo fails at load, naming it.
 ///
 /// A sound is interned while the app is built, by the engine and by
-/// [`AddSound::add_sound`], rather than loaded from a file, so it is not in
+/// [`EngineApp::add_sound`], rather than loaded from a file, so it is not in
 /// [`Registries`](crate::Registries) and not in its
 /// [`names`](crate::Registries::names): a game with noise chains this onto
 /// those wherever it builds effects, `registries.names().sounds(&sounds)`,
@@ -303,7 +296,7 @@ impl NoisePlugin {
 
 impl Plugin for NoisePlugin {
     fn build(&self, app: &mut App) {
-        use crate::effects::AddEffect;
+        use crate::app::EngineApp;
         use crate::plugin::{DecideSet, PerceiveSet, Turn, TurnSet};
         // What the engine's sources read exists whether or not the game
         // added combat or items; registering one twice is what
@@ -326,7 +319,7 @@ impl Plugin for NoisePlugin {
     }
 
     fn finish(&self, app: &mut App) {
-        crate::plugin::depends_on::<crate::plugin::CorePlugin>(app, "NoisePlugin");
+        app.depends_on::<crate::plugin::CorePlugin>("NoisePlugin");
     }
 }
 
@@ -478,8 +471,9 @@ mod tests {
     use std::sync::Arc;
 
     use super::*;
+    use crate::app::EngineApp;
     use crate::components::{Actor, Blocks, RevealsMap, Viewshed};
-    use crate::effects::{AddEngineEffects, EffectKinds, Fired, TriggerKinds, Triggers};
+    use crate::effects::{EffectKinds, Fired, TriggerKinds, Triggers};
     use crate::fov::FovPlugin;
     use crate::minds::{Mind, MindsPlugin, Perception};
     use crate::state::EngineState;

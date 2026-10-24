@@ -35,6 +35,7 @@ use bevy::ecs::world::DeferredWorld;
 use bevy::prelude::*;
 
 use crate::ability::Use;
+use crate::app::EngineApp;
 use crate::combat::{Attack, CombatRules, Dead, Faction, Health};
 use crate::components::{Actor, Blocks, MyTurn, Player, Position, Viewshed};
 use crate::doors::Open;
@@ -42,7 +43,7 @@ use crate::items::{Equip, EquipFromGround, PickUp, UseItem, UseItemAt};
 use crate::lighting::{DarkSight, Lighting};
 use crate::places::{GoThrough, MapId, OnMap, Transition};
 use crate::throwing::Throw;
-use crate::turn::{Acting, Action, AddAction, Intent, Occupancy, Step, Wait};
+use crate::turn::{Acting, Action, Intent, Occupancy, Step, Wait};
 use crate::world::WorldMap;
 
 /// How far a mind sees, in tiles: the range of its own [`Viewshed`], cast
@@ -796,7 +797,7 @@ pub(crate) struct MindWorld<'w, 's> {
 ///
 /// Written in [`DecideSet::Minds`](crate::plugin::DecideSet::Minds) and
 /// answered in [`DecideSet::Game`](crate::plugin::DecideSet::Game). A game
-/// rarely reads it: [`AddChoice::add_choice`] turns a choice that is also
+/// rarely reads it: [`EngineApp::add_choice`] turns a choice that is also
 /// an action into its intent, once, for every game. The actor's decision
 /// is already claimed, so nothing else will decide for it this pass.
 #[derive(Message, Debug)]
@@ -815,28 +816,14 @@ impl MindChose {
     }
 }
 
-/// Lets a mind choose an action of the game's own.
-pub trait AddChoice {
-    /// Registers `A` as an action, with its sweeper, and routes every
-    /// `MindChose` carrying an `A` to an `Intent<A>` in
-    /// [`DecideSet::Game`](crate::plugin::DecideSet::Game).
-    ///
-    /// A game writes the action type, the resolver and the tactic, the
-    /// same three things tutorial chapter 9 writes for a player's action,
-    /// and this line. A choice nobody routed is a choice nobody resolves,
-    /// which the sweeper refuses rather than losing.
-    fn add_choice<A: Action + Choice + Clone>(&mut self) -> &mut Self;
-}
-
-impl AddChoice for App {
-    fn add_choice<A: Action + Choice + Clone>(&mut self) -> &mut Self {
-        // Once: a game that already registered the action for its player
-        // must not get a second sweeper.
-        if !self.world().contains_resource::<Messages<Intent<A>>>() {
-            self.add_action::<A>();
-        }
-        self.add_message::<MindChose>().add_systems(crate::plugin::Turn, route_choice::<A>.in_set(crate::plugin::DecideSet::Game))
+/// The body of [`EngineApp::add_choice`](crate::app::EngineApp::add_choice).
+pub(crate) fn add_choice<A: Action + Choice + Clone>(app: &mut App) -> &mut App {
+    // Once: a game that already registered the action for its player
+    // must not get a second sweeper.
+    if !app.world().contains_resource::<Messages<Intent<A>>>() {
+        app.add_action::<A>();
     }
+    app.add_message::<MindChose>().add_systems(crate::plugin::Turn, route_choice::<A>.in_set(crate::plugin::DecideSet::Game))
 }
 
 /// Turns each choice of type `A` into the intent for it.
@@ -1051,7 +1038,7 @@ impl Plugin for MindsPlugin {
         // a use of something carried, so the messages they would write them into
         // exist whether or not the game added abilities, items or throwing.
         // Registering one twice is what `add_message` is built for.
-        use crate::seed::AddStream;
+        use crate::app::EngineApp;
         app.init_resource::<MindsRunning>()
             .add_message::<Intent<Use>>()
             .add_message::<Intent<PickUp>>()
@@ -1073,7 +1060,7 @@ impl Plugin for MindsPlugin {
     }
 
     fn finish(&self, app: &mut App) {
-        crate::plugin::depends_on::<crate::fov::FovPlugin>(app, "MindsPlugin");
+        app.depends_on::<crate::fov::FovPlugin>("MindsPlugin");
     }
 }
 
@@ -1959,7 +1946,7 @@ mod tests {
     /// An arena with items, their charges and the engine's effects, the two
     /// sides, and a player of thirty at `start`.
     fn stocked() -> (App, Entity, Point, crate::testing::TwoSides) {
-        use crate::effects::AddEngineEffects;
+        use crate::app::EngineApp;
         let (mut app, start, _) = arena();
         app.add_plugins((crate::items::ItemsPlugin, crate::effects::EffectsPlugin));
         app.add_engine_effects();

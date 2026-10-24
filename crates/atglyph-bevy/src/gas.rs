@@ -13,6 +13,7 @@
 //! What a gas does beyond its [`Breath`](atglyph_rules::gas::Breath) is the game's,
 //! answered from [`Breathed`], which is sent every turn an actor stands in some.
 
+use crate::app::EngineApp;
 use atglyph_core::Point;
 use atglyph_core::seed::position_hash;
 use atglyph_rules::gas::{self, GasId};
@@ -247,8 +248,8 @@ pub struct GasPlugin;
 
 impl Plugin for GasPlugin {
     fn build(&self, app: &mut App) {
-        use crate::effects::AddEffect;
-        use crate::plugin::{FieldSet, Needs, ResetsOnNewRun, Turn};
+        use crate::app::EngineApp;
+        use crate::plugin::{FieldSet, Turn};
         app.init_resource::<Gases>()
             .reset_on_new_run::<Gases>()
             .add_message::<Release>()
@@ -261,7 +262,7 @@ impl Plugin for GasPlugin {
     }
 
     fn finish(&self, app: &mut App) {
-        crate::plugin::depends_on::<crate::plugin::CorePlugin>(app, "GasPlugin");
+        app.depends_on::<crate::plugin::CorePlugin>("GasPlugin");
     }
 }
 

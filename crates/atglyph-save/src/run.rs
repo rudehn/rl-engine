@@ -11,14 +11,14 @@
 //! The engine walks the world instead. A game implements [`Saveable`] on
 //! the component that marks a kind of thing it spawns, saying how to write
 //! one down and how to spawn one again from what was written, and
-//! registers it with [`AddSaveable::save_kind`]. Everything the engine
+//! registers it with [`SaveApp::save_kind`]. Everything the engine
 //! owns on that entity, where it stands, its health, what it carries and
 //! wears, its statuses and which worn thing holds each held one, the side
 //! a status turned it from, its stack, the transition it is, the post it
 //! holds, how long it has left alight, is the engine's to
 //! capture and put back, in [`EntityState`]. A
 //! resource a game keeps of the run goes through [`SaveableState`] and
-//! [`save_state`](AddSaveable::save_state). A kind a game makes through
+//! [`save_state`](SaveApp::save_state). A kind a game makes through
 //! its `ItemMaker` or its `ActorMaker` need not say how it is made again:
 //! [`SaveableItem`] and [`SaveableActor`] write it as its definition, make
 //! it through the maker, and put back only what else the game keeps.
@@ -45,11 +45,12 @@
 //! written down by `save_on_leaving` rather than forgotten with its
 //! teardown, and [`AbandonRun`] forgets the slot the moment it is triggered.
 
+use atglyph_bevy::EngineApp;
 use atglyph_bevy::{
     AbandonRun, ActiveStatuses, ActorMaker, ApplyStatus, Burning, ContinueRun, ContinueSaved, Counters, Dead, Emptied, EndOfFrame, EndRun, Ending, EngineState,
     Equipped, Faction, Health, Hidden, Inventory, ItemLevel, ItemMaker, JoinStamp, Leader, LeaveRun, MapId, OnMap, PlaceEntered, Player, Position, Post,
-    PrepareRun, PropKind, Quests, Reads, Registries, Remains, RunResumed, SavedRun, Seed, SideWas, Stack, Stair, Stocked, Transition, Turns, Wearable,
-    WorkKinds, Working,
+    PrepareRun, PropKind, Quests, Registries, Remains, RunResumed, SavedRun, Seed, SideWas, Stack, Stair, Stocked, Transition, Turns, Wearable, WorkKinds,
+    Working,
 };
 use atglyph_core::{Id, Point};
 use atglyph_rules::{Equipment, Work};
@@ -258,8 +259,8 @@ impl SaveableState for Quests {
 /// keeps of the thing.
 ///
 /// Implemented on the component that marks the definition an item was
-/// made from, and registered with [`AddSaveable::save_items`] in place of
-/// [`AddSaveable::save_kind`]. The level is the thing's [`ItemLevel`],
+/// made from, and registered with [`SaveApp::save_items`] in place of
+/// [`SaveApp::save_kind`]. The level is the thing's [`ItemLevel`],
 /// nought for a thing with none; its charges, its stack and where it lies
 /// are the engine's state, as on any saved kind.
 ///
@@ -330,8 +331,8 @@ fn restore_item<K: SaveableItem>(world: &mut World, saved: &RawValue) -> Result<
 /// actor.
 ///
 /// Implemented on the component that marks the definition an actor was
-/// made from, and registered with [`AddSaveable::save_actors`] in place of
-/// [`AddSaveable::save_kind`]. Where it stands, its health, what it
+/// made from, and registered with [`SaveApp::save_actors`] in place of
+/// [`SaveApp::save_kind`]. Where it stands, its health, what it
 /// carries and wears, its statuses and the post it holds are the engine's
 /// state, as on any saved kind.
 ///
@@ -395,8 +396,8 @@ fn restore_actor<K: SaveableActor>(world: &mut World, saved: &RawValue) -> Resul
     Ok(actor)
 }
 
-/// Registers what a run is made of.
-pub trait AddSaveable {
+/// The save's methods on `App`: registers what a run is made of.
+pub trait SaveApp {
     /// Saves every entity carrying `K`, by `K`'s own account of it.
     fn save_kind<K: Saveable>(&mut self) -> &mut Self;
 
@@ -412,7 +413,7 @@ pub trait AddSaveable {
     fn save_state<R: SaveableState>(&mut self) -> &mut Self;
 }
 
-impl AddSaveable for App {
+impl SaveApp for App {
     fn save_kind<K: Saveable>(&mut self) -> &mut Self {
         self.init_resource::<SaveRegistry>();
         let label = short_name::<K>();
@@ -1408,7 +1409,7 @@ mod tests {
     fn game_with(saves: Saves, plugin: SavePlugin) -> (App, Point) {
         let mut app = atglyph_bevy::testing::headless_app();
         app.add_plugins((FovPlugin, CombatPlugin, ItemsPlugin, RemainsPlugin, atglyph_bevy::PropsPlugin));
-        atglyph_bevy::AddWork::add_work(&mut app, "mending");
+        atglyph_bevy::EngineApp::add_work(&mut app, "mending");
         let start = atglyph_bevy::testing::ground(&mut app);
         atglyph_bevy::testing::two_sides(&mut app);
         {
@@ -1680,7 +1681,7 @@ mod tests {
 
         let backend = std::sync::Arc::new(MemoryBackend::default());
         let (mut app, start) = game(Saves(backend.clone()));
-        atglyph_bevy::AddEngineEffects::add_engine_effects(&mut app);
+        atglyph_bevy::EngineApp::add_engine_effects(&mut app);
         let props = atglyph_rules::prop::load(PROPS, &atglyph_rules::Names::new()).expect("the props load");
         app.world_mut().resource_mut::<Registries>().props = props.clone();
         let (crate_id, plate_id) = (props.expect("supply crate"), props.expect("pressure plate"));
@@ -1705,7 +1706,7 @@ mod tests {
         save_run(app.world_mut()).unwrap();
 
         let (mut back, _) = game(Saves(backend));
-        atglyph_bevy::AddEngineEffects::add_engine_effects(&mut back);
+        atglyph_bevy::EngineApp::add_engine_effects(&mut back);
         back.world_mut().resource_mut::<Registries>().props = props;
         let save = load_run(back.world()).unwrap().expect("a save");
         assert_eq!(save.count_of::<PropKind>(), 2, "both props were written down, by the engine");

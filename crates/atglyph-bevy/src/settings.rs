@@ -17,7 +17,7 @@
 //!
 //! ```
 //! # use bevy::prelude::*;
-//! # use atglyph_bevy::settings::{AddSettings, Setting, Settings};
+//! # use atglyph_bevy::{EngineApp, settings::{Setting, Settings}};
 //! let mut app = App::new();
 //! let trails = app.add_setting(Setting::new("trails", "Display", "Trails", ["On", "Off"]));
 //! assert_eq!(app.world().resource::<Settings>().choice(trails), "On");
@@ -166,22 +166,16 @@ impl Settings {
     }
 }
 
-/// Declaring settings while the app is built.
-pub trait AddSettings {
-    /// Declares a setting and returns its id. See `Settings::add`.
-    fn add_setting(&mut self, setting: Setting) -> SettingId;
-}
-
-impl AddSettings for App {
-    fn add_setting(&mut self, setting: Setting) -> SettingId {
-        self.init_resource::<Settings>();
-        self.world_mut().resource_mut::<Settings>().add(setting)
-    }
+/// The body of [`EngineApp::add_setting`](crate::app::EngineApp::add_setting).
+pub(crate) fn add_setting(app: &mut App, setting: Setting) -> SettingId {
+    app.init_resource::<Settings>();
+    app.world_mut().resource_mut::<Settings>().add(setting)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::app::EngineApp;
 
     fn two() -> (Settings, SettingId, SettingId) {
         let mut settings = Settings::default();

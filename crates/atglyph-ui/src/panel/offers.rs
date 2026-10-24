@@ -47,8 +47,9 @@ use atglyph_core::{Direction, Rect};
 use atglyph_render::{Cell, MapView, Terminal};
 use bevy::prelude::*;
 
+use crate::app::UiApp;
 use crate::controls::{ControlInput, key_name};
-use crate::modal::{AddModal, ModalId, Modals};
+use crate::modal::{ModalId, Modals};
 use crate::panel::{clear, clip, frame, hides, other_place, wrap};
 use crate::tone::{Palette, Tones};
 use crate::view::offers::{OffersView, OffersViewPlugin};
@@ -161,8 +162,8 @@ impl Plugin for OffersPanel {
     }
 
     fn finish(&self, app: &mut App) {
-        atglyph_bevy::depends_on::<crate::UiPlugin>(app, "OffersPanel");
-        atglyph_bevy::depends_on::<PropsPlugin>(app, "OffersPanel");
+        app.depends_on::<crate::UiPlugin>("OffersPanel");
+        app.depends_on::<PropsPlugin>("OffersPanel");
     }
 }
 

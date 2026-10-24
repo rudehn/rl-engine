@@ -43,7 +43,8 @@ use atglyph_bevy::EngineSet;
 use atglyph_bevy::prelude::*;
 use bevy::prelude::*;
 
-use crate::controls::{AddControls, Chord, ControlId, ControlInput, Keys};
+use crate::app::UiApp;
+use crate::controls::{Chord, ControlId, ControlInput, Keys};
 use crate::log::Log;
 use crate::modal::Modals;
 use crate::panel::{InventoryMenu, inventory_modal};
@@ -249,9 +250,9 @@ impl Plugin for PlayerKeysPlugin {
     }
 
     fn finish(&self, app: &mut App) {
-        atglyph_bevy::depends_on::<crate::UiPlugin>(app, "PlayerKeysPlugin");
+        app.depends_on::<crate::UiPlugin>("PlayerKeysPlugin");
         if self.wanted.iter().any(|w| w.verb == PlayerVerb::PickUp) {
-            atglyph_bevy::depends_on::<ItemsPlugin>(app, "PlayerKeysPlugin's pick_up");
+            app.depends_on::<ItemsPlugin>("PlayerKeysPlugin's pick_up");
         }
     }
 }

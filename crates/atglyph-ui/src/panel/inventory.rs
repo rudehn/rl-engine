@@ -51,14 +51,14 @@
 //! Every action closes every screen, since it spends a turn and the turn
 //! loop assumes nothing is up while it runs.
 
-use crate::modal::AddModal;
+use crate::app::UiApp;
 use atglyph_bevy::prelude::*;
 use atglyph_bevy::{EngineSet, PresentSet};
 use atglyph_core::{Direction, Rect};
 use atglyph_render::{Cell, Terminal};
 use bevy::prelude::*;
 
-use crate::controls::{AddControls, Chord, ControlInput, EngineKey, is_letter, key_name, lettered_row, row_letter};
+use crate::controls::{Chord, ControlInput, EngineKey, is_letter, key_name, lettered_row, row_letter};
 use crate::modal::{ModalId, Modals};
 use crate::panel::ability::reach;
 use crate::panel::sheet::plain_op;
@@ -318,7 +318,7 @@ impl Plugin for InventoryPanel {
     }
 
     fn finish(&self, app: &mut App) {
-        atglyph_bevy::depends_on::<crate::UiPlugin>(app, "InventoryPanel");
+        app.depends_on::<crate::UiPlugin>("InventoryPanel");
         // After the game's own, so its groups are listed first.
         // Only the key that opens it. What the bag's own keys do is
         // written along its bottom border, where a player is already
@@ -852,7 +852,8 @@ fn more(terminal: &mut Terminal, y: i32, after: i32, end: i32, arrow: char, coun
 mod tests {
     use super::*;
     use crate::harness::Stage;
-    use atglyph_bevy::{AddEngineEffects, Intent, ThrowingPlugin};
+    use atglyph_bevy::EngineApp;
+    use atglyph_bevy::{Intent, ThrowingPlugin};
     use atglyph_core::DiceRoll;
     use atglyph_rules::Names;
     use atglyph_rules::content::Registry;
@@ -1518,7 +1519,7 @@ mod tests {
         let plugins = (atglyph_bevy::EffectsPlugin, crate::TargetViewPlugin, InventoryPanel::new(Rect::new(0, 0, 52, 14)).title("Bag"));
         let mut stage = Stage::new_with(plugins, |app| {
             app.add_engine_effects();
-            atglyph_bevy::AddEffect::add_effect::<Mark>(app);
+            atglyph_bevy::EngineApp::add_effect::<Mark>(app);
             let mut registries = app.world_mut().resource_mut::<Registries>();
             registries.tags = Registry::from_defs(vec![atglyph_rules::TagDef::new("kit")]).unwrap();
             registries.slots = Registry::from_defs(vec![SlotDef::new("body")]).unwrap();

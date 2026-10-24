@@ -8,7 +8,8 @@
 //! resolution it already has, so nothing flickers and the layout in
 //! [`layout`](crate::layout) draws the grid for exactly those pixels.
 
-use atglyph_bevy::settings::{AddSettings, Setting, Settings};
+use atglyph_bevy::EngineApp;
+use atglyph_bevy::settings::{Setting, Settings};
 use bevy::prelude::*;
 use bevy::window::{MonitorSelection, PrimaryWindow, WindowMode};
 

@@ -12,6 +12,7 @@
 //! with it and the targeting cursor previews with it, so the cells a player
 //! is shown are the cells the item will fly through.
 
+use crate::app::EngineApp;
 use atglyph_core::turn::BASE_ACTION_COST;
 use atglyph_core::{DiceRoll, Point};
 use atglyph_grid::{Footprint, TargetMode};
@@ -279,8 +280,8 @@ pub struct ThrowingPlugin;
 
 impl Plugin for ThrowingPlugin {
     fn build(&self, app: &mut App) {
+        use crate::app::EngineApp;
         use crate::plugin::{ResolveSet, Turn};
-        use crate::turn::AddAction;
         app.add_airborne::<ThrowLanding>()
             // What a landing reports, for the triggers it sets off. A game may
             // throw and have no effects, and then the queue simply stays empty.
@@ -290,8 +291,8 @@ impl Plugin for ThrowingPlugin {
     }
 
     fn finish(&self, app: &mut App) {
-        crate::plugin::depends_on::<crate::items::ItemsPlugin>(app, "ThrowingPlugin");
-        crate::plugin::depends_on::<crate::combat::CombatPlugin>(app, "ThrowingPlugin");
+        app.depends_on::<crate::items::ItemsPlugin>("ThrowingPlugin");
+        app.depends_on::<crate::combat::CombatPlugin>("ThrowingPlugin");
     }
 }
 
@@ -317,7 +318,7 @@ mod tests {
         fn new() -> Self {
             let mut app = headless_app();
             app.add_plugins((crate::fov::FovPlugin, CombatPlugin, ItemsPlugin, ThrowingPlugin, crate::effects::EffectsPlugin));
-            crate::effects::AddEngineEffects::add_engine_effects(&mut app);
+            crate::app::EngineApp::add_engine_effects(&mut app);
             let start = crate::testing::ground(&mut app);
             let sides = crate::testing::two_sides(&mut app);
             let player = app

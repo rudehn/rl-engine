@@ -16,8 +16,9 @@ use atglyph_core::{Direction, Rect};
 use atglyph_render::{Cell, Terminal};
 use bevy::prelude::*;
 
-use crate::controls::{AddControls, ControlId, ControlInput, key_name};
-use crate::modal::{AddModal, ModalId, Modals};
+use crate::app::UiApp;
+use crate::controls::{ControlId, ControlInput, key_name};
+use crate::modal::{ModalId, Modals};
 use crate::panel::{clear, clip, frame};
 use crate::tone::{Palette, Tones};
 
@@ -68,7 +69,7 @@ impl Plugin for SettingsPanel {
     }
 
     fn finish(&self, app: &mut App) {
-        atglyph_bevy::depends_on::<crate::UiPlugin>(app, "SettingsPanel");
+        app.depends_on::<crate::UiPlugin>("SettingsPanel");
         let keyed: Vec<_> =
             app.world().resource::<Settings>().iter().filter_map(|(id, s, _)| s.key.map(|key| (id, s.group.clone(), s.label.to_lowercase(), key))).collect();
         let mut keys = Vec::new();

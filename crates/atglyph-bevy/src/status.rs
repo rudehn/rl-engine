@@ -625,6 +625,7 @@ pub(crate) fn build(app: &mut App) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::app::EngineApp;
     use crate::bump::Bump;
     use crate::combat::{Armor, Attack, CombatRules, DamageStages, Faction, Health, MeleeAttack};
     use crate::components::{Blocks, MyTurn, Player, Position, RevealsMap, Viewshed};
@@ -635,7 +636,7 @@ mod tests {
     use crate::testing::headless_app;
     use crate::turn::Wait;
     use crate::turn::{Intent, Turns};
-    use crate::work::{AddWork, WorkKinds, Working};
+    use crate::work::{WorkKinds, Working};
     use atglyph_core::DiceRoll;
     use atglyph_core::turn::BASE_ACTION_COST;
     use atglyph_core::{Direction, Point, RunSeed};

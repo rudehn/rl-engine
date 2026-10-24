@@ -19,7 +19,7 @@
 //!
 //! ```
 //! # use bevy::prelude::*;
-//! # use atglyph_ui::{AddControls, Chord, ControlId, ControlInput, UiPlugin};
+//! # use atglyph_ui::{Chord, UiApp, ControlId, ControlInput, UiPlugin};
 //! #[derive(Resource)]
 //! struct Binds {
 //!     pick_up: ControlId,
@@ -706,18 +706,10 @@ fn pressing_toward(input: &ButtonInput<KeyCode>, repeats: &Repeats, directions: 
     toward.map(|t| (t, pressed))
 }
 
-/// Declaring controls while the app is built.
-pub trait AddControls {
-    /// Declares a control under `group` and returns its id. See
-    /// `Controls::add`.
-    fn add_control(&mut self, group: &str, action: &str, keys: impl Into<Keys>) -> ControlId;
-}
-
-impl AddControls for App {
-    fn add_control(&mut self, group: &str, action: &str, keys: impl Into<Keys>) -> ControlId {
-        self.init_resource::<Controls>();
-        self.world_mut().resource_mut::<Controls>().add(group, action, keys)
-    }
+/// The body of [`UiApp::add_control`](crate::app::UiApp::add_control).
+pub(crate) fn add_control(app: &mut App, group: &str, action: &str, keys: impl Into<Keys>) -> ControlId {
+    app.init_resource::<Controls>();
+    app.world_mut().resource_mut::<Controls>().add(group, action, keys)
 }
 
 /// This frame's keys, read through the registry.
@@ -924,7 +916,8 @@ mod focus_tests {
 mod stop_tests {
     use super::*;
     use crate::harness::Stage;
-    use atglyph_bevy::{AddWork, BeginWork, BreakReason, Intent, Turns, WorkBroken, WorkKinds, WorkPace};
+    use atglyph_bevy::EngineApp;
+    use atglyph_bevy::{BeginWork, BreakReason, Intent, Turns, WorkBroken, WorkKinds, WorkPace};
     use atglyph_rules::Work;
 
     /// Every `WorkBroken`, in order.

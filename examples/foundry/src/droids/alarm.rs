@@ -38,7 +38,7 @@ use bevy::prelude::*;
 pub const SIGNALLING: &str = "signalling";
 
 /// The name the alarm's sound is declared under, with
-/// [`AddSound::add_sound`](atglyph::ecs::AddSound) in
+/// [`EngineApp::add_sound`](atglyph::ecs::EngineApp::add_sound) in
 /// [`FoundryPlugin`](crate::plugin::FoundryPlugin).
 pub const ALARM_SOUND: &str = "alarm";
 

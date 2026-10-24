@@ -18,7 +18,7 @@ use crate::testing::ambiguity::{self, Allowed, system_type as id};
 /// Every engine plugin, over the test makers the engine's own prefab and
 /// loot tests use, never a list taken from a game.
 fn engine() -> App {
-    use crate::effects::AddEngineEffects;
+    use crate::app::EngineApp;
     use crate::loot::tests::Toys;
     use crate::noise::NoiseRules;
     use crate::prefabs::tests::Beasts;

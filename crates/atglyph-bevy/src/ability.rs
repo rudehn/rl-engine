@@ -9,7 +9,7 @@
 //! Effects are types, not a list, for the reason actions are: the engine
 //! ships one per subsystem it owns, in [`effects`](crate::effects), and a
 //! game registers its own with
-//! [`AddEffect::add_effect`](crate::effects::AddEffect::add_effect). There is no enum of effect kinds, no
+//! [`EngineApp::add_effect`]. There is no enum of effect kinds, no
 //! `Custom { id }`, and no list anywhere for a new one to be added to. An
 //! effect a game writes reaches the world through [`EffectWorld`], which
 //! hands out the engine's own requests and, for anything the engine never
@@ -28,6 +28,7 @@ use atglyph_rules::{Names, Registry, Relation, StatId, Statuses, TagId};
 use bevy::prelude::*;
 use rand::Rng;
 
+use crate::app::EngineApp;
 use crate::combat::{CombatRules, Dead, Faction, Health};
 use crate::components::MyTurn;
 use crate::cue::{AddAirborne, Airborne, CueWait, Cued, LookOf};
@@ -36,7 +37,7 @@ use crate::items::{Equipped, Inventory, Stack, Tagged};
 use crate::plugin::{ResolveSet, Turn, TurnSet};
 use crate::registries::Registries;
 use crate::status::{ActiveStatuses, StatBlock};
-use crate::turn::{Action, AddAction, Intent, Occupancy, Resolution, Turns};
+use crate::turn::{Action, Intent, Occupancy, Resolution, Turns};
 use crate::world::WorldMap;
 
 /// Spend a turn on an ability, pointed at a cell.
@@ -1022,12 +1023,12 @@ pub(crate) fn refresh_known(mut actors: Query<(&mut Known, Option<&Grants>)>) {
 /// Needs [`Abilities`], [`Registries`] and the run's [`Seed`](crate::seed::Seed)
 /// before play begins, and combat, since an ability's damage goes down the same
 /// pipeline a sword's does. Register every effect an ability file names
-/// with [`AddEffect::add_effect`](crate::effects::AddEffect::add_effect) while the app is built, then build
+/// with [`EngineApp::add_effect`] while the app is built, then build
 /// [`Abilities`] from the loaded definitions.
 ///
 /// The engine's own effects are not registered here: they live in
 /// [`effects`](crate::effects), and a game adds the ones its content names
-/// with [`AddEngineEffects`](crate::effects::AddEngineEffects) or one at a
+/// with [`EngineApp::add_engine_effects`] or one at a
 /// time.
 ///
 /// Every [`Actor`](crate::components::Actor) is given an empty [`Known`],
@@ -1039,9 +1040,8 @@ pub struct AbilitiesPlugin;
 
 impl Plugin for AbilitiesPlugin {
     fn build(&self, app: &mut App) {
+        use crate::app::EngineApp;
         use crate::components::Actor;
-        use crate::plugin::{Needs, ResetsOnNewRun};
-        use crate::seed::AddStream;
         crate::effects::ensure(app);
         app.register_required_components::<Actor, Known>();
         app.register_required_components::<Actor, Pools>();
@@ -1068,18 +1068,19 @@ impl Plugin for AbilitiesPlugin {
     // In `finish` like every other plugin's, so the order a game lists its
     // plugins in never matters.
     fn finish(&self, app: &mut App) {
-        crate::plugin::depends_on::<crate::combat::CombatPlugin>(app, "AbilitiesPlugin");
+        app.depends_on::<crate::combat::CombatPlugin>("AbilitiesPlugin");
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::app::EngineApp;
     use crate::combat::{CombatRules, DamageDealt, Faction};
     use crate::components::{Actor, Player, RevealsMap};
     use crate::components::{Blocks, Position, Viewshed};
     use crate::cue::{Anchor, Cue};
-    use crate::effects::{AddEffect, AddEngineEffects, Effect, FromArgs};
+    use crate::effects::{Effect, FromArgs};
     use crate::items::Item;
     use crate::places::{Arrive, Destination, MapId, Transition};
     use atglyph_core::{Direction, RunSeed};

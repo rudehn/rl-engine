@@ -17,9 +17,9 @@
 //!
 //! [`LogPanel`]: crate::panel::LogPanel
 
-use crate::controls::{AddControls, ControlInput, EngineKey, key_name};
+use crate::app::UiApp;
+use crate::controls::{ControlInput, EngineKey, key_name};
 use crate::cursor::CursorKeys;
-use crate::modal::AddModal;
 use atglyph_bevy::{EngineSet, PresentSet};
 use atglyph_core::Rect;
 use atglyph_render::Terminal;

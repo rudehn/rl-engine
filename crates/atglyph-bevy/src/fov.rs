@@ -7,6 +7,7 @@
 //! minds recast the one holding the turn before it perceives, since dozens
 //! of them move within one frame.
 
+use crate::app::EngineApp;
 use atglyph_core::{Grid2D, Point};
 use atglyph_grid::{BitGrid, fov};
 use bevy::prelude::*;
@@ -92,7 +93,7 @@ impl Plugin for FovPlugin {
     }
 
     fn finish(&self, app: &mut App) {
-        crate::plugin::depends_on::<crate::plugin::CorePlugin>(app, "FovPlugin");
+        app.depends_on::<crate::plugin::CorePlugin>("FovPlugin");
     }
 }
 

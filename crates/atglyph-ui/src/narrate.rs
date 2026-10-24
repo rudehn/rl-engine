@@ -518,7 +518,7 @@ impl Plugin for NarrationViewPlugin {
     }
 
     fn finish(&self, app: &mut App) {
-        atglyph_bevy::depends_on::<crate::UiPlugin>(app, "NarrationViewPlugin");
+        app.depends_on::<crate::UiPlugin>("NarrationViewPlugin");
     }
 }
 
@@ -1415,12 +1415,12 @@ impl Plugin for NarratorPlugin {
         }
         // A name is coloured in its glyph's colour, so a remnant that does
         // something in a dead actor's name takes its glyph with the name.
-        atglyph_bevy::KeepOnRemnant::keep_on_remnant::<Glyph>(app);
+        atglyph_bevy::EngineApp::keep_on_remnant::<Glyph>(app);
         app.insert_resource(self.book.clone()).add_systems(Update, speak.in_set(crate::ViewSet::Speak));
     }
 
     fn finish(&self, app: &mut App) {
-        atglyph_bevy::depends_on::<crate::UiPlugin>(app, "NarratorPlugin");
+        app.depends_on::<crate::UiPlugin>("NarratorPlugin");
     }
 }
 
@@ -2119,7 +2119,8 @@ mod tests {
     #[test]
     fn a_use_aimed_at_the_ground_names_nobody_and_one_aimed_at_someone_names_them() {
         use crate::view::target::harness::abilities;
-        use atglyph_bevy::{AbilitiesPlugin, AbilityEvent, AddEngineEffects};
+        use atglyph_bevy::EngineApp;
+        use atglyph_bevy::{AbilitiesPlugin, AbilityEvent};
         let mut stage = Stage::new_with((AbilitiesPlugin, atglyph_bevy::EffectsPlugin, NarratorPlugin::default()), |app| {
             app.add_engine_effects();
             abilities(app);
@@ -2147,7 +2148,8 @@ mod tests {
     #[test]
     fn harm_a_use_or_an_ability_landed_names_what_landed_it_rather_than_reading_as_a_blow() {
         use crate::view::target::harness::{abilities, arm};
-        use atglyph_bevy::{AbilitiesPlugin, AddEngineEffects, EffectKinds, Use};
+        use atglyph_bevy::EngineApp;
+        use atglyph_bevy::{AbilitiesPlugin, EffectKinds, Use};
         let mut stage = Stage::new_with((AbilitiesPlugin, atglyph_bevy::EffectsPlugin, NarratorPlugin::default()), |app| {
             app.add_engine_effects();
             abilities(app);
@@ -2195,7 +2197,8 @@ mod tests {
     #[test]
     fn a_use_that_harms_is_told_by_its_harm_alone_and_one_that_harms_nothing_by_its_use() {
         use crate::view::target::harness::{abilities, arm};
-        use atglyph_bevy::{AbilitiesPlugin, AbilityEvent, AddEngineEffects, Use};
+        use atglyph_bevy::EngineApp;
+        use atglyph_bevy::{AbilitiesPlugin, AbilityEvent, Use};
         let mut stage = Stage::new_with((AbilitiesPlugin, atglyph_bevy::EffectsPlugin, NarratorPlugin::default()), |app| {
             app.add_engine_effects();
             abilities(app);

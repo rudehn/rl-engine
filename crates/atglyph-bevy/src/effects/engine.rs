@@ -6,7 +6,7 @@
 //!
 //! [`Harm`] asks combat's damage pipeline and [`Mend`] its healing, [`Inflict`] and
 //! [`Cleanse`] ask statuses, and [`Shove`], [`Pull`] and [`Teleport`] move
-//! an actor through [`EffectWorld`]; [`AddEngineEffects`] registers those
+//! an actor through [`EffectWorld`]; [`EngineApp::add_engine_effects`](crate::app::EngineApp::add_engine_effects) registers those
 //! seven. [`Ignite`] asks fire, [`Emit`] asks gas and [`Noise`] asks
 //! hearing, and each is registered by the plugin that answers it, so a
 //! content file naming one works exactly when the game has that subsystem.
@@ -21,7 +21,8 @@ use atglyph_rules::gas::GasId;
 use atglyph_rules::{Hit, Names, StatusId};
 use bevy::prelude::*;
 
-use super::{AddEffect, Effect, EffectBonus, EffectWorld, FromArgs, Landing};
+use super::{Effect, EffectBonus, EffectWorld, FromArgs, Landing};
+use crate::app::EngineApp;
 use crate::combat::{DamageEvent, Heal};
 use crate::registries::Registries;
 use crate::status::{ApplyStatus, RemoveStatus};
@@ -486,28 +487,15 @@ impl FromArgs for Noise {
     }
 }
 
-/// The effects the engine ships, registered together.
-///
-/// A convenience, not a requirement: a game that wants three of them
-/// registers three, and one that wants none registers none. Nothing is
-/// registered by default, because an ability file naming an effect the
-/// game did not ask for should fail at load rather than work by accident.
-pub trait AddEngineEffects {
-    /// Registers `Harm`, `Mend`, `Inflict`, `Cleanse`, `Shove`, `Pull` and
-    /// `Teleport`.
-    fn add_engine_effects(&mut self) -> &mut Self;
-}
-
-impl AddEngineEffects for App {
-    fn add_engine_effects(&mut self) -> &mut Self {
-        self.add_effect::<Harm>()
-            .add_effect::<Mend>()
-            .add_effect::<Inflict>()
-            .add_effect::<Cleanse>()
-            .add_effect::<Shove>()
-            .add_effect::<Pull>()
-            .add_effect::<Teleport>()
-    }
+/// The body of [`EngineApp::add_engine_effects`](crate::app::EngineApp::add_engine_effects).
+pub(crate) fn add_engine_effects(app: &mut App) -> &mut App {
+    app.add_effect::<Harm>()
+        .add_effect::<Mend>()
+        .add_effect::<Inflict>()
+        .add_effect::<Cleanse>()
+        .add_effect::<Shove>()
+        .add_effect::<Pull>()
+        .add_effect::<Teleport>()
 }
 
 #[cfg(test)]

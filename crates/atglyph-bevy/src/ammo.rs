@@ -32,6 +32,7 @@
 //! its player reacts to that message rather than detecting the transition
 //! itself.
 
+use crate::app::EngineApp;
 use atglyph_rules::TagId;
 use bevy::prelude::*;
 
@@ -207,8 +208,8 @@ impl Plugin for AmmoPlugin {
     }
 
     fn finish(&self, app: &mut App) {
-        crate::plugin::depends_on::<crate::combat::CombatPlugin>(app, "AmmoPlugin");
-        crate::plugin::depends_on::<crate::items::ItemsPlugin>(app, "AmmoPlugin");
+        app.depends_on::<crate::combat::CombatPlugin>("AmmoPlugin");
+        app.depends_on::<crate::items::ItemsPlugin>("AmmoPlugin");
     }
 }
 

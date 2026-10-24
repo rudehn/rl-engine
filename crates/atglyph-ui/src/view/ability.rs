@@ -105,7 +105,7 @@ impl Plugin for AbilityViewPlugin {
     }
 
     fn finish(&self, app: &mut App) {
-        atglyph_bevy::depends_on::<crate::UiPlugin>(app, "AbilityViewPlugin");
+        app.depends_on::<crate::UiPlugin>("AbilityViewPlugin");
     }
 }
 
@@ -209,7 +209,7 @@ mod tests {
     use super::*;
     use crate::harness::Stage;
     use crate::view::target::harness::{abilities, arm};
-    use atglyph_bevy::AddEngineEffects;
+    use atglyph_bevy::EngineApp;
 
     fn staged() -> Stage {
         let mut stage = Stage::new_with((AbilitiesPlugin, AbilityViewPlugin), |app| {

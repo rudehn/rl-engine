@@ -239,7 +239,7 @@ impl Plugin for TitlePanel {
     }
 
     fn finish(&self, app: &mut App) {
-        atglyph_bevy::depends_on::<crate::UiPlugin>(app, "TitlePanel");
+        app.depends_on::<crate::UiPlugin>("TitlePanel");
     }
 }
 
@@ -536,7 +536,7 @@ fn draw_question(terminal: &mut Terminal, title: &TitleLayout, yes: bool, palett
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::modal::AddModal;
+    use crate::app::UiApp;
     use crate::panel::records::RECORDS_MODAL;
     use crate::panel::settings::SettingsPanel;
     use crate::tone::ToneId;

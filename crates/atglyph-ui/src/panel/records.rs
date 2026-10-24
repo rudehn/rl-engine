@@ -28,9 +28,10 @@ use atglyph_core::{Direction, Rect};
 use atglyph_render::{Cell, Terminal};
 use bevy::prelude::*;
 
+use crate::app::UiApp;
 use crate::controls::{ControlInput, key_name};
 use crate::game_menu::section_lines;
-use crate::modal::{AddModal, ModalId, Modals};
+use crate::modal::{ModalId, Modals};
 use crate::panel::{clear, clip, frame};
 use crate::tone::{Palette, ToneId, Tones};
 
@@ -109,7 +110,7 @@ impl Plugin for RecordsPanel {
     }
 
     fn finish(&self, app: &mut App) {
-        atglyph_bevy::depends_on::<crate::UiPlugin>(app, "RecordsPanel");
+        app.depends_on::<crate::UiPlugin>("RecordsPanel");
     }
 }
 

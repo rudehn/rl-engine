@@ -55,7 +55,7 @@ impl Plugin for ContainerViewPlugin {
     }
 
     fn finish(&self, app: &mut App) {
-        atglyph_bevy::depends_on::<crate::UiPlugin>(app, "ContainerViewPlugin");
+        app.depends_on::<crate::UiPlugin>("ContainerViewPlugin");
     }
 }
 

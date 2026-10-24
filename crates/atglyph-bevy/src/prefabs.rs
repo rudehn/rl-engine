@@ -29,6 +29,7 @@
 //! a piece that was not keyed. A monster placed at a slot holds that cell
 //! as its [`Post`]. `docs/design/prefabs.md` has the reasoning.
 
+use crate::app::EngineApp;
 use std::collections::BTreeSet;
 use std::marker::PhantomData;
 use std::sync::Arc;
@@ -290,7 +291,8 @@ impl<A, I> Default for PrefabPlugin<A, I> {
 
 impl<A: ActorMaker, I: ItemMaker> Plugin for PrefabPlugin<A, I> {
     fn build(&self, app: &mut App) {
-        use crate::plugin::{Needs, Turn, TurnSet};
+        use crate::app::EngineApp;
+        use crate::plugin::{Turn, TurnSet};
         app.needs::<Prefabs<A::Def>>("PrefabPlugin", "the game's prefabs and roles, as `Prefabs::new(prefabs, roles)`, inserted before play begins")
             .needs::<A>("PrefabPlugin", "the resource holding the game's monsters, implementing `ActorMaker`, inserted before play begins")
             .needs::<I>("PrefabPlugin", "the resource holding the game's items, implementing `ItemMaker`, inserted before play begins")
@@ -303,7 +305,7 @@ impl<A: ActorMaker, I: ItemMaker> Plugin for PrefabPlugin<A, I> {
     }
 
     fn finish(&self, app: &mut App) {
-        crate::plugin::depends_on::<crate::plugin::CorePlugin>(app, "PrefabPlugin");
+        app.depends_on::<crate::plugin::CorePlugin>("PrefabPlugin");
     }
 }
 

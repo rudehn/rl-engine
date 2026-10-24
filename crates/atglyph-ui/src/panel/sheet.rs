@@ -8,14 +8,14 @@
 //! whatever the game added. A section with nothing in it is left out, and
 //! a screen too short for the rest stops rather than overflows.
 
-use crate::modal::AddModal;
+use crate::app::UiApp;
 use atglyph_bevy::{EngineSet, PresentSet};
 use atglyph_core::Rect;
 use atglyph_render::Terminal;
 use atglyph_rules::stats::Op;
 use bevy::prelude::*;
 
-use crate::controls::{AddControls, Chord, ControlInput, EngineKey, key_name};
+use crate::controls::{Chord, ControlInput, EngineKey, key_name};
 use crate::cursor::CursorKeys;
 use crate::modal::{ModalId, Modals};
 use crate::panel::{clear, clip, frame, section};

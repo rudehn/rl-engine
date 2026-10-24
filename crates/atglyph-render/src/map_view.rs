@@ -432,8 +432,8 @@ impl Plugin for MapViewPlugin {
     }
 
     fn finish(&self, app: &mut App) {
-        depends_on::<CorePlugin>(app, "MapViewPlugin");
-        depends_on::<FovPlugin>(app, "MapViewPlugin");
+        app.depends_on::<CorePlugin>("MapViewPlugin");
+        app.depends_on::<FovPlugin>("MapViewPlugin");
     }
 }
 

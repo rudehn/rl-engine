@@ -82,7 +82,8 @@ fn remember(settings: Res<Settings>, saves: Res<Saves>, mut remembered: ResMut<R
 mod tests {
     use super::*;
     use crate::backend::MemoryBackend;
-    use atglyph_bevy::settings::{AddSettings, Setting};
+    use atglyph_bevy::EngineApp;
+    use atglyph_bevy::settings::Setting;
     use std::sync::Arc;
 
     /// An app with two settings declared and `backend` to remember them

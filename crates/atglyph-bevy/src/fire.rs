@@ -16,6 +16,7 @@
 //! `Flammable` off whatever burnt out, since it has burnt; a game despawns,
 //! chars or loots it in answer.
 
+use crate::app::EngineApp;
 use std::collections::BTreeMap;
 
 use atglyph_core::Point;
@@ -383,8 +384,8 @@ pub struct FirePlugin;
 
 impl Plugin for FirePlugin {
     fn build(&self, app: &mut App) {
-        use crate::effects::AddEffect;
-        use crate::plugin::{FieldSet, Needs, ResetsOnNewRun, Turn};
+        use crate::app::EngineApp;
+        use crate::plugin::{FieldSet, Turn};
         app.init_resource::<Fire>()
             .reset_on_new_run::<Fire>()
             .add_message::<Kindle>()
@@ -401,7 +402,7 @@ impl Plugin for FirePlugin {
     }
 
     fn finish(&self, app: &mut App) {
-        crate::plugin::depends_on::<crate::plugin::CorePlugin>(app, "FirePlugin");
+        app.depends_on::<crate::plugin::CorePlugin>("FirePlugin");
     }
 }
 

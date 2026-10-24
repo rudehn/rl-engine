@@ -21,8 +21,9 @@ use atglyph_core::{Direction, Rect};
 use atglyph_render::{Cell, Terminal};
 use bevy::prelude::*;
 
+use crate::app::UiApp;
 use crate::controls::{Chord, ControlInput, key_name};
-use crate::modal::{AddModal, ModalId, Modals};
+use crate::modal::{ModalId, Modals};
 use crate::panel::{clear, clip, frame};
 use crate::tone::{Palette, Tones};
 use crate::view::container::{ContainerView, ContainerViewPlugin, OpenContainer};
@@ -111,8 +112,8 @@ impl Plugin for ContainerPanel {
     }
 
     fn finish(&self, app: &mut App) {
-        atglyph_bevy::depends_on::<crate::UiPlugin>(app, "ContainerPanel");
-        atglyph_bevy::depends_on::<PropsPlugin>(app, "ContainerPanel");
+        app.depends_on::<crate::UiPlugin>("ContainerPanel");
+        app.depends_on::<PropsPlugin>("ContainerPanel");
         // Nothing on the controls screen: the screen opens itself when a
         // container is opened, so there is no root-level key to list, and
         // what it answers to is written along its own bottom border.

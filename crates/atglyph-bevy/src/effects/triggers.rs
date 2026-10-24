@@ -15,7 +15,7 @@
 //!
 //! TriggerKinds are interned in [`TriggerKinds`] rather than enumerated, so a game
 //! adds its own, an overheating gun or a charged console, with
-//! [`AddTriggerKind::add_trigger_kind`] and reports it from a system of its own.
+//! [`EngineApp::add_trigger_kind`](crate::app::EngineApp::add_trigger_kind) and reports it from a system of its own.
 
 use std::sync::Arc;
 
@@ -99,18 +99,11 @@ impl Default for TriggerKinds {
     }
 }
 
-/// Declares a kind of trigger while the app is being built.
-pub trait AddTriggerKind {
-    /// Declares the trigger kind `name`. Look its id up again with [`TriggerKinds::get`].
-    fn add_trigger_kind(&mut self, name: &str) -> &mut Self;
-}
-
-impl AddTriggerKind for App {
-    fn add_trigger_kind(&mut self, name: &str) -> &mut Self {
-        self.init_resource::<TriggerKinds>();
-        self.world_mut().resource_mut::<TriggerKinds>().declare(name);
-        self
-    }
+/// The body of [`EngineApp::add_trigger_kind`](crate::app::EngineApp::add_trigger_kind).
+pub(crate) fn add_trigger_kind<'a>(app: &'a mut App, name: &str) -> &'a mut App {
+    app.init_resource::<TriggerKinds>();
+    app.world_mut().resource_mut::<TriggerKinds>().declare(name);
+    app
 }
 
 /// One thing a carrier does at one moment.
@@ -444,7 +437,7 @@ pub(crate) fn report_died(
 ///
 /// A list a plugin adds to rather than a fixed set, since the components
 /// that say how a thing looks belong to crates this one cannot see; the
-/// narrator adds its glyph with [`KeepOnRemnant::keep_on_remnant`].
+/// narrator adds its glyph with [`EngineApp::keep_on_remnant`](crate::app::EngineApp::keep_on_remnant).
 #[derive(Resource, Debug, Clone)]
 pub struct RemnantKeeps(Vec<std::any::TypeId>);
 
@@ -473,19 +466,11 @@ impl RemnantKeeps {
     }
 }
 
-/// Says, while the app is built, that a remnant takes a component from
-/// what it stands in for.
-pub trait KeepOnRemnant {
-    /// A remnant takes `C` as it takes the [`Name`].
-    fn keep_on_remnant<C: Component + Clone>(&mut self) -> &mut Self;
-}
-
-impl KeepOnRemnant for App {
-    fn keep_on_remnant<C: Component + Clone>(&mut self) -> &mut Self {
-        self.init_resource::<RemnantKeeps>();
-        self.world_mut().resource_mut::<RemnantKeeps>().keep::<C>();
-        self
-    }
+/// The body of [`EngineApp::keep_on_remnant`](crate::app::EngineApp::keep_on_remnant).
+pub(crate) fn keep_on_remnant<C: Component + Clone>(app: &mut App) -> &mut App {
+    app.init_resource::<RemnantKeeps>();
+    app.world_mut().resource_mut::<RemnantKeeps>().keep::<C>();
+    app
 }
 
 /// What a carrier is, for `land_triggers`: its triggers, whether it is a
@@ -708,9 +693,9 @@ pub(crate) fn land_triggers(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::app::EngineApp;
     use crate::combat::{CombatPlugin, DamageDealt, Health};
     use crate::components::{Actor, Blocks, Position};
-    use crate::effects::AddEngineEffects;
     use crate::registries::Registries;
     use crate::state::EngineState;
     use crate::testing::headless_app;
@@ -1092,7 +1077,7 @@ mod tests {
     /// nothing in particular.
     #[test]
     fn a_use_made_on_a_thing_lands_with_that_thing_and_nothing_else_does() {
-        use crate::effects::AddEffect;
+        use crate::app::EngineApp;
         let (mut app, at) = floor();
         app.add_effect::<NoteOn>().init_resource::<LandedOn>();
         let triggers =

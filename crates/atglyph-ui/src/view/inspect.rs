@@ -13,8 +13,7 @@
 //! gates its own movement keys on [`no_modal`](crate::no_modal) and gets
 //! the exclusion for free.
 
-use crate::controls::AddControls;
-use crate::modal::AddModal;
+use crate::app::UiApp;
 use atglyph_bevy::prelude::*;
 use atglyph_core::{Point, geometry};
 use atglyph_render::Glyph;
@@ -120,7 +119,7 @@ impl Plugin for InspectViewPlugin {
     }
 
     fn finish(&self, app: &mut App) {
-        atglyph_bevy::depends_on::<crate::UiPlugin>(app, "InspectViewPlugin");
+        app.depends_on::<crate::UiPlugin>("InspectViewPlugin");
         // Declared once the game has declared its own, so the controls
         // screen lists the game's groups first whatever order the plugins
         // were added in.

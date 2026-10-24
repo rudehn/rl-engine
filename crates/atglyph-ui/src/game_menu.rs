@@ -27,14 +27,14 @@
 //! in play, a presenter has no business doing file I/O, and it was the one
 //! reason `atglyph-ui` depended on `atglyph-save` at all.
 
-use crate::modal::AddModal;
+use crate::app::UiApp;
 use atglyph_bevy::prelude::*;
 use atglyph_bevy::{Ending, Outcome, Restart, world_is_shown};
 use atglyph_core::{Direction, Rect};
 use atglyph_render::{Cell, Terminal};
 use bevy::prelude::*;
 
-use crate::controls::{AddControls, ControlInput, EngineKey, key_name};
+use crate::controls::{ControlInput, EngineKey, key_name};
 use crate::modal::{ModalId, Modals};
 use crate::panel::title::TitleMenu;
 use crate::panel::{clear, clip, frame, wrap};
@@ -178,7 +178,7 @@ impl Plugin for GameMenuPanel {
     }
 
     fn finish(&self, app: &mut App) {
-        atglyph_bevy::depends_on::<crate::UiPlugin>(app, "GameMenuPanel");
+        app.depends_on::<crate::UiPlugin>("GameMenuPanel");
         app.add_control(crate::focus::SCREENS_GROUP, "open the menu", EngineKey::OpenMenu);
     }
 }

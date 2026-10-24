@@ -224,7 +224,7 @@ impl Plugin for InventoryViewPlugin {
     }
 
     fn finish(&self, app: &mut App) {
-        atglyph_bevy::depends_on::<crate::UiPlugin>(app, "InventoryViewPlugin");
+        app.depends_on::<crate::UiPlugin>("InventoryViewPlugin");
     }
 }
 

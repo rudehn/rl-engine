@@ -20,7 +20,8 @@ use atglyph_core::{Point, geometry};
 use atglyph_render::Glyph;
 use bevy::prelude::*;
 
-use crate::controls::{AddControls, EngineKey, Keys};
+use crate::app::UiApp;
+use crate::controls::{EngineKey, Keys};
 use crate::cursor::CursorInput;
 use crate::modal::Modals;
 
