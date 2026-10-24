@@ -11,7 +11,7 @@
             crates/atglyph-ui/src/panel/inspect.rs
             crates/atglyph-save/src/run.rs
             crates/atglyph-ui/src/controls.rs
-     fingerprint: dbbb9612 -->
+     fingerprint: 62bc8f78 -->
 
 # Work
 
