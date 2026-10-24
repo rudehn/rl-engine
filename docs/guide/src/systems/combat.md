@@ -7,6 +7,7 @@
             crates/atglyph-bevy/src/state.rs
             crates/atglyph-bevy/src/turn.rs
             crates/atglyph-rules/src/damage.rs
+            crates/atglyph-rules/src/arms.rs
             crates/atglyph-rules/src/faction.rs
             crates/atglyph-rules/src/forecast.rs
             crates/atglyph-rules/src/accuracy.rs
@@ -16,7 +17,7 @@
             crates/atglyph-bevy/src/ammo.rs
             crates/atglyph-bevy/src/effects/mod.rs
             crates/atglyph-bevy/src/effects/engine.rs
-     fingerprint: 82d43147 -->
+     fingerprint: 21ea402a -->
 
 # Combat and loadout
 
@@ -27,10 +28,10 @@ Above that line everything is the game's: who hates whom, what a kind of damage 
 
 ## Turning it on
 
-`CombatPlugin` declares `needs::<CombatRules>`, hinting that one comes from `CombatRules::new(&sides)`, and `needs::<Registries>` for the damage kinds a blow can deal.
+`CombatPlugin` declares `needs::<CombatRules>`, hinting that one comes from `CombatRules::new()`, and `needs::<Registries>` for the damage kinds a blow can deal.
 It takes `CombatRng`, a stream of its own derived from the run's seed, so a game never inserts one and a weapon added late cannot shift the rolls of a run that was going fine.
-It registers `Attack` as an action, `DamageEvent`, `DamageDealt`, `Heal`, `Healed`, `DeathEvent` and `Struck` as messages, `ShotLanding` as something that can be in the air, and `DamageStages` as a resource whose default is `SubtractArmor` alone.
-Its systems are `perceive_reach` in `PerceiveSet::Annotate`, `land_shots` in `LandSet::Shot` chained ahead of `resolve_attacks` in `ResolveSet::Act`, `apply_damage` chained ahead of `apply_healing` in `ResolveSet::Damage`, `end_run_on_player_death` in `TurnSet::React` and `process_deaths` in `CleanupSet::Remove`.
+It registers `Attack` as an action, `DamageEvent`, `DamageDealt`, `Heal`, `Healed`, `DeathEvent` and `Struck` as messages, `ShotLanding` as something that can be in the air, and `DamageStages`, whose default is `SubtractArmor` alone, and `HitRules` as resources.
+Its systems are `perceive_reach` in `PerceiveSet::Annotate`, `land_shots` in `LandSet::Shot` chained ahead of `resolve_attacks` and `keep_shooters` in `ResolveSet::Act`, `apply_damage` chained ahead of `apply_healing` in `ResolveSet::Damage`, `end_run_on_player_death` in `TurnSet::React` and `process_deaths` in `CleanupSet::Remove`.
 `bury_the_dead` is the exception and runs in `Last`'s `EndOfFrame::Bury`, after the run is saved and before a restart or a leaving for the title, which is how the dead are promised to linger until the frame ends without naming one of the systems that has to see them go.
 `Resists` is a component rather than a requirement, so an actor with none meets an empty ladder and a game with no resistances pays nothing.
 Nothing here decides who strikes whom: minds choose for monsters, `Bump` turns a walk key into an `Attack` when a foe is in the way, and an ability's damage arrives as the same `DamageEvent` a sword's does.
@@ -39,21 +40,21 @@ Nothing here decides who strikes whom: minds choose for monsters, `Bump` turns a
 ## The model
 
 `Health` is `current` and `max`, and `Health::full(n)` is both.
-`Faction` puts an actor on a side, and `CombatRules` is the matrix over the sides the game registered: `hostile` sets a pair both ways, `hunts` sets one way only, and `allied` sets help both ways, over a `Factions` that starts allied with itself and neutral to everyone else, dense and asymmetric because a grudge need not be returned.
+`Faction` puts an actor on a side, and `CombatRules` holds who hates whom: `hostile` sets a pair both ways, `hunts` sets one way only, and `allied` sets help both ways, into a `Factions` that keeps only the pairs named and works out the rest, a side allied with itself and neutral to everyone else, so it needs no registry and is asymmetric because a grudge need not be returned.
 `CombatRules` also carries `armor` and `attack`, each an optional `StatId`, `unaware`, an optional percent a blow on the unaware lands at, and `death_ends_run`, which `death_is_not_the_end()` clears for a game that revives or plays on as a ghost.
 `MeleeAttack` is a `kind`, a `dice` roll, an optional `cost` in hundredths of a step, an optional `look`, an optional `shape` and an optional `unaware` percent of its own; `RangedAttack` is the same with a `range` and no `unaware`, built by `new` and narrowed by `costing`, `looking`, `shaped` and, for a blow, `unaware`, so a field only some games want is added without touching every call site.
 `AttackShape` is who else an attack strikes besides its target, read from RON as `Sweep`, every foe beside the attacker, or `Pierce(n)`, the target and every foe in the next `n` cells beyond it in line, short of a wall or a shut door and, for a shot, of its range.
 `RangedAttack` and `Throwable` also carry an optional `effective` range, a third of `range` when left out, which is as far as a hit model charges nothing for distance.
 `HitRules` holds the game's `HitModel`, `Certain` unless the game inserts another, and `Marksmanship` gathers what a model reads into a `Shot`: how the attack travels, the distance, the effective range and reach, the `LightBand` at the target, and the stats `accuracy_stat` and `evasion_stat` name.
-`Armor` is flat damage removed and `Strikes` is a list of extra rolls every hit carries, a flaming blade's fire or a venomed edge's poison.
+`Armor` is flat damage removed and `BonusDamage` is a list of extra rolls every hit carries, a flaming blade's fire or a venomed edge's poison.
 All four sit on an actor or on an item, and that is the whole of how gear fights: a jerkin is an item with `Armor(1)` and nothing copies the 1 onto whoever puts it on.
 `Loadout` is the one answer to what an entity fights with, in three layers: the actor's own components, the same components on every item in its `Equipped` slots in slot order, and the value of the stat `CombatRules` names.
 A worn blow or shot replaces the actor's own, since a cutlass is swung in place of a fist, while armor, resistances and extra strikes add up.
-A worn thing whose `Consumable` is empty lends no blow or shot, so a spent wand is not fired and its wearer falls back on what is left, and neither does one whose attack is put by as `Stowed`, a weapon gone dry or one a game benched for its own reason, such as heat; `Loadout::dry` says by name whether a worn thing is dry, and [Ammunition](ammunition.md) is what dries it.
-`armor`, `resistances`, `melee`, `ranged` and `strikes` are the sums; `melee_with` and `ranged_with` also say which worn item it came from; `blows` is the melee roll followed by the strikes, which is every roll one blow lands.
+A worn thing whose `Consumable` is empty lends no blow or shot, so a spent wand is not fired and its wearer falls back on what is left, and neither does one whose attack is put by as a `BenchedAttack`, a weapon gone dry or one a game benched for its own reason, such as heat; `Loadout::dry` says by name whether a worn thing is dry, and [Ammunition](ammunition.md) is what dries it.
+`armor`, `mending`, `resistances`, `melee` and `ranged` are the sums; `melee_with` and `ranged_with` also say which worn item it came from; `blows` is the melee roll followed by the bonus damage, which is every roll one blow lands.
 The attack resolver strikes with it, `apply_damage` defends with it, and `blows` and its ranged twin `shots` are what a forecast is filled from, so what a panel says a fight will cost is worked out from the numbers the fight uses.
 `Loadout::arms` packs both of those, both costs and the shot's reach into a `forecast::Arms`, and `Combatant::armed` reads it at the distance the caller passes: one cell away is the melee rolls, further is the shot while the shot reaches, and past its reach is nothing at all.
-That is the rule `resolve_attacks` picks by, kept in one place, so an actor carrying only a gun forecasts as dangerous across the room and harmless once you are beside it rather than as harmless everywhere.
+That is `atglyph_rules::arms::choose_reach`, the rule `resolve_attacks` picks by too, kept in one place, so an actor carrying only a gun forecasts as dangerous across the room and harmless once you are beside it rather than as harmless everywhere.
 `Combatant::closing` and `Arms::closing` are the same fight as the two would have it once in reach: where nothing reaches from where they stand, a side is counted with its shot if it has one and its blow if not, so an inspect panel says how many turns a brawler across the room needs rather than never, and only a side with no attack at all reads never.
 `resolve_attacks` picks melee when the two are adjacent and otherwise a shot filtered by `line_of_fire`; an attack with nothing that reaches still spends an ordinary turn, since what was spent was the aim.
 It writes `Struck` before any damage, naming the worn item the attack came from, because what a weapon does to itself happens at the trigger rather than at the target.
@@ -63,12 +64,12 @@ A rolled attack that misses still writes `Struck` and the `fire` moment, since t
 For a worn item it also reports the `fire` moment at the attacker's cell, and the `hit` moment at the target's cell when the blow or shot lands, so a wand's charge is spent and its effects land through [Effects](effects.md) without combat knowing what either is.
 A shot takes its item's triggers with it as it is fired, so a watched shot from a thing its last charge spent still lands what its hits carry, from a remnant in its place.
 Every roll is floored at zero where it is rolled, so a weapon with a bad bonus that rolls low has missed, and `resolve` reads a hit offered below zero as nothing.
-An attack with a `Look` is seen: a shot cues a `Cue::Flight` and a blow a `Cue::Burst`, and while something watches the cues a shot's hits wait in `Airborne<ShotLanding>` until the flight has been seen, and `land_shots` then drops them on a target still standing, so one killed while the shot flew is missed rather than hurt twice.
+An attack with a `look` is seen: a shot cues a `Cue::Flight` and a blow a `Cue::Burst`, and while something watches the cues a shot's hits wait in `Airborne<ShotLanding>` until the flight has been seen, and `land_shots` then drops them on a target still standing, so one killed while the shot flew is missed rather than hurt twice.
 `shot` is where a projectile goes and `line_of_fire` is that call landing on the cell it was pointed at; a targeting preview draws the same call, so what the player is shown and what the resolver decides cannot disagree.
 A `DamageEvent` carries a `Hit`, which separates `attacker`, who triggers on-hit riders, from `credit`, who gets the kill, so a poison tick credits whoever applied it without recursing its own riders; `critical` and `status` are there for the stages and narrators that care.
-It also carries a `Reach`, which is how the damage got there: `DamageEvent::new` is `Effect`, what did not travel as a weapon, and `arriving` names `Melee`, `Shot` or `Thrown` instead, or `Ability(id)` or `Thing(entity)`, which the engine's `Harm` effect stamps from its landing so a rod's bolt is told as the rod's and not as its user's blow, carried through to `DamageDealt` for whoever puts it into words and read by nothing in the pipeline.
-`apply_damage` builds a `Defender` and the resistances from the target's `Loadout`, runs `resolve` over the game's `DamageStages`, takes the result off health capped at `max`, and writes `DamageDealt` and, at zero, `DeathEvent`.
-An `Invulnerable` target keeps what it absorbs and takes no harm: the hit is still written to `DamageDealt`, with nothing dealt, so a narrator says it had no effect rather than saying nothing.
+It also carries a `DamageRoute`, which is how the damage got there: `DamageEvent::new` is `Effect`, what did not travel as a weapon, and `arriving` names `Melee`, `Shot` or `Thrown` instead, or `Ability(id)` or `Thing(entity)`, which the engine's `Harm` effect stamps from its landing so a rod's bolt is told as the rod's and not as its user's blow, carried through to `DamageDealt` for whoever puts it into words and read by nothing in the pipeline.
+`apply_damage` builds a `Defender` and the resistances from the target's `Loadout`, runs `resolve` over the game's `DamageStages`, takes the result off health capped at `max`, and writes `DamageDealt`, with what was `dealt` and the health `lost`, and, at zero, `DeathEvent`.
+An `Invulnerable` target, and anyone standing in a place its builder made `peaceful`, takes no harm: the hit is still written to `DamageDealt`, with nothing dealt, so a narrator says it had no effect rather than saying nothing.
 A `DamageKind` is a name and whether armor applies to it, and `Resistances` is a percentage per kind: 100 is immunity, a negative number is vulnerability, and above 100 absorbs the hit, restoring the share past a hundred.
 The engine ships three stages, `SubtractArmor`, `ApplyResistance` and `HalveIfBlocked`, and the default list holds the first alone.
 A mend is not a hit and has no kind: a `Heal` names a target, an amount and who did it, `apply_healing` restores it after the pass's damage, never to the dead and never past `max`, and `Healed` reports what was restored, which at full health is nought.
@@ -78,7 +79,7 @@ Nothing mitigates a heal; what scales it is `CombatRules::mending_stat`, the sta
 
 ## Using it
 
-What a game hands combat is two registries and two rules, which is the whole of it in the tutorial's third step.
+What a game hands combat is two registries and its rules, which is the whole of it in the tutorial's third step, since the default stages are the ones it wants.
 
 <!-- include: ../../../../examples/tutorial/src/bin/step03_blows.rs:combat -->
 ```rust,no_run
@@ -87,11 +88,8 @@ What a game hands combat is two registries and two rules, which is the whole of 
     let kinds = Registry::from_defs(vec![DamageKind::new("bite"), DamageKind::new("kick")]).unwrap();
     let sides = Registry::from_defs(vec![FactionDef::new("you"), FactionDef::new("vermin")]).unwrap();
     let (you, vermin) = (sides.expect("you"), sides.expect("vermin"));
-    commands.insert_resource(CombatRules::new(&sides).hostile(you, vermin));
+    commands.insert_resource(CombatRules::new().hostile(you, vermin));
     commands.insert_resource(Registries { damage_kinds: kinds.clone(), factions: sides, ..default() });
-    // What a hit passes through on its way to the target. One stage here;
-    // resistances, a shield, a critical rule would each be another.
-    commands.insert_resource(DamageStages(vec![Box::new(SubtractArmor)]));
 ```
 
 Turning accuracy on is one resource, and Foundry's is the whole of it.
@@ -114,8 +112,8 @@ The game decides what a damage kind is and whether armor applies to it, who hate
 `Defender::blocked` is never set by the engine, which builds one with `blocked: false` every time, so `HalveIfBlocked` is for a caller that fills its own and a game that blocks rolls the block inside a stage of its own.
 Whether an attack lands is the game's model and the engine's roll: `HitRules` holds whatever `HitModel` the game chose, `Marksmanship` hands it the same facts whoever asks, and the resolver draws once from `CombatRng`, so a panel's chance and the attack's outcome cannot disagree.
 What a miss spends is the engine's call, the weapon's `fire` moment and nothing after it; what accuracy is made of, which stats, what range and light cost, whether anything is ever certain, is the model's.
-`armor_stat` and `attack_stat` are the whole seam between the registered stats and a blow, which is why a status that hardens the skin and an affix that sharpens the hand both work by moving a stat and neither is named in combat; a game that registered no stats names neither, and its armor is components alone.
-What a weapon does to itself is hung on `Struck`, a message that already names the item, so no game recomputes which weapon the loadout would have chosen: ammunition is the engine's, and heat or wear is the game's, benching the weapon through the same `Stowed`.
+`armor_stat` and `attack_stat` are the whole seam between the registered stats and a blow, which is why a status that hardens the skin and a ring that sharpens the hand both work by moving a stat and neither is named in combat; a game that registered no stats names neither, and its armor is components alone.
+What a weapon does to itself is hung on `Struck`, a message that already names the item, so no game recomputes which weapon the loadout would have chosen: ammunition is the engine's, and heat or wear is the game's, benching the weapon through the same `BenchedAttack`.
 Who a shape strikes is the engine's, foes only and each its own roll, so a sweep beside a friend never lands on the friend; which weapons have a shape is content.
 Who is unaware is stealth's to say and what surprise is worth the game's percent, and it multiplies blows alone, because what it pays for is the walk up to the target unnoticed, which a shot from across the room never takes.
 Neither is in a forecast: a shape does to the one subject of a duel what the same blow does with none, and a blow from hiding lands once before the subject is awake for every blow after it.
@@ -125,8 +123,8 @@ Arithmetic that is really about the rules lives in `atglyph-rules`, and what tha
 
 ## Where it lives
 
-`atglyph-rules` is tier 1 and has no Bevy in it: `damage.rs` is `Hit`, `Defender`, the `DamageStage` trait and a `resolve` that is a fold over stages, all of it tested against ids made out of thin air.
-`faction.rs` is the dense matrix, which is a table and an index rather than anything that needs a world.
+`atglyph-rules` is tier 1 and has no Bevy in it: `damage.rs` is `Hit`, `Defender`, the `DamageStage` trait, a `resolve` that is a fold over stages and `apply_hit`, `heal` and `mitigate`, what a hit and a heal do to health, all of it tested against ids made out of thin air.
+`faction.rs` is the table of named pairs and `stance`, the one answer to how one side regards another, and `arms.rs` is which weapon an attack is made with and the armor it meets, none of which needs a world.
 `forecast.rs` is where the split earns its keep: `expected_damage` calls the same `resolve` with the average roll in place of a real one and through the game's own stages, so a panel that says a fight is deadly got the word from the arithmetic the fight will use.
 A `Combatant` also carries the chance its attacks land, 100 unless a hit model says otherwise, and `expected_damage` counts the misses by it, so a fight that is deadly on paper and a coin toss at the trigger reads as the coin toss.
 `Arms` is what a fight fought at a distance costs it: both sets of rolls, both costs and the shot's reach, with `Arms::at` the one place the choice between them is made and `Combatant` still one set already chosen.

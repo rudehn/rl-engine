@@ -1,4 +1,4 @@
-//! Warren, step 9: an action of the game's own, and tests with no window.
+//! Warren, step 8: an action of the game's own, and tests with no window.
 //!
 //! The guide chapter is `docs/guide/src/08-an-action-of-your-own.md`. Shove is not an engine action and
 //! never will be: the engine holds the loop, the game says what may be
@@ -6,9 +6,7 @@
 //!
 //! `cargo run -p tutorial --bin step08_shove`
 //!
-//! Keys: as before, plus shift and a direction to shove.
-//!
-//! Keys: arrows, `hjklyubn` or the numpad to walk, `.` to wait, `q` to quit.
+//! Keys: as step 7, plus shift and a direction to shove.
 
 use std::sync::Arc;
 

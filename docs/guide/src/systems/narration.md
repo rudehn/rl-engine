@@ -12,7 +12,8 @@
             crates/atglyph-bevy/src/plugin.rs
             crates/atglyph-rules/src/status.rs
             crates/atglyph-bevy/src/ability.rs
-     fingerprint: 608f72b1 -->
+            crates/atglyph-bevy/src/lighting.rs
+     fingerprint: dd094036 -->
 
 # Narration
 
@@ -32,13 +33,13 @@ A game changes a phrase, silences one or asks for the unseen to be spoken by bui
 ## The model
 
 `NarrationView` is the rows a pass produced, oldest first, spoken and cleared once a frame.
-A `Said` is one thing that happened as the narrator reads it: its `words`, a `who`, a `whom` and a `what`, a `named` for a registry's word, a `detail`, an `amount`, an `at`, whether it was `seen`, whether the doer was `who_seen`, and the `turn`.
+A `Said` is one thing that happened as the narrator reads it: its `words`, a `who`, a `whom` and a `what`, a `named` for a registry's word, a `detail`, an `amount`, an `at`, whether it was `seen`, whether the doer was `who_seen` and whom it was done to `whom_seen`, and the `turn`.
 `Words` is either a `Phrase`, one of the engine's own events, or `Own { text, tone }`, a game's line already worded.
 Two kinds rather than a phrase a game may add to, because `Phrase` enumerates what the engine raises and nothing else, and a game's line needs no entry in a table, only a place in the order.
 `Phrase` is closed for the same reason, and it is split by perspective and by how the damage arrived: `YouHit`, `HitsYou` and `OthersFight` for a blow, `YouShoot`, `ShootsYou` and `OthersShoot` for a shot, and `YourUseHits`, `UseHitsYou` and `OthersUseHits` for harm an ability or a thing landed, each of the nine with a twin for the one that got through nothing, so no grammar and no branch on who did it lives in the engine.
-What tells them apart is `Reach`, which rides `DamageEvent` down the pipeline to `DamageDealt` untouched: `Shot` is worded as a shot, `Ability` and `Thing` as harm named by what landed it, `Your ash rod hits the rat for 4.` and `The goblin's firebolt hits you for 3.`, and `Melee`, `Thrown` and `Effect` keep the blow's words, since a poison is already narrated by whatever inflicted it.
+What tells them apart is `DamageRoute`, which rides `DamageEvent` down the pipeline to `DamageDealt` untouched: `Shot` is worded as a shot, `Ability` and `Thing` as harm named by what landed it, `Your ash rod hits the rat for 4.` and `The goblin's firebolt hits you for 3.`, and `Melee`, `Thrown` and `Effect` keep the blow's words, since a poison is already narrated by whatever inflicted it.
 A rolled attack that missed is `YouMiss`, `MissesYou` or `OthersMiss`, read from `Missed` and said in the muted tone of a blow that did nothing, whatever way it travelled.
-Using an ability or a thing from the pack is told apart from what it hit: `YouUse` and `Uses` are all it says of one aimed at nobody or that caught nobody by name, `You use burst.`, since only one caught alone, by `witness.aims_at_someone(ability)`, is told as `YouUseOn` or `UsesOn`, `The necromancer uses blink on you.`; several caught by a ground-aimed use are still counted, `You use burst, catching 2.`, which says nothing of being aimed at any one of them.
+Using an ability or a thing from the pack is told apart from what it hit: `YouUse` and `Uses` are all it says of one aimed at nobody or that caught nobody by name, `You use burst.`, since only one caught alone, by `witness.aims_at_someone(ability)`, is told as `YouUseOn` or `UsesOn`, `The necromancer uses blink on you.`; several caught by a ground-aimed use are still counted, `You use burst, catching 2.`, which says nothing of being aimed at any one of them, and an ability that harmed someone is told by its harm line alone, `Your bolt hits the rat for 3.`
 A use a `Reflects` body turns back is told before the harm line it caused, so a caster hurt by its own cast is never met with no reason first: `YouReflect`, `ReflectsOntoYou` or `OthersReflect`, naming who turned it back and whom it landed on in its place.
 A status landing on the player is `YouAreAfflicted`, or `YouGainABoon` for a `StatusDef` marked `boon`, the same words told as good news; one running out is `YouAreNoLonger`, and a cure is `YourAfflictionPasses`, except that a boon broken off, a cloak ended by a blow or by its plate coming off, is lost rather than cured and says `YouAreNoLonger`.
 Every one of them says "you are", because a status is named as what its holder is, `warded` or `scorched`, and each is told when a status begins and never when a `StatusEvent::Renewed` keeps it up, so a cloud is told once and not every turn it is breathed.
@@ -46,13 +47,14 @@ Every one of them says "you are", because a status is named as what its holder i
 A use is named as one of the thing, `You use a stim.`, since the stack already counts one fewer, and only a use of a thing with a `use` trigger is said at all: what using anything else means is the game's to say, the way a crust of bread is.
 What the player puts on, wields, takes off and drops is said as theirs, `You drop your sword.`, where `a sword` read as though it were any sword.
 A worn thing that would not come off when the player tried is `WillNotComeOff`, `Your ring will not come off.`, told as bad news.
+A death on the player's side, as `CombatRules` says, is `AllyDies`, `KillsAlly` or `YouKillAlly` in the bad tone, and one that came through a way after the player is told as following them, `FollowsYou`, where anyone else leaving is `Leaves`.
 `seen` is whether the player saw it, which is either that it happened to the player or that it happened where the player can see, and `Phrasebook::speak_unseen` decides whether an unseen row is spoken at all.
-`who_seen` is the narrower fact beside it, whether the doer's own cell was in the player's sight, and `render` takes as an argument whether to honour it, since what to do about an unseen doer is the presenter's setting rather than the row's business.
+`who_seen` is the narrower fact beside it, whether the player could see the doer itself by `PlayerSight::shows`, the question the map asks, so the log never names what the map left out, a thing `Concealed` in the dark among them, and `whom_seen` is the same of whom it was done to; what to do about an unseen one is the presenter's setting rather than the row's business.
 A doer that may not be named is `UNSEEN`, the one word `something`, and `speak` names it anyway while `speak_unseen` is on, because a game that asked for the unseen to be narrated asked for it named.
 The two were one field until a shot out of an unlit room named the shooter, a thing the player had never laid eyes on: being shot from the dark is always worth telling you, which is what `seen` answers, and that answer is not permission to say who fired.
 `Tell` is a game's own line told in its place among what the turns did: a template, a tone, and up to three entities for its placeholders, with `by`, `to` and `about` to name them.
 It is written from inside a pass, usually in `TurnSet::React`, and the collector reads it with that pass's events and after them, so it lands in the log below what it answers and above whatever the next actor does.
-A line written outside the turns, the one a run opens with or a key refused before any turn is spent, has no pass to wait for and goes to the `MessageLog` directly.
+A line written outside the turns, the one a run opens with or a key refused before any turn is spent, has no pass to wait for and goes to the log directly through the `Log` param, `log.notice`, `info`, `muted` or `push`, which stamps it with the current turn.
 `Phrasebook` is the words for every phrase, one entry per phrase with a tone of its own, and `set`, `silence` and `get` are all of it.
 The placeholders are `{who}` and `{whom}`, which are `you` or the name through `noun::with_the`, `the goblin`, or as written for one that carries its own article or starts with a capital, `the Drowned King` or `Grubnak`, `{what}`, which is a thing's name said with its stack's count through `noun::counted_as`, `a sword`, or bare for a thing carrying `MassNoun`, `chain mail`, `{your what}`, the same thing as the player's own through `noun::owned`, `your sword`, `{n}` for the amount, `{named}` for a registry's word and `{detail}` for whatever more there is to say, each capitalised by writing the key capitalised.
 `render` fills a template and answers with the text and a `Span` per name that has a colour, and an unknown key is left in the text as it was written rather than dropped.

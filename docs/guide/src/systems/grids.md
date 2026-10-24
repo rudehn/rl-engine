@@ -12,7 +12,7 @@
             crates/atglyph-grid/src/dijkstra.rs
             crates/atglyph-grid/src/region.rs
             crates/atglyph-grid/src/targeting.rs
-     fingerprint: 3e17b792 -->
+     fingerprint: b9a8d28f -->
 
 # Grids and tiles
 
@@ -32,20 +32,20 @@ Names are resolved there rather than at registration, which is what lets a door 
 ## The model
 
 `Point` is two `i32`s ordered on `y` and then `x`, so a sorted list of points reads top to bottom and left to right, and several generation passes lean on that to break ties the same way every run.
-`Rect` is half-open on the right and bottom, and carries the predicates a layout pass wants: `contains`, `is_border`, `intersects`, `too_close` with a margin, `inflate`, `intersection`, `union`, and `cells`, `interior` and `border` as row-major iterators.
+`GridRect` is half-open on the right and bottom, named apart from Bevy's `Rect`, and carries the predicates a layout pass wants: `contains`, `is_border`, `intersects`, `too_close` with a margin, `inflate`, `intersection`, `union`, and `cells`, `interior` and `border` as row-major iterators.
 `Direction` is the eight compass points declared clockwise from north, with `index` pinned to that order so anything stored per direction is laid out the same way.
 `Grid2D` is the addressing contract every map-shaped type implements: `width` and `height` are all an implementor writes, and `bounds`, `xy_idx`, `idx_point`, `in_bounds`, `checked_idx` and `neighbours` come with it, so an algorithm is written once against the trait and runs on a terrain, a scratch grid or the current place alike.
 `Steps` picks four neighbours or eight, and `Grid<T>` is the dense row-major container every layer uses; a layer per grid rather than one grid of fat structs, so a sweep over one layer stays in cache.
 `geometry` is the pure shape arithmetic over plain points: `chebyshev`, `euclidean_sq`, `octile_milli` as an integer heuristic scaled by a thousand, `line` by Bresenham, and `square`, `disc` and `cone` as iterators so a caller that only tests membership allocates nothing.
-`TileId` is a `u16` index; `TileProps` is the record behind it, carrying `walkable`, `passable`, `opaque`, `blocks_projectiles`, `move_cost`, `opens_to`, `closes_to` and an optional `Burn`.
+`TileId` is a `u16` index; `TileProps` is the record behind it, carrying `walkable`, `passable`, `opaque`, `blocks_projectiles`, `move_cost`, `opens_to`, `closes_to`, an optional `Burn` and an optional `Glow`, the light it sheds.
 `walkable` against `passable` is the load-bearing pair: a closed door is not walkable this turn but a corridor through it still connects two rooms, and a connectivity pass that confused the two would wall off half a map.
-`TileTables` is what the hot loops actually read, a `Vec` per flag indexed by id, with `opens` and `closes` resolved to ids and `burn` resolved to a `Kindling`.
+`TileTables` is what the hot loops actually read, a `Vec` per flag indexed by id, with `opens` and `closes` resolved to ids, `burns` resolved to a `Kindling`, and `lights`.
 `Terrain` is a `Grid<TileId>` and nothing else, and `Terrain::view(&registry)` makes a `TerrainView` that answers the two questions from the tables.
 Those two questions are the traits `OpacitySource` and `CostSource`, both supertraits of `Grid2D`, and both answer for an out-of-bounds cell without being asked: off the grid is opaque and impassable, so a scan stops at the edge rather than checking twice.
 `CostSource` answers a third question, `lets_diagonal_past(p)`, which a search asks of both cells a diagonal step squeezes between: `is_passable(p)` unless a source says otherwise, so a cell may be priced enterable, a closed door at the cost of opening it, while still letting no diagonal cut past its corner while it is shut.
 A newtype over a view that overrides one method is how smoke, a hazard or a swimmer's costs go on top without copying the terrain, and the doc-test on `TerrainView` is that pattern written out.
 `BitGrid` is one bit per cell for viewsheds, visited sets and explored maps; `SpatialGrid<E>` is a `BTreeMap<Point, Vec<E>>` for who is standing where, kept out of the terrain so moving every turn does not mark the terrain changed.
-`AStar` is one mover to one goal, holding its scratch buffers across searches, and returns a `Path` of steps and a total cost; `DijkstraMap` is one flood any number of movers descend, bounded to a `Rect` so a continuous world never floods a million cells a turn, with `UNREACHED` for what it did not reach, signed values so `scale` and `rescan` invert it into the safety map a fleeing monster follows, and `take_lower`, which makes the flood from several goals out of one flood from each.
+`AStar` is one mover to one goal, holding its scratch buffers across searches, and returns a `Path` of steps and a total cost; `DijkstraMap` is one flood any number of movers descend, bounded to a `GridRect` so a big map is flooded only where it is wanted, with `UNREACHED` for what it did not reach, signed values so `scale` and `rescan` invert it into the safety map a fleeing monster follows, and `take_lower`, which makes the flood from several goals out of one flood from each.
 `PathRules` says whether diagonals are allowed and whether one may cut a corner between two blocked orthogonals, off by default, and a diagonal costs 1414 to an orthogonal's 1000.
 With `cut_corners` off, `step_cost`, which `AStar` and `DijkstraMap` both step through, refuses a diagonal unless `lets_diagonal_past` answers yes of both cells it squeezes between, so the one rule reaches a search and the move resolver alike and a mover never plans a step the resolver would refuse.
 `region::flood` marks what is reachable into a `BitGrid` and `region::label_regions` numbers every connected component at once, both taking passability as a closure over flat indices so they run on anything.
@@ -54,22 +54,24 @@ With `cut_corners` off, `step_cost`, which `AStar` and `DijkstraMap` both step t
 
 ## Using it
 
-A game's tile layer is a registry filled by name and a table of its own keyed by the same ids: the tutorial registers a wall and a floor with the flags left at their defaults, and keeps the colours they are drawn in beside the registry rather than in the props.
+A game's tile layer is a registry filled by name and a table of its own keyed by the same ids: the tutorial's sixth step registers a wall, a floor and a curtain of roots that can be walked through and not seen past, and keeps the colours they are drawn in beside the registry rather than in the props.
 
-<!-- include: ../../../../examples/tutorial/src/bin/step01_walking.rs:tiles -->
+<!-- include: ../../../../examples/tutorial/src/bin/step06_descent.rs:tiles -->
 ```rust,no_run
 /// The warren's tiles, and how each one looks in full light.
 struct Warren {
     tiles: TileRegistry,
-    seed: RunSeed,
 }
 
 impl Warren {
-    fn new(seed: RunSeed) -> Self {
+    fn new() -> Self {
         let mut tiles = TileRegistry::new();
         tiles.register(TileProps::wall("earth")).unwrap();
         tiles.register(TileProps::floor("dirt")).unwrap();
-        Self { tiles, seed }
+        // Walkable and opaque: you can step through a curtain of roots,
+        // but you cannot see past one until you do.
+        tiles.register(TileProps::floor("roots").opaque(true)).unwrap();
+        Self { tiles }
     }
 
     /// Both colours of every tile, and how much each cell jitters from
@@ -79,6 +81,7 @@ impl Warren {
         let t = |name| self.tiles.expect(name);
         look.set_varied(t("earth"), Cell::new('#', Color::srgb(0.78, 0.66, 0.50)).on(Color::srgb(0.34, 0.27, 0.21)), Vary::new(0.20, 0.05));
         look.set_varied(t("dirt"), Cell::new('.', Color::srgb(0.66, 0.58, 0.45)).on(Color::srgb(0.18, 0.15, 0.12)), Vary::new(0.28, 0.06));
+        look.set_varied(t("roots"), Cell::new('+', Color::srgb(0.55, 0.74, 0.45)).on(Color::srgb(0.16, 0.22, 0.13)), Vary::new(0.18, 0.05));
         look
     }
 }

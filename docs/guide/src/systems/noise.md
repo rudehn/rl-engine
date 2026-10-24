@@ -16,7 +16,7 @@
             crates/atglyph-bevy/src/status.rs
             crates/atglyph-ui/src/view/nearby.rs
             crates/atglyph-ui/src/panel/nearby.rs
-     fingerprint: 66ec16fc -->
+     fingerprint: beb31458 -->
 
 # Noise
 
@@ -29,12 +29,12 @@ The engine writes the noise of its own actions and a game writes the rest, as on
 
 `NoisePlugin::new(NoiseRules { step, strike, door, landing, door_muffle })` is the whole of turning it on, and the rules have no defaults, because how loud a step is, is balance.
 A loudness of zero makes no noise at all, which is how a game leaves one of the engine's four sources out without leaving the plugin out.
-It chains `make_engine_noise` and `resolve_noise` in `TurnSet::Listen`, which sits after `TurnSet::React`: a noise a game writes answering the pass is heard in the same pass whichever way the executor ran the two, so a replay cannot tell a game's sound from the engine's.
+It chains `make_engine_noise`, `resolve_noise` and `wake_on_noise` in `TurnSet::Listen`, which sits after `TurnSet::React`: a noise a game writes answering the pass is heard in the same pass whichever way the executor ran the two, so a replay cannot tell a game's sound from the engine's.
 `age_heard` goes in `DecideSet::Notice`, beside stealth's own aging, so a sound and a sighting grow stale at one point in a turn, and `follow_heard` in `PerceiveSet::Annotate`, where a mind's knowledge is filled in.
 It declares `depends_on::<CorePlugin>` and nothing else: the `Thinking` it annotates, the `Stepped` the move resolver writes and the `DoorEvent` a door writes are all `CorePlugin`'s.
 It registers `DamageEvent` and `ItemEvent` itself, because a game may have added neither combat nor items, and then those queues stay empty rather than panicking a reader.
 It registers the `Noise` effect as well, so content that makes a sound loads exactly when the game can hear one.
-It also adds `wake_on_noise`, in `TurnSet::Listen`, which cures a sleeping status on whoever heard a noise with its `Hearing` threshold left on it; the system lives beside the other two that wake a sleeper, in `status.rs`, since only this plugin knows when a noise reached someone.
+`wake_on_noise`, last in that chain, cures a sleeping status on whoever heard a noise with its `Hearing` threshold left on it; the system lives beside the other two that wake a sleeper, in `status.rs`, since only this plugin knows when a noise reached someone.
 Without the plugin nothing is heard however close it is made, a `Hearing` on an actor sits there doing nothing, and a sleeper wakes to harm and sight alone.
 
 ## The model
@@ -54,11 +54,11 @@ The engine reads `maker` for one thing only, that its maker does not hear it: it
 It skips a noise no listener on this map is within `loudness` Chebyshev tiles of, since no flood carries further than that, and otherwise builds `Earshot`, a single `DijkstraMap` reused by every flood so hearing allocates nothing once it has grown, over a square of side `2 * loudness + 1` clipped to the loaded window.
 What a cell costs a sound is `hearing::carries`, read off flags a tile already has rather than a field of its own: what a thrown thing passes, sound passes at one step; what stops one and opens is a closed door, passed at one step and `door_muffle` more; anything else that stops one is a wall and stops sound.
 `left_after` takes the walk off the loudness and `heard` asks whether what is left reaches the listener's threshold.
-A listener that heard several in a pass keeps the one that arrived loudest, ties to the lower cell in `Point` order, so the order they were written in cannot change where it goes.
+Listeners are told in row and column order, and one that heard several in a pass keeps the one `hearing::loudest` picks, the most left with a tie to the earlier cell in row-major order, so neither the order they were written in nor an entity's number can change where it goes.
 Every listener is told, but only a listener that is not the player has its `Heard` set: the player's turn is the game's, so the engine says what was heard and decides nothing about it.
 `follow_heard` offers what the mind holding the turn heard to `Thinking::offer_trail`, unless that mind can see the cell, in which case it forgets it, because seeing the place is having looked and that is what ends a search that arrived.
 Stealth offers its lost trails to the same place, the freshest offer becomes `Snapshot::last_known` with ties to the lower cell, and so which contributor ran first cannot reach a tactic.
-`NoiseRunning` answers whether the plugin was added at all, asked of its message rather than of the components, since `Hearing` brings a `Heard` with it whether or not anything will ever fill it.
+`NoiseRunning` answers whether the plugin was added at all, asked of a marker only the plugin inserts rather than of the components or the messages, since `Hearing` brings a `Heard` with it whether or not anything will ever fill it and a view registers `NoiseHeard` for itself.
 
 ## Using it
 
@@ -137,7 +137,7 @@ Per-weapon loudness and per-tile deadening are not here: a knife and a pistol ar
 
 ## Where it lives
 
-`atglyph-rules` is tier 1 and has no Bevy in it: `ai/hearing.rs` is four items and no world, the stats, what a cell costs a sound, what is left after a walk and whether that reaches a threshold, so the property the whole subsystem rests on, that a sound of loudness `n` reaches a threshold of zero at exactly `n` steps and not one more, is proved as arithmetic with no `App` under it.
+`atglyph-rules` is tier 1 and has no Bevy in it: `ai/hearing.rs` is five items and no world, the stats, what a cell costs a sound, what is left after a walk, whether that reaches a threshold and which of several a listener goes to, so the property the whole subsystem rests on, that a sound of loudness `n` reaches a threshold of zero at exactly `n` steps and not one more, is proved as arithmetic with no `App` under it.
 `ai/awareness.rs` is where `Awareness` lives, shared with stealth, so a heard place and a lost subject go stale by one state machine and a panel reading either reads one type.
 `atglyph-bevy` is tier 2 and owns where a sound goes: `noise.rs` is the plugin, the components, the messages, the flood and the two systems that reach into a mind's turn, and it asks `hearing::carries` what each cell costs rather than deciding that itself.
 `plugin.rs` fixes `TurnSet::Listen` between the pass's reactions and its record, which is the one ordering decision that makes a game's noises and the engine's indistinguishable in a replay.

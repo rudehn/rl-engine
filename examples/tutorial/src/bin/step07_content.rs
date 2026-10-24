@@ -1,4 +1,4 @@
-//! Warren, step 8: the bestiary moves out of Rust and into a file.
+//! Warren, step 7: the bestiary moves out of Rust and into a file.
 //!
 //! The guide chapter is `docs/guide/src/07-content-in-files.md`. A
 //! [`Registry`] validates the file at load and hands out a dense
@@ -7,7 +7,8 @@
 //!
 //! `cargo run -p tutorial --bin step07_content`
 //!
-//! Keys: arrows, `hjklyubn` or the numpad to walk, `.` to wait, `q` to quit.
+//! Keys: arrows, `hjklyubn` or the numpad to walk or strike, Enter, `>` or
+//! `<` to take stairs, `g` get, `e` eat, `.` wait, `q` quit.
 
 use std::sync::Arc;
 

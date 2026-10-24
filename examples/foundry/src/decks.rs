@@ -347,16 +347,16 @@ impl PlaceRules for Foundry {
         Ok(built)
     }
 
+    fn tiles(&self) -> TileTables {
+        self.tiles.tables()
+    }
+
     // ANCHOR: ladder
     /// The decks, one under another, with a lift between each two: up at
     /// a deck's entry, down at the farthest exit the deck was built with,
     /// so the way on is as far from where the commando arrived as the
     /// deck allows. Deck one's way up is the lift out, which the game
     /// lays, and the core has nothing below it.
-    fn tiles(&self) -> TileTables {
-        self.tiles.tables()
-    }
-
     fn ladder(&self) -> Option<Ladder> {
         let (up, down) = (StairLook::new('<', crate::lifts::LIFT, "lift up"), StairLook::new('>', crate::lifts::LIFT, "lift down"));
         Some(Ladder::new((1..=DECKS).map(map_of), up, down).top(LadderEnd::Game))

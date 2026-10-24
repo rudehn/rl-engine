@@ -4,7 +4,7 @@
             crates/atglyph-bevy/src/combat.rs
             crates/atglyph-bevy/src/items.rs
             crates/atglyph-ui/src/view/gear.rs
-     fingerprint: 5569a737 -->
+     fingerprint: b9c6a21f -->
 
 # Ammunition
 
@@ -24,9 +24,9 @@ A game that wants its own reaction to a shot or to a bag settled first orders ag
 `Ammo { tag }` on an item makes it fed: the tag, registered as every tag is, is what one shot spends, and a weapon carries it beside its `RangedAttack`.
 What it spends is any carried thing with that tag in its `Tagged` and a `Stack`, so a quiver is a stack of arrows and its count is what is left.
 `spend_ammo` reads every ranged `Struck` whose item is fed and takes one off the first stack in the attacker's bag with the tag and something left in it, despawning the stack at nought; a blow, a `Struck` naming no item and an attacker with no bag are passed over.
-`sync_ammo` then reads every fed item in every `Inventory`, worn or not, and sets it dry or loaded from that bag alone: with no unit of its tag left it takes the `RangedAttack` off, puts it by as `Stowed::Ranged` and marks the item `Dry`, and with one back it puts the attack back and takes both off.
+`sync_ammo` then reads every fed item in every `Inventory`, worn or not, and sets it dry or loaded from that bag alone: with no unit of its tag left it takes the `RangedAttack` off, puts it by as `BenchedAttack::Ranged` and marks the item `Dry`, and with one back it puts the attack back and takes both off.
 Only a change writes `AmmoChanged { item, dry }`, so a game that tells its player a weapon has run dry or loaded again reads that rather than watching components come and go, as Foundry's narration does.
-`Stowed` is combat's holder for an attack a worn thing cannot make right now, and a game benching a weapon for a reason of its own, heat among them, puts it in the same holder; `Dry` marks the ones ammunition put there, so `sync_ammo` restores only what it put by and a game's own reason, querying its own cause, never sees one ammunition benched.
+`BenchedAttack` is combat's holder for an attack a worn thing cannot make right now, and a game benching a weapon for a reason of its own, heat among them, puts it in the same holder; `Dry` marks the ones ammunition put there, so `sync_ammo` restores only what it put by and a game's own reason, querying its own cause, never sees one ammunition benched.
 `Loadout` therefore finds no shot on a dry weapon and falls through to the next worn thing with an attack, knowing nothing of ammunition, and `Loadout::dry` is the one place that answers by name whether a worn thing is dry.
 `GearViewPlugin` notes a worn fed weapon's rounds on its gear row as a facet keyed `ammo`, `N left` counted fresh from the player's bag or `dry` in `Tones::BAD`, with `note_ammo` after `collect_gear` in `ViewSet::Collect`, so the rail says whether the next shot is there without the pack being opened.
 Nothing of it is saved, since it is the bag's: a continued run reads each weapon dry or loaded from the bag it restored.
@@ -59,5 +59,5 @@ What a row says of a dry weapon is a facet rather than a field of `Row`, because
 ## Where it lives
 
 `atglyph-bevy` is tier 2 and holds the economy in its own module, beside combat rather than inside it, since a game of cutlasses adds `CombatPlugin` and never this.
-`Stowed` and `Loadout::dry` are combat's, so a weapon benched for heat and one benched for want of arrows fall through the same way, and the plugin's own tests prove that a bag emptied by any means dries its weapon, with a bag filled by hand and no turn queue at all.
+`BenchedAttack` and `Loadout::dry` are combat's, so a weapon benched for heat and one benched for want of arrows fall through the same way, and the plugin's own tests prove that a bag emptied by any means dries its weapon, with a bag filled by hand and no turn queue at all.
 `atglyph-ui` reads `Ammo` off the gear view's own entities, since it depends on `atglyph-bevy` and not the other way round, and a game drawing its own rail from `GearView` reads the same facet.

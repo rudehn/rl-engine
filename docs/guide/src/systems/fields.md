@@ -11,7 +11,7 @@
             crates/atglyph-bevy/src/effects/engine.rs
             crates/atglyph-bevy/src/world.rs
             crates/atglyph-bevy/src/plugin.rs
-     fingerprint: 06407729 -->
+     fingerprint: 0436800b -->
 
 # Fire and gas
 
@@ -36,13 +36,13 @@ Both reset on a new run, and both declare `depends_on::<CorePlugin>`.
 `TileField<T>` is the field: `step` asks a rule for every cell's next value through an `Around` that reads the grid as it stood, and then the buffers swap.
 Nothing a step changes can move again within the same step, so a fire cannot run across a map in one turn and a cloud spreads the same way whichever order its cells were visited in; the second buffer is kept, so a step allocates nothing.
 `MapFields<T>` holds one per map, follows the map readers read, sets a field aside when play crosses to another and takes it up again on return.
-`Fire` is a `MapFields<u8>` of turns left, read through `is_burning`, `turns_at` and `burning`.
+`Fire` is a `MapFields<u8>` of turns left, read through `is_burning` and `burning`.
 `Kindle { at, turns }` asks for fire on a cell; a cell with nothing to burn still burns that long and goes out, which is a fireball scorching bare stone, and a tile that both refuses a thrown thing and does not burn refuses it.
 `Flammable { catch_pct, turns }` is what a game puts on a crate or a corpse, and `Burning` is what is alight, `Burning::forever` for a brazier that keeps its own cell burning for good.
 What a cell burns as comes from three places and the most flammable wins: the `Kindling` its tile declares through `TileProps::burns`, a `Flammable` entity standing on it, and a gas in it whose `GasDef::burns` is set.
 `fire::spread` burns every alight cell down one turn and rolls each unlit one against `catch_chance`, which compounds a chance for each of its eight neighbours that is burning.
 The rolls are a `position_hash` of a seed derived for fire over the turn number, not draws from a stream, so the same cell rolls the same whatever order the step visited it in and a save carries no generator for it.
-`FireRules` is the game's half of fire: `inflicts` a status on whoever stands in flames, `smoke` a gas each burning cell gives off, and `glow` the light it sheds, `FIRE_GLOW` unless a game says otherwise.
+`FireRules` is the game's half of fire: `inflicts` a status on whoever stands in flames, `smoke` a gas each burning cell gives off, and `glow` the light it sheds, a warm flicker unless a game says otherwise.
 `FireEvent` reports `Scorched`, `Caught`, `BurntOut` and `TileBurnt`.
 `Gases` holds one `MapFields<u8>` of concentration per registered gas, read through `at`, `densest` and `cells`.
 A `GasDef` carries `spread`, `fade`, `veils_at`, `burns` and `inflicts`, and nothing else.

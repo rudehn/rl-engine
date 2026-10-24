@@ -4,7 +4,8 @@
             crates/atglyph-rules/src/prop.rs
             crates/atglyph-bevy/src/loot.rs
             crates/atglyph-bevy/src/props.rs
-     fingerprint: 99e5ed39 -->
+            crates/atglyph-bevy/src/parts.rs
+     fingerprint: 30c89e66 -->
 
 # Loot
 
@@ -23,21 +24,21 @@ As play begins it refuses, by name, a container holding an item the game has no 
 
 ## The model
 
-`ItemMaker` is the game's side, and all of it: `make` turns an item id and a count into entities, placed nowhere, one stack for a thing that stacks and that many of anything else; `id_of` finds a definition by name; `table` is the game's `LootTable`; `scatter` gives its `ScatterRules`; `band` says how deep a `LootArea` is; and `loose` may overrule how many loose items an area gets.
+`ItemMaker` is the game's side, and all of it: `make` turns an item id and a count into entities, placed nowhere, one stack for a thing that stacks and that many of anything else; `make_at` makes one thing at a given level, as it is made when found, which is also how a saved item comes back; `id_of` finds a definition by name and `name_of` names one; `table` is the game's `LootTable`; `scatter` gives its `ScatterRules`; `band` says how deep a `LootArea` is; and `loose` may overrule how many loose items an area gets.
 `LootArea` is a place by `MapId`, and a band is the game's own number for how deep, far or dangerous that is.
 `make` is handed a `Provenance { found, band }`: `found` is why something is being made, `Scatter`, `Drop`, `Container` or `Placed` at a prefab's slot by `PrefabPlugin`, and `band` is the one the draw was asked at, a place's for its floor, a container's plus its row's offset, a prefab slot's plus its own, and for a drop the band of the place the actor died in; `make` is also handed the engine's stream for whatever it rolls on the thing, a quality or an enchant.
 `LootTable` is built by `loot::load` from a spawn file of rows, each an item, the bands it applies at, a weight and an optional group; its rows are sorted by item name, so the order they are written in draws nothing.
 `pick` draws a row that applies at a band by weight and how many are found together; `pick_tagged` draws only among items carrying a tag, and when nothing carrying it applies as deep as asked, `band_for` falls back to the nearest band above that has something, so a request past the deepest row gets the deepest thing.
 `ScatterRules` puts a count beside each place mark of a tag, a range of loose items, and more for each band; `plan_scatter` lays them on free cells over a `Layout` of marks and bounds, beside a mark and never on it, one to a cell.
 `LevelTable`, loaded with `loot::load_levels`, rolls an enchant level by band for a game's `make` to put on the things it knows are enchantable.
-A place is scattered from a stream derived for that place alone, and a container from one derived for its cell, so what lies anywhere never depends on what happened elsewhere first.
+A place is scattered from a stream derived from its own `PlaceSeed`, and a container from one derived from its place's seed and its cell, so what lies anywhere never depends on what happened elsewhere first.
 `Drops<D>` is a `DropTable` the game puts on an actor when it spawns it, each `DropRow` rolled on its own with its chance and count, from `LootRng`, which carries on from kill to kill and never touches combat's stream.
 A place is scattered on the arrival that built it, so nothing records which have been scattered.
 A container's `ContentRoll` is `Stock::Item`, a named item in a count, or `Stock::Tag`, that many separate draws of the tag at the container's band plus the row's `band` offset; draws of one thing are made together, so six slugs are one stack.
 
 ## Using it
 
-A game's item registry is its `ItemMaker`, and Foundry's is the armory: a deck's band is its number, its floor has one item beside every armory mark, two beside every store and `3 + deck` more, and a thing whose definition names an `enchant`, every weapon and piece of armor, rolls its level from the armory's `LevelTable` at the band it is found at, capped at the block's `max`.
+A game's item registry is its `ItemMaker`, and Foundry's is the armory: a deck's band is its number, its floor has one item beside every armory mark, two beside every store and `3 + deck` more, and a thing whose definition names a `level`, every weapon and piece of armor, rolls it from the armory's `LevelTable` at the band it is found at, held within the level's bounds when its parts are put on.
 
 <!-- include: ../../../../examples/foundry/src/gear.rs:maker -->
 ```rust,no_run
@@ -49,7 +50,15 @@ A game's item registry is its `ItemMaker`, and Foundry's is the armory: a deck's
 impl ItemMaker for Armory {
     type Def = ItemDef;
 
-    fn make(&self, commands: &mut Commands, _: &Registries, def: Id<ItemDef>, count: u32, from: Provenance, rng: &mut rand::rngs::StdRng) -> Vec<Entity> {
+    fn make(
+        &self,
+        commands: &mut Commands,
+        _: &Registries,
+        def: Id<ItemDef>,
+        count: u32,
+        from: Provenance,
+        rng: &mut atglyph::rand::rngs::StdRng,
+    ) -> Vec<Entity> {
         let d = self.defs.get(def);
         if d.stack {
             return spawn_items(commands, self, def, count);

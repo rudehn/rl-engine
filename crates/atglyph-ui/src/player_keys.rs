@@ -36,8 +36,7 @@
 //! game that would rather say why in its own words from its own state.
 //!
 //! A plugin rather than a function because a game turns it on or off whole:
-//! one with another scheme, or the tutorial's early steps, which teach the
-//! hand-written loop, leave it out, and then nothing here runs.
+//! one with another scheme leaves it out, and then nothing here runs.
 
 use atglyph_bevy::EngineSet;
 use atglyph_bevy::prelude::*;

@@ -4,6 +4,7 @@
             crates/atglyph-bevy/src/effects/triggers.rs
             crates/atglyph-bevy/src/effects/engine.rs
             crates/atglyph-bevy/src/consumable.rs
+            crates/atglyph-bevy/src/parts.rs
             crates/atglyph-bevy/src/plugin.rs
             crates/atglyph-bevy/src/items.rs
             crates/atglyph-bevy/src/throwing.rs
@@ -18,7 +19,7 @@
             crates/atglyph-bevy/src/cue.rs
             crates/atglyph-grid/src/targeting.rs
             crates/atglyph-ui/src/narrate.rs
-     fingerprint: 626bf1d0 -->
+     fingerprint: 133c7452 -->
 
 # Effects
 
@@ -30,11 +31,11 @@ What an effect costs the thing that carried it is not here; that is `ItemsPlugin
 ## Turning it on
 
 `EffectsPlugin` is added by any plugin that lands effects, `AbilitiesPlugin` and `PropsPlugin`, when the game has not added it, so a game rarely names it and the order a game lists its plugins in never matters.
-It initializes `EffectKinds` and `Moments`, takes the `EffectRng` stream, registers `Fired`, `FiredOn` and the `DamageEvent`, `Afflict` and `Cure` every landing may write, reads `Cued`, adds `Airborne<UseLanding>` for a use in the air, and runs `report_remnants`, `land_aimed_uses` and `land_triggers`, chained, in `ResolveSet::Triggers`.
+It initializes `EffectKinds` and `TriggerKinds`, takes the `EffectRng` and `ReflectRng` streams, registers `Fired`, `FiredOn`, `Reflected`, `LandedOn` and the `DamageEvent`, `Heal`, `ApplyStatus` and `RemoveStatus` every landing may write, reads `Cued`, adds `Airborne<UseLanding>` for a use in the air, and runs `report_remnants`, `land_aimed_uses` and `land_triggers`, chained, in `ResolveSet::Triggers`, `report_died` in `TurnSet::React` and `bury_remnants` in `EndOfFrame::Bury`.
 It is not unique and builds once, so a game that adds it by hand as well gets one copy and no error.
 That stage sits between `ResolveSet::Act` and `ResolveSet::Fields`: after every action that reports a moment, and before fire, gas, statuses and damage, so a grenade's fire spreads and a stim's mend is applied in the pass that set them off.
 `add_engine_effects()` registers the seven effects that need no subsystem, and `FirePlugin`, `GasPlugin` and `NoisePlugin` register `Ignite`, `Emit` and `Noise`, so a content file naming one loads exactly when the game has fire, gas or hearing.
-A game registers an effect of its own with `app.add_effect::<E>()` and a moment of its own with `app.add_moment(name)`, both while the app is built.
+A game registers an effect of its own with `app.add_effect::<E>()` and a moment of its own with `app.add_trigger_kind(name)`, both while the app is built.
 
 ## The model
 
@@ -42,22 +43,22 @@ A game registers an effect of its own with `app.add_effect::<E>()` and a moment 
 Every engine effect's arguments refuse a field they do not name, so a typo fails the load naming it rather than leaving a number at its default.
 `EffectKinds` files each under its `KIND`, and `Effects::build` turns a list of `EffectSpec` into built effects or reports every spec that would not build.
 `Landing` is what an effect sees: the user, what landed it as a `Source` of `Ability`, `Trigger { on, moment }` or `Offer`, the origin and aim, every cell covered and every actor under them, `bonus`, the `EffectBonus` of whatever landed it, which `land_triggers` copies off the carrier and which is the default, adding nothing, for an ability, an offer or a plain thing, and `on`, the thing a use was made on when the use asked its user for one.
-`Landing::reach` is how its harm arrives, `Reach::Ability` for an ability, `Reach::Thing` for the trigger of a thing other than its own user, a rod zapped or a flask broken, and `Effect` for anything else, a prop springing its own trap among them, and `Harm` stamps it on every `DamageEvent` it writes so the narrator names what did it.
-`EffectBonus { turns, amount }` is a component the game writes on a thing when it spawns it, whatever made it stronger already applied, as it writes `Armor` and `Bestows`: `Harm` and `Mend` add its `amount` to the roll's bonus through `roll_with` and `Inflict` adds its `turns` through `turns_with`, and every other engine effect ignores it, so the engine never learns what a level is.
+The harm it lands arrives by a `DamageRoute`, `Ability` for an ability, `Thing` for the trigger of a thing other than its own user, a rod zapped or a flask broken, and `Effect` for anything else, a prop springing its own trap among them, and `Harm` stamps it on every `DamageEvent` it writes so the narrator names what did it.
+`EffectBonus { turns, amount }` is a component written on a thing when it is spawned, by `insert_parts` from its `Level` or by the game itself, whatever made it stronger already applied, as `Armor` and `Bestows` are: `Harm` and `Mend` add its `amount` to the roll's bonus through `roll_with` and `Inflict` adds its `turns` through `turns_with`, and every other engine effect ignores it, so the engine never learns what a level is.
 `Noise { sound, loudness }` makes one `MakeNoise` by the landing's user where a projectile stopped, else where it was aimed, however many cells the footprint covers, and describes itself as nothing, since a bag line saying a grenade makes a noise would crowd out what it does.
 Its sound is resolved at load against the names it is built with, and those carry the sounds only when a loader chains `SoundNames::sounds` onto them, since sounds are interned while the app is built and `Registries::names` has none; a sound nobody declared, or a `loudness` below one, is a load error naming it.
-`Inflict` also takes `while_worn`, false unless written: landed by a trigger, its `Afflict` is then held by the thing the trigger is on, and the status ends when that thing is no longer worn; landed by an ability or an offer, it is not held.
+`Inflict` also takes `while_worn`, false unless written: landed by a trigger, its `ApplyStatus` is then held by the thing the trigger is on, and the status ends when that thing is no longer worn; landed by an ability or an offer, it is not held.
 It is meant for a trigger that only ever lands on its own wearer, since a held refresh reaching an area's or a hit's bystander who already carries the status unheld takes their instance over and the very next pass cures it for not wearing the thing.
 It describes itself with ` while worn` after the turns, so the bag says so under the thing.
 `EffectWorld` asks the subsystem that owns a thing to do it, damage, a heal, a status on or off, a cue, and moves an actor itself, since nothing else owns that.
-`Effects::land` rolls each entry against its own chance from `EffectRng`, which keeps the derivation domain `b"ability"` it had as `AbilityRng`, so a trap, a stim and a spell are dealt from one deck and every seed rolls what it rolled before.
-`Moments` interns the names of moments, the engine's `use`, `land`, `fire`, `hit`, `entered`, `destroyed` and `pulse` first so their ids are constants on the type.
+`Effects::land` rolls each entry against its own chance from `EffectRng`, drawn under its own domain, `atglyph.effects`, so a trap, a stim and a spell are dealt from one deck and no other stream's draws move when one is added.
+`TriggerKinds` interns the names of moments, the engine's `use`, `land`, `fire`, `hit`, `entered`, `destroyed`, `pulse`, `struck` and `died` first so their ids are constants on the type.
 `TriggerSpec`, in `atglyph-rules` beside `EffectSpec`, is the authored form: `on`, a moment by name; `area`, `Here` or `Burst { radius }`; `fires`, how many times before it stops; `effects`, a list of its own; `look`, what shows over the cells it lands on and, for an aimed use, what flies there; `every`, the hundredths between pulses, which a `pulse` trigger must carry and no other may; `targeting`, a `Targeting` for a `use` pointed at somewhere, written in an ability's words; and `asks`, an `Asks` of a prompt and an optional tag, for a `use` made on another of its user's things.
 `Triggers::build(specs, shared, moments, kinds, names)` builds a definition's triggers once, sharing each list through an `Arc`, and fails on a moment nobody registered, a pulse with no `every` or an `every` of nought, an `every` on any other moment, a `targeting` or an `asks` on anything but a `use`, the two together, a targeting aimed at nobody but its user, and a second `use` trigger beside one that aims or asks, naming each.
-The built `Trigger` keeps its `every`, and `Triggers::pulse_every` reads a carrier's back, so a game building a worn thing's `Pulse` takes its period from the trigger rather than keeping a second copy, and `Triggers::targeting` and `Triggers::asks` read back how a carrier's use is pointed and what it asks for.
+The built `Trigger` keeps its `every`, which `insert_parts` reads back for a worn thing's `WornTimer` rather than keeping a second copy, and `Triggers::targeting` and `Triggers::asks` read back how a carrier's use is pointed and what it asks for.
 A spec with no list takes the definition's `shared` one, and a spec with neither fails, since a trigger that does nothing is a typo.
 `Triggers` is the component, and each copy counts its own `fires`, so springing one cable spends nothing of another.
-`Fired { on, moment, by, at }` is how a subsystem reports a moment, and all it does: items report `use` on an accepted use, where its user stands or at the cell an aimed one was pointed at, and `pulse` for each worn `Pulse` whose period came round, throwing reports `land` where a throw comes to rest, combat reports `fire` for each attack made with a worn thing, `hit` at each struck actor's cell and the attacker's own `hit` beside it, and `struck` for the one struck, before its damage lands, and props and actors alike report `entered`, `destroyed` and `died`.
+`Fired { on, moment, by, at }` is how a subsystem reports a moment, and all it does: items report `use` on an accepted use, where its user stands or at the cell an aimed one was pointed at, and `pulse` for each worn `WornTimer` whose period came round, throwing reports `land` where a throw comes to rest, combat reports `fire` for each attack made with a worn thing, `hit` at each struck actor's cell and the attacker's own `hit` beside it, and `struck` for the one struck, before its damage lands, and props and actors alike report `entered`, `destroyed` and `died`.
 An actor that carries `Triggers` answers its own `hit`, `struck` and `died`, credited to it directly rather than to whoever it names `by`, since an actor is the one a thing is used by rather than a thing used: a `struck` aura spares the actor it is on, unlike a prop's or a thing's area, which catches everyone standing in it.
 `land_triggers` reads each `Fired` in the order written, takes the entity's triggers for that moment in list order, skips any spent, cues a blast over the cells for one with a `look`, going out from the cell the moment happened on, lands the list over `area_cells`, the one cell or the burst `atglyph::grid::burst` works out inside the loaded window, with everyone in the area as a target, the one who set it off included, and counts `fires` down.
 A `use` of a carrier whose `Consumable` has nothing left lands nothing at all, read before that use's charge is spent, since only a thing not yet known is let be used empty.
@@ -127,7 +128,7 @@ A trap's harm is the trap's own and not the doing of whoever stepped on it, so t
 Charges are not here: a thing with triggers and no `Consumable` costs nothing, and `spend_charges` reads `Fired` after `land_triggers` so what the last charge did lands before the thing is gone.
 The engine carries a bonus on the carrier and never learns what a level is: the game writes the `EffectBonus` with the level applied when it spawns the thing, and an effect adds it without asking where it came from, so an enchant, a blessing and a curse are one number to the engine and three rules to the game.
 Only what changes in play is saved, a trigger's fires left beside a consumable's charges, and the lists are rebuilt from the definitions.
-A carrier's `EffectBonus` is not saved either: the game's spawn writes it again from whatever the game saved, a level, the way it wrote it the first time.
+A carrier's `EffectBonus` is not saved either: the spawn writes it again from the saved level, the way it wrote it the first time.
 
 ## Where it lives
 

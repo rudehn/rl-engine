@@ -1,4 +1,4 @@
-//! Warren, step 10: the panels, and a rail down the side.
+//! Warren, step 9: the panels, and a rail down the side.
 //!
 //! The guide chapter is `docs/guide/src/09-where-to-go-next.md`. Everything in the
 //! rail comes from a view the engine keeps current: what is in sight with
@@ -9,7 +9,7 @@
 //! `cargo run -p tutorial --bin step09_panels`, and `WARREN_SEED=19` picks
 //! another warren, which is how this chapter's screenshot was taken.
 //!
-//! Keys: as step 9, plus `x` for the look cursor, `p` for the log, and `?`
+//! Keys: as step 8, plus `x` for the look cursor, `p` for the log, and `?`
 //! for the list of them. The list is the same registry the input system
 //! reads, so it cannot go stale.
 
