@@ -144,10 +144,12 @@ impl Plugin for UndermerePlugin {
         // again without the file being read again.
         let (quests, facts) = crate::quest::load(&library.registries);
         app.insert_resource(quests).insert_resource(facts);
+        // ANCHOR: currency
         // Trading, paid in the one tag every piece of gold carries, so the
         // engine counts a purse and a price without knowing a coin from
         // anything else Undermere calls an item.
         app.insert_resource(Currency(library.registries.tags.expect("gold")));
+        // ANCHOR_END: currency
         // The gold carried, said on the rail in the coin's own colour.
         let (r, g, b) = library.armory.defs.get(library.armory.defs.expect(crate::finds::GOLD)).color;
         app.add_tone(crate::shops::GOLD_TONE, Color::srgb(r, g, b));

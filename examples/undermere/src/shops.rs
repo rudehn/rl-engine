@@ -517,6 +517,7 @@ fn shelf_of(stocking: &[Stocking], post: Post) -> &Stocking {
     stocking.iter().find(|s| s.keeper == post.keeper).unwrap_or_else(|| panic!("wares.ron has no keeper {:?}", post.keeper))
 }
 
+// ANCHOR: keeper
 /// What a keeper is besides one of Mereholt's people: its [`Post`] and the
 /// [`Trader`] that buys what `wares.ron` says, which the engine does not
 /// save, so a keeper stood on the first arrival and one a continued run
@@ -525,6 +526,7 @@ pub fn keeper(post: Post, wares: &Wares, armory: &Armory) -> impl Bundle {
     let keeper = wares.keeper(post.keeper).expect("every post's keeper is in wares.ron");
     (Shopkeeper(post), Trader { buys: trader_tags(keeper, armory), pays_pct: PAYS_PCT })
 }
+// ANCHOR_END: keeper
 
 /// What [`keep_shops`] reads.
 #[derive(bevy::ecs::system::SystemParam)]

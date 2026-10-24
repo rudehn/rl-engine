@@ -1,12 +1,12 @@
 <!-- documents:
-     plugins: RecordsPlugin, SavePlugin, RecordsPanel
+     plugins: RecordsPlugin, RecordsPanel
      files: crates/atglyph-bevy/src/records.rs
             crates/atglyph-save/src/records.rs
             crates/atglyph-ui/src/panel/records.rs
             crates/atglyph-ui/src/view/ending.rs
             crates/atglyph-ui/src/game_menu.rs
             crates/atglyph-ui/src/panel/title.rs
-     fingerprint: 6339c80d -->
+     fingerprint: 3f6bc0d7 -->
 
 # Run records
 
@@ -16,7 +16,7 @@ The screen a run ends on reads the same record, so what it says of a run and wha
 
 ## Turning it on
 
-`RecordsPlugin` is the record itself: it registers the `RecordRun` message, initialises `RunRecords`, completes and files each record in `Update` ahead of `EngineSet::Present`, so whatever draws a record has it the frame it is filed, and forgets which record is this run's, and any still waiting, in `EndRun`.
+`RecordsPlugin` is the record itself: it registers the `RecordRun` message, initialises `RunRecords`, completes and files each record in `Update` after `EngineSet::Fov` and ahead of `EngineSet::Present`, so whatever draws a record has it the frame it is filed, and forgets which record is this run's, and any still waiting, in `EndRun`.
 A game writes one `RecordRun` when its run is over, and a game that never writes one keeps no records.
 `SavePlugin`, in `atglyph-save`, keeps the list between launches in a game with `RecordsPlugin`, which it learns in its `finish`, whichever was added first: it reads the `records` slot there, before the first frame, and writes it in `EndOfFrame::Save` on a frame the list changed.
 In a game that saves nothing the list lasts as long as the process.
@@ -27,13 +27,13 @@ The screen a run ends on takes nothing more: the `EndingViewPlugin` that `GameMe
 
 `RecordRun` is the game's half: a `score`, a `summary` and `sections`, each section a `RecordSection` of a `heading` and a `body`.
 `RunRecord` is the whole: the game's three, the `outcome` as a `RecordOutcome` of `Won`, `Died` or `Abandoned`, the run's `seed`, the whole `turn` it ended on, and `when`, seconds since the Unix epoch, or `None` on wasm, where the engine has no wall clock to read.
-`record_runs` completes each `RecordRun` once there is an `Ending`: the outcome and the turn from the `Ending`, the seed from the run's `Seed`, and the time from the clock.
+The engine completes each `RecordRun` once there is an `Ending`: the outcome and the turn from the `Ending`, the seed from the run's `Seed`, and the time from the clock.
 A record written in the same pass as the `RunOver` it answers arrives before the `Ending` does, so it waits for one rather than being dropped, however many frames that takes, as long as its run stands.
 A record still waiting when its run is torn down goes with it in `EndRun`: filed if the run had ended, since the `Ending` is still there, and otherwise dropped with a warning, never filed against the next run's ending.
 `RunRecords` holds `records`, best score first, and `this_run`, the record filed for the run that is ending.
-`RunRecords::file` puts a record in its place, a tie keeping the newer ahead, and drops whatever falls past `MAX_RECORDS`, a hundred, so the list keeps the hundred best rather than the first hundred.
+`RunRecords::file` puts a record in its place, a tie keeping the newer ahead, and drops whatever falls past a hundred, so the list keeps the hundred best rather than the first hundred.
 `this_run` is cleared in `EndRun`, so the record stands for every frame the ended run's screen is up and is gone before the next run begins, while `records` is never cleared by a run.
-`collect_ending` reads it in `ViewSet::Collect`: `EndingView::summary` is its summary, and its sections are pushed ahead of any a game pushes in `ViewSet::Annotate`.
+The ending view reads it in `ViewSet::Collect`: `EndingView::summary` is its summary, and its sections are pushed ahead of any a game pushes in `ViewSet::Annotate`.
 So the end screen says the run's line, when a record was filed, under its title and any epitaph, then the seed and the turn, then the sections.
 `SavePlugin` writes the list as RON in the `records` slot, apart from the run's slot and never deleted with it, and only when the list differs from what the slot is known to hold.
 Every field of `RunRecord` is `#[serde(default)]` and a field it does not know is passed over, so a record an earlier or a later build wrote reads as far as it can.
@@ -41,8 +41,8 @@ A slot that does not parse is warned about and left as it is with the list start
 `RecordsPanel` lists the records in its rectangle, one row each as `rank. score  summary  date`, the date `YYYY-MM-DD`, or nothing for a record with no time, scrolled to keep the row picked out in view.
 The direction keys walk the list and wrap, and confirm opens the record picked out: its summary in the frame's title, the seed and the turn under it, then its sections drawn the way the end screen draws them, scrolled by the direction keys once they run past the rectangle.
 Close goes back from a record to the list, and from the list closes the screen.
-`RecordsScreen` is `selected`, the record picked out, as every menu here names it, `open`, whether that record is shown, and `scroll`, how far it is scrolled, all reset each time the screen opens, so the key that opened it is never read as its first move.
-`RecordsPanel::title` and `empty` change the list's border and what it says with no records, and `records_modal` is the id a game's own menu opens it by.
+Which record is picked out, whether it is shown and how far it is scrolled are all reset each time the screen opens, so the key that opened it is never read as its first move.
+`RecordsPanel::title` and `empty` change the list's border and what it says with no records, and `records_modal(&modals)` is the id a game's own menu opens it by.
 `TitlePanel` draws a Records row once the `records` modal is declared, and lets it be taken once the list holds a record.
 
 ## Using it

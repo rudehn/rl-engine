@@ -1,5 +1,5 @@
 <!-- documents:
-     plugins: FullscreenPlugin, SettingsPanel, SavePlugin
+     plugins: FullscreenPlugin, SettingsPanel
      files: crates/atglyph-bevy/src/settings.rs
             crates/atglyph-render/src/fullscreen.rs
             crates/atglyph-ui/src/panel/settings.rs
@@ -7,7 +7,7 @@
             crates/atglyph-ui/src/panel/title.rs
             crates/atglyph-save/src/settings.rs
             crates/atglyph/src/lib.rs
-     fingerprint: 3f1c82bb -->
+     fingerprint: e323ba6a -->
 
 # Settings
 
@@ -19,7 +19,7 @@ None of the three knows the others.
 
 `RoguelikePlugins` adds `FullscreenPlugin`, so every game on the terminal has one setting declared before it adds anything: `fullscreen`, under `Display`, `Off` or `On`, with F11 as its key.
 Nothing is fullscreen until something sets it, and the key is the settings screen's to read, so a game without `SettingsPanel` has the setting and not the key.
-`SettingsPanel` takes the `Rect` it may draw in, declares the `settings` modal, and in its `finish` turns every setting that has a key into a control, so the controls screen lists it.
+`SettingsPanel` takes the `GridRect` it may draw in, declares the `settings` modal, and in its `finish` turns every setting that has a key into a control, so the controls screen lists it.
 `SavePlugin`, in `atglyph-save`, is the third: it recalls what was remembered in its `finish` and writes in `EndOfFrame::Save` when a setting has changed.
 In a game that saves nothing every setting works and starts on its default each launch.
 On the web `FullscreenPlugin` declares nothing, because a browser grants fullscreen only from inside the handler of a key or a click and Bevy reads keys a frame later; the canvas follows the page, and the browser's own fullscreen fills the screen.
@@ -28,12 +28,12 @@ On the web `FullscreenPlugin` declares nothing, because a browser grants fullscr
 
 `Setting` is a `name`, a `group`, a `label`, its `choices`, the `default` among them and an optional `key`, built with `Setting::new` and then `default_choice` and `key`.
 The name is the word it is remembered under, so renaming one forgets what every player chose; the group and the label are what the screen shows.
-`app.add_setting` declares one and returns a `SettingId`, and panics on a name declared twice, a setting with no choices or a default it does not have, since each is a mistake in a game's setup.
+`app.add_setting`, an `EngineApp` method, declares one and returns a `SettingId`, and panics on a name declared twice, a setting with no choices or a default it does not have, since each is a mistake in a game's setup.
 `Settings` is the registry, a resource: `chosen` is a setting's choice by its place and `choice` the same in words, `choose` sets it, `cycle` moves it along and wraps at both ends, `find` looks one up by name and `iter` lists them in the order they were declared.
 It does not say which setting moved; a reader watches the resource with Bevy's change detection and compares against what it last applied, the way `FullscreenPlugin` compares against the window's mode before writing it.
 `remembered` is every name with the words of its choice, and `recall` sets each declared setting a map names, passing over a name nobody declared and a choice a setting no longer has.
 Words and not places in the list, so a choice added in the middle of a setting does not turn everyone's into another.
-`FullscreenPlugin` puts the primary window in borderless fullscreen or back in a window when the setting and the window disagree, and once more in its `cleanup`, after every plugin's `finish`, so a choice already recalled is on the window before the first frame.
+`FullscreenPlugin` puts the primary window in borderless fullscreen or back in a window in `PostUpdate` on a frame the settings changed and the setting and the window disagree, and once more in its `cleanup`, after every plugin's `finish`, so a choice already recalled is on the window before the first frame.
 `SettingsPanel` lists the settings under their groups, a group standing where its first setting was declared: up and down pick a row, left and right change it, confirm changes it forward and the close key goes back to whatever was under the screen.
 A setting's own key changes it when no screen is open or this one is on top, in any engine state.
 The game menu offers a `Settings` row above `Quit` when the panel was added and at least one setting is declared, and is not drawn while the screen it opened is up; the title offers one on the same terms, and leaves it out rather than drawing it dim when there is nothing to set.

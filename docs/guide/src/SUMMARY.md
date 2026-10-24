@@ -35,6 +35,7 @@
   - [Uses and charges](systems/uses.md)
   - [Ammunition](systems/ammunition.md)
   - [Loot](systems/loot.md)
+  - [Trade](systems/trade.md)
   - [Minds](systems/minds.md)
   - [Work](systems/work.md)
 - [What it perceives]()

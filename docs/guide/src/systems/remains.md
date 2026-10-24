@@ -7,7 +7,7 @@
             crates/atglyph-bevy/src/noise.rs
             crates/atglyph-rules/src/ai/snapshot.rs
             crates/atglyph-save/src/run.rs
-     fingerprint: bfa0aad8 -->
+     fingerprint: 2971e3a4 -->
 
 # Remains
 
@@ -19,10 +19,11 @@ Beside the body it keeps a twin of the actor as it lived, which no ordinary quer
 
 ## Turning it on
 
-`RemainsPlugin` adds `keep_life` to `ResolveSet::Damage`, after `apply_damage`, and `leave_remains` to `CleanupSet::Remove`, after `process_deaths`, and declares `depends_on::<CombatPlugin>`, since without deaths there is nothing to leave.
+`RemainsPlugin` keeps each marked actor's life in `ResolveSet::Damage`, after damage is applied, and lays the body down in `CleanupSet::Remove`, after deaths are processed, and declares `depends_on::<CombatPlugin>`, since without deaths there is nothing to leave.
 It is opt-in twice: the plugin decides whether any death leaves anything, and `LeavesRemains` on the spawn decides whether this one does, so a game leaves wrecks behind its machines and nothing behind its summoned things without a second plugin.
 A marker on an actor in a game that never added the plugin does nothing at all.
 `RemainsPlugin::naming("{what} remains")` is the same plugin with the wording set as it is added; the default `RemainsNaming` says the same thing, and a game may replace the resource later instead.
+`RevivalRules`, inserted before or after the plugin, sets how far from its body a revived actor may stand, two cells by default.
 A body is a `Prop`, so a game that wants minds to walk to bodies, verbs offered on them or panels listing them adds `PropsPlugin` beside this one.
 Without `PropsPlugin` a body is something named lying on the floor and nothing reads it.
 
@@ -31,19 +32,19 @@ Without `PropsPlugin` a body is something named lying on the floor and nothing r
 `LeavesRemains` is the per-actor half of the opt-in, and carries nothing.
 `Remains` is what an actor becomes: `since`, what the clock read when it died, and `credit`, whoever killed it if anyone did and that one is still in the world.
 Those are the two things the engine already knew at the moment of death, and neither is a claim about a world.
-`keep_life` reads the same `DeathEvent` first, in the pass the actor dies and before anything answers it, and `take_twin` copies the whole actor onto a twin carrying Bevy's `Disabled`, linked from the body by `Life`.
-Every component is copied and none is named; one that is not `Clone` cannot be, and `uncopied` names it in an error at the moment of death.
-`Life` despawns the twin when it comes off the body or the body is despawned, and `Remains` takes `Life` with it when it comes off, so no twin outlives its body.
-`leave_remains` reads `DeathEvent`, skips the player and skips anything unmarked, and on the rest puts `Position` back and calls `lay_down`, which removes `WasLiving` and inserts `Prop` and `Remains`.
-The position is put back because `process_deaths` took it off with the turn and the cell in the index, and remains lie where the actor fell rather than where a game would have to remember it fell.
-`WasLiving` is the one list of what an actor stops being: `Dead`, `Actor`, `Blocks`, `Health`, `Mind`, `Perception`, `Viewshed`, `Notice`, `Aware`, `Hearing`, `Heard` and `Post`.
+The engine reads the same `DeathEvent` first, in the pass the actor dies and before anything answers it, and copies the whole actor onto a twin carrying Bevy's `Disabled`, linked from the body by `RevivalTwin`.
+Every component is copied and none is named; one that is not `Clone` cannot be, and is named in an error at the moment of death.
+`RevivalTwin` despawns the twin when it comes off the body or the body is despawned, and `Remains` takes `RevivalTwin` with it when it comes off, so no twin outlives its body.
+Laying the body down reads `DeathEvent`, skips the player and skips anything unmarked, and on the rest puts `Position` back and calls `lay_down`, which takes off what made it living and inserts `Prop` and `Remains`.
+The position is put back because the death pass took it off with the turn and the cell in the index, and remains lie where the actor fell rather than where a game would have to remember it fell.
+One list says what an actor stops being: `Dead`, `Actor`, `Blocks`, `Health`, `Mind`, `Perception`, `Viewshed`, `Notice`, `Aware`, `Hearing`, `Heard`, `Post`, `Offers` and `Triggers`.
 `Health` comes off rather than being left at zero, because a body left with health answers the query the damage pass makes and could be killed a second time.
 `Notice` and `Hearing` come off for a subtler reason: a watcher is anything carrying a `Mind` or a `Notice` that is not `Dead`, a listener anything carrying `Hearing` that is not `Dead`, and remains are not `Dead` by design, so a body that kept them would go on watching and hearing the player with every enemy on the level dead.
-`Post` comes off with them, since a body keeps no cell and walks back to none.
-`Dead` is on that list too, and taking it off is the whole of keeping the entity, since `bury_the_dead` despawns whatever still carries it at the end of the frame.
+`Post` comes off with them, since a body keeps no cell and walks back to none, and so do `Offers` and `Triggers`, so a captive's offer is not still made by its corpse; the twin keeps all of them, so a revival offers and answers what the living actor did.
+`Dead` is on that list too, and taking it off is the whole of keeping the entity, since the engine despawns whatever still carries it at the end of the frame.
 `RemainsLeft { entity, at }` is sent for each one, and `entity` is the actor that died, so a game reacting in `TurnSet::React` reads whatever it spawned that actor with.
-`RemainsNaming` is a template with `{what}` standing for whatever the actor was called, and `name_as_remains` applies it, once at the death and again when a save lays a body back down.
-A body is seen by a mind as a `PropView` in `Snapshot::props`, filled by `perceive_props` in `PerceiveSet::Annotate`, carrying which entity it is, where it lies and whose it was, and nothing else.
+`RemainsNaming` is a template with `{what}` standing for whatever the actor was called, with a second, set by `RemainsNaming::proper`, for someone with a proper name, and it is applied once at the death and again when a save lays a body back down.
+A body is seen by a mind as a `PropView` in `Snapshot::props`, filled in `PerceiveSet::Annotate`, carrying which entity it is, where it lies and whose it was, and nothing else.
 `EntityState::remains` is how a save holds it: the whole of it is optional, so a save written before remains existed still loads, and the `SaveId` inside it is optional again, since a death nobody was credited with is still a death.
 `EntityState::remains_as` holds the prop kind a game dressed the body in afterwards, by name, and it is put back on the body as it is laid down, so a wreck comes back a wreck without the game's own record of what the thing was having to know it died.
 A save lays a body down through the same `lay_down`, so a body from a save has a twin too, of the living thing the game's record respawned.
@@ -51,7 +52,7 @@ A save lays a body down through the same `lay_down`, so a body from a save has a
 A looted body comes back without what was taken, a body whose bag was taken away comes back with none, and a bag it gained as a body is emptied onto the floor first.
 In a game with items, death has already let fall everything the actor carried and wore, so it stands up with nothing and its gear at its feet, and what its gear lent is folded again from what it wears now.
 An actor still dying is refused: it has a twin from the pass it died in, but it is not remains until it is laid down.
-A body with something standing on it stands up on the nearest free cell within `STANDING_ROOM`, and `Revived { entity }` is sent.
+A body with something standing on it stands up on the nearest free cell within `RevivalRules::standing_room`, and `Revived { entity }` is sent.
 
 ## Using it
 

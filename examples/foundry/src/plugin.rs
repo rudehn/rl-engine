@@ -74,6 +74,7 @@ pub struct FoundryPlugin;
 impl Plugin for FoundryPlugin {
     fn build(&self, app: &mut App) {
         add_engine(app);
+        // ANCHOR: run_schedules
         // What every run stands on, the run's start, and what a continued
         // run gives back and says once the engine has restored it: the
         // upgrades first, so a pick offered again is offered to the
@@ -84,6 +85,7 @@ impl Plugin for FoundryPlugin {
         // What a run is saved as, and when: on the way out and on every
         // deck arrival.
         crate::save::register(app);
+        // ANCHOR_END: run_schedules
         // Work, for the repair drone: the engine keeps its turns and its
         // row; `droids::repair` says which wrecks and what finishing means.
         app.add_work(crate::droids::REPAIRING).add_work(crate::droids::SIGNALLING);

@@ -5,7 +5,7 @@
             crates/atglyph-rules/src/names.rs
             crates/atglyph-core/src/id.rs
             crates/atglyph-bevy/src/noise.rs
-     fingerprint: 2d4c8d4e -->
+     fingerprint: 7f43eb69 -->
 
 # Registries and content
 
@@ -18,7 +18,7 @@ The engine never learns what any of those ids mean.
 
 There is no plugin here, and no system.
 `Registries` is a resource the game inserts, and a plugin that reads one says so with `needs::<Registries>` and a hint naming which registry it wants filled.
-`GasPlugin`, `FirePlugin`, `AbilitiesPlugin`, `PropsPlugin` and three of `atglyph-ui`'s view plugins all declare it, and every one that is missing is reported together when play begins.
+`GasPlugin`, `FirePlugin`, `AbilitiesPlugin`, `PropsPlugin`, `LootPlugin`, `PrefabPlugin` and three of `atglyph-ui`'s view plugins all declare it, and every one that is missing is reported together when play begins.
 A registry a game has no use for stays empty, and empty means none: no statuses means no badges on a health bar, no slots means nothing is worn.
 Registries name each other, so a game fills them in the order they refer to one another, the ones that name nothing first and the ones loaded through `Registries::names` after.
 
@@ -39,50 +39,34 @@ Nothing here is a plugin, a system or a schedule; a registry is data a game hand
 
 ## Using it
 
-The tutorial's start fills the two registries combat reads, loads its own bestiary against them, and hands the resource to the engine.
+The tutorial's start, in `NewRun`, fills the two registries combat reads, loads its own bestiary against them, and hands the resource to the engine before it spawns the player.
 
 <!-- include: ../../../../examples/tutorial/src/bin/step07_content.rs:start -->
 ```rust,no_run
-/// Hands the engine the map rules and the player, then warps the player in.
-fn start(
-    mut commands: Commands,
-    seed: Res<Seed>,
-    mut warps: MessageWriter<WarpRequest>,
-    mut log: ResMut<MessageLog>,
-    mut next: ResMut<NextState<EngineState>>,
-) {
-    let warren = Warren::new(seed.0);
-
+/// Hands the engine what combat reads, then spawns the player into the
+/// warren, at the first floor's entry.
+fn start(mut commands: Commands, seed: Res<Seed>, mut log: Log) {
     // The two registries combat reads: what damage can be, and who hates
     // whom. Both are the game's content, named nowhere in the engine.
     let kinds = Registry::from_defs(vec![DamageKind::new("bite"), DamageKind::new("venom"), DamageKind::new("kick")]).unwrap();
     let sides = Registry::from_defs(vec![FactionDef::new("you"), FactionDef::new("vermin")]).unwrap();
     let (you, vermin) = (sides.expect("you"), sides.expect("vermin"));
-    commands.insert_resource(CombatRules::new(&sides).hostile(you, vermin));
+    commands.insert_resource(CombatRules::new().hostile(you, vermin));
     let registries = Registries { damage_kinds: kinds.clone(), factions: sides, ..default() };
-    // What a hit passes through on its way to the target. One stage here;
-    // resistances, a shield, a critical rule would each be another.
-    commands.insert_resource(DamageStages(vec![Box::new(SubtractArmor)]));
     // The bestiary names the damage each creature deals, so it loads against
     // the registries before they are handed to the engine.
     commands.insert_resource(Bestiary::load(&registries.names(), vermin));
     commands.insert_resource(registries);
 
-    commands.insert_resource(warren.appearance());
-    commands.insert_resource(WorldMap::new(warren.tiles.tables()));
-    commands.insert_resource(PlaceRulesRes(Box::new(warren)));
-
-    let player = commands
-        .spawn((
-            (Actor, Player, Blocks, Position(Point::ZERO)),
+    commands.spawn_player(
+        map_of(1),
+        (
             (Viewshed::new(9), RevealsMap, Faction(you), Glyph::new('@', Color::WHITE).on_layer(10)),
             (Health::full(24), Armor(1), MeleeAttack::new(kinds.expect("kick"), DiceRoll::new(1, 6))),
             (Inventory::default(),),
-        ))
-        .id();
-    warps.write(WarpRequest::into_place(player, map_of(1)));
-    log.push(format!("Seed {}. You squeeze into the warren.", seed.0.0), Tones::NOTICE, 0);
-    next.set(EngineState::Playing);
+        ),
+    );
+    log.push(format!("Seed {}. You squeeze into the warren.", seed.0.0), Tones::NOTICE);
 }
 ```
 
