@@ -30,6 +30,9 @@ A game on 0.3 moves in the order of the list below, then reads each `To change: 
 
 Every change, newest first:
 
+- A game's own animation is a cue: `Particles` holds what plays and says with `is_waited_on` whether the turns wait on it, and its `play`, with `Animation`, `Beat`, `Trail` and `Burst`, is the engine's own, so the module docs no longer tell a game to write to `Particles`. A cue a game writes plays as the engine's do, waited on and skipped by a key.
+  To change: breaking: a 0.3 game that called `Particles::play` writes a `Cued { actor, cue }` instead, a `Cue::Flight` or `Cue::Burst` with `look: LookOf::Given(look)` for a look of its own, and sets the pace in `ParticleStyle`.
+
 - A game reacts to a refused trade and rebinds the trade screen's key: the `TradeRefused { customer, trader, deal, item, why }` message, written when a `Buy` or `Sell` is refused, and `TradeKeys`, whose `whole` deals the whole of a row, are public, where both were crate-private, as `SheetKeys` and `ScrollbackKeys` are, and both are in `atglyph::prelude::extras`.
   To change: nothing.
 

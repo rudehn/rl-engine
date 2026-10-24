@@ -26,8 +26,10 @@
 //! reached them (see [`fields`](crate::fields)), so a grenade is seen to go
 //! off and then to leave its smoke behind. An `Animation` is a list of
 //! them played one after another, one per actor per frame, in the order the
-//! actor's cues were written. A game with a look of its own writes to
-//! [`Particles`] itself.
+//! actor's cues were written. A game with a look of its own writes a
+//! [`Cued`] carrying it, as [`LookOf::Given`], and never an animation:
+//! what plays and how it is paced is this plugin's, so a game's own flight
+//! waits on the turns and is skipped by a key as the engine's are.
 //!
 //! Everything is drawn from the wall clock, so a frame that comes late
 //! shows a later moment rather than a slower one, and a still frame costs
