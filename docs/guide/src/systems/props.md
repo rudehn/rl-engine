@@ -19,7 +19,7 @@
             crates/atglyph-save/src/engine.rs
             crates/atglyph-bevy/src/lighting.rs
             crates/atglyph-bevy/src/app.rs
-     fingerprint: 49cf1d01 -->
+     fingerprint: f88a8575 -->
 
 # Props
 

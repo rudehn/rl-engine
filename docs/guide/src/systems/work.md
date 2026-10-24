@@ -11,7 +11,7 @@
             crates/atglyph-ui/src/panel/inspect.rs
             crates/atglyph-save/src/run.rs
             crates/atglyph-ui/src/controls.rs
-     fingerprint: 54508e36 -->
+     fingerprint: dbbb9612 -->
 
 # Work
 
@@ -38,7 +38,7 @@ On every turn after, the engine claims the actor's decision before any mind is a
 A status that holds its holder's turns, or sleeps it, takes a worker's as well, spending each before its `Toil` is resolved, so the work waits out the hold with nothing done and nothing broken.
 On the last turn `Working` comes off and `WorkDone { actor, kind, target }` is sent.
 Work is broken off with `WorkBroken { actor, kind, target, done, reason }`, the gravest `BreakReason` first: `Died` on a `DeathEvent`, `Hurt` on any `DamageDealt` for the worker that dealt anything, even a hit healed in the same pass, `DoneByAnother` when another worker's `WorkDone` names the same target, and `OutOfReach` when the target is gone or out of reach.
-`Works::leave_off` breaks it as `LeftOff`, the actor leaving it of its own accord, which is what a key pressed while the player works comes to, and what a rule of the game's own calls.
+`Works::leave_off` breaks it as `LeftOff`, the actor leaving it of its own accord, which is what a key pressed while the player works comes to; `Works::stop`, or a `StopWork` message answered at the head of the next pass, breaks it as `Stopped`, a rule of the game's own.
 Everything done is lost with it; `WorkBroken::done` says how far it got.
 The player works by the same `Working`, begun by `Works::begin` from whatever the player did, and its turns are spent for it with no key pressed, at most one each `WorkPace` of the wall clock, twenty a second by default and `WorkPace::every_frame()` for a test, so the world is drawn moving between them.
 Spending one of those turns on anything else leaves the work off as `LeftOff`, the player's own act standing, while a direction key toward the work's own target presses on with it; a foe coming into the player's sight breaks it as `FoeSighted` before another turn is spent, and the player keeps the turn to answer it.
@@ -106,7 +106,7 @@ pub fn rebuild_wrecks(
 The engine decides how work runs: that each turn of it is a turn, what it costs, that the brain is not asked again while it lasts, and what breaks it.
 Breaking comes from the one place each cause lands rather than from watching for change: harm from the damage pipeline, death from the death message, and reach from where the worker and its target are now, so every way of moving either is covered without any of them knowing work exists.
 The game decides everything work means: what kinds there are and what each is called, when an actor begins one, how long it takes, which is a number its own code computes when it begins, and what finishing does.
-A rule of the game's own that should stop work calls `Works::leave_off`.
+A rule of the game's own that should stop work calls `Works::stop` or writes a `StopWork`, so a reader of `WorkBroken` tells it from the worker walking away.
 The pace of the player's work is the game's number and decides only when a turn is spent, never what it does, so a replay keyed by the turn clock plays the same at any pace.
 An actor that shrugs off harm and keeps working is not here either, and when it comes it is a marker a game's own boss would require, never an engine word for a boss.
 

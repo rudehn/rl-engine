@@ -164,7 +164,7 @@ pub use throwing::{Flight, Throw, Throwable, ThrowingPlugin, flight};
 pub use title::{AbandonRun, ContinueRun, HoldStart, LeaveRun, SavedRun, begin_afresh, begin_run};
 pub use trade::{Buy, Currency, Deal, Parties, Sell, TRADE, TradePlugin, TradeRefusal, Traded, Trader, Trading, Ware, Worth, pay};
 pub use turn::{Acting, Action, ActionDone, ActionRefused, Intent, Occupancy, Resolution, Speeds, Step, Stepped, TurnEnd, TurnRules, Turns, Wait};
-pub use work::{BeginWork, BreakReason, WorkBegan, WorkBroken, WorkDone, WorkKinds, WorkPace, Working, Works};
+pub use work::{BeginWork, BreakReason, StopWork, WorkBegan, WorkBroken, WorkDone, WorkKinds, WorkPace, Working, Works};
 pub use world::{PlaceMap, PlaceSave, WindowView, WorldMap, WorldMapSave};
 
 /// The names a game writes.

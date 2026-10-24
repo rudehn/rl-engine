@@ -32,7 +32,8 @@ pub fn in_reach(worker: Point, target: Point) -> bool {
 /// Why work was broken off.
 ///
 /// Closed, because each is a thing the engine itself detects; a rule of
-/// a game's own stops work with `Works::stop` and reads as `Stopped`.
+/// a game's own stops work with `Works::stop` or a `StopWork` and reads as
+/// `Stopped`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BreakReason {
     /// The worker was harmed: any damage that landed, even a hit healed in

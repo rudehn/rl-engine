@@ -83,7 +83,7 @@ Work breaks for one of five reasons, and each comes from a single place rather t
 | `Died` | A `DeathEvent` for the worker |
 | `OutOfReach` | The target is missing, or more than one cell from the worker |
 | `DoneByAnother` | The engine's own `WorkDone` for the same target |
-| `Stopped` | The game called `works.stop(actor)` |
+| `Stopped` | The game called `works.stop(actor)` or wrote a `StopWork(actor)` |
 
 Each takes `Working` off and writes `WorkBroken { actor, kind, target, done, reason }`.
 Progress is lost with it: the next start begins from nothing.

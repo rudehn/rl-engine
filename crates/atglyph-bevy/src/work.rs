@@ -12,8 +12,8 @@
 //! [`WorkBegan`] is written when work starts. `break_work` breaks it off
 //! with a [`WorkBroken`] and its [`BreakReason`] when the worker is hurt or
 //! dies, when its target is gone or out of reach, or when another worker
-//! finishes the same target; a game stops it with `Works::stop`, or by
-//! writing a `StopWork`, which `answer_stops` reads at the head of
+//! finishes the same target; a game stops it with [`Works::stop`], or by
+//! writing a [`StopWork`], which `answer_stops` reads at the head of
 //! every pass. What a kind of work is called is interned by [`WorkKinds`]
 //! from the word a panel shows, through [`EngineApp::add_work`].
 //!
@@ -168,12 +168,16 @@ impl Works<'_, '_> {
         }
     }
 
-    /// Stops `actor`'s work, if it has any, as a rule of the game's own.
+    /// Stops `actor`'s work, if it has any, as a rule of the game's own,
+    /// which reads as [`BreakReason::Stopped`].
     ///
     /// At once, so a stop written before the turns run this frame is
     /// answered before another turn of the work is spent. A [`StopWork`]
-    /// says the same from anywhere a message can be written.
-    pub(crate) fn stop(&mut self, actor: Entity) {
+    /// says the same from anywhere a message can be written. Not
+    /// [`Works::leave_off`], which is the worker's own choice: a reader of
+    /// [`WorkBroken`] tells a game's interruption from the player walking
+    /// away by the reason alone.
+    pub fn stop(&mut self, actor: Entity) {
         self.break_off(actor, BreakReason::Stopped);
     }
 
@@ -200,8 +204,12 @@ impl Works<'_, '_> {
 /// any turn of work is spent in it, so a stop written in one pass's
 /// `TurnSet::React` or in a frame's drawing is answered before the next
 /// turn of the work. [`Works::stop`] is the same, at once.
+///
+/// The message rather than [`Works`] for code that holds the `World`
+/// rather than a system's parameters, such as a function a key or a use
+/// calls, where building the `SystemParam` would be the whole of the work.
 #[derive(Message, Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct StopWork(pub Entity);
+pub struct StopWork(pub Entity);
 
 /// Breaks off the work of everyone a [`StopWork`] names.
 ///
