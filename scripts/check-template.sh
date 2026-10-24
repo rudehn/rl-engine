@@ -4,8 +4,8 @@
 #   scripts/check-template.sh   renders templates/starter into a scratch
 #                               directory with its placeholders filled and
 #                               the engine taken from this checkout rather
-#                               than from crates.io, then checks formatting,
-#                               clippy and the template's own tests
+#                               than from its release tag, then checks
+#                               formatting, clippy and the template's own tests
 #
 # cargo-generate is not needed: the template's only placeholders are
 # {{project-name}} and {{crate_name}}, and they are filled here, so CI
@@ -24,12 +24,15 @@ if find templates -name Cargo.toml | grep .; then
 fi
 
 # The template pins the engine to the release it was written against, the
-# workspace version. Bumping the version without the template, or the
-# template without the version, is a template that generates games against
-# an engine it was not written for.
+# git tag of the workspace version in the workspace's repository: the engine
+# is not on crates.io, so a game depends on it from git. Bumping the version
+# without the template, or the template without the version, is a template
+# that generates games against an engine it was not written for.
 version=$(sed -n '/^\[workspace.package\]/,/^\[/s/^version = "\(.*\)"/\1/p' Cargo.toml)
-if ! grep -qx "atglyph = \"$version\"" templates/starter/Cargo.toml.liquid; then
-  echo "error: templates/starter pins an atglyph other than $version, the workspace version" >&2
+repository=$(sed -n '/^\[workspace.package\]/,/^\[/s/^repository = "\(.*\)"/\1/p' Cargo.toml)
+pin="{ git = \"$repository\", tag = \"v$version\" }"
+if ! grep -qxF "atglyph = $pin" templates/starter/Cargo.toml.liquid; then
+  echo "error: templates/starter pins an atglyph other than $pin, the workspace's tag" >&2
   exit 1
 fi
 
@@ -70,8 +73,8 @@ if grep -n "cargo generate --git" README.md docs/guide/src/*.md crates/atglyph/s
 fi
 
 # And every dependency line the readme offers a project of its own names it.
-if grep -nE '^(//! )?atglyph(-[a-z]+)? = ' README.md crates/*/README.md crates/*/src/lib.rs | grep -v "= \"$version\"\$"; then
-  echo "error: the lines above depend on an atglyph other than $version" >&2
+if grep -nE '^(//! )?atglyph(-[a-z]+)? = ' README.md crates/*/README.md crates/*/src/lib.rs | grep -vF "= $pin"; then
+  echo "error: the lines above depend on an atglyph other than $pin" >&2
   exit 1
 fi
 

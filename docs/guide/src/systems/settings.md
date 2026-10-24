@@ -7,7 +7,7 @@
             crates/atglyph-ui/src/panel/title.rs
             crates/atglyph-save/src/settings.rs
             crates/atglyph/src/lib.rs
-     fingerprint: ccb12daa -->
+     fingerprint: e157c4b3 -->
 
 # Settings
 

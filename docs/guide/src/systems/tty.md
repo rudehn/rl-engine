@@ -6,7 +6,7 @@
             crates/atglyph-tty/src/paint.rs
             crates/atglyph/src/lib.rs
             crates/atglyph-save/src/backend.rs
-     fingerprint: 62adecdc -->
+     fingerprint: 99d420b5 -->
 
 # The text terminal
 

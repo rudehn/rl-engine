@@ -35,7 +35,7 @@ use crate::keys::DirectionKeys;
 
 /// Records to [`RECORD_VAR`] and plays [`REPLAY_VAR`](atglyph_bevy::replay::REPLAY_VAR), when either is set.
 ///
-/// [`RoguelikePlugins`](https://docs.rs/atglyph) adds one reading the
+/// `RoguelikePlugins`, in the `atglyph` facade, adds one reading the
 /// environment; a test names its file and its recording outright.
 #[derive(Default, Debug, Clone)]
 pub struct ReplayPlugin {

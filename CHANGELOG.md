@@ -1,7 +1,7 @@
 # Changelog
 
 A release is a tag, `v` and the workspace version.
-The starter template pins the release it was written against by version, in its `atglyph = "..."` line, and a game made from it moves to a newer one by changing that version and reading here what moved.
+The engine is not on crates.io: a game depends on it from git, pinned to a release's tag, and the starter template pins the release it was written against in its `atglyph` line, so a game made from it moves to a newer one by changing that tag and reading here what moved.
 Pushing a tag publishes its release page from its section here, through `scripts/release-notes.sh`.
 
 ## Unreleased
@@ -107,11 +107,14 @@ Every change, newest first:
 - The glyph terminal draws the box-drawing and block characters, U+2500 to U+259F, itself rather than through the font, as a terminal emulator does: a line runs to its cell's edges and meets the next, so a frame is one unbroken line with its corners closed, and a block fills its cell, so a bar is solid. A shade is a dot pattern, dots about a light line wide covering a quarter, a half or three quarters of the cell, that carries on into the cells beside it without a seam, so gas thick enough to hide behind still reads as haze. A glyph across a wide run, a map tile two cells wide, is drawn for the run with one cell's strokes: a horizontal line runs edge to edge, a vertical one stands in the middle at its usual weight, and a block or a shade fills the tile. They draw the same in the browser, whose embedded font has none of them; a tileset's picture for one of them still wins. The text-terminal front end is unchanged.
   To change: nothing; a game's frames, bars, box art and shaded tiles draw this way at once, and a typeface shipped only for these characters may go.
 
-- The template's first run has three potions to drink on `d`, a dagger and a leather coat to pick up on `g` and put on with `w`, and depends on `atglyph = "0.4.0"` from crates.io where it named a git tag; `scripts/check-template.sh` refuses a template whose `bevy` line is on another version than the engine's, and the release notes print the dependency by version.
+- The template's first run has three potions to drink on `d`, a dagger and a leather coat to pick up on `g` and put on with `w`, and `scripts/check-template.sh` refuses a template whose `bevy` line is on another version than the engine's.
   To change: nothing for a game; a game made from the template may do the same.
 
 - Every crate packages for crates.io: each internal dependency carries the workspace version, each crate has its readme, and `scripts/check-publish.sh` packages and verifies the workspace in CI.
   To change: nothing.
+
+- A game depends on the engine from git, pinned to the release's tag, `atglyph = { git = "https://github.com/rudehn/rl-engine", tag = "v0.4.0" }`, as the template, the readmes and the release page now say: 0.4.0 is released on GitHub only, and the release workflow publishes to crates.io only once the repository variable `PUBLISH_CRATES` is `true`. `scripts/check-template.sh` holds the template and every dependency line the readmes offer to that tag.
+  To change: nothing for a game on a git tag already; a game on 0.3 changes its tag to `v0.4.0` along with the rename below.
 
 - `atglyph::bevy` and `atglyph::rand` re-export the Bevy and the `rand` the engine is built on, so a game lists no `rand` of its own and the starter template lists none.
   To change: drop the game's `rand` line and write `atglyph::rand::...` where `rand::...` was; keep `bevy` at `0.19`, since Bevy's derives read the game's own `bevy` line.

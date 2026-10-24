@@ -24,6 +24,14 @@ if [ -z "$bevy" ]; then
   exit 1
 fi
 
+# The repository a game depends on the engine from by tag, since the engine
+# is not on crates.io.
+repository=$(sed -n '/^\[workspace.package\]/,/^\[/s/^repository = "\(.*\)"/\1/p' Cargo.toml)
+if [ -z "$repository" ]; then
+  echo "error: Cargo.toml's [workspace.package] names no repository" >&2
+  exit 1
+fi
+
 printf '%s\n' "$section"
 cat <<EOF
 
@@ -31,13 +39,13 @@ cat <<EOF
 
 \`\`\`sh
 cargo install cargo-generate
-cargo generate --git https://github.com/rudehn/rl-engine --tag v$version templates/starter --name my-game
+cargo generate --git $repository --tag v$version templates/starter --name my-game
 \`\`\`
 
 Or depend on it directly:
 
 \`\`\`toml
-atglyph = "$version"
+atglyph = { git = "$repository", tag = "v$version" }
 bevy = "$bevy"
 \`\`\`
 EOF

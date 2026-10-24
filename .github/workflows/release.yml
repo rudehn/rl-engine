@@ -13,8 +13,8 @@ jobs:
     with:
       docs: true
   # Before anything is published, which cannot be undone: a tag on a commit
-  # whose workspace version is another number would put up crates at the
-  # wrong version.
+  # whose workspace version is another number would put up a release page,
+  # and with crates.io on crates, at the wrong version.
   version:
     needs: check
     permissions:
@@ -29,11 +29,17 @@ jobs:
             echo "error: tag $GITHUB_REF_NAME is not v$version, the workspace version" >&2
             exit 1
           fi
+  # The crates.io half, off until the repository variable PUBLISH_CRATES is
+  # 'true': a release is a tag and its GitHub page, and a game depends on the
+  # engine from git by that tag. Both jobs stay whole so that turning
+  # crates.io on is the one setting.
+  #
   # Breaking changes against the last published version of each crate. A
   # crate never published has nothing to be checked against and is noticed,
   # not failed.
   semver:
     needs: [check, version]
+    if: vars.PUBLISH_CRATES == 'true'
     permissions:
       contents: read
     runs-on: ubuntu-latest
@@ -63,6 +69,7 @@ jobs:
   # in a job-level `if`, so it is passed through `env` and tested per step.
   publish:
     needs: [check, version, semver]
+    if: vars.PUBLISH_CRATES == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -91,8 +98,16 @@ jobs:
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token || env.SECRET_TOKEN }}
         run: python3 scripts/publish.py --publish
+  # After the crates when they are published, so a page never announces a
+  # version crates.io refused; when they are not, a skipped publish is no
+  # reason to stand down, and the page waits on the checks alone.
   page:
     needs: [check, version, publish]
+    if: >-
+      ${{ !cancelled()
+      && needs.check.result == 'success'
+      && needs.version.result == 'success'
+      && (vars.PUBLISH_CRATES != 'true' || needs.publish.result == 'success') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5

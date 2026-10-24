@@ -24,7 +24,7 @@ cargo run
 
 The first run is a dark floor of rooms lit by your torch and a few braziers, goblins that notice you and hunt you, blows traded by walking into them, and potions, a dagger and a leather coat to pick up, drink and wear.
 It is one file, with a status row, a log, a look cursor, and tests that play it without a window.
-`--tag` fetches the template as it was at that release, and the generated game's `atglyph = "..."` line is the engine version it pins, so moving to a newer engine is changing that version; leave the tag off and the template comes from `main`, which may use something no release has yet.
+`--tag` fetches the template as it was at that release, and the generated game's `atglyph` line pins the engine to the same tag, so moving to a newer engine is changing that tag; leave the tag off and the template comes from `main`, which may use something no release has yet.
 CI generates and builds the template on every change to the engine, so it does not rot.
 
 To try the engine first, the guide's first six steps run in the browser with nothing to install: [a map and walking](https://rudehn.github.io/rl-engine/01-a-map-and-walking.html), [sight and light](https://rudehn.github.io/rl-engine/02-sight-and-light.html), [blows and the log](https://rudehn.github.io/rl-engine/03-blows-and-the-log.html), [things and minds](https://rudehn.github.io/rl-engine/04-things-and-minds.html), [a knack](https://rudehn.github.io/rl-engine/05-a-knack.html) and [two floors](https://rudehn.github.io/rl-engine/06-two-floors.html).
@@ -118,12 +118,12 @@ Read it at [rudehn.github.io/rl-engine](https://rudehn.github.io/rl-engine/), or
 
 ## Add it to a project you already have
 
-Depend on it by version, as the template does.
+atglyph is not on crates.io yet, so depend on it from git, pinned to a release's tag, as the template does.
 The `atglyph` crate is the facade that re-exports every other crate, and `atglyph::prelude::*` brings in what a first game names, alongside `bevy::prelude::*`; the rest is in its topic modules, `atglyph::prelude::combat`, `items`, `minds`, `world`, `mapgen`, `ui`, `save` and `extras`, and `atglyph::prelude::all` is every one.
 
 ```toml
 [dependencies]
-atglyph = "0.4.0"
+atglyph = { git = "https://github.com/rudehn/rl-engine", tag = "v0.4.0" }
 bevy = "0.19"
 ```
 
@@ -148,9 +148,9 @@ The sample below uses three.
 
 ```toml
 [dependencies]
-atglyph-core = "0.4.0"
-atglyph-grid = "0.4.0"
-atglyph-mapgen = "0.4.0"
+atglyph-core = { git = "https://github.com/rudehn/rl-engine", tag = "v0.4.0" }
+atglyph-grid = { git = "https://github.com/rudehn/rl-engine", tag = "v0.4.0" }
+atglyph-mapgen = { git = "https://github.com/rudehn/rl-engine", tag = "v0.4.0" }
 ```
 
 This builds a dungeon floor from a seed, computes what is visible from the start, and finds the path to the exit, all without Bevy.

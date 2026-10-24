@@ -3,12 +3,12 @@
 //! Use this crate alone, or through `atglyph` as `atglyph::grid`.
 //! It runs field of view, light, pathfinding and flood fills over a grid of tiles, builds with no Bevy, and builds for `wasm32-unknown-unknown`,
 //! so a tool, a server or a test can depend on `atglyph-grid` and skip compiling Bevy.
-//! Its example imports from the crates it builds on, so used alone it lists them at the same version:
+//! Its example imports from the crates it builds on, so used alone it lists them at the same tag:
 //!
 //! ```toml
 //! [dependencies]
-//! atglyph-core = "0.4.0"
-//! atglyph-grid = "0.4.0"
+//! atglyph-core = { git = "https://github.com/rudehn/rl-engine", tag = "v0.4.0" }
+//! atglyph-grid = { git = "https://github.com/rudehn/rl-engine", tag = "v0.4.0" }
 //! ```
 //!
 //! ```
