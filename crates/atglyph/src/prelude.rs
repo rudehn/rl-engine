@@ -52,7 +52,7 @@ pub use atglyph_core::grid::Grid2D;
 pub use atglyph_core::point::{GridRect, Point};
 pub use atglyph_core::seed::{PlaceSeed, RunSeed, SeedDomain};
 pub use atglyph_grid::light::Rgb;
-pub use atglyph_grid::tile::{TileProps, TileRegistry, TileTables};
+pub use atglyph_grid::tile::{TileLook, TileProps, TileRegistry, TileTables};
 pub use atglyph_mapgen::chain::{BuildError, Chain};
 pub use atglyph_mapgen::context::BaseContext;
 pub use atglyph_mapgen::dungeon;

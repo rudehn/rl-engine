@@ -66,10 +66,9 @@ impl Glyph {
 /// What each tile looks like in full light, indexed by [`TileId`], and
 /// how light and memory change it.
 ///
-/// Filled from a file by [`load`](Self::load), or by hand with
-/// [`set_varied`](Self::set_varied) for a game whose tiles are few. The
-/// standard tiles a game gives no look are drawn in the engine's, by
-/// [`fill_standard`](Self::fill_standard).
+/// Built from the looks a game's tiles carry by
+/// [`from_tiles`](Self::from_tiles). The standard tiles a game gives no
+/// look are drawn in the engine's, by [`fill_standard`](Self::fill_standard).
 #[derive(Resource, Debug, Clone, Default)]
 pub struct TileAppearance {
     looks: Vec<Option<(Cell, Vary)>>,
@@ -111,8 +110,8 @@ impl TileAppearance {
     pub fn fill_standard(&mut self, names: &[String]) {
         for (i, name) in names.iter().enumerate() {
             let has_look = self.looks.get(i).is_some_and(Option::is_some);
-            if let (false, Some(cell), Ok(raw)) = (has_look, standard_look(name), u16::try_from(i)) {
-                self.set(TileId(raw), cell);
+            if let (false, Some((cell, vary)), Ok(raw)) = (has_look, standard_look(name), u16::try_from(i)) {
+                self.set_varied(TileId(raw), cell, vary);
             }
         }
     }
@@ -155,19 +154,10 @@ impl TileAppearance {
 }
 
 /// The engine's look for a tile of [`TileRegistry::standard`](atglyph_grid::TileRegistry::standard),
-/// by its name: plain greys, so it reads as a placeholder a game replaces,
-/// and doors in a warm brown so a way through stands out.
-fn standard_look(name: &str) -> Option<Cell> {
-    let floor_bg = Color::srgb(0.05, 0.05, 0.05);
-    let door = Color::srgb(0.70, 0.50, 0.30);
-    Some(match name {
-        "void" => Cell::new(' ', Color::BLACK).on(Color::BLACK),
-        "wall" => Cell::new('#', Color::srgb(0.60, 0.60, 0.60)).on(Color::srgb(0.15, 0.15, 0.15)),
-        "floor" => Cell::new('.', Color::srgb(0.45, 0.45, 0.45)).on(floor_bg),
-        "door_closed" => Cell::new('+', door).on(floor_bg),
-        "door_open" => Cell::new('\'', door).on(floor_bg),
-        _ => return None,
-    })
+/// by its name: the look that tile carries.
+fn standard_look(name: &str) -> Option<(Cell, Vary)> {
+    let standard = atglyph_grid::TileRegistry::standard();
+    standard.id(name).and_then(|id| standard.get(id).look.as_ref()).map(crate::looks::drawn)
 }
 
 /// Gives the standard tiles of a world just come up the standard look
@@ -695,7 +685,7 @@ mod tests {
         assert_eq!(look.lit(id("floor")), Cell::new('.', Color::srgb(0.45, 0.45, 0.45)).on(Color::srgb(0.05, 0.05, 0.05)));
         assert_eq!(look.lit(id("door_closed")).glyph, '+');
         assert_eq!(look.lit(id("door_open")).glyph, '\'');
-        assert_eq!(look.lit(id("void")), Cell::new(' ', Color::BLACK).on(Color::BLACK));
+        assert_eq!(look.lit(id("void")), Cell::new(' ', Color::srgb(0.0, 0.0, 0.0)).on(Color::srgb(0.0, 0.0, 0.0)));
     }
 
     #[test]

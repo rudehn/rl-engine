@@ -138,26 +138,24 @@ struct Dungeon {
 
 impl Dungeon {
     fn new() -> Self {
+        let stone = TileLook::new('#', (0.70, 0.68, 0.64))
+            .on((0.28, 0.27, 0.26))
+            .vary(0.18, 0.04);
+        let flagstone = TileLook::new('.', (0.60, 0.58, 0.52))
+            .on((0.14, 0.13, 0.12))
+            .vary(0.25, 0.05);
         let mut tiles = TileRegistry::new();
-        tiles.register(TileProps::wall("stone")).unwrap();
-        tiles.register(TileProps::floor("flagstone")).unwrap();
+        tiles
+            .register(TileProps::wall("stone").look(stone))
+            .unwrap();
+        tiles
+            .register(TileProps::floor("flagstone").look(flagstone))
+            .unwrap();
         Self { tiles }
     }
 
     fn appearance(&self) -> TileAppearance {
-        let mut look = TileAppearance::new();
-        let t = |name| self.tiles.expect(name);
-        look.set_varied(
-            t("stone"),
-            Cell::new('#', Color::srgb(0.70, 0.68, 0.64)).on(Color::srgb(0.28, 0.27, 0.26)),
-            Vary::new(0.18, 0.04),
-        );
-        look.set_varied(
-            t("flagstone"),
-            Cell::new('.', Color::srgb(0.60, 0.58, 0.52)).on(Color::srgb(0.14, 0.13, 0.12)),
-            Vary::new(0.25, 0.05),
-        );
-        look
+        TileAppearance::from_tiles(&self.tiles).expect("every tile has a look")
     }
 }
 

@@ -3,7 +3,7 @@
 //
 // Every field (the ones marked "optional" may be left out):
 //   tile:               the tile's name, what the game and other lines call it
-// What it is, read by atglyph::rules::tiles::load:
+// What it is:
 //   walkable:           optional; whether you can stand on it; false
 //   opaque:             optional; whether it blocks sight; false
 //   blocks_projectiles: optional; whether a thrown thing stops at it; false
@@ -14,7 +14,7 @@
 //   closes_to:          optional; the tile it becomes when closed, by name
 //   burn:               optional; (catch_pct:, turns:, leaves:), how it burns
 //   light:              optional; (intensity:, radius:, color: (r:, g:, b:))
-// How it looks, read by TileAppearance::load:
+// How it looks:
 //   glyph:              one character
 //   fg:                 (r, g, b) in 0..=1, the glyph's colour
 //   bg:                 optional; (r, g, b), the cell's fill; black

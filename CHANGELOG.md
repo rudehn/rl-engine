@@ -8,7 +8,7 @@ atglyph is not on crates.io yet, so a game depends on a release by its git tag, 
 
 ### Added
 
-- `atglyph::rules::tiles::load` reads a whole tile registry from a tiles file, everything `TileProps` holds beside each tile's look, so a tile is one line of RON.
+- A tile carries its look: `TileProps::look`, a `TileLook` of glyph and colours, set with a builder or read from a tiles file. `atglyph::rules::tiles::load` reads a whole `TileRegistry` from the file, one line a tile, and `TileAppearance::from_tiles` builds the colour table from it.
 
 ### Changed
 
@@ -18,6 +18,9 @@ atglyph is not on crates.io yet, so a game depends on a release by its git tag, 
 ### Removed
 
 - **Breaking:** `atglyph::bevy`; name `bevy::` from the game's own `bevy = "0.19"` dependency, which Bevy's derive macros need anyway.
+- **Breaking:** `TileAppearance::load(text, &tiles)`; read the tiles with `atglyph::rules::tiles::load(text)`, moving each tile's properties into its line, and call `TileAppearance::from_tiles(&tiles)`.
+- **Breaking:** `atglyph::rules::tiles::light_tiles`; a tile's `light` is read with the rest of its line by `tiles::load`, or set in code with `TileProps::light`.
+- **Breaking:** `TileProps` is no longer `Eq`, since a look holds colours.
 
 ### Fixed
 

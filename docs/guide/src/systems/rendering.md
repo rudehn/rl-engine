@@ -50,7 +50,7 @@ The camera never scales; the glyphs take a font size scaled with the cell and ar
 `TileAppearance` is what each tile looks like in full light, indexed by `TileId`: `set` and `set_varied` fill it, `lit` reads it back, and an id the game never described draws as a magenta question mark so the gap is visible rather than blank.
 `seen` is that look jittered for the cell and the moment, `remembered` is it jittered as it was seen and then faded, and `under` colours both of a cell's colours by the light landing there.
 The map fills `Knowledge` once a frame with the topmost glyph on every tile in sight of anything that is not an `Actor` and not `Hidden`, or nothing, and `recalled` draws it over the tile once it is out of sight, in its own colour faded by the same `Memory`, so the stairs behind the player read as remembered and stay legible.
-`TileAppearance::load` reads the same table from RON against a `TileRegistry`, refusing the file and naming at once every entry for a tile that is not registered, every tile described twice, and every registered tile the file leaves out, so a gap is reported at startup by name rather than found on the map.
+`TileAppearance::from_tiles` builds the table from the `TileLook` each tile in a `TileRegistry` carries, written in code or read with the tile from a file by `atglyph_rules::tiles::load`, and names at once every tile without one, so a gap is reported at startup rather than found on the map.
 `Vary` is how a tile strays from cell to cell and over time, a `brightness` spread, a `hue` spread per channel and a `shimmer` that drifts; `Memory` is the brightness, saturation and cool `tint` a remembered tile keeps; `Shading` is how light becomes colour, with the level a tile shows its authored colour at, what an unlit but seen tile keeps, and the speeds a flicker and a shimmer move at.
 All of it is cosmetic, and the only clock is the frame's, so a replayed seed plays identically however it is coloured.
 `FieldAppearance` is fire and gas over the tiles they are on: a `flame` cell and the `flare` it flickers toward, the `ember` that now and then rises off a flame into the cell over it, the `haze` glyphs gas thick enough to hide behind is drawn with, thinnest first, and a tint per `GasId` that is grey until the game names one.
@@ -95,15 +95,9 @@ What the engine cannot supply is the look of a tile, which is a table the game f
 
 <!-- include: ../../../../examples/tutorial/src/bin/step07_content.rs:looks -->
 ```rust,no_run
-    /// What each tile is, read from `assets/tiles.ron`.
+    /// What each tile is and how it looks, read from `assets/tiles.ron`.
     fn new() -> Self {
         Self { tiles: atglyph::rules::tiles::load(TILES_RON).unwrap_or_else(|e| panic!("assets/tiles.ron: {e}")) }
-    }
-
-    /// How each tile looks, read from the same file. A tile the file gives
-    /// no look is reported at startup, by name.
-    fn appearance(&self) -> TileAppearance {
-        TileAppearance::load(TILES_RON, &self.tiles).unwrap_or_else(|e| panic!("assets/tiles.ron: {e}"))
     }
 ```
 

@@ -275,7 +275,7 @@ The rat king is placed by name, on the crack of daylight.
 //
 // Every field (the ones marked "optional" may be left out):
 //   tile:               the tile's name, what the game and other lines call it
-// What it is, read by atglyph::rules::tiles::load:
+// What it is:
 //   walkable:           optional; whether you can stand on it; false
 //   opaque:             optional; whether it blocks sight; false
 //   blocks_projectiles: optional; whether a thrown thing stops at it; false
@@ -286,7 +286,7 @@ The rat king is placed by name, on the crack of daylight.
 //   closes_to:          optional; the tile it becomes when closed, by name
 //   burn:               optional; (catch_pct:, turns:, leaves:), how it burns
 //   light:              optional; (intensity:, radius:, color: (r:, g:, b:))
-// How it looks, read by TileAppearance::load:
+// How it looks:
 //   glyph:              one character
 //   fg:                 (r, g, b) in 0..=1, the glyph's colour
 //   bg:                 optional; (r, g, b), the cell's fill; black
@@ -303,22 +303,15 @@ The rat king is placed by name, on the crack of daylight.
 
 <!-- include: ../../../examples/tutorial/src/bin/step07_content.rs:looks -->
 ```rust,no_run
-    /// What each tile is, read from `assets/tiles.ron`.
+    /// What each tile is and how it looks, read from `assets/tiles.ron`.
     fn new() -> Self {
         Self { tiles: atglyph::rules::tiles::load(TILES_RON).unwrap_or_else(|e| panic!("assets/tiles.ron: {e}")) }
     }
-
-    /// How each tile looks, read from the same file. A tile the file gives
-    /// no look is reported at startup, by name.
-    fn appearance(&self) -> TileAppearance {
-        TileAppearance::load(TILES_RON, &self.tiles).unwrap_or_else(|e| panic!("assets/tiles.ron: {e}"))
-    }
 ```
 
-Each line says what a tile is and how it looks.
-`atglyph::rules::tiles::load` reads what it is: walkable, opaque, and the rest.
-`TileAppearance::load` reads how it looks from the same file.
-Each skips the other's fields, and both report every mistake in the file at startup, by name.
+Each line says everything about a tile: walkable, opaque, and the rest, then its look.
+`atglyph::rules::tiles::load` reads the file into the same `TileRegistry` the code built before, looks included, so `appearance` doesn't change.
+A mistake in the file, such as a door that opens into a tile the file doesn't define, is reported at startup, by name.
 
 ## Try it
 

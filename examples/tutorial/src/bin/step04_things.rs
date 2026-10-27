@@ -92,7 +92,7 @@ impl Plugin for Warren {
 // ANCHOR_END: plugin
 
 // ANCHOR: tiles
-/// The warren's tiles.
+/// The warren's tiles: what each one is, and how it looks in full light.
 struct Floors {
     tiles: TileRegistry,
 }
@@ -100,22 +100,17 @@ struct Floors {
 impl Floors {
     fn new() -> Self {
         let mut tiles = TileRegistry::new();
-        tiles.register(TileProps::wall("earth")).unwrap();
-        tiles.register(TileProps::floor("dirt")).unwrap();
+        tiles.register(TileProps::wall("earth").look(TileLook::new('#', (0.78, 0.66, 0.50)).on((0.34, 0.27, 0.21)).vary(0.20, 0.05))).unwrap();
+        tiles.register(TileProps::floor("dirt").look(TileLook::new('.', (0.66, 0.58, 0.45)).on((0.18, 0.15, 0.12)).vary(0.28, 0.06))).unwrap();
         // Walkable, but you cannot see through it.
-        tiles.register(TileProps::floor("roots").opaque(true)).unwrap();
+        let roots = TileLook::new('+', (0.55, 0.74, 0.45)).on((0.16, 0.22, 0.13)).vary(0.18, 0.05);
+        tiles.register(TileProps::floor("roots").opaque(true).look(roots)).unwrap();
         Self { tiles }
     }
 
-    /// How each tile looks in full light: a glyph, its colour, the cell's
-    /// background, and how much each cell varies from its neighbours.
+    /// The renderer's colour table, from the looks the tiles carry.
     fn appearance(&self) -> TileAppearance {
-        let mut look = TileAppearance::new();
-        let t = |name| self.tiles.expect(name);
-        look.set_varied(t("earth"), Cell::new('#', Color::srgb(0.78, 0.66, 0.50)).on(Color::srgb(0.34, 0.27, 0.21)), Vary::new(0.20, 0.05));
-        look.set_varied(t("dirt"), Cell::new('.', Color::srgb(0.66, 0.58, 0.45)).on(Color::srgb(0.18, 0.15, 0.12)), Vary::new(0.28, 0.06));
-        look.set_varied(t("roots"), Cell::new('+', Color::srgb(0.55, 0.74, 0.45)).on(Color::srgb(0.16, 0.22, 0.13)), Vary::new(0.18, 0.05));
-        look
+        TileAppearance::from_tiles(&self.tiles).expect("every tile has a look")
     }
 }
 // ANCHOR_END: tiles

@@ -7,11 +7,16 @@
 //! floors and doors for free; a game that wants vacuum, force fields or
 //! lava registers them and they are first-class from the first frame.
 //!
-//! Anything only the game cares about (glyph, colour, flavour text) belongs
-//! in a game-side table keyed by the same id, not here. The light a tile
-//! sheds is not that: it decides what is seen, so it is a [`Glow`] on the
-//! tile's own record, and the Bevy layer's lighting hangs it on every cell
-//! of the kind.
+//! A tile carries its own look, a [`TileLook`] of plain data: a glyph and
+//! its colours. Keeping it on the record means a tile is defined in one
+//! place, a line of a file or a builder in code, and read once; the map's
+//! hot tables never hold it, and a renderer turns it into colour. The
+//! light a tile sheds is a [`Glow`] on the record too, which the Bevy
+//! layer's lighting hangs on every cell of the kind.
+//!
+//! A tiles file is a list of [`TileProps`], one a line, the look's fields
+//! written beside the rest: `(tile: "roots", walkable: true, opaque: true,
+//! glyph: '+', fg: (0.55, 0.74, 0.45))`.
 
 use std::collections::BTreeMap;
 
@@ -41,45 +46,171 @@ pub const NORMAL_MOVE_COST: u16 = 100;
 /// The distinction between `walkable` and `passable` is load-bearing for
 /// connectivity: a closed door is not walkable this turn but is passable in
 /// the sense that a corridor through it still connects two rooms.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "TileLine", into = "TileLine")]
 pub struct TileProps {
-    /// The name content files refer to it by. A tiles file writes it as
-    /// `tile`, the key its looks are read by too.
-    #[serde(alias = "tile")]
+    /// The name content files refer to it by.
     pub name: String,
     /// Whether an actor can stand on it right now.
-    #[serde(default)]
     pub walkable: bool,
     /// Whether a route may go through it eventually (doors, shallow water).
     /// Defaults to `walkable` when omitted.
-    #[serde(default)]
     pub passable: Option<bool>,
     /// Whether it blocks line of sight.
-    #[serde(default)]
     pub opaque: bool,
     /// Whether it stops projectiles and thrown things.
-    #[serde(default)]
     pub blocks_projectiles: bool,
-    /// Cost to enter, in hundredths of a normal step. `0` is treated as
-    /// normal, and a file that leaves it out gets normal.
-    #[serde(default = "normal_move_cost")]
+    /// Cost to enter, in hundredths of a normal step. `0` is treated as normal.
     pub move_cost: u16,
     /// The tile this becomes when it is opened, by name: a closed door names
     /// its open self. Stepping into it opens it, for an actor able to, and a
     /// mind that opens doors paths through it.
-    #[serde(default)]
     pub opens_to: Option<String>,
     /// The tile this becomes when it is closed, by name: an open door names
     /// its closed self.
-    #[serde(default)]
     pub closes_to: Option<String>,
     /// How it burns, when it does. Nothing burns unless it says so.
-    #[serde(default)]
     pub burn: Option<Burn>,
     /// The light every cell of it sheds by itself: lava, a lit window, a
     /// wall lamp. `None`, as most tiles are, sheds nothing.
-    #[serde(default)]
     pub light: Option<Glow>,
+    /// How it looks in full light. `None` draws as the renderer's
+    /// placeholder, and a renderer building its table from the registry
+    /// names every tile left without one.
+    pub look: Option<TileLook>,
+}
+
+/// How a tile looks in full light: a glyph and its colours, plain data a
+/// renderer turns into colour. Colours are `(r, g, b)` in `0..=1`.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct TileLook {
+    /// The character drawn.
+    pub glyph: char,
+    /// The glyph's colour.
+    pub fg: (f32, f32, f32),
+    /// The cell's fill; black when `None`.
+    pub bg: Option<(f32, f32, f32)>,
+    /// How far each cell strays from the authored colour, `(brightness,
+    /// hue)` in `0..=1` each; none when `None`.
+    pub vary: Option<(f32, f32)>,
+    /// Brightness drifting over time, `0..=1`, for water and anything else
+    /// that should not sit still.
+    pub shimmer: f32,
+}
+
+impl TileLook {
+    /// `glyph` in `fg` on black, the same in every cell.
+    pub const fn new(glyph: char, fg: (f32, f32, f32)) -> Self {
+        Self { glyph, fg, bg: None, vary: None, shimmer: 0.0 }
+    }
+
+    /// Builder: the cell's fill.
+    pub const fn on(mut self, bg: (f32, f32, f32)) -> Self {
+        self.bg = Some(bg);
+        self
+    }
+
+    /// Builder: how far each cell strays in brightness and hue.
+    pub const fn vary(mut self, brightness: f32, hue: f32) -> Self {
+        self.vary = Some((brightness, hue));
+        self
+    }
+
+    /// Builder: brightness drifting over time.
+    pub const fn shimmer(mut self, shimmer: f32) -> Self {
+        self.shimmer = shimmer;
+        self
+    }
+}
+
+/// One line of a tiles file: a tile with its look's fields written beside
+/// the rest, which is how [`TileProps`] reads and writes itself.
+///
+/// The full option space: `tile` always; `walkable`, `opaque` and
+/// `blocks_projectiles`, false when left out; `passable`, as `walkable`;
+/// `move_cost`, normal; `opens_to`, `closes_to`, `burn` and `light`, none;
+/// and the look, `glyph` and `fg` together or neither, with `bg`, `vary`
+/// and `shimmer` only beside them.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct TileLine {
+    #[serde(alias = "name")]
+    tile: String,
+    #[serde(default)]
+    walkable: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    passable: Option<bool>,
+    #[serde(default)]
+    opaque: bool,
+    #[serde(default)]
+    blocks_projectiles: bool,
+    #[serde(default = "normal_move_cost")]
+    move_cost: u16,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    opens_to: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    closes_to: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    burn: Option<Burn>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    light: Option<Glow>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    glyph: Option<char>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    fg: Option<(f32, f32, f32)>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    bg: Option<(f32, f32, f32)>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    vary: Option<(f32, f32)>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    shimmer: Option<f32>,
+}
+
+impl TryFrom<TileLine> for TileProps {
+    type Error = String;
+
+    fn try_from(line: TileLine) -> Result<Self, String> {
+        let look = match (line.glyph, line.fg) {
+            (Some(glyph), Some(fg)) => Some(TileLook { glyph, fg, bg: line.bg, vary: line.vary, shimmer: line.shimmer.unwrap_or(0.0) }),
+            (None, None) if line.bg.is_none() && line.vary.is_none() && line.shimmer.is_none() => None,
+            _ => return Err(format!("{}: a look needs a glyph and an fg, both", line.tile)),
+        };
+        Ok(Self {
+            name: line.tile,
+            walkable: line.walkable,
+            passable: line.passable,
+            opaque: line.opaque,
+            blocks_projectiles: line.blocks_projectiles,
+            move_cost: line.move_cost,
+            opens_to: line.opens_to,
+            closes_to: line.closes_to,
+            burn: line.burn,
+            light: line.light,
+            look,
+        })
+    }
+}
+
+impl From<TileProps> for TileLine {
+    fn from(t: TileProps) -> Self {
+        let look = t.look;
+        Self {
+            tile: t.name,
+            walkable: t.walkable,
+            passable: t.passable,
+            opaque: t.opaque,
+            blocks_projectiles: t.blocks_projectiles,
+            move_cost: t.move_cost,
+            opens_to: t.opens_to,
+            closes_to: t.closes_to,
+            burn: t.burn,
+            light: t.light,
+            glyph: look.map(|l| l.glyph),
+            fg: look.map(|l| l.fg),
+            bg: look.and_then(|l| l.bg),
+            vary: look.and_then(|l| l.vary),
+            shimmer: look.map(|l| l.shimmer).filter(|s| *s != 0.0),
+        }
+    }
 }
 
 /// What a tile left without a cost costs, for serde.
@@ -128,6 +259,7 @@ impl TileProps {
             closes_to: None,
             burn: None,
             light: None,
+            look: None,
         }
     }
 
@@ -197,6 +329,12 @@ impl TileProps {
         self
     }
 
+    /// Builder: how it looks in full light.
+    pub fn look(mut self, look: TileLook) -> Self {
+        self.look = Some(look);
+        self
+    }
+
     /// Whether a route may go through it, defaulting to `walkable`.
     pub(crate) fn is_passable(&self) -> bool {
         self.passable.unwrap_or(self.walkable)
@@ -248,12 +386,17 @@ impl TileRegistry {
     /// opaque, so an unfinished map is a solid block rather than an open
     /// field. The two doors open and close into each other.
     pub fn standard() -> Self {
+        // Plain greys, so they read as placeholders a game replaces, and
+        // doors in a warm brown so a way through stands out.
+        let floor_bg = (0.05, 0.05, 0.05);
+        let door = (0.70, 0.50, 0.30);
         let mut r = Self::new();
-        r.register(TileProps::wall("void")).expect("empty registry");
-        r.register(TileProps::wall("wall")).expect("fresh name");
-        r.register(TileProps::floor("floor")).expect("fresh name");
-        r.register(TileProps::named("door_closed").passable(true).opaque(true).blocks_projectiles(true).opens_to("door_open")).expect("fresh name");
-        r.register(TileProps::floor("door_open").closes_to("door_closed")).expect("fresh name");
+        r.register(TileProps::wall("void").look(TileLook::new(' ', (0.0, 0.0, 0.0)).on((0.0, 0.0, 0.0)))).expect("empty registry");
+        r.register(TileProps::wall("wall").look(TileLook::new('#', (0.60, 0.60, 0.60)).on((0.15, 0.15, 0.15)))).expect("fresh name");
+        r.register(TileProps::floor("floor").look(TileLook::new('.', (0.45, 0.45, 0.45)).on(floor_bg))).expect("fresh name");
+        let shut = TileProps::named("door_closed").passable(true).opaque(true).blocks_projectiles(true).opens_to("door_open");
+        r.register(shut.look(TileLook::new('+', door).on(floor_bg))).expect("fresh name");
+        r.register(TileProps::floor("door_open").closes_to("door_closed").look(TileLook::new('\'', door).on(floor_bg))).expect("fresh name");
         r
     }
 

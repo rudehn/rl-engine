@@ -175,24 +175,23 @@ impl Plugin for Warren {
 // ANCHOR_END: plugin
 
 // ANCHOR: tiles
-/// The warren's tiles.
+/// The warren's tiles: what each one is, and how it looks in full light.
 struct Floors {
     tiles: TileRegistry,
 }
 
 impl Floors {
     // ANCHOR: looks
-    /// What each tile is, read from `assets/tiles.ron`.
+    /// What each tile is and how it looks, read from `assets/tiles.ron`.
     fn new() -> Self {
         Self { tiles: atglyph::rules::tiles::load(TILES_RON).unwrap_or_else(|e| panic!("assets/tiles.ron: {e}")) }
     }
-
-    /// How each tile looks, read from the same file. A tile the file gives
-    /// no look is reported at startup, by name.
-    fn appearance(&self) -> TileAppearance {
-        TileAppearance::load(TILES_RON, &self.tiles).unwrap_or_else(|e| panic!("assets/tiles.ron: {e}"))
-    }
     // ANCHOR_END: looks
+
+    /// The renderer's colour table, from the looks the tiles carry.
+    fn appearance(&self) -> TileAppearance {
+        TileAppearance::from_tiles(&self.tiles).expect("every tile has a look")
+    }
 }
 // ANCHOR_END: tiles
 

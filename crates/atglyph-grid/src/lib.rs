@@ -76,7 +76,7 @@ pub use light::{Emitter, Glow, Light, LightBand, LightField, Rgb};
 pub use spatial::SpatialGrid;
 pub use targeting::{Footprint, TargetMode, burst, clear_shot, footprint};
 pub use terrain::{CostSource, OpacitySource, Terrain, TerrainView};
-pub use tile::{Burn, Kindling, TileId, TileProps, TileRegistry, TileTables};
+pub use tile::{Burn, Kindling, TileId, TileLook, TileProps, TileRegistry, TileTables};
 
 /// The names most callers want in scope.
 pub mod prelude {
@@ -90,5 +90,5 @@ pub mod prelude {
     pub use crate::spatial::SpatialGrid;
     pub use crate::targeting::{Footprint, TargetMode, burst, clear_shot, footprint};
     pub use crate::terrain::{CostSource, OpacitySource, Terrain, TerrainView};
-    pub use crate::tile::{Burn, Kindling, TileId, TileProps, TileRegistry, TileTables};
+    pub use crate::tile::{Burn, Kindling, TileId, TileLook, TileProps, TileRegistry, TileTables};
 }
