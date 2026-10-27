@@ -95,8 +95,13 @@ What the engine cannot supply is the look of a tile, which is a table the game f
 
 <!-- include: ../../../../examples/tutorial/src/bin/step07_content.rs:looks -->
 ```rust,no_run
-    /// How each tile looks, read from `assets/tiles.ron`. A tile the file
-    /// forgets is reported at startup, by name.
+    /// What each tile is, read from `assets/tiles.ron`.
+    fn new() -> Self {
+        Self { tiles: atglyph::rules::tiles::load(TILES_RON).unwrap_or_else(|e| panic!("assets/tiles.ron: {e}")) }
+    }
+
+    /// How each tile looks, read from the same file. A tile the file gives
+    /// no look is reported at startup, by name.
     fn appearance(&self) -> TileAppearance {
         TileAppearance::load(TILES_RON, &self.tiles).unwrap_or_else(|e| panic!("assets/tiles.ron: {e}"))
     }

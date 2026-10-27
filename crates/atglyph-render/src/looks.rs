@@ -1,14 +1,17 @@
 //! How tiles look, read from a file.
 //!
 //! Every game describes its tiles twice: what each one is, in a
-//! [`TileRegistry`], and how it looks, in a [`TileAppearance`]. The first
-//! comes from data already; this is the loader for the second, so a
-//! game's colours are a file beside its monsters rather than the largest
-//! block of Rust in its start, and a new tile is a line rather than a
-//! recompile.
+//! [`TileRegistry`], and how it looks, in a [`TileAppearance`]. Both can
+//! come from one file, a line a tile: [`load`] reads what each tile is,
+//! with no renderer, and this reads how it looks, so a game's tiles are a
+//! file beside its monsters rather than the largest block of Rust in its
+//! start, and a new tile is a line rather than a recompile.
+//!
+//! [`load`]: atglyph_rules::tiles::load
 //!
 //! The file is a list, one entry per tile, named by the tile's registered
-//! name. Every registered tile must be described: a tile with no look
+//! name. What a tile is, `walkable`, `opaque` and the rest, is passed over
+//! here. Every registered tile must be described: a tile with no look
 //! would be drawn as a magenta question mark, and a file is checked at
 //! load so the gap is reported at startup, by name, rather than found on
 //! the map. Every unknown name and every tile left out is listed at once.

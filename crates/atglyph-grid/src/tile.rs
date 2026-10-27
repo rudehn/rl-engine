@@ -43,7 +43,9 @@ pub const NORMAL_MOVE_COST: u16 = 100;
 /// the sense that a corridor through it still connects two rooms.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TileProps {
-    /// The name content files refer to it by.
+    /// The name content files refer to it by. A tiles file writes it as
+    /// `tile`, the key its looks are read by too.
+    #[serde(alias = "tile")]
     pub name: String,
     /// Whether an actor can stand on it right now.
     #[serde(default)]
@@ -58,8 +60,9 @@ pub struct TileProps {
     /// Whether it stops projectiles and thrown things.
     #[serde(default)]
     pub blocks_projectiles: bool,
-    /// Cost to enter, in hundredths of a normal step. `0` is treated as normal.
-    #[serde(default)]
+    /// Cost to enter, in hundredths of a normal step. `0` is treated as
+    /// normal, and a file that leaves it out gets normal.
+    #[serde(default = "normal_move_cost")]
     pub move_cost: u16,
     /// The tile this becomes when it is opened, by name: a closed door names
     /// its open self. Stepping into it opens it, for an actor able to, and a
@@ -77,6 +80,11 @@ pub struct TileProps {
     /// wall lamp. `None`, as most tiles are, sheds nothing.
     #[serde(default)]
     pub light: Option<Glow>,
+}
+
+/// What a tile left without a cost costs, for serde.
+fn normal_move_cost() -> u16 {
+    NORMAL_MOVE_COST
 }
 
 /// How a tile burns.

@@ -6,6 +6,10 @@ atglyph is not on crates.io yet, so a game depends on a release by its git tag, 
 
 ## [Unreleased]
 
+### Added
+
+- `atglyph::rules::tiles::load` reads a whole tile registry from a tiles file, everything `TileProps` holds beside each tile's look, so a tile is one line of RON.
+
 ### Changed
 
 - [Undermere](https://github.com/rudehn/undermere) and [Foundry](https://github.com/rudehn/foundry) moved to repositories of their own; a game changes nothing.

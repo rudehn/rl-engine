@@ -4,7 +4,7 @@
 >
 > Source: [`step07_content.rs`](https://github.com/rudehn/rl-engine/blob/main/examples/tutorial/src/bin/step07_content.rs)
 
-The rats move out of Rust and into a file, and so do the tiles' looks.
+The rats move out of Rust and into a file, and so do the tiles.
 Adding a creature becomes a line of RON.
 
 ## The bestiary file
@@ -266,41 +266,59 @@ fn populate(
 `pick_group` draws a kind that may live at this depth, by weight, and how many come together.
 The rat king is placed by name, on the crack of daylight.
 
-## The tiles' looks
+## The tiles
 
 <!-- include: ../../../examples/tutorial/assets/tiles.ron -->
 ```ron
-// How the warren's tiles look in full light. The renderer works out
-// darkness and memory from these two colours.
+// The warren's tiles: what each one is, and how it looks in full light.
+// The renderer works out darkness and memory from the two colours.
 //
 // Every field (the ones marked "optional" may be left out):
-//   tile:    the tile's registered name; every registered tile needs a line,
-//            and the load says which is missing
-//   glyph:   one character
-//   fg:      (r, g, b) in 0..=1, the glyph's colour
-//   bg:      optional; (r, g, b), the cell's fill; black when left out
-//   vary:    optional; (brightness, hue), how far each cell strays from the
-//            authored colour, 0..=1 each; none when left out
-//   shimmer: optional; brightness drifting over time, 0..=1, for water and
-//            anything else that should not sit still
+//   tile:               the tile's name, what the game and other lines call it
+// What it is, read by atglyph::rules::tiles::load:
+//   walkable:           optional; whether you can stand on it; false
+//   opaque:             optional; whether it blocks sight; false
+//   blocks_projectiles: optional; whether a thrown thing stops at it; false
+//   passable:           optional; whether a route may go through it later, as a
+//                       shut door is; as walkable when left out
+//   move_cost:          optional; hundredths of a step to enter; 100
+//   opens_to:           optional; the tile it becomes when opened, by name
+//   closes_to:          optional; the tile it becomes when closed, by name
+//   burn:               optional; (catch_pct:, turns:, leaves:), how it burns
+//   light:              optional; (intensity:, radius:, color: (r:, g:, b:))
+// How it looks, read by TileAppearance::load:
+//   glyph:              one character
+//   fg:                 (r, g, b) in 0..=1, the glyph's colour
+//   bg:                 optional; (r, g, b), the cell's fill; black
+//   vary:               optional; (brightness, hue), how far each cell strays
+//                       from the authored colour, 0..=1 each; none
+//   shimmer:            optional; brightness drifting over time, 0..=1
 [
-    (tile: "earth", glyph: '#', fg: (0.78, 0.66, 0.50), bg: (0.34, 0.27, 0.21), vary: (0.20, 0.05)),
-    (tile: "dirt",  glyph: '.', fg: (0.66, 0.58, 0.45), bg: (0.18, 0.15, 0.12), vary: (0.28, 0.06)),
-    (tile: "roots", glyph: '+', fg: (0.55, 0.74, 0.45), bg: (0.16, 0.22, 0.13), vary: (0.18, 0.05)),
+    (tile: "earth", opaque: true, blocks_projectiles: true, glyph: '#', fg: (0.78, 0.66, 0.50), bg: (0.34, 0.27, 0.21), vary: (0.20, 0.05)),
+    (tile: "dirt",  walkable: true, glyph: '.', fg: (0.66, 0.58, 0.45), bg: (0.18, 0.15, 0.12), vary: (0.28, 0.06)),
+    // Walkable, but you cannot see through it.
+    (tile: "roots", walkable: true, opaque: true, glyph: '+', fg: (0.55, 0.74, 0.45), bg: (0.16, 0.22, 0.13), vary: (0.18, 0.05)),
 ]
 ```
 
 <!-- include: ../../../examples/tutorial/src/bin/step07_content.rs:looks -->
 ```rust,no_run
-    /// How each tile looks, read from `assets/tiles.ron`. A tile the file
-    /// forgets is reported at startup, by name.
+    /// What each tile is, read from `assets/tiles.ron`.
+    fn new() -> Self {
+        Self { tiles: atglyph::rules::tiles::load(TILES_RON).unwrap_or_else(|e| panic!("assets/tiles.ron: {e}")) }
+    }
+
+    /// How each tile looks, read from the same file. A tile the file gives
+    /// no look is reported at startup, by name.
     fn appearance(&self) -> TileAppearance {
         TileAppearance::load(TILES_RON, &self.tiles).unwrap_or_else(|e| panic!("assets/tiles.ron: {e}"))
     }
 ```
 
-What a tile is stays in code; how it looks moves to the file.
-A tile the file forgets is reported at startup, by name.
+Each line says what a tile is and how it looks.
+`atglyph::rules::tiles::load` reads what it is: walkable, opaque, and the rest.
+`TileAppearance::load` reads how it looks from the same file.
+Each skips the other's fields, and both report every mistake in the file at startup, by name.
 
 ## Try it
 
