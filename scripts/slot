@@ -3,8 +3,7 @@
 #
 #   scripts/slot <command> [args...]
 #
-# Every compile (through scripts/rustc-wrapper) and every test process
-# (through .config/nextest.toml) of every checkout of this workspace runs
+# Every compile (through scripts/rustc-wrapper) of every checkout of this workspace runs
 # inside one, so however many agents build and test at once, the machine runs
 # about one of them per core. Each cargo and each nextest sizes itself to the
 # cores as if it had the machine alone, and several agents at once ran three or
@@ -71,23 +70,6 @@ waitpid($pid, 0);
 my $status = $?;
 close $held;
 
-# A test's processor time, which unlike its wall time does not grow when
-# the machine is shared, is what scripts/test-times.py holds a run's budget
-# to: nextest records only the wall time, so a test it runs here appends its
-# own to a file named for the run. Only the one process waited on is
-# counted, with every thread it ran.
-if (my $run = $ENV{NEXTEST_RUN_ID}) {
-    my (undef, undef, $user, $system) = times;
-    my $root = dirname(dirname(abs_path($0)));
-    my $dir = ($ENV{CARGO_TARGET_DIR} || "$root/target") . '/nextest/cpu';
-    make_path($dir);
-    if (open(my $log, '>>', "$dir/$run.tsv")) {
-        # One short line, written whole by one write: every test of the
-        # run appends to the same file at once.
-        syswrite($log, sprintf("%.3f\t%s\n", $user + $system, join("\t", @ARGV)));
-        close $log;
-    }
-}
 if (WIFSIGNALED($status)) {
     $SIG{$_} = 'DEFAULT' for qw(INT TERM HUP);
     kill WTERMSIG($status), $$;

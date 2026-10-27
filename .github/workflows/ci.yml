@@ -61,24 +61,10 @@ jobs:
         run: python3 scripts/check-systems.py
       - name: clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: nextest
-      # nextest pools every test in one run and skips doc-tests, which
-      # `cargo test --doc` runs.
       - name: tests
-        run: cargo nextest run --workspace --profile ci
+        run: cargo test --workspace --no-fail-fast
         env:
           ATGLYPH_FULL_SEEDS: 1
-      # The slowest tests and the run's processor time against CI's own
-      # budget, which warns rather than fails: the runner is not the
-      # machine the everyday budget was measured on, and it plays every
-      # seed. The everyday budget fails in scripts/gate.sh.
-      - name: test times
-        if: success() || failure()
-        run: python3 scripts/test-times.py --profile ci --check full --top 20
-      - name: doc-tests
-        run: cargo test --workspace --doc
       - name: the starter template generates and builds
         run: scripts/check-template.sh
       - name: every crate packages for crates.io

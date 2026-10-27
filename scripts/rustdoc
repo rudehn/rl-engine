@@ -4,7 +4,7 @@
 #
 # Bevy is linked as a shared library on the desktop (the crates' Cargo.toml
 # say why), and with it the standard library, so a doc-test, like any test,
-# has to find both when it runs. For a unit test cargo and nextest put their
+# has to find both when it runs. For a unit test cargo puts its
 # directories on the loader's path. For a doc-test cargo puts its own build
 # directories there but not the standard library's, and rustdoc runs every
 # doc-test it built with that path, so each one stopped at its first line. An
