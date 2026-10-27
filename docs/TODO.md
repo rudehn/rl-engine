@@ -56,6 +56,7 @@ Everything in the first band is either a bug, or cheap enough that the reasoning
 | 34 | The rule numbers, closed lists and English the engine still holds | 10 | low | medium |
 | 35 | The API review's renames | 10 | low | high |
 | 36 | A run whose start builds no world sits idle without a word | 3 | medium | medium |
+| 37 | The guide's game never runs in a terminal | 5 | medium | low |
 | - | Everything in 5 and 6 | 5, 6 | gated | gated |
 
 The first eight items of the order this file opened with were built on 2026-09-22, and the plan's progress log says how.
@@ -236,6 +237,12 @@ The design docs still owed, and which files a slice owes, are in `AGENTS.md`.
   Changing the line changes every map those seeds generate and may disturb fingerprint tests, so it is its own slice rather than a correction to the page.
   Recorded in the same breath: A*'s insertion-order tie-break was documented at `crates/atglyph-grid/src/astar.rs:10` with no test behind it until 2026-09-22, when writing `systems/grids.md` turned up the claim that ties are pinned by tests and only the flood half was.
   Other documented properties may be unpinned the same way, and a page that claims one is the occasion to check.
+
+- **The guide's game never runs in a terminal.**
+  `TtyRoguelikePlugins` runs a game on the framework in a text terminal, and only the starter template's `--tty` uses it; the tutorial's steps, which the guide teaches, run in the window alone, and chapter 9 gives the terminal one line.
+  `examples/terminal` is named for the terminal but shows something else, the four Bevy-free crates in a loop the game owns, with its own turns, rats and drawing, so it hooks into none of the systems the guide shows.
+  Found on 2026-10-26.
+  The fix proposed then: every tutorial step picks its front end on `--tty` from step 1, as the template does, played by hand in a real terminal, and `examples/terminal` renamed `examples/toolkit`, said to be the Bevy-free crates used alone.
 
 ## 6. Publish it
 

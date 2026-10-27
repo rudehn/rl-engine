@@ -6,6 +6,8 @@ atglyph is not on crates.io yet, so a game depends on a release by its git tag, 
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-26
+
 ### Added
 
 - A tile carries its look: `TileProps::look`, a `TileLook` of glyph and colours, set with a builder or read from a tiles file. `atglyph::rules::tiles::load` reads a whole `TileRegistry` from the file, one line a tile, and `TileAppearance::from_tiles` builds the colour table from it.
@@ -171,7 +173,8 @@ Full detail: [CHANGELOG.md at v0.2.0](https://github.com/rudehn/rl-engine/blob/v
 - `templates/starter`, a game to generate with `cargo generate`.
 - The guide, and three examples: the tutorial, the delve and Corsair.
 
-[Unreleased]: https://github.com/rudehn/rl-engine/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/rudehn/rl-engine/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/rudehn/rl-engine/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/rudehn/rl-engine/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/rudehn/rl-engine/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/rudehn/rl-engine/compare/v0.1.0...v0.2.0

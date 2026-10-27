@@ -39,7 +39,7 @@
             crates/atglyph-bevy/src/turn.rs
             crates/atglyph-render/src/terminal.rs
             crates/atglyph-render/src/map_view.rs
-     fingerprint: 39757313 -->
+     fingerprint: 349319e5 -->
 
 # Panels
 

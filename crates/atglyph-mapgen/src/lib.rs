@@ -7,9 +7,9 @@
 //!
 //! ```toml
 //! [dependencies]
-//! atglyph-core = { git = "https://github.com/rudehn/rl-engine", tag = "v0.4.0" }
-//! atglyph-grid = { git = "https://github.com/rudehn/rl-engine", tag = "v0.4.0" }
-//! atglyph-mapgen = { git = "https://github.com/rudehn/rl-engine", tag = "v0.4.0" }
+//! atglyph-core = { git = "https://github.com/rudehn/rl-engine", tag = "v0.5.0" }
+//! atglyph-grid = { git = "https://github.com/rudehn/rl-engine", tag = "v0.5.0" }
+//! atglyph-mapgen = { git = "https://github.com/rudehn/rl-engine", tag = "v0.5.0" }
 //! ```
 //!
 //! ```

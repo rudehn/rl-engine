@@ -4,7 +4,7 @@
 //!
 //! ```sh
 //! cargo install cargo-generate
-//! cargo generate --git https://github.com/rudehn/rl-engine --tag v0.4.0 templates/starter --name my-game
+//! cargo generate --git https://github.com/rudehn/rl-engine --tag v0.5.0 templates/starter --name my-game
 //! ```
 //!
 //! The generated game is one file: a floor of rooms lit by a torch, goblins

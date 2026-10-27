@@ -4,7 +4,7 @@ A release is the steps below, in order.
 A step marked **Nate** needs his account, his credentials or his judgment; an agent stops there and says so.
 
 A release is on GitHub only: a tag, its release page and the guide.
-A game depends on the engine from git, pinned to the tag, as `atglyph = { git = "https://github.com/rudehn/rl-engine", tag = "v0.4.0" }`, and the starter template does the same.
+A game depends on the engine from git, pinned to the tag, as `atglyph = { git = "https://github.com/rudehn/rl-engine", tag = "v0.5.0" }`, and the starter template does the same.
 The crates go to crates.io only once the repository variable `PUBLISH_CRATES` is `true`; until then `release.yml` skips its `semver` and `publish` jobs, and the steps marked **crates.io** below wait for the release that turns it on.
 
 1. The documentation pass, as `AGENTS.md` describes it, over everything since the last tag.
