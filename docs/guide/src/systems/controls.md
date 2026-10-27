@@ -75,38 +75,34 @@ A game names the standard verbs it wants to `PlayerKeysPlugin`, and declares its
 
 <!-- include: ../../../../examples/tutorial/src/bin/step09_panels.rs:keys -->
 ```rust,no_run
-/// Warren's own keys, by name.
-///
-/// The names are what `player_input` checks; the keys behind them are
-/// declared once in `declare_controls`, and the `?` screen lists that
-/// same declaration. A key the game stops reading leaves the screen with
-/// its declaration.
+/// Warren's own keys.
 #[derive(Resource, Clone, Copy)]
 struct Binds {
     shove: ControlId,
+    screech: ControlId,
     eat: ControlId,
+    throw: ControlId,
+    lantern: ControlId,
     quit: ControlId,
 }
 
-/// Declares the keys, under the headings the `?` screen groups them by.
-///
-/// Walking, the stairs, picking up and waiting are the same in every
-/// roguelike, so they are the engine's `PlayerKeysPlugin`, named here in
-/// Warren's words: the walk is every direction key the engine binds,
-/// arrows, `hjklyubn` and the numpad. The shove is Warren's own, the same
-/// keys with Shift held, and a chord is matched exactly, so `L` never
-/// reads as a step east.
+/// Declares the keys. Walking and waiting are the engine's standard keys.
 fn declare_controls(app: &mut App) {
     app.add_plugins(
         PlayerKeysPlugin::new()
-            .walk("Move", "walk, or strike whoever is there")
+            .walk("Move", "walk or attack")
             .go_through("Move", "take the stairs")
             .pick_up("Act", "pick up what is here")
             .wait("Act", "wait a turn"),
     );
     let binds = Binds {
-        shove: app.add_control("Move", "shove whoever is there", Keys::Directions { shift: true }),
+        // The same direction keys with Shift held. A chord matches exactly,
+        // so Shift and `l` never reads as a step.
+        shove: app.add_control("Move", "shove", Keys::Directions { shift: true }),
+        screech: app.add_control("Act", "screech", KeyCode::KeyA),
         eat: app.add_control("Act", "eat a crust", KeyCode::KeyE),
+        throw: app.add_control("Act", "throw a rock", KeyCode::KeyR),
+        lantern: app.add_control("Act", "lantern on or off", KeyCode::KeyT),
         quit: app.add_control("Game", "quit", KeyCode::KeyQ),
     };
     app.insert_resource(binds);
@@ -117,9 +113,7 @@ The other half is one run condition, which is the whole of what a game has to re
 
 <!-- include: ../../../../examples/tutorial/src/bin/step09_panels.rs:gate -->
 ```rust,no_run
-        // One gate for every screen there is and every screen added later:
-        // the stack is empty, or the world does not have the keys.
-        .add_systems(Update, player_input.in_set(EngineSet::Input).run_if(no_modal))
+        app.add_systems(Update, (player_input, tend_lantern).in_set(EngineSet::Input).run_if(no_modal));
 ```
 
 ## The line

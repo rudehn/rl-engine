@@ -69,10 +69,11 @@ The engine's words are one plugin, and changing any of them is one call on it.
 
 <!-- include: ../../../../examples/tutorial/src/bin/step09_panels.rs:narrator -->
 ```rust,no_run
-        // The engine narrates blows, deaths and pickups into the log, naming
-        // things in their own colours. Warren changes one phrase: what a rat
-        // does to you is a bite.
-        .add_plugins(NarratorPlugin::default().phrase(Phrase::HitsYou, "{Who} bites you for {n}.", Tones::BAD))
+/// The engine narrates blows and deaths into the log. Warren changes one
+/// phrase: what a rat does to you is a bite.
+fn narrator() -> NarratorPlugin {
+    NarratorPlugin::default().phrase(Phrase::HitsYou, "{Who} bites you for {n}.", Tones::BAD)
+}
 ```
 
 A line the engine has no phrase for is a `Tell`, written from inside the pass it answers: a system reading `WorkBegan` for a kind of work of the game's writes `Tell::new("{Who} starts signalling.", Tones::NOTICE).by(actor)`, and the narrator says it, with the actor's name in its colours, after what it answers and before whatever the next actor does.

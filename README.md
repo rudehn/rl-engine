@@ -27,7 +27,7 @@ It is one file, with a status row, a log, a look cursor, and tests that play it 
 `--tag` fetches the template as it was at that release, and the generated game's `atglyph` line pins the engine to the same tag, so moving to a newer engine is changing that tag; leave the tag off and the template comes from `main`, which may use something no release has yet.
 CI generates and builds the template on every change to the engine, so it does not rot.
 
-To try the engine first, the guide's first six steps run in the browser with nothing to install: [a map and walking](https://rudehn.github.io/rl-engine/01-a-map-and-walking.html), [sight and light](https://rudehn.github.io/rl-engine/02-sight-and-light.html), [blows and the log](https://rudehn.github.io/rl-engine/03-blows-and-the-log.html), [things and minds](https://rudehn.github.io/rl-engine/04-things-and-minds.html), [a knack](https://rudehn.github.io/rl-engine/05-a-knack.html) and [two floors](https://rudehn.github.io/rl-engine/06-two-floors.html).
+To try the engine first, the guide's first six steps run in the browser with nothing to install: [a map and walking](https://rudehn.github.io/rl-engine/01-a-map-and-walking.html), [sight and light](https://rudehn.github.io/rl-engine/02-sight-and-light.html), [blows and the log](https://rudehn.github.io/rl-engine/03-blows-and-the-log.html), [things and minds](https://rudehn.github.io/rl-engine/04-things-and-minds.html), [a knack](https://rudehn.github.io/rl-engine/05-a-knack.html) and [floors and a way out](https://rudehn.github.io/rl-engine/06-two-floors.html).
 
 ## Features
 

@@ -78,10 +78,14 @@ Turning drawing on is one plugin group, and the rectangle the map gets is the on
 <!-- include: ../../../../examples/tutorial/src/bin/step01_walking.rs:main -->
 ```rust,no_run
 fn main() -> AppExit {
-    // What every game adds: the window and the glyph terminal, the turn
-    // loop, sight, the map across the whole terminal, and the UI base.
-    // Then the game, which is one plugin, and the seed it is played on.
-    App::new().add_plugins(RoguelikePlugins::new("Warren", COLS, ROWS)).add_plugins(Warren).insert_resource(Seed(RunSeed(7))).run()
+    App::new()
+        // The window, the glyph terminal, the turn loop, sight, the map and
+        // the UI base.
+        .add_plugins(RoguelikePlugins::new("Warren", COLS, ROWS))
+        // The game itself, the same plugin the tests add.
+        .add_plugins(Warren)
+        .insert_resource(Seed(RunSeed(7)))
+        .run()
 }
 ```
 
@@ -91,9 +95,8 @@ What the engine cannot supply is the look of a tile, which is a table the game f
 
 <!-- include: ../../../../examples/tutorial/src/bin/step07_content.rs:looks -->
 ```rust,no_run
-    /// Both colours of every tile, and how much each cell strays from its
-    /// neighbours, read from `assets/tiles.ron` against the tiles registered
-    /// above. A tile the file forgets is reported at startup, by name.
+    /// How each tile looks, read from `assets/tiles.ron`. A tile the file
+    /// forgets is reported at startup, by name.
     fn appearance(&self) -> TileAppearance {
         TileAppearance::load(TILES_RON, &self.tiles).unwrap_or_else(|e| panic!("assets/tiles.ron: {e}"))
     }

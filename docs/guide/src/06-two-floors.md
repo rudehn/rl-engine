@@ -1,31 +1,30 @@
-# Two floors, and a way out
+# Floors, and a way out
 
 > Run it: `cargo run -p tutorial --bin step06_descent`
 >
 > Source: [`step06_descent.rs`](https://github.com/rudehn/rl-engine/blob/main/examples/tutorial/src/bin/step06_descent.rs)
 
 <div class="demo" data-demo="step06_descent">
-  <img src="images/10-panels.png" alt="Warren with a rail down the right, the log along the bottom">
+  <img src="images/06-floors.png" alt="The first floor, the Burrow, its name in the log">
   <button type="button">Play this step</button>
   <p class="weight">Loads about 8 MB</p>
 </div>
 
-Stairs between two floors, a second floor built a different way, and daylight that ends the run.
+The warren gets four floors with stairs between them, and a crack of daylight at the bottom that wins the run.
 
-## A place is a map that is kept
+## Floors are maps
 
 <!-- include: ../../../examples/tutorial/src/bin/step06_descent.rs:floors -->
 ```rust,no_run
-/// How deep the warren goes before it lets you out again.
-const FLOORS: u32 = 2;
+/// How deep the warren goes.
+const FLOORS: u32 = 4;
 
-/// The warren's floors are maps one upward, so a floor's number is its
-/// map's.
+/// Floor `n` is map `n`.
 fn map_of(floor: u32) -> MapId {
     MapId(floor)
 }
 
-/// The floor a map id is.
+/// The floor a map is.
 fn floor_of(map: MapId) -> u32 {
     map.0
 }
@@ -34,38 +33,37 @@ fn floor_of(map: MapId) -> u32 {
 fn name_of(floor: u32) -> &'static str {
     match floor {
         1 => "the Burrow",
-        _ => "the Deep Nest",
+        2 => "the Middens",
+        3 => "the Bone Nest",
+        _ => "the King's Chamber",
     }
 }
 ```
 
-The warren's floors are maps one upward, so a floor's number is its map's.
+Each floor is a map with its own `MapId`.
+These helpers keep the numbering in one place.
 
-Each is a *place*: built the first time it is entered, then kept.
-Leaving freezes the actors and items where they stand, so the rat you ran from is still in the corridor at the health you left it.
-Actors on other maps are skipped by the scheduler instead of simulated, so a deep run costs no more per turn than a shallow one.
-
-## One rules object, two floors
+## Building each floor
 
 <!-- include: ../../../examples/tutorial/src/bin/step06_descent.rs:rules -->
 ```rust,no_run
-/// How a floor is built. The engine calls this once, the first time
-/// something enters the map, and keeps what comes back.
-impl PlaceRules for Warren {
+/// How a floor is built. The engine calls this the first time something
+/// enters the floor, with that floor's own seed, and keeps the result.
+impl PlaceRules for Floors {
     fn build(&self, map: MapId, seed: PlaceSeed) -> Result<PlaceBuild, BuildError> {
-        let depth = floor_of(map);
-        let (wall, open, roots) = (self.tiles.expect("earth"), self.tiles.expect("dirt"), self.tiles.expect("roots"));
+        let (wall, floor) = (self.tiles.expect("earth"), self.tiles.expect("dirt"));
         let mut ctx = BaseContext::blank(84, 42, self.tiles.clone(), wall);
-        // `seed` is this floor's own, handed in by the engine, so the second
-        // floor is the same whether or not you dawdled on the first.
-        let chain = match depth {
+        let chain = match floor_of(map) {
             // Dug rooms near the surface.
-            1 => Chain::new().then(dungeon::Rooms { floor: open, attempts: 40, min_size: 5, max_size: 10, min_rooms: 6 }).then(dungeon::Doors { door: roots }),
-            // Gnawed-out caves under them.
-            _ => Chain::new().then(passes::CellularCave { wall, floor: open, fill_pct: 45, ..Default::default() }).then(passes::KeepLargestRegion { wall }),
+            1 | 2 => Chain::new()
+                .then(dungeon::Rooms { floor, attempts: 40, min_size: 5, max_size: 10, min_rooms: 6 })
+                .then(dungeon::Doors { door: self.tiles.expect("roots") }),
+            // Gnawed-out caves below them.
+            3 => Chain::new().then(passes::CellularCave { wall, floor, fill_pct: 45, ..Default::default() }).then(passes::KeepLargestRegion { wall }),
+            // One wide chamber at the bottom.
+            _ => Chain::new().then(dungeon::Rooms { floor, attempts: 60, min_size: 12, max_size: 18, min_rooms: 2 }),
         };
-        // Every floor gets a start and a point as far from it as the floor
-        // allows: the stairs down on the first, the way out on the second.
+        // A start, and the point farthest from it: where the stairs down go.
         chain.then(dungeon::RandomStart).then(dungeon::FarthestExit).run(&mut ctx, seed)?;
         PlaceBuild::from_context(ctx)
     }
@@ -75,9 +73,8 @@ impl PlaceRules for Warren {
     }
 
     /// The floors, top first, and how their stairs look. The engine lays a
-    /// stair up at every floor's start but the first's and a stair down
-    /// at every floor's far point but the last's, when the floor is built.
-    /// The last floor's far point is ours: the way out.
+    /// stair up at each floor's start and a stair down at its far point.
+    /// The last floor's far point is the game's: the way out.
     fn ladder(&self) -> Option<Ladder> {
         let stone = Rgb::new(204, 204, 219);
         let (up, down) = (StairLook::new('<', stone, "stairs up"), StairLook::new('>', stone, "stairs down"));
@@ -86,28 +83,43 @@ impl PlaceRules for Warren {
 }
 ```
 
-`build` is handed the `MapId`, so the shape of the run is a `match`, and `ladder` says the floors stand one under the other and how their stairs look.
-Dug rooms near the surface, a gnawed-out cave under them, and `KeepLargestRegion` after the cave because cave generators produce islands and an unreachable half is a floor whose stairs are sometimes unreachable.
+`build` now picks a chain by floor: rooms near the top, caves below, one big chamber at the bottom.
+`FarthestExit` marks the cell farthest from the start.
 
-The `PlaceSeed` the engine hands `build` is derived from the run's seed and the map's number alone, so the second floor is the same whether or not you dawdled on the first.
-`populate` draws from the same floor's seed through `seed.place(map)`, never from a counter the player can move.
+`ladder` tells the engine the floors' order.
+It lays a stair down at each floor's far point and a stair up at each start.
+`LadderEnd::Game` leaves the last floor's far point to the game.
+Each floor is built the first time you enter it, from its own seed, and kept.
 
-## Stairs are entities
+`go_through`, in `declare_controls`, adds the stair key `>` to the standard keys.
+
+## The way out
 
 <!-- include: ../../../examples/tutorial/src/bin/step06_descent.rs:populate -->
 ```rust,no_run
-/// The stream the rats are placed from, named once and drawn from each
-/// floor's own seed: a spawner added later draws from a stream of its own
-/// and cannot shift what this one places, and the floors may be entered in
-/// any order.
+/// The random stream rats are placed from. Each floor draws it from its own
+/// seed, so floors can be entered in any order.
 const RATS: SeedDomain = SeedDomain::new(b"warren.rats");
 
-/// Fills the floor the one time it is built. `PlaceEntered::first` is
-/// true only on that arrival, so coming back does not restock it.
-fn populate(mut commands: Commands, mut entered: MessageReader<PlaceEntered>, rats: Res<Rats>, map: Res<WorldMap>, seed: Res<Seed>) {
+/// Fills a floor the first time it is entered.
+fn populate(
+    mut commands: Commands,
+    mut entered: MessageReader<PlaceEntered>,
+    rats: Res<Rats>,
+    map: Res<WorldMap>,
+    seed: Res<Seed>,
+    mut tell: MessageWriter<Tell>,
+) {
     for ev in entered.read() {
+        let depth = floor_of(ev.map);
+        tell.write(Tell::new(format!("Floor {depth}: {}.", name_of(depth)), Tones::NOTICE));
         if !ev.first {
             continue;
+        }
+        // The stairs are the engine's. The way out, at the last floor's far
+        // point, is an entity the game spawns.
+        if let Some(far) = ev.exit.filter(|_| depth == FLOORS) {
+            commands.spawn((Position(far), WayOut, Name::new("crack of daylight"), Glyph::new('<', Color::srgb(1.0, 0.95, 0.70)).on_layer(1)));
         }
         let Some(place) = map.place(ev.map) else { continue };
         let bounds = place.terrain.bounds();
@@ -115,29 +127,24 @@ fn populate(mut commands: Commands, mut entered: MessageReader<PlaceEntered>, ra
         let mut placed = 0;
         while placed < 16 {
             let p = Point::new(rng.random_range(bounds.x..bounds.right()), rng.random_range(bounds.y..bounds.bottom()));
-            // Not on top of the player, and not close enough to be unfair.
+            // On floor, and not close enough to the start to be unfair.
             if !map.is_walkable(p) || geometry::chebyshev(p, ev.entry) < 8 {
                 continue;
             }
-            // Every fourth is a ratling: the same body, a better mind.
+            // Every fourth is a ratling: the same body, a cleverer mind.
             let clever = placed % 4 == 3;
-            // A ratling carries its own supper. Nothing picks bread up off
-            // the floor: `Scavenge` fetches gear and missiles, not meals.
-            let supper = clever.then(|| {
-                commands
-                    .spawn((Item, Crust(6), Tagged(vec![rats.bread]), Name::new("crust of bread"), Glyph::new('%', Color::srgb(0.85, 0.72, 0.40)).on_layer(2)))
-                    .id()
-            });
-            let mut e = commands.spawn((
+            // A ratling carries its supper, and knows how to eat it.
+            let supper = clever.then(|| commands.spawn((Item, Crust(6), Tagged(vec![rats.bread]), Name::new("crust of bread"))).id());
+            let mut rat = commands.spawn((
                 (Actor, Blocks, Position(p), Speed(110), Faction(rats.faction)),
                 (Health::full(6), Armor(0), Perception(7), DarkSight(9)),
                 (MeleeAttack::new(rats.bite, DiceRoll::new(1, 3)),),
             ));
             if clever {
-                e.insert((
+                rat.insert((
                     Mind(rats.ratling.clone()),
-                    // Wits are what a mind is allowed to consider. A ratling
-                    // opens doors, fetches what it can throw, and throws it.
+                    // Wits say what a mind may consider: a ratling opens
+                    // doors, picks things up and throws them.
                     Intelligence(Wits::SAPIENT),
                     Inventory { items: supper.into_iter().collect() },
                     Grants(vec![rats.gnaw]),
@@ -145,73 +152,47 @@ fn populate(mut commands: Commands, mut entered: MessageReader<PlaceEntered>, ra
                     Name::new("ratling"),
                 ));
             } else {
-                e.insert((
-                    Mind(rats.mind.clone()),
-                    // An animal flees and searches, and that is all.
-                    Intelligence(Wits::ANIMAL),
-                    Glyph::new('r', Color::srgb(0.72, 0.55, 0.45)).on_layer(5),
-                    Name::new("rat"),
-                ));
+                rat.insert((Mind(rats.mind.clone()), Intelligence(Wits::ANIMAL), Glyph::new('r', Color::srgb(0.72, 0.55, 0.45)).on_layer(5), Name::new("rat")));
             }
             placed += 1;
         }
-        // The stairs are the engine's, laid from the ladder. The bottom of
-        // the ladder is ours: the way out, at the last floor's far point,
-        // an entity standing on a cell and nothing more.
-        if let Some(far) = ev.exit.filter(|_| floor_of(ev.map) == FLOORS) {
-            commands.spawn((Position(far), WayOut, Name::new("crack of daylight"), Glyph::new('<', Color::srgb(1.0, 0.95, 0.70)).on_layer(1)));
-        }
-        // Bread to mend with and rocks to throw, scattered the same way.
+        // Bread and rocks, scattered the same way.
         let mut dropped = 0;
         while dropped < 14 {
             let p = Point::new(rng.random_range(bounds.x..bounds.right()), rng.random_range(bounds.y..bounds.bottom()));
-            if !map.is_walkable(p) {
-                continue;
+            if map.is_walkable(p) {
+                litter(&mut commands, &rats, p, dropped % 2 == 0);
+                dropped += 1;
             }
-            litter(&mut commands, &rats, p, dropped % 2 == 0);
-            dropped += 1;
         }
     }
 }
 ```
 
-There is no stairs table and no special tile flag.
-The engine lays the stairs from the ladder when each floor is built: a stair up at its start, but the first floor's, and a stair down at its far point, but the last floor's.
-Each is an entity with a `Transition`, which names where it leads and how you arrive, and `GoThrough` takes the one you are standing on.
-`PlayerKeysPlugin` gains `go_through`, which binds it to Enter, `>` and `<`.
-`LadderEnd::Game` says the bottom of the ladder is a way of the game's own rather than nothing.
-So `populate` puts the daylight at the last floor's far point, and nothing stops you putting a `Transition` on a rat.
-
-## Winning
+`populate` now names the floor in the log each time you arrive.
+On the first visit to the last floor, it spawns the crack of daylight at the far point.
 
 <!-- include: ../../../examples/tutorial/src/bin/step06_descent.rs:way_out -->
 ```rust,no_run
-/// The crack of daylight on the last floor. Standing on it ends the run.
+/// The crack of daylight on the last floor.
 #[derive(Component, Clone, Copy)]
 struct WayOut;
 
-/// Winning is a component and an `if`. It runs inside the turn, so the run
-/// ends on the step that reached the daylight and not a frame later.
-fn leave(player: Query<(&Position, Option<&OnMap>), With<Player>>, ways: Query<(&Position, Option<&OnMap>), With<WayOut>>, mut over: MessageWriter<RunOver>) {
+/// Standing on the daylight wins the run, on the step that reached it.
+fn leave(player: Query<(&Position, &OnMap), With<Player>>, ways: Query<(&Position, &OnMap), With<WayOut>>, mut over: MessageWriter<RunOver>) {
     let Ok((at, on)) = player.single() else { return };
-    for (way, way_on) in &ways {
-        if way.0 == at.0 && way_on.map(|m| m.0) == on.map(|m| m.0) {
-            over.write(RunOver::won().saying("You come up into the roots, and the scratching stays below."));
-        }
+    if ways.iter().any(|(way, way_on)| way.0 == at.0 && way_on.0 == on.0) {
+        over.write(RunOver::won().saying("You come up into the roots, and the scratching stays below."));
     }
 }
 ```
 
-A victory condition is a component and an `if`.
-`RunOver::won()` ends the run the way the player's death does: the menu opens over the last frame with Warren's words above it, and no way back into it.
-
-It runs inside the turn, so the run ends on the step that reached the daylight rather than a frame later.
-[Where to go next](09-where-to-go-next.md) points at the quest system, which is this with the objectives in a file.
+Winning is a component and an `if`.
+`RunOver::won()` ends the run, and the menu opens with your words.
 
 ## Try it
 
-- Add a third floor. You should only touch `FLOORS`, `name_of` and the `match`.
-- Put a `Transition` straight back to the first floor beside the daylight.
-- Go down, kill a rat, come back up, go down again. The rat stays dead.
+- Set `FLOORS` to `2`.
+- Swap the chains so the caves are on top.
 
 Next: [content in files](07-content-in-files.md).

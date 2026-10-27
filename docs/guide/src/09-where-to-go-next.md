@@ -1,198 +1,167 @@
-# Where to go next
+# Panels, and where to go next
 
-Warren is a complete roguelike in under 700 lines before its tests, and uses maybe a third of the engine.
-The Systems pages are the reference for the rest, one per system, and each teaser below links to the page that covers it.
-Two whole games built on the engine, [Undermere](https://github.com/rudehn/undermere) and [Foundry](https://github.com/rudehn/foundry), live in repositories of their own, and the worked examples below are theirs.
+> Run it: `cargo run -p tutorial --bin step09_panels`
+>
+> Source: [`step09_panels.rs`](https://github.com/rudehn/rl-engine/blob/main/examples/tutorial/src/bin/step09_panels.rs)
 
-## Lighting
+![Warren with a rail down the right: vitals, what is in sight, and the log along the bottom](images/10-panels.png)
 
-- **Add** one resource: `commands.insert_resource(Lighting::dark());`
-- **You supply** a `LightSource` on a prop, an actor or an item, `Fuel` if it burns down, and `DarkSight` on whoever sees without one.
-- **You get** the `Viewshed` split from [chapter 2](02-sight-and-light.md) starting to matter: `line` stays geometric, `visible` shrinks to what is lit, and a monster that sheds nothing is found only where a light reaches it.
-  `Fuel` reports `LightEvent::BurntOut`.
-- **Worked examples** [Undermere](https://github.com/rudehn/undermere), where every place is seen dimly by its own ambient and a lantern, a brazier or a clump of glowcaps is what makes it bright.
-  [Foundry](https://github.com/rudehn/foundry) below deck one, where the lights are out and the commando sees by a shoulder lamp and a helmet's dark sight.
-- **Reference** [Sight and lighting](systems/sight.md).
-- **Design** [`docs/design/lighting.md`](https://github.com/rudehn/rl-engine/blob/main/docs/design/lighting.md).
+The status row becomes a rail down the right side: your vitals, then everything in sight.
+`x` looks at things, `p` reads the whole log, and `?` lists every key.
 
-## Stealth
+## The screen
 
-- **Add** `StealthPlugin`.
-- **You supply** `Notice` on an observer, which is a certain radius, a chance beyond it, a bonus while the subject stands in light, and a memory; `Stealth` on a subject narrows both.
-- **You get** a roll between being seen and being noticed.
-  A monster that has not noticed you does not act on you, one that loses you searches where it last saw you, and `Watchers` answers who is watching whom for the panels.
-- **Worked examples** [Foundry](https://github.com/rudehn/foundry): a commando the droids have to notice, and a probe that signals and then sounds an alarm that brings the rest.
-  [Undermere](https://github.com/rudehn/undermere) gives every monster a `Notice`, and a potion's darkness shrouds whoever stands in it.
-- **Reference** [Stealth](systems/stealth.md).
-- **Design** [`docs/design/stealth.md`](https://github.com/rudehn/rl-engine/blob/main/docs/design/stealth.md).
+<!-- include: ../../../examples/tutorial/src/bin/step09_panels.rs:layout -->
+```rust,no_run
+/// The screen, cut once so the map and every panel agree on it: the map,
+/// the log under it, a rail down the right, and boxes over the map.
+struct Screen {
+    map: GridRect,
+    log: GridRect,
+    vitals: GridRect,
+    nearby: GridRect,
+    over_map: GridRect,
+    scrollback: GridRect,
+    controls: GridRect,
+    hint: GridRect,
+}
 
-## Abilities
+impl Screen {
+    fn new() -> Self {
+        // Vitals at the head of the rail, the hint for the controls screen
+        // in its last row, and what is in sight between them.
+        let rail = RailLayout::new(COLS, ROWS, RAIL).log(LOG_ROWS).vitals(9).hint().cut();
+        let map = rail.map;
+        let over_map = GridRect::new(map.x + 2, map.bottom() - 10, map.width.min(46), 9);
+        Self {
+            map,
+            log: rail.log,
+            vitals: rail.vitals,
+            nearby: rail.nearby,
+            over_map,
+            scrollback: map.inflate(-2),
+            controls: GridRect::new(0, 0, COLS, ROWS - LOG_ROWS),
+            hint: rail.hint,
+        }
+    }
+}
+```
 
-- **Add** `AbilitiesPlugin`.
-- **You supply** abilities as data: an aim, a shape from the targeting footprints, costs, requirements, a cooldown and a list of named effects.
-  The engine ships ten effects, seven registered together by `add_engine_effects` and three by the fire, gas and noise plugins, and a game registers its own with `add_effect`.
-- **You get** a key that writes `AimAt`, a cursor the engine opens, a preview of what the shot would cover, and the turn spent.
-  An item never lends an ability: what a potion does is its own triggers, which the engine lands when it is drunk or thrown, so a potion is a line of RON.
-- **Worked examples** [Undermere](https://github.com/rudehn/undermere) has fourteen, [Foundry](https://github.com/rudehn/foundry) one, and `crates/atglyph-bevy/tests/genres.rs` loads five genres of them into one registry.
-- **Reference** [Abilities](systems/abilities.md).
-- **Design** [`docs/design/abilities.md`](https://github.com/rudehn/rl-engine/blob/main/docs/design/abilities.md).
+`RailLayout` cuts the usual roguelike screen from a few numbers: the map, the log under it, and a rail down the right.
+Cutting it once keeps the map and every panel in agreement.
 
-## Statuses, stats and gear
+## The panels
 
-- **Add** nothing for statuses, which are `CorePlugin`'s, and put the registries a game needs in `Registries`.
-- **You supply** what wearing a thing does, on the thing: a worn blade carries the `MeleeAttack` it is swung with, a coat its `Armor`, and an affix what it `Bestows` on a stat.
-- **You get** afflictions ticked by the turn through the damage pipeline, with stacking rules and cures; a stat block with a modifier accumulator; an equipment slot graph with displacement; and an affix model of prefixes and suffixes with level-scaled grants, weighted rolling and per-instance state.
-  `Loadout` sums the gear at the blow and `fold_gear` keeps the stats current, so nothing is ever copied onto the wearer.
-- **Worked example** [Undermere](https://github.com/rudehn/undermere) uses all of it.
-- **Reference** [Statuses](systems/statuses.md) for the afflictions and the stat block, [Items and equipment](systems/items.md) for the slots, the affixes and the `Loadout`, [Uses and charges](systems/uses.md) for what a thing does when it is used and what that costs it, and [Ammunition](systems/ammunition.md) for what a shot spends.
+<!-- include: ../../../examples/tutorial/src/bin/step09_panels.rs:main -->
+```rust,no_run
+fn main() -> AppExit {
+    let screen = Screen::new();
+    let seed = std::env::var("WARREN_SEED").ok().and_then(|s| s.parse().ok()).unwrap_or(7);
+    App::new()
+        .add_plugins(RoguelikePlugins::new("Warren", COLS, ROWS).map(screen.map))
+        .add_plugins(Warren)
+        // Each panel draws a view the engine keeps current, in its own
+        // rectangle. Add the ones your game has a use for.
+        .add_plugins((
+            VitalsPanel::new(screen.vitals).heading("Vitals").bars(10),
+            NearbyPanel::new(screen.nearby).titled("").headings("In sight", "On the floor"),
+            LogPanel::new(screen.log),
+            // `x` opens the look cursor; this says what it is on.
+            InspectPanel::new(screen.over_map),
+            // `p` opens the whole log, scrollable.
+            ScrollbackPanel::new(screen.scrollback),
+            // `?` lists every key, and the rail's last row says so.
+            ControlsPanel::new(screen.controls).hint(screen.hint),
+        ))
+        .add_plugins(TargetPanel::new(screen.over_map).hints("enter confirm  tab next  esc cancel"))
+        .add_plugins(narrator())
+        // Escape opens the menu, and dying opens it by itself.
+        .add_plugins(GameMenuPanel::new(GridRect::new(COLS / 2 - 20, 8, 40, 12)).died("The warren keeps you."))
+        .insert_resource(Seed(RunSeed(seed)))
+        .run()
+}
+```
 
-## Quests
+Each panel reads a view the engine keeps current, and draws itself in its rectangle.
 
-- **Add** `FactsPlugin`.
-- **You supply** facts with a kind, a subject, an object and an amount, and objectives over them.
-- **You get** `Quests` with prerequisite chains and a victory flag, and `Counters`, a ledger of named tallies.
-  It is the grown-up version of the `if` that ends the run at the daylight in [chapter 6](06-two-floors.md).
-- **Reference** [Statuses](systems/statuses.md), where `FactsPlugin` sits beside the statuses it shares a page with.
+- `NearbyPanel` lists what is in sight, and what is on the floor.
+- `InspectPanel` says what the look cursor (`x`) is on, and forecasts a fight with it.
+- `ScrollbackPanel` shows the whole log on `p`, scrollable and filterable.
 
-## Saving
+## A note of your own
 
-- **Add** `SavePlugin` and a backend resource: files, memory or browser storage, all behind one trait.
-- **You supply** `Saveable` on the component that marks each kind of thing your game spawns, saying how to write one down and spawn it again, registered with `save_kind`.
-- **You get** the rest of the walk: where each thing stands, its health, its bag, its slots and its statuses, along with the scheduler's queue, the world's edits and places, and what has been explored.
-  The envelope is versioned and refuses a mismatch instead of guessing, entities are remapped on the way back in, and `SavePlugin` keeps the save a turn behind the run so a closed window saves.
-  It forgets the save when the run ends.
-- **Worked example** [Foundry](https://github.com/rudehn/foundry)'s `save.rs`: four kinds and four resources, in about two hundred and fifty lines before its tests.
-- **Reference** [Saving and the ending screen](systems/saving.md).
+The engine doesn't know that a hurt rat is fleeing; that's Warren's rule.
+The game adds a `Facet` to the rat's row, in a tone it declares:
 
-## The run's beginning and end
+<!-- include: ../../../examples/tutorial/src/bin/step09_panels.rs:tone -->
+```rust,no_run
+        // A tone the engine never heard of, for a note on the nearby list.
+        app.add_tone("fleeing", Color::srgb(0.6, 0.8, 1.0));
+        app.add_plugins(NearbyViewPlugin).add_systems(Update, (note_floor, note_what_a_rat_is_doing).in_set(ViewSet::Annotate));
+```
 
-- **Add** nothing.
-  `CorePlugin` has it.
-- **You supply** a start system in `NewRun`, and whatever your game keeps of a run that the engine does not, forgotten in `EndRun`.
-- **You get** the engine running your start again after every `Restart`, on a fresh seed or the same one, with the old run torn down first.
-  `RunOver` ends a run, from the player's death unless `CombatRules` say otherwise, or from any condition of your own.
-  `GameMenuPanel` opens over the ending and offers the next run, under whatever your game pushed onto `EndingView` about what the run came to.
-- **Reference** [The turn loop](systems/turn-loop.md) for the schedules, and [Saving and the ending screen](systems/saving.md) for what is kept and what is shown at the end.
+<!-- include: ../../../examples/tutorial/src/bin/step09_panels.rs:annotate -->
+```rust,no_run
+/// The rail has room for which floor this is.
+fn note_floor(mut vitals: ResMut<VitalsView>, map: Res<WorldMap>) {
+    let depth = floor_of(map.current());
+    vitals.facets.push(Facet::new("floor", format!("floor {depth}/{FLOORS}: {}", name_of(depth))));
+}
 
-## A title screen
+/// What a rat is up to, as a note on its row in the nearby list. Fleeing
+/// is this game's rule, so the engine prints the note without knowing it.
+fn note_what_a_rat_is_doing(mut nearby: ResMut<NearbyView>, tones: Res<Tones>, bestiary: Res<Bestiary>, rats: Query<(&Kind, &Health)>) {
+    let fleeing = tones.get("fleeing").expect("declared in Warren");
+    for row in nearby.actors.iter_mut() {
+        let Ok((kind, health)) = rats.get(row.entity) else { continue };
+        if health.current * 100 <= bestiary.defs.get(kind.0).flee_at * health.max {
+            row.facets.push(Facet::new("mood", "fleeing").toned(fleeing));
+        }
+    }
+}
+```
 
-- **Add** `TitlePanel::new(rect)`, with the rectangle its rows stand in.
-- **You supply** your picture, painted in `TitleSet::Backdrop`, and a start in `NewRun` that stands aside while `ContinueRun` is present, for the system of yours that restores the saved run.
-- **You get** the first run held back until the player picks: Continue, in a game with `SavePlugin`, over a save this build can read, New Game, which asks before it gives a saved run up, Records and Settings when there is something behind them, and Exit.
-  The pause and end menus offer Main menu, and with `SavePlugin` a run left that way is written down for Continue.
-- **Worked examples** [Undermere](https://github.com/rudehn/undermere), a night over a black lake, and [Foundry](https://github.com/rudehn/foundry), a droid works.
-- **Reference** [The title screen](systems/title.md).
-
-## Records of every run
-
-- **Add** `RecordsPlugin`, kept between launches by your `SavePlugin`, and `RecordsPanel::new(rect)` for the screen.
-- **You supply** one `RecordRun` when your run is over: its score, a line saying what it came to, and the sections you want shown.
-- **You get** every run filed best first and kept between launches in a slot of its own, the run's own record on the screen it ends on, and a screen listing them all, which the title opens.
-- **Worked example** [Undermere](https://github.com/rudehn/undermere), whose score is five lines and a total.
-- **Reference** [Run records](systems/records.md).
-- **Design** [`docs/design/records.md`](https://github.com/rudehn/rl-engine/blob/main/docs/design/records.md).
-
-## A narrator
-
-- **Add** `NarratorPlugin`.
-- **You supply** nothing, or a `Phrasebook` with the phrases you would rather it used.
-- **You get** every engine event spoken, split by who did what to whom, with names in the colours of the things they name.
-  Reword a phrase, silence one, or read the `NarrationView` and say it your own way.
-  A line of your own told from inside a turn is a `Tell`, written in `TurnSet::React`, and the narrator speaks it after what it answers and before whatever the next actor does.
-- **Reference** [Narration](systems/narration.md).
-
-## Balance
-
-`atglyph-rules::balance` scores threat and prints a band report over the `BandedTable` from [chapter 7](07-content-in-files.md).
-No example game has a flag that prints it yet.
-
-## Panels, past the two you have
-
-Warren uses a status strip and a log, added in [chapter 2](02-sight-and-light.md) when there was something to put in them.
-The engine has four more views and the machinery behind all of them.
-
-A panel is split in three, and the split is why any of it belongs in an engine.
-The **view** is a resource of plain data, rows and bars and numbers, with no colour and no string the game did not supply.
-The **collector** refills it in `ViewSet::Collect`.
-The **presenter** draws one, in a `PresentSet` layer, taking its rectangle in its constructor.
-"Every actor in the viewshed, nearest first, with a health fraction and a relation" is the same sentence in every roguelike; a gold-ruled rail with small-caps headings is one game's taste.
-
-That gives five places to stop, and you can stop at any of them: add the panel and be done, change the `Palette` and restyle everything at once, push a `Facet` for what the engine cannot know, keep the view and draw it yourself, or add neither.
-
-- **What the engine cannot know** is a `Facet`: a key, some words and a tone, pushed onto a row in `ViewSet::Annotate`. Warren already does this for the crusts in your bag and the floor you are on.
-- **Colours** are never passed to a widget. Every widget takes a `ToneId`, a semantic role the `Palette` turns into a colour, and `add_tone` declares a role and colours it in one call.
-- **Screens** are a stack of interned ids in `Modals`, with `no_modal` and `modal_is` as run conditions, so one gate on your input covers every screen you ever add.
-- **Keys** can be declared once in a `Controls` registry and read back by name, which is what lets `ControlsPanel` show exactly the keys the game reads.
-  The keys every roguelike reads alike, walking, the stairs, waiting, picking up, firing and throwing, are `PlayerKeysPlugin`, named in your own words; step 9 takes four of them and keeps the shove and the crusts in its own system.
-- **Two presenters over one view**: `LogPanel` draws the last few lines along the bottom and `ScrollbackPanel` draws all of them on a screen, over the same log, and neither knows the other exists.
-- **The forecast** in the look cursor is not the panel's arithmetic. `atglyph::rules::forecast` runs the average roll through the same mitigation pipeline a real blow goes through, so it cannot drift from the fight.
-- **The screen** is cut once, and `RailLayout` cuts the usual one, a map with the log under it and a rail down the right, from a few numbers; its `RailScreen` hands back every rectangle, and `panels()` the rail's panels as a group you edit.
-
-`examples/tutorial/src/bin/step09_panels.rs` is the worked example, with the rail, the look cursor, tones and a controls screen, and [`docs/design/ui.md`](https://github.com/rudehn/rl-engine/blob/main/docs/design/ui.md) is why it is shaped that way.
-[Panels](systems/panels.md) is the reference for the split and for every view the engine ships, and [Controls, modals and cursors](systems/controls.md) for the declaration, the stack and the cursor.
+`Kind` on each creature lets the system look up its definition's `flee_at`.
 
 ## Testing without a window
 
-The engine ships the test kit it uses itself, in `atglyph::ecs::testing`, and a game's tests use the same copy.
-
-A headless app is the engine with no window, plus the engine plugins your game uses and your own systems, exactly as `main` adds them minus what draws.
-Two `update` calls start a run and deal the player its first turn; after that it is one per action.
-
 <!-- include: ../../../examples/tutorial/src/bin/step09_panels.rs:headless -->
 ```rust,no_run
-    /// The warren with no window: the engine plugins the game uses, the
-    /// game's own systems, and nothing that needs a screen.
-    fn headless(seed: u64) -> App {
-        // Someone to read what `populate` tells, and the plugins `main` adds.
-        let narrator = NarratorPlugin::default().phrase(Phrase::HitsYou, "{Who} bites you for {n}.", Tones::BAD);
-        let mut app = atglyph::testing::headless(RunSeed(seed), narrator, (CombatPlugin, MindsPlugin, ItemsPlugin));
-        app.places(Warren::new())
-            .add_choice::<Shove>()
-            .add_message::<Shoved>()
-            .add_systems(NewRun, start)
-            .add_systems(Turn, resolve_shoves.in_set(ResolveSet::Act))
-            .add_systems(Turn, (populate, eat).in_set(TurnSet::React))
-            .add_systems(Update, narrate.in_set(PresentSet::Narrate));
-        app
-    }
-
-    /// A started run: two frames is enough for the warp to build floor one
-    /// and the scheduler to deal the player its first turn.
     fn started(seed: u64) -> (App, Entity) {
-        let mut app = headless(seed);
-        app.update();
-        app.update();
-        let player = app.world_mut().query_filtered::<Entity, With<Player>>().single(app.world()).unwrap();
-        (app, player)
-    }
-
-    fn act<A: Action>(app: &mut App, actor: Entity, action: A) {
-        app.world_mut().write_message(Intent::new(actor, action));
-        app.update();
+        let mut app = headless(RunSeed(seed), narrator(), (Warren, KeyScriptPlugin));
+        let me = player(&mut app);
+        (app, me)
     }
 ```
 
-Writing an intent is how the game plays itself, and a suite like Warren's runs in about forty milliseconds.
+`atglyph::testing::headless` is the engine with no window, plus the narrator and the game plugin `main` adds.
+`KeyScriptPlugin` lets a test press keys through the real input path.
+The test module of each step is a worked example.
 
-- `KeyScriptPlugin` and `press(&mut app, key)` play a key the way a keyboard does, so a test drives your real input system instead of writing intents by hand.
-- `ground(&mut app)` stands walled open ground up for a test that needs a map and not the game's own.
-- `two_sides(&mut app)` inserts combat rules for two sides at war.
-- `atglyph::testing` is the same kit with the headless game beside it: `headless(seed, narrator, game)` builds the app above with your narrator and your plugin and saves kept in memory, `settle`, `pass_turns`, `stand_on`, `equip` and their kin drive it as the engine's own intents would, and `row`, `written` and `said` read the screen and the log back.
+## Where to go next
 
-Where a property exists, assert it over a range of seeds: that every generated floor has somewhere to stand and somewhere to go is forty-eight floors of evidence that costs milliseconds, because generation is tier 1 and never builds an `App`.
-Where no property exists, use a fingerprint test and say so in its name, so a change reads as a change rather than a failure.
-Test the refusal as well as the action: a wrong refusal crashes nothing, it silently eats a turn or freezes the loop.
+Each system has a reference page.
+These are the ones Warren didn't use:
 
-The test module of `step09_panels.rs` is the worked example.
+| System | What it adds |
+|---|---|
+| [Stealth](systems/stealth.md) | Monsters that haven't noticed you yet, and sneaking past them |
+| [Statuses](systems/statuses.md) | Poison, sleep, and anything else with a duration |
+| [Items](systems/items.md) and [uses](systems/uses.md) | Equipment slots, worn bonuses, and things used from the bag |
+| [Ammunition](systems/ammunition.md) | Guns, bows and what they fire |
+| [Loot](systems/loot.md) | What a floor and a container hold, drawn from tables |
+| [Props](systems/props.md) | Crates, levers, traps and containers |
+| [Fields](systems/fields.md) | Fire and gas that spread from cell to cell |
+| [Work](systems/work.md) | Actions that take many turns |
+| [Trade](systems/trade.md) | Buying and selling between two actors |
+| [Saving](systems/saving.md) | Saving and continuing a run |
+| [Title](systems/title.md) | A title screen with New Game and Continue |
+| [Records](systems/records.md) | A high-score table of past runs |
+| [Panels](systems/panels.md) | The rest of the panels: gear, the bag, a character sheet |
+| [Controls](systems/controls.md) | Rebinding and grouping keys |
 
-
-## In a text terminal
-
-- **Add** `TtyRoguelikePlugins::new(cols, rows)` in place of `RoguelikePlugins`, with the same `map` and `across`.
-- **You supply** nothing else: the same game plugins and panels run unchanged.
-- **You get** the glyph grid written to the terminal the game was started in, locally or at the end of an SSH login, with only the cells that changed written each frame and the keys typed read back as Bevy's keys.
-  It is desktop only, and it has no window, no fullscreen setting and no typeface of its own.
-- **Worked example** the starter template, whose `main` picks `TtyRoguelikePlugins` when it is run with `--tty`.
+To play [in a text terminal](systems/tty.md), locally or over SSH, add `TtyRoguelikePlugins::new(cols, rows)` in place of `RoguelikePlugins`.
+The starter template does this with `--tty`.
 
 ## The crates
 
@@ -203,29 +172,11 @@ The test module of `step09_panels.rs` is the worked example.
 | 2 | `atglyph-bevy`, `atglyph-render`, `atglyph-ui`, `atglyph-save`, `atglyph-tty` | yes |
 | 3 | `atglyph` | facade |
 
-Map generation, field of view, pathfinding, the damage pipeline and the AI brains are tier 1.
-They run headless, test in milliseconds and build for WebAssembly, so the property tests above cost milliseconds, and CI enforces the boundary.
-A tool that needs only one of them can depend on that crate alone and never compile Bevy.
+Map generation, field of view, pathfinding, damage and the AI brains are tier 1.
+They run and test without Bevy, and a tool can depend on one of them alone.
 
-## The examples
+## Further reading
 
-| Example | What it shows |
-|---|---|
-| `terminal` | A walk through generated rooms and a fight with the rats in them, in a terminal, on the Bevy-free crates alone, the way a toolkit is used when the game owns its loop |
-| `tutorial` | Warren, the game this guide builds, one binary a chapter |
-
-Two whole games, [Undermere](https://github.com/rudehn/undermere) and [Foundry](https://github.com/rudehn/foundry), live in repositories of their own and depend on the engine by a release's tag.
-
-## Reading further
-
-- [`docs/OVERVIEW.md`](https://github.com/rudehn/rl-engine/blob/main/docs/OVERVIEW.md), the inventory of what exists and what does not.
-- [`docs/PLAN.md`](https://github.com/rudehn/rl-engine/blob/main/docs/PLAN.md), why, decision by decision.
-- [`docs/design/`](https://github.com/rudehn/rl-engine/tree/main/docs/design), one file per subsystem: how it works and why it is shaped that way.
-  Twenty-two of them, and among those this chapter has not sent you to already are
-  [fields](https://github.com/rudehn/rl-engine/blob/main/docs/design/fields.md) (fire and gas),
-  [minds](https://github.com/rudehn/rl-engine/blob/main/docs/design/minds.md) (how a non-player decides),
-  [noise](https://github.com/rudehn/rl-engine/blob/main/docs/design/noise.md) (what a sound is and who hears it),
-  [props](https://github.com/rudehn/rl-engine/blob/main/docs/design/props.md) (crates, levers, containers and traps) and
-  [remains](https://github.com/rudehn/rl-engine/blob/main/docs/design/remains.md) (what is left where something died).
-- [`docs/TODO.md`](https://github.com/rudehn/rl-engine/blob/main/docs/TODO.md), the work that has been found and not started, if you would rather build the engine than a game on it.
-- [`AGENTS.md`](https://github.com/rudehn/rl-engine/blob/main/AGENTS.md), the rules the build enforces and the rules review enforces.
+- Two whole games built on the engine: [Undermere](https://github.com/rudehn/undermere) and [Foundry](https://github.com/rudehn/foundry).
+- [`docs/OVERVIEW.md`](https://github.com/rudehn/rl-engine/blob/main/docs/OVERVIEW.md), everything the engine has.
+- [`docs/design/`](https://github.com/rudehn/rl-engine/tree/main/docs/design), how each subsystem works and why.

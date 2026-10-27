@@ -1,41 +1,48 @@
 # Introduction
 
-This guide builds a roguelike called Warren: a rat warren under a granary, two floors deep, dark except for the lantern you carry, with a way out at the bottom that ends the run.
+This guide builds a roguelike called Warren: a rat warren four floors deep, dark except for the lantern you carry, with a crack of daylight at the bottom that ends the run.
 
 ![Warren: a dug room lit by sight, remembered corridors in cold blue, two rats closing in, and the log counting their bites](images/warren.png)
 
-Nine steps, each a complete program you can run, and the first six playable in this page without installing anything.
-CI compiles every one of them, so the code in these pages is code that builds.
+Nine steps, each a complete program you can run, and the first six playable in this page.
+Each step is the one before it plus something new:
 
-Each step is the one before it plus a single new thing, and the sixth is a small game with floors, fighting, items, an ability and a way to win.
-The last three move the monsters into a file, add an action the engine has never heard of, and fill a rail of panels down the side.
+1. A map, and walking on it.
+2. Darkness, a lantern, and the first panels.
+3. Rats, combat and a log.
+4. Items to eat and throw, and rats that throw back.
+5. An ability of your own.
+6. Four floors, stairs, and a way to win.
+7. Monsters and tile looks moved into files.
+8. A new action, the shove.
+9. A rail of panels down the side.
 
-## Two rules the API follows
+## Two rules the engine follows
 
-**Own the loop or leave it out.**
-The engine holds the turn loop, the scheduler, field of view, the occupancy index, the damage pipeline and the map.
-Your game supplies the decisions: what a tile looks like, what a monster wants, what eating a crust means.
+**The engine owns the loop.**
+It holds the turn order, field of view, combat and the map.
+Your game supplies the decisions: what a tile looks like, what a monster wants, what eating a crust does.
 
 **The engine never names your content.**
-There is no `enum MonsterKind`, no `Tile::Wall`, no `DamageType::Fire`.
-Tiles, damage kinds, factions, statuses, item tags and abilities are opaque ids in registries you fill.
+There is no `MonsterKind` enum or `Tile::Wall`.
+Tiles, damage kinds, factions and abilities are ids in registries you fill.
 
-## What you need first
+## What you need
 
-Rust, and Bevy's ECS: components, systems, resources, `Query`, `Commands`.
-Not Bevy's renderer, assets or scenes.
-Warren draws with a glyph terminal the engine ships.
+Rust, and Bevy's ECS: components, systems, resources, `Query` and `Commands`.
+Warren draws with a glyph terminal the engine ships, so you need nothing from Bevy's renderer.
 
-To build and run the steps yourself, or to start a game of your own from the template, the project's readme has the three commands for each.
+## Your own project
 
-## How the chapters work
+Add both crates to `Cargo.toml`:
 
-Each chapter takes the previous step and adds one thing.
-Code in the text is pulled from the step's source, and the full file is linked at the top of every chapter.
+```toml
+[dependencies]
+atglyph = { git = "https://github.com/rudehn/rl-engine", tag = "v0.4.0" }
+bevy = "0.19"
+```
 
-Every step imports `atglyph::prelude::*`, the names a first game uses.
-From [chapter 4](04-things-and-minds.md) on, a step also imports the topic modules it needs beside it, such as `atglyph::prelude::{combat::*, items::*}`.
+List `bevy` yourself, at the version atglyph uses.
+Bevy's derive macros, such as `#[derive(Component)]`, look for it in your own `Cargo.toml`.
 
-Panels arrive when there is something to put in them rather than all at once, and the last chapter says where the rest of the engine is.
-
-Next: [a map, and walking on it](01-a-map-and-walking.md).
+Every step imports `atglyph::prelude::*`, plus the topic modules it needs, such as `atglyph::prelude::{combat::*, items::*}`.

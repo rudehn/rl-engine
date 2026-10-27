@@ -43,30 +43,39 @@ The tutorial's start, in `NewRun`, fills the two registries combat reads, loads 
 
 <!-- include: ../../../../examples/tutorial/src/bin/step07_content.rs:start -->
 ```rust,no_run
-/// Hands the engine what combat reads, then spawns the player into the
-/// warren, at the first floor's entry.
-fn start(mut commands: Commands, seed: Res<Seed>, mut log: Log) {
-    // The two registries combat reads: what damage can be, and who hates
-    // whom. Both are the game's content, named nowhere in the engine.
-    let kinds = Registry::from_defs(vec![DamageKind::new("bite"), DamageKind::new("venom"), DamageKind::new("kick")]).unwrap();
+/// Hands combat its registries and the rats their brain, then spawns the
+/// player at the first floor's start, lantern open.
+fn start(mut commands: Commands, seed: Res<Seed>, effect_kinds: Res<EffectKinds>, mut log: Log) {
+    // What damage can be, and who hates whom: the game's content, which
+    // the engine knows only by id.
+    let kinds = Registry::from_defs(vec![DamageKind::new("bite"), DamageKind::new("venom"), DamageKind::new("kick"), DamageKind::new("din")]).unwrap();
     let sides = Registry::from_defs(vec![FactionDef::new("you"), FactionDef::new("vermin")]).unwrap();
     let (you, vermin) = (sides.expect("you"), sides.expect("vermin"));
     commands.insert_resource(CombatRules::new().hostile(you, vermin));
-    let registries = Registries { damage_kinds: kinds.clone(), factions: sides, ..default() };
-    // The bestiary names the damage each creature deals, so it loads against
-    // the registries before they are handed to the engine.
-    commands.insert_resource(Bestiary::load(&registries.names(), vermin));
+    // A tag a gnaw's cost names, so a crust can be spent by it.
+    let tags = Registry::from_defs(vec![TagDef::new("bread")]).unwrap();
+    let bread = tags.expect("bread");
+    let registries = Registries { damage_kinds: kinds.clone(), factions: sides, tags, ..default() };
+    // Checked against the registries and the effects as it loads, so a
+    // misspelt name fails here, at startup.
+    let knacks = Abilities::load(KNACKS_RON, &effect_kinds, &registries.names()).unwrap_or_else(|e| panic!("assets/knacks.ron: {e}"));
+    let screech = knacks.defs().expect("screech");
+    let gnaw = knacks.defs().expect("gnaw");
+    commands.insert_resource(Knacks { screech });
+    commands.insert_resource(knacks);
+    // The bestiary names damage kinds, so it loads against the registries.
+    commands.insert_resource(Bestiary::load(&registries.names(), Kin { faction: vermin, bite: kinds.expect("bite"), bread, gnaw }));
     commands.insert_resource(registries);
 
     commands.spawn_player(
         map_of(1),
         (
-            (Viewshed::new(9), RevealsMap, Faction(you), Glyph::new('@', Color::WHITE).on_layer(10)),
-            (Health::full(24), Armor(1), MeleeAttack::new(kinds.expect("kick"), DiceRoll::new(1, 6))),
-            (Inventory::default(),),
+            (Viewshed::new(9), RevealsMap, LANTERN, Faction(you), Grants(vec![screech]), Glyph::new('@', Color::WHITE).on_layer(10)),
+            (Health::full(24), Armor(1), MeleeAttack::new(kinds.expect("kick"), DiceRoll::new(1, 6)), Inventory::default()),
         ),
     );
-    log.push(format!("Seed {}. You squeeze into the warren.", seed.0.0), Tones::NOTICE);
+    log.notice(format!("Seed {}. You squeeze into the warren.", seed.0.0));
+    log.muted("Something is scratching in the dark.");
 }
 ```
 

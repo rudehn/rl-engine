@@ -55,12 +55,13 @@ A game reaches a place by spawning a `Transition` on a cell, and where those cel
 
 <!-- include: ../../../../examples/tutorial/src/bin/step09_panels.rs:ladder -->
 ```rust,no_run
-    /// The floors, top first, and how their stairs look: the engine lays
-    /// them when each floor is built. Nothing below the last floor.
+    /// The floors, top first, and how their stairs look. The engine lays a
+    /// stair up at each floor's start and a stair down at its far point.
+    /// The last floor's far point is the game's: the way out.
     fn ladder(&self) -> Option<Ladder> {
-        let stone = Rgb::new(219, 219, 179);
+        let stone = Rgb::new(204, 204, 219);
         let (up, down) = (StairLook::new('<', stone, "stairs up"), StairLook::new('>', stone, "stairs down"));
-        Some(Ladder::new((1..=FLOORS).map(map_of), up, down))
+        Some(Ladder::new((1..=FLOORS).map(map_of), up, down).bottom(LadderEnd::Game))
     }
 ```
 

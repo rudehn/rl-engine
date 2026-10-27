@@ -4,20 +4,17 @@
 >
 > Source: [`step08_shove.rs`](https://github.com/rudehn/rl-engine/blob/main/examples/tutorial/src/bin/step08_shove.rs)
 
-Everything so far used actions the engine ships.
-This one it has never heard of: shove a rat back a cell, for half a turn.
+The engine knows walking, attacking, using and throwing.
+This chapter adds an action it has never heard of: a shove, for the player and for a monster.
 
 ## An action is a type
 
 <!-- include: ../../../examples/tutorial/src/bin/step08_shove.rs:action -->
 ```rust,no_run
-/// Shove whoever stands one cell away in this direction back another cell.
+/// Shove whoever stands next to you, in this direction, back one cell.
 ///
-/// An action is a type. There is no list in the engine for it to be added
-/// to; registering it makes `Intent<Shove>` a message, and the sweep
-/// refuses any that no resolver claims. It is a `Choice` as well, so a
-/// hog's brain can decide it and the engine routes the decision to the
-/// same intent the player's key writes.
+/// An action is a type. Registering it as a choice makes `Intent<Shove>` a
+/// message, and lets a mind choose it too.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct Shove(Direction);
 impl Action for Shove {}
@@ -27,37 +24,34 @@ impl Choice for Shove {
     }
 }
 
-/// A shove that landed, for the log to read.
+/// A shove that landed, for the log.
 #[derive(Message, Debug, Clone, Copy)]
 struct Shoved {
     target: Entity,
 }
 ```
 
-`Action` is an empty marker trait and `Intent<Shove>` is its own message type.
-There is no `enum Action` for it to be added to.
+`Action` makes `Shove` something an actor can be asked to do.
+`Choice` lets a mind choose it too.
+`Shoved` is a message for the log.
 
+<!-- include: ../../../examples/tutorial/src/bin/step08_shove.rs:register -->
 ```rust,no_run
-        .add_choice::<Shove>()
-        .add_message::<Shoved>()
-        .add_systems(Turn, resolve_shoves.in_set(ResolveSet::Act))
+        // The shove: something the player may do and a mind may choose,
+        // and the system that resolves it.
+        app.add_choice::<Shove>().add_message::<Shoved>().add_systems(Turn, resolve_shoves.in_set(ResolveSet::Act));
 ```
 
-`add_action` registers the message and installs a sweeper in `TurnSet::Sweep`, after everything that might have resolved the intent.
-Warren says `add_choice`, which does everything `add_action` does and one thing more, for the hog at the end of this chapter.
-Forget the resolver and you get a warning naming the type, not a frozen game with the player holding a turn nothing will spend.
+`add_choice` registers both, and `resolve_shoves` runs in `ResolveSet::Act` with the engine's own resolvers.
 
-The key is Shift and a direction, which writes an `Intent<Shove>` the way a direction alone writes an `Intent<Bump>`.
-This step reads every key in an input system of its own against the engine's `DirectionKeys`, and step 9 hands the standard ones back to `PlayerKeysPlugin` and declares the shove as a chord beside them.
-
-## What a resolver owes
+## The resolver
 
 <!-- include: ../../../examples/tutorial/src/bin/step08_shove.rs:resolver -->
 ```rust,no_run
-/// What the shove costs. A shove is quicker than a swing.
+/// A shove costs half a turn.
 const SHOVE_COST: u32 = BASE_ACTION_COST / 2;
 
-/// Everything the resolver moves.
+/// What the resolver reads and moves.
 #[derive(bevy::ecs::system::SystemParam)]
 struct Shoving<'w, 's> {
     occupancy: ResMut<'w, Occupancy>,
@@ -66,12 +60,8 @@ struct Shoving<'w, 's> {
     targets: Query<'w, 's, (&'static mut Position, Option<&'static mut Viewshed>), Without<MyTurn>>,
 }
 
-/// Resolves a shove.
-///
-/// The shape every resolver has: claim the turn so nothing else spends it,
-/// do the thing, and say how it went. `done` charges what it cost; `failed`
-/// leaves the player holding the turn and charges anyone else, so a
-/// monster cannot try the same impossible shove forever.
+/// Resolves a shove, the shape every resolver has: claim the turn, do the
+/// thing, and say how it went. `failed` leaves the player holding the turn.
 fn resolve_shoves(mut intents: MessageReader<Intent<Shove>>, mut resolution: Resolution, mut shoved: MessageWriter<Shoved>, mut world: Shoving) {
     for intent in intents.read() {
         if !resolution.claim(intent.actor) {
@@ -86,8 +76,7 @@ fn resolve_shoves(mut intents: MessageReader<Intent<Shove>>, mut resolution: Res
         let room = world.map.is_walkable(behind) && !world.occupancy.is_occupied(behind);
         let pushed = world.occupancy.first_at(from.0 + offset).filter(|_| room).and_then(|t| world.targets.get_mut(t).ok().map(|found| (t, found)));
         let Some((target, (mut pos, viewshed))) = pushed else {
-            // Nobody there, or nowhere for them to go: nothing happens, and
-            // the turn is still the player's to spend on something else.
+            // Nobody there, or nowhere for them to go.
             resolution.failed(intent.actor, SHOVE_COST);
             continue;
         };
@@ -102,27 +91,111 @@ fn resolve_shoves(mut intents: MessageReader<Intent<Shove>>, mut resolution: Res
 }
 ```
 
-`Resolution` is the engine's side of every resolver, its own and yours.
+Every resolver has the same shape.
+`claim` the turn so nothing else spends it, do the thing, then report.
+`done` charges the cost.
+`failed` leaves the player holding the turn, and charges a monster, so a monster never retries the impossible forever.
 
-**Claim the turn.** `resolution.claim` returns false if the actor holds no turn, so the intent is stale, or if something already spent this one. One turn is one action, across resolvers that have never heard of each other.
+## The key
 
-**Say how it went.** `resolution.done` charges what the action cost and requeues the actor. `resolution.failed` is for one that could not be done: the player keeps the turn at no cost, and anyone else is charged, because a monster handed a free retry asks again forever. That rule lives in `Resolution`, so no resolver has to remember it.
+<!-- include: ../../../examples/tutorial/src/bin/step08_shove.rs:keys -->
+```rust,no_run
+/// Warren's own keys.
+#[derive(Resource, Clone, Copy)]
+struct Binds {
+    shove: ControlId,
+    screech: ControlId,
+    eat: ControlId,
+    throw: ControlId,
+    lantern: ControlId,
+    quit: ControlId,
+}
 
-**Keep the indexes straight.** Moving something means `occupancy.relocate` as well as writing `Position`, and marking a moved viewshed dirty.
+/// Declares the keys. Walking and waiting are the engine's standard keys.
+fn declare_controls(app: &mut App) {
+    app.add_plugins(
+        PlayerKeysPlugin::new()
+            .walk("Move", "walk or attack")
+            .go_through("Move", "take the stairs")
+            .pick_up("Act", "pick up what is here")
+            .wait("Act", "wait a turn"),
+    );
+    let binds = Binds {
+        // The same direction keys with Shift held. A chord matches exactly,
+        // so Shift and `l` never reads as a step.
+        shove: app.add_control("Move", "shove", Keys::Directions { shift: true }),
+        screech: app.add_control("Act", "screech", KeyCode::KeyA),
+        eat: app.add_control("Act", "eat a crust", KeyCode::KeyE),
+        throw: app.add_control("Act", "throw a rock", KeyCode::KeyR),
+        lantern: app.add_control("Act", "lantern on or off", KeyCode::KeyT),
+        quit: app.add_control("Game", "quit", KeyCode::KeyQ),
+    };
+    app.insert_resource(binds);
+}
+```
 
-`SHOVE_COST` is `BASE_ACTION_COST / 2`: fifty against a step's hundred, both scaled by `Speed`.
+`Keys::Directions { shift: true }` binds Shift with every direction key, and `keys.direction(binds.shove)` reads which:
 
-Reporting through a `Shoved` message instead of logging from inside the resolver keeps narration out of it and lets anything else react later.
+<!-- include: ../../../examples/tutorial/src/bin/step08_shove.rs:input -->
+```rust,no_run
+/// The player, while it holds the turn, and its bag.
+type PlayerTurn<'w, 's> = Query<'w, 's, (Entity, &'static Inventory), (With<Player>, With<MyTurn>)>;
+
+/// Reads Warren's own keys once a frame. Asking to act is writing an
+/// intent: the engine spends the turn, or refuses what cannot be done.
+fn player_input(
+    keys: ControlInput,
+    binds: Res<Binds>,
+    player: PlayerTurn,
+    carried: Carried,
+    knacks: Res<Knacks>,
+    mut intents: PlayerIntents,
+    mut exit: MessageWriter<AppExit>,
+) {
+    if keys.just_pressed(binds.quit) {
+        exit.write(AppExit::Success);
+    }
+    // Not the player's turn: drop the key.
+    let Ok((entity, bag)) = player.single() else { return };
+    if let Some(dir) = keys.direction(binds.shove) {
+        intents.shoves.write(Intent::new(entity, Shove(dir)));
+    } else if keys.just_pressed(binds.screech) {
+        // Opens the aiming cursor. The engine uses the knack on Enter.
+        intents.knacks.write(AimAt { user: entity, ability: knacks.screech });
+    } else if keys.just_pressed(binds.eat) {
+        if let Some(crust) = bag.items.iter().copied().find(|i| carried.crusts.contains(*i)) {
+            intents.uses.write(Intent::new(entity, UseItem(crust)));
+        }
+    } else if keys.just_pressed(binds.throw)
+        && let Some(rock) = bag.items.iter().copied().find(|i| carried.rocks.contains(*i))
+    {
+        // Opens the aiming cursor. The engine writes the throw on Enter.
+        intents.aims.write(AimThrow { user: entity, item: rock });
+    }
+}
+
+/// Every intent Warren's keys write, in one parameter.
+#[derive(bevy::ecs::system::SystemParam)]
+struct PlayerIntents<'w> {
+    uses: MessageWriter<'w, Intent<UseItem>>,
+    aims: MessageWriter<'w, AimThrow>,
+    knacks: MessageWriter<'w, AimAt>,
+    shoves: MessageWriter<'w, Intent<Shove>>,
+}
+
+/// What the bag might hold, so a key can pick the right thing.
+#[derive(bevy::ecs::system::SystemParam)]
+struct Carried<'w, 's> {
+    crusts: Query<'w, 's, (), With<Crust>>,
+    rocks: Query<'w, 's, (), With<Throwable>>,
+}
+```
 
 ## A monster that shoves
 
-The hog shoves too, and it takes three lines more than the player did.
-
 <!-- include: ../../../examples/tutorial/src/bin/step08_shove.rs:tactic -->
 ```rust,no_run
-/// The hog's move: shove whoever stands beside it instead of biting. A
-/// tactic of Warren's own, in the brain beside the engine's, that decides
-/// Warren's own action.
+/// The hog's move: shove whoever is beside it instead of biting.
 struct ShoveAdjacent;
 
 impl Tactic<Entity> for ShoveAdjacent {
@@ -138,26 +211,27 @@ impl Tactic<Entity> for ShoveAdjacent {
 }
 ```
 
-A tactic is a type that reads the snapshot and answers with a `Decision`.
-The engine's decisions are its own actions, a step, a blow, a use; yours is `Decision::own(Shove(d))`, a box holding your type.
-`Shove` implements `Choice` as well as `Action`, one `name` for the trace, and the brain puts `ShoveAdjacent` `first`, in front of everything the standard chain holds, for any rat whose file says `shoves: true`.
+A tactic looks at the snapshot of the world its mind sees and returns a decision, or nothing.
+`Decision::own` wraps Warren's own action.
 
+The warren hog has `shoves: true` in `rats.ron`, and the bestiary puts the tactic first in its brain:
+
+<!-- include: ../../../examples/tutorial/src/bin/step08_shove.rs:brain -->
 ```rust,no_run
-        .add_choice::<Shove>()
+            let wits = if def.clever { Wits::SAPIENT } else { Wits::ANIMAL };
+            let can = Repertoire { flee_at: def.flee_at, melee: true, abilities: def.clever, wits, ..Repertoire::default() };
+            let mut brain = if def.clever { CLEVER.brain(can) } else { WARREN.brain(can) };
+            // A shover leads with its shove: Warren's own choice, routed to
+            // Warren's own action.
+            if def.shoves {
+                brain = brain.first(ShoveAdjacent);
+            }
+            minds.push(Arc::new(brain.build()));
 ```
-
-`add_choice` replaces `add_action`.
-It registers the action and its sweeper as before, and it routes every choice of that type a mind makes to the same `Intent<Shove>` the key writes, so `resolve_shoves` never learns whether a hog or a hand asked.
-A choice nobody routed is refused by the sweeper, not lost.
-
-What a tactic needs to know that the engine does not, a scent or a post to return to, you push onto the snapshot in `PerceiveSet::Annotate` with `add_sense` and read back in the tactic with `sense::<T>()`.
-A game that decides a monster's whole turn itself claims it with `acting.claim_decision` in `TurnSet::Decide`, and the engine's brains leave that monster alone.
 
 ## Try it
 
-- Make a shove fail against a heavier monster with `resolution.failed`.
-- Charge a full turn instead of half. The clock is the balance knob.
-- Delete `resolve_shoves` and press the key. Read the warning.
-- Give the rat king `shoves: true` and stand beside it.
+- Make a shove cost a full turn.
+- Give the rat king `shoves: true`.
 
-Next: [where to go next](09-where-to-go-next.md).
+Next: [panels, and where to go next](09-where-to-go-next.md).

@@ -56,28 +56,25 @@ The tutorial's lantern is a `LightSource` constant that a key puts on the player
 
 <!-- include: ../../../../examples/tutorial/src/bin/step02_light.rs:lantern -->
 ```rust,no_run
-/// What the lantern sheds when it is open: a warm, slightly restless pool.
+/// The lantern's light: warm, and a little restless.
 const LANTERN: LightSource = LightSource::new(150, 7, Rgb::new(255, 210, 140)).flickering(30);
 
-/// The player and whether its lantern is open, while it holds the turn.
+/// The player, while it holds the turn, and whether its lantern is open.
 type Lantern<'w, 's> = Query<'w, 's, (Entity, Has<LightSource>), (With<Player>, With<MyTurn>)>;
 
-/// `t` opens the lantern or shades it, and spends the turn either way.
-///
-/// The light is a component on the player, so shading it is removing one.
-/// Nothing else changes: sight is still sight, and the explored map still
-/// remembers what the light once reached.
-fn tend_lantern(keys: Res<ButtonInput<KeyCode>>, mut commands: Commands, player: Lantern, mut waits: MessageWriter<Intent<Wait>>, mut log: Log) {
-    if !keys.just_pressed(KeyCode::KeyT) {
+/// Opens or shades the lantern, which spends the turn. The light is a
+/// component, so shading it is removing it.
+fn tend_lantern(keys: ControlInput, binds: Res<Binds>, mut commands: Commands, player: Lantern, mut waits: MessageWriter<Intent<Wait>>, mut log: Log) {
+    if !keys.just_pressed(binds.lantern) {
         return;
     }
     let Ok((entity, lit)) = player.single() else { return };
     if lit {
         commands.entity(entity).remove::<LightSource>();
-        log.muted("You shade the lantern. The warren closes to arm's length.");
+        log.muted("You shade the lantern.");
     } else {
         commands.entity(entity).insert(LANTERN);
-        log.notice("You open the lantern. The dirt comes up warm around you.");
+        log.notice("You open the lantern.");
     }
     waits.write(Intent::new(entity, Wait));
 }

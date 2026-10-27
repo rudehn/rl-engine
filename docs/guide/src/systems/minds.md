@@ -73,10 +73,11 @@ Warren's bestiary is a brain per kind, the standard chain at Warren's numbers bu
 
 <!-- include: ../../../../examples/tutorial/src/bin/step09_panels.rs:brain -->
 ```rust,no_run
-            // A shover leads with its shove; the shove is a choice of Warren's
-            // own, which the engine routes to Warren's own action.
-            let can = Repertoire { flee_at: def.flee_at, melee: true, ..Repertoire::default() };
-            let mut brain = WARREN.brain(can);
+            let wits = if def.clever { Wits::SAPIENT } else { Wits::ANIMAL };
+            let can = Repertoire { flee_at: def.flee_at, melee: true, abilities: def.clever, wits, ..Repertoire::default() };
+            let mut brain = if def.clever { CLEVER.brain(can) } else { WARREN.brain(can) };
+            // A shover leads with its shove: Warren's own choice, routed to
+            // Warren's own action.
             if def.shoves {
                 brain = brain.first(ShoveAdjacent);
             }

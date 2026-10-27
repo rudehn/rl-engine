@@ -58,24 +58,23 @@ A game's tile layer is a registry filled by name and a table of its own keyed by
 
 <!-- include: ../../../../examples/tutorial/src/bin/step06_descent.rs:tiles -->
 ```rust,no_run
-/// The warren's tiles, and how each one looks in full light.
-struct Warren {
+/// The warren's tiles.
+struct Floors {
     tiles: TileRegistry,
 }
 
-impl Warren {
+impl Floors {
     fn new() -> Self {
         let mut tiles = TileRegistry::new();
         tiles.register(TileProps::wall("earth")).unwrap();
         tiles.register(TileProps::floor("dirt")).unwrap();
-        // Walkable and opaque: you can step through a curtain of roots,
-        // but you cannot see past one until you do.
+        // Walkable, but you cannot see through it.
         tiles.register(TileProps::floor("roots").opaque(true)).unwrap();
         Self { tiles }
     }
 
-    /// Both colours of every tile, and how much each cell jitters from
-    /// its neighbours. The renderer derives darkness and memory from these.
+    /// How each tile looks in full light: a glyph, its colour, the cell's
+    /// background, and how much each cell varies from its neighbours.
     fn appearance(&self) -> TileAppearance {
         let mut look = TileAppearance::new();
         let t = |name| self.tiles.expect(name);

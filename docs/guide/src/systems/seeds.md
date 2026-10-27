@@ -43,14 +43,11 @@ The tutorial's spawner names its domain once and draws from the floor's own seed
 
 <!-- include: ../../../../examples/tutorial/src/bin/step03_blows.rs:populate -->
 ```rust,no_run
-/// The stream the rats are placed from, named once and drawn from each
-/// floor's own seed: a spawner added later draws from a stream of its own
-/// and cannot shift what this one places, and the floors may be entered in
-/// any order.
+/// The random stream rats are placed from. Each floor draws it from its own
+/// seed, so floors can be entered in any order.
 const RATS: SeedDomain = SeedDomain::new(b"warren.rats");
 
-/// Fills the floor the one time it is built. `PlaceEntered::first` is
-/// true only on that arrival, so coming back does not restock it.
+/// Fills a floor the first time it is entered.
 fn populate(mut commands: Commands, mut entered: MessageReader<PlaceEntered>, rats: Res<Rats>, map: Res<WorldMap>, seed: Res<Seed>) {
     for ev in entered.read() {
         if !ev.first {
@@ -62,15 +59,16 @@ fn populate(mut commands: Commands, mut entered: MessageReader<PlaceEntered>, ra
         let mut placed = 0;
         while placed < 16 {
             let p = Point::new(rng.random_range(bounds.x..bounds.right()), rng.random_range(bounds.y..bounds.bottom()));
-            // Not on top of the player, and not close enough to be unfair.
+            // On floor, and not close enough to the start to be unfair.
             if !map.is_walkable(p) || geometry::chebyshev(p, ev.entry) < 8 {
                 continue;
             }
-            commands.spawn((
+            let mut rat = commands.spawn((
                 (Actor, Blocks, Position(p), Speed(110), Faction(rats.faction)),
-                (Health::full(6), Armor(0), Perception(7), DarkSight(9), Mind(rats.mind.clone()), Glyph::new('r', Color::srgb(0.72, 0.55, 0.45)).on_layer(5)),
-                (MeleeAttack::new(rats.bite, DiceRoll::new(1, 3)), Name::new("rat")),
+                (Health::full(6), Armor(0), Perception(7), DarkSight(9)),
+                (MeleeAttack::new(rats.bite, DiceRoll::new(1, 3)),),
             ));
+            rat.insert((Mind(rats.mind.clone()), Glyph::new('r', Color::srgb(0.72, 0.55, 0.45)).on_layer(5), Name::new("rat")));
             placed += 1;
         }
     }

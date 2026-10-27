@@ -86,18 +86,18 @@ An item is an entity carrying the components that say what it is worth, and Warr
 
 <!-- include: ../../../../examples/tutorial/src/bin/step04_things.rs:litter -->
 ```rust,no_run
-/// What the floor is littered with: bread that mends, rocks that fly.
+/// A crust of bread, and how much it heals.
+#[derive(Component, Clone, Copy)]
+struct Crust(i32);
+
+/// Drops a crust or a rock at `p`.
 fn litter(commands: &mut Commands, rats: &Rats, p: Point, bread: bool) {
     if bread {
         commands.spawn((Item, Crust(8), Name::new("crust of bread"), Position(p), Glyph::new('%', Color::srgb(0.85, 0.72, 0.40)).on_layer(2)));
     } else {
-        commands.spawn((
-            Item,
-            Throwable::new(7, Some((rats.bite, DiceRoll::new(1, 4)))),
-            Name::new("rock"),
-            Position(p),
-            Glyph::new('*', Color::srgb(0.66, 0.66, 0.70)).on_layer(2),
-        ));
+        // Thrown up to 7 cells, for 1d4.
+        let flies = Throwable::new(7, Some((rats.bite, DiceRoll::new(1, 4))));
+        commands.spawn((Item, flies, Name::new("rock"), Position(p), Glyph::new('*', Color::srgb(0.66, 0.66, 0.70)).on_layer(2)));
     }
 }
 ```

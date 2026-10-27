@@ -10,102 +10,83 @@
   <p class="weight">Loads about 8 MB</p>
 </div>
 
-Rats that hunt you in the dark, and a log that says what happened.
+Rats arrive, they bite, and you can kick back.
+The log says who hit whom, and dying opens a menu.
 
-## Combat, and the minds that choose it
+## Combat and minds
 
-<!-- include: ../../../examples/tutorial/src/bin/step03_blows.rs:main -->
+<!-- include: ../../../examples/tutorial/src/bin/step03_blows.rs:plugin -->
 ```rust,no_run
-fn main() -> AppExit {
-    let mut app = App::new();
-    // What every game adds: the window and the glyph terminal, the turn
-    // loop, sight, the map in everything but the status row and the log, and the UI base.
-    app.add_plugins(RoguelikePlugins::new("Warren", COLS, ROWS).map(GridRect::new(0, 1, COLS, ROWS - 1 - LOG_ROWS)))
-        // Without this the world is lit everywhere and sight is geometry
-        // alone. With it, `visible` shrinks to what a light reaches.
-        .add_plugins((CombatPlugin, MindsPlugin, LightingPlugin))
-        .insert_resource(Lighting::dark())
-        .insert_resource(Seed(RunSeed(7)))
-        // Two panels: the vitals strip on the top row, the log along the
-        // bottom. Each draws itself; neither needs a system of yours.
-        .add_plugins(VitalsPanel::new(GridRect::new(0, 0, COLS, 1)).hints("[t]orch  [.]wait  [q]uit"))
-        .add_plugins(LogPanel::new(GridRect::new(0, ROWS - LOG_ROWS, COLS, LOG_ROWS)))
-        // The engine narrates blows, deaths and pickups into the log, naming
-        // things in their own colours. Warren changes one phrase: what a rat
-        // does to you is a bite.
-        .add_plugins(NarratorPlugin::default().phrase(Phrase::HitsYou, "{Who} bites you for {n}.", Tones::BAD))
-        // Escape opens the menu, and the run's end opens it by itself.
-        .add_plugins(GameMenuPanel::new(GridRect::new(COLS / 2 - 20, 8, 40, 12)).died("The warren keeps you."))
-        .add_systems(NewRun, start)
-        // A floor fills the first time it is entered, inside the turn.
-        .add_systems(Turn, populate.in_set(TurnSet::React))
-        // Once a frame, before the turns: the lantern is a key of Warren's
-        // own, read beside the standard ones.
-        .add_systems(Update, tend_lantern.in_set(EngineSet::Input))
-        .add_systems(Update, note_explored.in_set(ViewSet::Annotate));
-    // The floors, handed over once: the engine builds each the first time
-    // something enters it, from that floor's own seed.
-    let warren = Warren::new();
-    app.insert_resource(warren.appearance()).places(warren);
-    declare_controls(&mut app);
-    app.run()
+/// The game: its floors, its start and its keys.
+struct Warren;
+
+impl Plugin for Warren {
+    fn build(&self, app: &mut App) {
+        let floors = Floors::new();
+        app.insert_resource(floors.appearance()).places(floors);
+        // Without lighting the world is lit everywhere. With it, you see
+        // only what a light reaches.
+        app.add_plugins(LightingPlugin).insert_resource(Lighting::dark());
+        // Combat resolves blows; minds decide the monsters' turns.
+        app.add_plugins((CombatPlugin, MindsPlugin));
+        app.add_systems(NewRun, start);
+        // Inside the turn: a floor fills the first time it is entered.
+        app.add_systems(Turn, populate.in_set(TurnSet::React));
+        app.add_systems(Update, (player_input, tend_lantern).in_set(EngineSet::Input).run_if(no_modal));
+        // The vitals view is data the panel in `main` draws; the game writes
+        // a line onto it, so the game adds it.
+        app.add_plugins(VitalsViewPlugin).add_systems(Update, note_explored.in_set(ViewSet::Annotate));
+        declare_controls(app);
+    }
 }
 ```
 
-Deciding where to move and deciding whom to hit are the same decision, asked of the same priority list.
-`MindsPlugin` owns that decision and `CombatPlugin` owns what a blow does once it is struck, so a monster that thinks needs both.
-Forget `MindsPlugin` and the first monster spawned says so in an error naming the plugin, instead of standing still all run in silence.
+`CombatPlugin` resolves blows and `MindsPlugin` decides what monsters do on their turns.
+Walking into a monster now attacks it: the walk key's intent becomes a step, a blow or opening a door, whichever fits.
 
-## What a hit passes through
+## Damage kinds and sides
 
 <!-- include: ../../../examples/tutorial/src/bin/step03_blows.rs:start -->
 ```rust,no_run
-/// Hands the engine what combat reads, then spawns the player into the
-/// warren, at the first floor's entry.
+/// Hands combat its registries and the rats their brain, then spawns the
+/// player at the first floor's start, lantern open.
 fn start(mut commands: Commands, seed: Res<Seed>, mut log: Log) {
-    // The two registries combat reads: what damage can be, and who hates
-    // whom. Both are the game's content, named nowhere in the engine.
+    // What damage can be, and who hates whom: the game's content, which
+    // the engine knows only by id.
     let kinds = Registry::from_defs(vec![DamageKind::new("bite"), DamageKind::new("kick")]).unwrap();
     let sides = Registry::from_defs(vec![FactionDef::new("you"), FactionDef::new("vermin")]).unwrap();
     let (you, vermin) = (sides.expect("you"), sides.expect("vermin"));
     commands.insert_resource(CombatRules::new().hostile(you, vermin));
     commands.insert_resource(Registries { damage_kinds: kinds.clone(), factions: sides, ..default() });
     commands.insert_resource(Rats {
-        // Asked in order, first that answers wins: bite what is next to
-        // you, run when badly hurt, chase what you can see, else mill about.
+        // Asked in order, and the first that answers wins: bite what is
+        // beside you, run when badly hurt, chase what you see, else wander.
         mind: Arc::new(Brain::new().then(MeleeAdjacent).then(FleeWhenHurt { at_pct: 30 }).then(Hunt).then(Wander { chance_pct: 40 })),
         bite: kinds.expect("bite"),
         faction: vermin,
     });
 
     commands.spawn_player(
-        WARREN,
+        MapId::FIRST,
         (
             (Viewshed::new(9), RevealsMap, LANTERN, Faction(you), Glyph::new('@', Color::WHITE).on_layer(10)),
             (Health::full(24), Armor(1), MeleeAttack::new(kinds.expect("kick"), DiceRoll::new(1, 6))),
         ),
     );
-    log.push(format!("Seed {}. You squeeze into the warren.", seed.0.0), Tones::NOTICE);
-    log.push("Something is scratching in the dark.", Tones::MUTED);
+    log.notice(format!("Seed {}. You squeeze into the warren.", seed.0.0));
+    log.muted("Something is scratching in the dark.");
 }
 ```
 
-Damage kinds and factions are registries, like tiles.
-They go in `Registries`, the one resource every subsystem reads its registries from.
-`CombatRules` is only who is hostile to whom, held as a matrix over pairs instead of a flag on a monster, so a three-way war costs nothing extra.
+Combat needs two things from the game: what kinds of damage exist, and which sides are hostile.
+Both are registries of your own names; the engine only sees ids.
+The player gets health, armor and a kick, and a `Faction` to fight on.
 
-`DamageStages` is what a hit passes through on its way to the target.
-Its default is one stage, `SubtractArmor`, and Warren keeps it.
-Resistances by damage kind, a shield that eats the first hit each turn, a critical rule reading the attacker's stats: each is another entry in that list, in the order you put them.
-
-Combat rolls from a stream the engine derives from the run's `Seed`, which `main` inserted in [chapter 1](01-a-map-and-walking.md).
-A game never inserts a stream of its own.
-
-## A brain is a priority list
+## Rats
 
 <!-- include: ../../../examples/tutorial/src/bin/step03_blows.rs:creatures -->
 ```rust,no_run
-/// What every rat in the warren shares: one brain, one faction, one bite.
+/// What every rat shares: one brain, one bite, one side.
 #[derive(Resource)]
 struct Rats {
     mind: Arc<Brain<Entity>>,
@@ -114,41 +95,90 @@ struct Rats {
 }
 ```
 
-Tactics are asked in order and the first that answers wins, so the reading order is the behaviour.
-Bite what is next to you, run when badly hurt, chase what you can see, else mill about.
+A `Brain` is a list of tactics.
+Each turn the engine asks them in order, and the first that has an answer wins.
+Every rat shares one brain through an `Arc`.
 
-The brain holds no state about any particular rat, so sixteen rats share one `Arc`.
-What a tactic needs is passed in: a snapshot of what that actor can see, its health, its position.
-That snapshot is cut to the actor's own `Viewshed`, and then to its `Perception`, which is how far its mind considers what it sees.
+<!-- include: ../../../examples/tutorial/src/bin/step03_blows.rs:populate -->
+```rust,no_run
+/// The random stream rats are placed from. Each floor draws it from its own
+/// seed, so floors can be entered in any order.
+const RATS: SeedDomain = SeedDomain::new(b"warren.rats");
 
-`Hunt` does not pathfind per rat per turn.
-It asks the engine for the way toward the enemies it sees, and the engine keeps one Dijkstra flow field per set of goals and movement class, so sixteen rats after one player read their downhill step off one flood.
+/// Fills a floor the first time it is entered.
+fn populate(mut commands: Commands, mut entered: MessageReader<PlaceEntered>, rats: Res<Rats>, map: Res<WorldMap>, seed: Res<Seed>) {
+    for ev in entered.read() {
+        if !ev.first {
+            continue;
+        }
+        let Some(place) = map.place(ev.map) else { continue };
+        let bounds = place.terrain.bounds();
+        let mut rng = seed.place(ev.map).rng(RATS, 0);
+        let mut placed = 0;
+        while placed < 16 {
+            let p = Point::new(rng.random_range(bounds.x..bounds.right()), rng.random_range(bounds.y..bounds.bottom()));
+            // On floor, and not close enough to the start to be unfair.
+            if !map.is_walkable(p) || geometry::chebyshev(p, ev.entry) < 8 {
+                continue;
+            }
+            let mut rat = commands.spawn((
+                (Actor, Blocks, Position(p), Speed(110), Faction(rats.faction)),
+                (Health::full(6), Armor(0), Perception(7), DarkSight(9)),
+                (MeleeAttack::new(rats.bite, DiceRoll::new(1, 3)),),
+            ));
+            rat.insert((Mind(rats.mind.clone()), Glyph::new('r', Color::srgb(0.72, 0.55, 0.45)).on_layer(5), Name::new("rat")));
+            placed += 1;
+        }
+    }
+}
+```
 
-## One key, three actions
+`populate` runs in `TurnSet::React` when the player first enters a floor.
+It draws positions from a stream of the floor's seed, so the same seed places the same rats.
+A rat is a bundle of components: `Actor` takes turns, `Blocks` fills its cell, `Mind` decides.
 
-The walk keys have written a `Bump` since [chapter 1](01-a-map-and-walking.md), and only now is there anyone to strike.
-The engine decides what a bump comes to: a step onto open ground, a blow at a foe standing there, or the door in the way opened.
-Warren renames the verb `walk, or strike whoever is there`, and nothing else about the keys changes.
-That is an alternate action, read in `ResolveSet::Redirect`, the stage before any resolver claims the turn.
+## The narrator and the menu
 
-## The narrator
+<!-- include: ../../../examples/tutorial/src/bin/step03_blows.rs:narrator -->
+```rust,no_run
+/// The engine narrates blows and deaths into the log. Warren changes one
+/// phrase: what a rat does to you is a bite.
+fn narrator() -> NarratorPlugin {
+    NarratorPlugin::default().phrase(Phrase::HitsYou, "{Who} bites you for {n}.", Tones::BAD)
+}
+```
 
-The engine reads every event it raises and says what happened, inside the turn, one pass at a time, so a frame in which three rats act reads in the order they acted.
-Each event becomes a `Phrase`, split by who did what to whom, and the `Phrasebook` holds one template and one tone for each.
-Warren changes exactly one: what a rat does to you is a bite.
+`NarratorPlugin` writes blows and deaths to the log.
+Warren rewrites one phrase, so a rat bites rather than hits.
 
-A name in a template is drawn in the colour of the thing it names, so the rat in `The rat bites you for 2.` is the rat's own brown.
-Take a rat's `Name` off and the log says `something`.
+<!-- include: ../../../examples/tutorial/src/bin/step03_blows.rs:main -->
+```rust,no_run
+fn main() -> AppExit {
+    App::new()
+        // The map now leaves the top row for the vitals and the bottom rows
+        // for the log.
+        .add_plugins(RoguelikePlugins::new("Warren", COLS, ROWS).map(GridRect::new(0, 1, COLS, ROWS - 1 - LOG_ROWS)))
+        .add_plugins(Warren)
+        .add_plugins((
+            VitalsPanel::new(GridRect::new(0, 0, COLS - 13, 1)),
+            LogPanel::new(GridRect::new(0, ROWS - LOG_ROWS, COLS, LOG_ROWS)),
+            // `?` lists every key the game declared; the top-right corner
+            // says so.
+            ControlsPanel::new(GridRect::new(4, 3, COLS - 8, ROWS - LOG_ROWS - 6)).hint(GridRect::new(COLS - 13, 0, 12, 1)),
+        ))
+        .add_plugins(narrator())
+        // Escape opens the menu, and dying opens it by itself.
+        .add_plugins(GameMenuPanel::new(GridRect::new(COLS / 2 - 20, 8, 40, 12)).died("The warren keeps you."))
+        .insert_resource(Seed(RunSeed(7)))
+        .run()
+}
+```
 
-## Ending the run
-
-When the player dies the engine writes `RunOver`, leaves `EngineState::Playing`, and `GameMenuPanel` opens by itself under the words Warren gave it, offering a new run or the same seed again.
-The screen it opens says the outcome, the seed and the turn; a game with more to say pushes a section onto `EndingView` and the screen draws it.
+`GameMenuPanel` opens on Escape, and by itself when you die, offering a new run.
 
 ## Try it
 
-- Add a stage that halves every hit and read the log to confirm the order.
-- Reverse `MeleeAdjacent` and `Hunt` and watch rats walk past you.
-- Take `DarkSight` off the rats and hunt them with the lantern shaded.
+- Give the rats `Speed(200)` and see how fast they close in.
+- Remove `FleeWhenHurt` from the brain and the rats fight to the death.
 
 Next: [things to carry, throw and eat](04-things-and-minds.md).

@@ -9,10 +9,15 @@ atglyph is not on crates.io yet, so a game depends on a release by its git tag, 
 ### Changed
 
 - [Undermere](https://github.com/rudehn/undermere) and [Foundry](https://github.com/rudehn/foundry) moved to repositories of their own; a game changes nothing.
+- The tutorial's nine steps share the starter template's shape, one game plugin that `main` and the tests both add, and each step only adds to the one before; its chapters are shorter.
 
 ### Removed
 
 - **Breaking:** `atglyph::bevy`; name `bevy::` from the game's own `bevy = "0.19"` dependency, which Bevy's derive macros need anyway.
+
+### Fixed
+
+- The tutorial's steps 4 to 6 draw the aiming cursor with `TargetPanel`, where `r` and `a` opened an unseen cursor that held the arrow keys, and steps 7 to 9 keep throwing, the screech and ratlings.
 
 ## [0.4.0] - 2026-10-24
 

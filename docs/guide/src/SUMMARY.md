@@ -7,10 +7,10 @@
 - [Blows, and the log that tells you](03-blows-and-the-log.md)
 - [Things to carry, throw and eat](04-things-and-minds.md)
 - [A knack of your own](05-a-knack.md)
-- [Two floors, and a way out](06-two-floors.md)
+- [Floors, and a way out](06-two-floors.md)
 - [Content in files](07-content-in-files.md)
 - [An action of your own](08-an-action-of-your-own.md)
-- [Where to go next](09-where-to-go-next.md)
+- [Panels, and where to go next](09-where-to-go-next.md)
 
 ---
 

@@ -83,8 +83,8 @@ What a game hands combat is two registries and its rules, which is the whole of 
 
 <!-- include: ../../../../examples/tutorial/src/bin/step03_blows.rs:combat -->
 ```rust,no_run
-    // The two registries combat reads: what damage can be, and who hates
-    // whom. Both are the game's content, named nowhere in the engine.
+    // What damage can be, and who hates whom: the game's content, which
+    // the engine knows only by id.
     let kinds = Registry::from_defs(vec![DamageKind::new("bite"), DamageKind::new("kick")]).unwrap();
     let sides = Registry::from_defs(vec![FactionDef::new("you"), FactionDef::new("vermin")]).unwrap();
     let (you, vermin) = (sides.expect("you"), sides.expect("vermin"));

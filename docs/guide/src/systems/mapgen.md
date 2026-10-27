@@ -66,23 +66,23 @@ A game's generation is a chain assembled for the map being built, run with a see
 
 <!-- include: ../../../../examples/tutorial/src/bin/step06_descent.rs:rules -->
 ```rust,no_run
-/// How a floor is built. The engine calls this once, the first time
-/// something enters the map, and keeps what comes back.
-impl PlaceRules for Warren {
+/// How a floor is built. The engine calls this the first time something
+/// enters the floor, with that floor's own seed, and keeps the result.
+impl PlaceRules for Floors {
     fn build(&self, map: MapId, seed: PlaceSeed) -> Result<PlaceBuild, BuildError> {
-        let depth = floor_of(map);
-        let (wall, open, roots) = (self.tiles.expect("earth"), self.tiles.expect("dirt"), self.tiles.expect("roots"));
+        let (wall, floor) = (self.tiles.expect("earth"), self.tiles.expect("dirt"));
         let mut ctx = BaseContext::blank(84, 42, self.tiles.clone(), wall);
-        // `seed` is this floor's own, handed in by the engine, so the second
-        // floor is the same whether or not you dawdled on the first.
-        let chain = match depth {
+        let chain = match floor_of(map) {
             // Dug rooms near the surface.
-            1 => Chain::new().then(dungeon::Rooms { floor: open, attempts: 40, min_size: 5, max_size: 10, min_rooms: 6 }).then(dungeon::Doors { door: roots }),
-            // Gnawed-out caves under them.
-            _ => Chain::new().then(passes::CellularCave { wall, floor: open, fill_pct: 45, ..Default::default() }).then(passes::KeepLargestRegion { wall }),
+            1 | 2 => Chain::new()
+                .then(dungeon::Rooms { floor, attempts: 40, min_size: 5, max_size: 10, min_rooms: 6 })
+                .then(dungeon::Doors { door: self.tiles.expect("roots") }),
+            // Gnawed-out caves below them.
+            3 => Chain::new().then(passes::CellularCave { wall, floor, fill_pct: 45, ..Default::default() }).then(passes::KeepLargestRegion { wall }),
+            // One wide chamber at the bottom.
+            _ => Chain::new().then(dungeon::Rooms { floor, attempts: 60, min_size: 12, max_size: 18, min_rooms: 2 }),
         };
-        // Every floor gets a start and a point as far from it as the floor
-        // allows: the stairs down on the first, the way out on the second.
+        // A start, and the point farthest from it: where the stairs down go.
         chain.then(dungeon::RandomStart).then(dungeon::FarthestExit).run(&mut ctx, seed)?;
         PlaceBuild::from_context(ctx)
     }
@@ -92,9 +92,8 @@ impl PlaceRules for Warren {
     }
 
     /// The floors, top first, and how their stairs look. The engine lays a
-    /// stair up at every floor's start but the first's and a stair down
-    /// at every floor's far point but the last's, when the floor is built.
-    /// The last floor's far point is ours: the way out.
+    /// stair up at each floor's start and a stair down at its far point.
+    /// The last floor's far point is the game's: the way out.
     fn ladder(&self) -> Option<Ladder> {
         let stone = Rgb::new(204, 204, 219);
         let (up, down) = (StairLook::new('<', stone, "stairs up"), StairLook::new('>', stone, "stairs down"));

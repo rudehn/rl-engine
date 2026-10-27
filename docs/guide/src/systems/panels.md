@@ -110,41 +110,38 @@ Adding panels is the whole of the cheapest way in: each plugin holds its rectang
 
 <!-- include: ../../../../examples/tutorial/src/bin/step09_panels.rs:panels -->
 ```rust,no_run
-        // Five panels. Each holds its own rectangle, reads a view the engine
-        // keeps current, and draws itself: none of them needs a system here.
-        // Warren has no equipment slots, so it takes no `GearPanel`. Opt-in
-        // is per panel: you add the ones you have a game for.
+        // Each panel draws a view the engine keeps current, in its own
+        // rectangle. Add the ones your game has a use for.
         .add_plugins((
             VitalsPanel::new(screen.vitals).heading("Vitals").bars(10),
             NearbyPanel::new(screen.nearby).titled("").headings("In sight", "On the floor"),
             LogPanel::new(screen.log),
-            InspectPanel::new(screen.inspect),
-            // A second presenter over the log the strip already draws: `p`
-            // opens all of it, scrollable and filterable by tone.
+            // `x` opens the look cursor; this says what it is on.
+            InspectPanel::new(screen.over_map),
+            // `p` opens the whole log, scrollable.
             ScrollbackPanel::new(screen.scrollback),
-            // Every key declared below and by the engine, on one screen, and
-            // the one hint that opens it in the rail's last row.
+            // `?` lists every key, and the rail's last row says so.
             ControlsPanel::new(screen.controls).hint(screen.hint),
         ))
-        // What the engine cannot know about a row. Named by set, never by
-        // ordering after a collector function.
-        .add_systems(Update, (note_bag_and_floor, note_what_a_rat_is_doing).in_set(ViewSet::Annotate))
 ```
 
 What the engine cannot know arrives the other way, as a facet pushed onto a row in `ViewSet::Annotate`.
 
 <!-- include: ../../../../examples/tutorial/src/bin/step09_panels.rs:annotate -->
 ```rust,no_run
-/// What a rat is up to, on the row the engine built for it.
-///
-/// `MonsterAIMode` is not a thing the engine has; `flee_at` is this
-/// game's rule. So the row gets a facet, in a tone this game declared,
-/// and the rail prints it without knowing what fleeing is.
+/// The rail has room for which floor this is.
+fn note_floor(mut vitals: ResMut<VitalsView>, map: Res<WorldMap>) {
+    let depth = floor_of(map.current());
+    vitals.facets.push(Facet::new("floor", format!("floor {depth}/{FLOORS}: {}", name_of(depth))));
+}
+
+/// What a rat is up to, as a note on its row in the nearby list. Fleeing
+/// is this game's rule, so the engine prints the note without knowing it.
 fn note_what_a_rat_is_doing(mut nearby: ResMut<NearbyView>, tones: Res<Tones>, bestiary: Res<Bestiary>, rats: Query<(&Kind, &Health)>) {
-    let fleeing = tones.get("fleeing").expect("declared while building");
+    let fleeing = tones.get("fleeing").expect("declared in Warren");
     for row in nearby.actors.iter_mut() {
         let Ok((kind, health)) = rats.get(row.entity) else { continue };
-        if health.current <= bestiary.defs.get(kind.0).flee_at {
+        if health.current * 100 <= bestiary.defs.get(kind.0).flee_at * health.max {
             row.facets.push(Facet::new("mood", "fleeing").toned(fleeing));
         }
     }

@@ -60,10 +60,12 @@ The tutorial asks to act through `PlayerKeysPlugin`, an instance of a key becomi
 
 <!-- include: ../../../../examples/tutorial/src/bin/step01_walking.rs:input -->
 ```rust,no_run
-        // The keys every roguelike shares, named in Warren's words for the
-        // `?` screen. Each press becomes an intent; the engine claims the
-        // turn, charges it, and refuses what cannot be done.
-        app.add_plugins(PlayerKeysPlugin::new().walk("Move", "walk").wait("Act", "wait a turn"));
+/// Reads Warren's own keys once a frame.
+fn player_input(keys: ControlInput, binds: Res<Binds>, mut exit: MessageWriter<AppExit>) {
+    if keys.just_pressed(binds.quit) {
+        exit.write(AppExit::Success);
+    }
+}
 ```
 
 ## The line

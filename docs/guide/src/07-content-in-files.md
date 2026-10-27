@@ -4,12 +4,10 @@
 >
 > Source: [`step07_content.rs`](https://github.com/rudehn/rl-engine/blob/main/examples/tutorial/src/bin/step07_content.rs)
 
-Warren has one kind of rat because a `spawn` call was hard-coded.
-Move the bestiary into a file and the game stops needing a recompile to gain a monster.
+The rats move out of Rust and into a file, and so do the tiles' looks.
+Adding a creature becomes a line of RON.
 
-## The file
-
-Every RON schema in this repository lists its full option space at the top, because the file is the interface.
+## The bestiary file
 
 <!-- include: ../../../examples/tutorial/assets/rats.ron -->
 ```ron
@@ -27,6 +25,8 @@ Every RON schema in this repository lists its full option space at the top, beca
 //   perception: tiles at which it notices you
 //   speed:      percent, 100 normal
 //   flee_at:    percent health at or below which it runs; 0 never flees
+//   clever:     optional; opens doors, throws rocks, and carries a crust it
+//               gnaws when hurt
 //   shoves:     optional; whether it shoves you back a cell instead of biting
 //               when you stand beside it
 //   spawn:      (first_floor, last_floor, weight, min_group, max_group);
@@ -34,6 +34,7 @@ Every RON schema in this repository lists its full option space at the top, beca
 //               game places by hand
 [
     (name: "rat",        glyph: 'r', color: (0.72, 0.55, 0.45), hp: 6,  armor: 0, attack: "1d3",   kind: "bite",  perception: 7,  speed: 110, flee_at: 30, spawn: (1, 3, 6, 2, 4)),
+    (name: "ratling",    glyph: 'R', color: (0.85, 0.66, 0.50), hp: 6,  armor: 0, attack: "1d3",   kind: "bite",  perception: 7,  speed: 110, flee_at: 25, clever: true, spawn: (1, 4, 3, 1, 2)),
     (name: "grey rat",   glyph: 'r', color: (0.62, 0.64, 0.68), hp: 9,  armor: 1, attack: "1d4",   kind: "bite",  perception: 8,  speed: 100, flee_at: 20, spawn: (2, 4, 4, 1, 3)),
     (name: "root adder", glyph: 's', color: (0.45, 0.78, 0.42), hp: 7,  armor: 0, attack: "1d5+1", kind: "venom", perception: 6,  speed: 130, flee_at: 0,  spawn: (2, 4, 3, 1, 2)),
     (name: "warren hog", glyph: 'h', color: (0.85, 0.60, 0.55), hp: 18, armor: 2, attack: "1d6",   kind: "bite",  perception: 5,  speed: 90,  flee_at: 0,  shoves: true, spawn: (3, 4, 2, 1, 1)),
@@ -41,13 +42,17 @@ Every RON schema in this repository lists its full option space at the top, beca
 ]
 ```
 
-## The struct
+Six kinds of vermin, each with its stats and where it lives.
+`spawn` is the first floor, the last floor, a weight, and how many come together.
+The rat king has a weight of 0, so it never turns up at random.
+
+## Reading it
 
 <!-- include: ../../../examples/tutorial/src/bin/step07_content.rs:def -->
 ```rust,no_run
-/// One kind of vermin, exactly as `assets/rats.ron` writes it. Serde
-/// parses the file; [`Named`] is how the registry knows what to key it by,
-/// and a [`NameRef`] is a name in the file that the load turns into an id.
+/// One kind of vermin, exactly as `assets/rats.ron` writes it. Serde parses
+/// it; [`Named`] says what to key it by; a [`NameRef`] is a name in the
+/// file that the load turns into an id.
 #[derive(Debug, Clone, Deserialize)]
 struct RatDef {
     name: String,
@@ -60,6 +65,8 @@ struct RatDef {
     perception: i32,
     speed: u32,
     flee_at: i32,
+    #[serde(default)]
+    clever: bool,
     spawn: (i32, i32, u32, u32, u32),
 }
 
@@ -68,39 +75,42 @@ impl Named for RatDef {
         &self.name
     }
 }
-
-/// What an entity on the map was spawned from.
-#[derive(Component, Clone, Copy)]
-struct Kind(Id<RatDef>);
 ```
 
-`Named` tells the registry what to key an entry by.
-`DiceRoll` deserializes straight from `"1d5+1"`.
-`NameRef<DamageKind>` is the interesting one: in the file it is a name, `kind: "venom"`, and by the time the game holds a `RatDef` it is the id of a damage kind.
+`RatDef` mirrors one line of the file, and serde reads it.
+`kind` is a `NameRef`: a name in the file that becomes an id when it loads, and fails the load if the name is unknown.
 
-## Names become ids at load
+## The bestiary
 
 <!-- include: ../../../examples/tutorial/src/bin/step07_content.rs:bestiary -->
 ```rust,no_run
-/// Warren's chain, the engine's standard one with only what a rat does:
-/// it bites what is beside it, runs once it is hurt enough, hunts what it
-/// sees and otherwise drifts, stepping on two turns in five.
+/// The brain every kind is built from: bite, run once hurt enough, chase
+/// what it sees, else wander.
 const WARREN: Standard = Standard { melee: true, flee: true, flee_after_attacks: true, hunt: true, wander_chance: Some(40), ..Standard::NONE };
 
-/// The bestiary: the defs, one brain per def, and the table that says
-/// what belongs at what depth.
+/// A clever kind's brain adds its knacks, throwing and fetching rocks.
+const CLEVER: Standard = Standard { ability_chance: Some(80), throw_chance: Some(60), scavenge_reach: Some(9), wander_chance: Some(30), ..WARREN };
+
+/// What every creature shares that is not in the file.
+struct Kin {
+    faction: FactionId,
+    bite: atglyph::rules::damage::DamageKindId,
+    bread: TagId,
+    gnaw: AbilityId,
+}
+
+/// The bestiary: the kinds, a brain for each, and a table of what lives
+/// at which depth.
 #[derive(Resource)]
 struct Bestiary {
     defs: Registry<RatDef>,
     table: BandedTable<Id<RatDef>>,
     minds: Vec<Arc<Brain<Entity>>>,
-    faction: FactionId,
+    kin: Kin,
 }
 
 impl Bestiary {
-    /// Reads the file against `names`, builds a brain for each entry from its own fields,
-    /// and bands the ones with a weight into the spawn table.
-    fn load(names: &Names, faction: FactionId) -> Self {
+    fn load(names: &Names, kin: Kin) -> Self {
         let defs: Registry<RatDef> = names.load(RATS_RON).unwrap_or_else(|e| panic!("assets/rats.ron: {e}"));
         let mut table = BandedTable::default();
         let mut minds = Vec::new();
@@ -109,75 +119,154 @@ impl Bestiary {
             if weight > 0 {
                 table.push(BandedEntry::new(id).bands(first, last).weight(weight).group(group_min, group_max));
             }
-            let can = Repertoire { flee_at: def.flee_at, melee: true, ..Repertoire::default() };
-            minds.push(Arc::new(WARREN.brain(can).build()));
+            let wits = if def.clever { Wits::SAPIENT } else { Wits::ANIMAL };
+            let can = Repertoire { flee_at: def.flee_at, melee: true, abilities: def.clever, wits, ..Repertoire::default() };
+            let brain = if def.clever { CLEVER.brain(can) } else { WARREN.brain(can) };
+            minds.push(Arc::new(brain.build()));
         }
-        Self { defs, table, minds, faction }
+        Self { defs, table, minds, kin }
     }
 
     /// Spawns one of `id` at `at`.
     fn spawn(&self, commands: &mut Commands, id: Id<RatDef>, at: Point) -> Entity {
         let def = self.defs.get(id);
-        commands
-            .spawn((
-                (Actor, Blocks, Kind(id), Position(at), Speed(def.speed), Faction(self.faction)),
-                (Health::full(def.hp), Armor(def.armor), Perception(def.perception), Mind(self.minds[id.index()].clone())),
-                (MeleeAttack::new(def.kind.id(), def.attack), Glyph::new(def.glyph, Color::srgb(def.color.0, def.color.1, def.color.2)).on_layer(5)),
-                // What the narrator, and later the rail, call it.
-                (Name::new(def.name.clone()),),
-            ))
-            .id()
+        // A clever kind carries its supper, and knows how to eat it.
+        let supper = def.clever.then(|| commands.spawn((Item, Crust(6), Tagged(vec![self.kin.bread]), Name::new("crust of bread"))).id());
+        let mut e = commands.spawn((
+            (Actor, Blocks, Position(at), Speed(def.speed), Faction(self.kin.faction)),
+            (Health::full(def.hp), Armor(def.armor), Perception(def.perception), DarkSight(9), Mind(self.minds[id.index()].clone())),
+            (MeleeAttack::new(def.kind.id(), def.attack), Glyph::new(def.glyph, Color::srgb(def.color.0, def.color.1, def.color.2)).on_layer(5)),
+            (Name::new(def.name.clone()),),
+        ));
+        if def.clever {
+            e.insert((Intelligence(Wits::SAPIENT), Inventory { items: supper.into_iter().collect() }, Grants(vec![self.kin.gnaw])));
+        } else {
+            e.insert(Intelligence(Wits::ANIMAL));
+        }
+        e.id()
     }
 }
 ```
 
-`names.load` parses and checks: names unique, every entry well formed, and every name of other content found.
-It fails at start-up naming the file, not three floors down.
+`Bestiary` replaces chapter 3's `Rats` resource.
+It loads the file into a `Registry`, which gives each line an `Id`, and builds a spawn table and a brain per kind.
 
-The names come from `Registries`, the resource `start` fills with the damage kinds and the sides before anything is loaded against them:
+The hand-built brains are gone too.
+`Standard` is the engine's usual chain of tactics, and a `Repertoire` says what each kind can do.
+A `clever` kind gets throwing, scavenging and its knack.
 
-```rust
-    commands.insert_resource(Bestiary::load(&registries.names(), vermin));
+`start` loads it against the registries, so `kind: "venom"` must be a registered damage kind:
+
+<!-- include: ../../../examples/tutorial/src/bin/step07_content.rs:start -->
+```rust,no_run
+/// Hands combat its registries and the rats their brain, then spawns the
+/// player at the first floor's start, lantern open.
+fn start(mut commands: Commands, seed: Res<Seed>, effect_kinds: Res<EffectKinds>, mut log: Log) {
+    // What damage can be, and who hates whom: the game's content, which
+    // the engine knows only by id.
+    let kinds = Registry::from_defs(vec![DamageKind::new("bite"), DamageKind::new("venom"), DamageKind::new("kick"), DamageKind::new("din")]).unwrap();
+    let sides = Registry::from_defs(vec![FactionDef::new("you"), FactionDef::new("vermin")]).unwrap();
+    let (you, vermin) = (sides.expect("you"), sides.expect("vermin"));
+    commands.insert_resource(CombatRules::new().hostile(you, vermin));
+    // A tag a gnaw's cost names, so a crust can be spent by it.
+    let tags = Registry::from_defs(vec![TagDef::new("bread")]).unwrap();
+    let bread = tags.expect("bread");
+    let registries = Registries { damage_kinds: kinds.clone(), factions: sides, tags, ..default() };
+    // Checked against the registries and the effects as it loads, so a
+    // misspelt name fails here, at startup.
+    let knacks = Abilities::load(KNACKS_RON, &effect_kinds, &registries.names()).unwrap_or_else(|e| panic!("assets/knacks.ron: {e}"));
+    let screech = knacks.defs().expect("screech");
+    let gnaw = knacks.defs().expect("gnaw");
+    commands.insert_resource(Knacks { screech });
+    commands.insert_resource(knacks);
+    // The bestiary names damage kinds, so it loads against the registries.
+    commands.insert_resource(Bestiary::load(&registries.names(), Kin { faction: vermin, bite: kinds.expect("bite"), bread, gnaw }));
     commands.insert_resource(registries);
+
+    commands.spawn_player(
+        map_of(1),
+        (
+            (Viewshed::new(9), RevealsMap, LANTERN, Faction(you), Grants(vec![screech]), Glyph::new('@', Color::WHITE).on_layer(10)),
+            (Health::full(24), Armor(1), MeleeAttack::new(kinds.expect("kick"), DiceRoll::new(1, 6)), Inventory::default()),
+        ),
+    );
+    log.notice(format!("Seed {}. You squeeze into the warren.", seed.0.0));
+    log.muted("Something is scratching in the dark.");
+}
 ```
 
-Misspell a kind and the run stops at start-up with `root adder: unknown damage kind "vemon"`, every unknown name in the file reported at once under the creature it is in.
-They are the same tables the engine reads, so the kind a file was checked against is the kind combat mitigates.
-A game's own registries join the lookup the same way: `names.with("item", &items)` lets a creature name what it drops.
-Nothing in `RatDef` is a string that could still be wrong, and nothing spawns a rat by looking a name up.
+## Placing groups
 
-What comes back is an `Id<RatDef>`: a dense index, so `minds[id.index()]` is an array lookup, and typed, so it cannot be passed where an `Id<ItemDef>` belongs.
+<!-- include: ../../../examples/tutorial/src/bin/step07_content.rs:populate -->
+```rust,no_run
+/// The random stream rats are placed from. Each floor draws it from its own
+/// seed, so floors can be entered in any order.
+const RATS: SeedDomain = SeedDomain::new(b"warren.rats");
 
-Note what the loop does with `flee_at`.
-`WARREN` is the engine's standard chain, a `Standard` holding only the steps Warren wants at Warren's own numbers, and a `Repertoire` is what one rat can do.
-The loop builds a different brain per definition from that definition's fields, so a rat that never flees gets a brain with no `FleeWhenHurt` in it, instead of one that checks a flag every turn.
-The file decides the shape of the brain, not only its numbers.
-
-## Bands say what belongs where
-
-```rust
-                table.push(BandedEntry::new(id).bands(first, last).weight(weight).group(group_min, group_max));
-```
-
-```rust
+/// Fills a floor the first time it is entered.
+fn populate(
+    mut commands: Commands,
+    mut entered: MessageReader<PlaceEntered>,
+    bestiary: Res<Bestiary>,
+    map: Res<WorldMap>,
+    seed: Res<Seed>,
+    mut tell: MessageWriter<Tell>,
+) {
+    for ev in entered.read() {
+        let depth = floor_of(ev.map);
+        tell.write(Tell::new(format!("Floor {depth}: {}.", name_of(depth)), Tones::NOTICE));
+        if !ev.first {
+            continue;
+        }
+        // The stairs are the engine's. The way out, at the last floor's far
+        // point, is an entity the game spawns.
+        if let Some(far) = ev.exit.filter(|_| depth == FLOORS) {
+            commands.spawn((Position(far), WayOut, Name::new("crack of daylight"), Glyph::new('<', Color::srgb(1.0, 0.95, 0.70)).on_layer(1)));
+            // The rat king sits on it. Its weight of 0 keeps it out of the
+            // table, so it is placed by name.
+            bestiary.spawn(&mut commands, bestiary.defs.expect("rat king"), far);
+        }
+        let Some(place) = map.place(ev.map) else { continue };
+        let bounds = place.terrain.bounds();
+        let mut rng = seed.place(ev.map).rng(RATS, 0);
+        // Groups, not single rats: the table says what may live at this
+        // depth, how likely it is, and how many come together.
+        let mut groups = 0;
+        for _ in 0..60 {
+            if groups >= 3 + depth as usize {
+                break;
+            }
             let Some((&id, count)) = bestiary.table.pick_group(depth as i32, &mut rng) else { break };
+            let anchor = Point::new(rng.random_range(bounds.x..bounds.right()), rng.random_range(bounds.y..bounds.bottom()));
+            let mut placed = 0;
+            for p in geometry::square(anchor, 2) {
+                // On floor, and not close enough to the start to be unfair.
+                if placed < count && map.is_walkable(p) && geometry::chebyshev(p, ev.entry) >= 8 {
+                    bestiary.spawn(&mut commands, id, p);
+                    placed += 1;
+                }
+            }
+            if placed > 0 {
+                groups += 1;
+            }
+        }
+        // Bread and rocks, scattered the same way.
+        let mut dropped = 0;
+        while dropped < 14 {
+            let p = Point::new(rng.random_range(bounds.x..bounds.right()), rng.random_range(bounds.y..bounds.bottom()));
+            if map.is_walkable(p) {
+                litter(&mut commands, &bestiary, p, dropped % 2 == 0);
+                dropped += 1;
+            }
+        }
+    }
+}
 ```
 
-A `BandedTable` entry has a depth range, a weight and a group size, so the difficulty curve is four numbers per line in a file.
-Rats thin out below floor three, hogs only appear on the last two, adders come in ones and twos.
+`pick_group` draws a kind that may live at this depth, by weight, and how many come together.
+The rat king is placed by name, on the crack of daylight.
 
-Weight zero keeps an entry out of the table, which is how the king lives in the same file and is still placed by hand:
-
-```rust
-                bestiary.spawn(&mut commands, bestiary.defs.expect("rat king"), throne);
-```
-
-`atglyph-rules` ships a threat score and a band report over this same table, for a balance tool or a test to print.
-
-## The tiles too
-
-The largest block of Rust in [chapter 2](02-sight-and-light.md) was three lines of colour literals.
-Colour is content as well, so it goes in a file of the same shape:
+## The tiles' looks
 
 <!-- include: ../../../examples/tutorial/assets/tiles.ron -->
 ```ron
@@ -203,23 +292,19 @@ Colour is content as well, so it goes in a file of the same shape:
 
 <!-- include: ../../../examples/tutorial/src/bin/step07_content.rs:looks -->
 ```rust,no_run
-    /// Both colours of every tile, and how much each cell strays from its
-    /// neighbours, read from `assets/tiles.ron` against the tiles registered
-    /// above. A tile the file forgets is reported at startup, by name.
+    /// How each tile looks, read from `assets/tiles.ron`. A tile the file
+    /// forgets is reported at startup, by name.
     fn appearance(&self) -> TileAppearance {
         TileAppearance::load(TILES_RON, &self.tiles).unwrap_or_else(|e| panic!("assets/tiles.ron: {e}"))
     }
 ```
 
-The load is checked against the registry the same way the bestiary is checked against the damage kinds.
-A tile the file forgets, a name it misspells or a tile it describes twice stops the run at start-up with every problem listed, instead of showing up as a magenta question mark three floors down.
-What a tile *is* stays in `Warren::new`, because the engine reads that; what it looks like is the renderer's business and the file's.
+What a tile is stays in code; how it looks moves to the file.
+A tile the file forgets is reported at startup, by name.
 
 ## Try it
 
-- Add a monster of your own to `rats.ron`. You will not touch a Rust file.
-- Give something `spawn: (1, 4, 20, 6, 10)` and meet a swarm.
-- Break the file on purpose, by duplicating a name, writing `"1z6"`, or giving a rat a `kind` nobody registered, and read the error.
-- Recolour the roots in `tiles.ron`, then delete the line and read what the load says.
+- Add a creature to `rats.ron` and see it on the floors you gave it.
+- Misspell a damage kind and read the error.
 
 Next: [an action of your own](08-an-action-of-your-own.md).

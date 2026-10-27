@@ -57,7 +57,7 @@ The [guide](https://rudehn.github.io/rl-engine/) builds a roguelike one chapter 
 
 - things to throw, and monsters that pick things up, in [Things to carry, throw and eat](https://rudehn.github.io/rl-engine/04-things-and-minds.html);
 - an ability, in [A knack of your own](https://rudehn.github.io/rl-engine/05-a-knack.html);
-- stairs and more floors, in [Two floors, and a way out](https://rudehn.github.io/rl-engine/06-two-floors.html);
+- stairs and more floors, in [Floors, and a way out](https://rudehn.github.io/rl-engine/06-two-floors.html);
 - monsters and items read from RON files, in [Content in files](https://rudehn.github.io/rl-engine/07-content-in-files.html);
 - an action of your own, in [An action of your own](https://rudehn.github.io/rl-engine/08-an-action-of-your-own.html);
 - more panels, statuses and saving, in [Where to go next](https://rudehn.github.io/rl-engine/09-where-to-go-next.html).

@@ -145,12 +145,15 @@ impl PlaceRules for Floors {
 /// Hands combat its registries and the rats their brain, then spawns the
 /// player at the first floor's start, lantern open.
 fn start(mut commands: Commands, seed: Res<Seed>, mut log: Log) {
+    // ANCHOR: combat
     // What damage can be, and who hates whom: the game's content, which
     // the engine knows only by id.
     let kinds = Registry::from_defs(vec![DamageKind::new("bite"), DamageKind::new("kick")]).unwrap();
     let sides = Registry::from_defs(vec![FactionDef::new("you"), FactionDef::new("vermin")]).unwrap();
     let (you, vermin) = (sides.expect("you"), sides.expect("vermin"));
     commands.insert_resource(CombatRules::new().hostile(you, vermin));
+    commands.insert_resource(Registries { damage_kinds: kinds.clone(), factions: sides, ..default() });
+    // ANCHOR_END: combat
     commands.insert_resource(Rats {
         // Asked in order, and the first that answers wins: bite what is
         // beside you, run when badly hurt, chase what you see, else wander.
@@ -168,7 +171,6 @@ fn start(mut commands: Commands, seed: Res<Seed>, mut log: Log) {
         bite: kinds.expect("bite"),
         faction: vermin,
     });
-    commands.insert_resource(Registries { damage_kinds: kinds.clone(), factions: sides, ..default() });
 
     commands.spawn_player(
         MapId::FIRST,
