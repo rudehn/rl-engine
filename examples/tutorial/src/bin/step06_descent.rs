@@ -1,25 +1,20 @@
-//! Warren, step 6: two floors, and a way out of the second.
+//! Warren, step 6: four floors, stairs between them, and a way out.
 //!
-//! The guide chapter is `docs/guide/src/06-two-floors.md`. A floor is a
-//! *place*: built the first time it is entered and kept whole after that.
-//! The floors are a ladder the rules describe, and the engine lays the
-//! stairs between them, entities with a [`Transition`]; the way out at the
-//! bottom is an entity too: stand on it and the run is won.
+//! The guide chapter is `docs/guide/src/06-two-floors.md`.
 //!
 //! `cargo run -p tutorial --bin step06_descent`
 //!
-//! Keys: arrows to walk or strike, `>` to take stairs, `a` screech,
-//! `g` get, `e` eat, `r` throw, `t` lantern, `.` wait, `q` quit.
+//! Keys: arrows to walk or strike, `>` take the stairs, `a` screech, `g` get, `e` eat, `r` throw
+//! a rock (Enter to confirm an aim, Escape to put it away), `t` lantern,
+//! `.` wait, `q` quit.
 
 use atglyph::prelude::*;
 use atglyph::prelude::{combat::*, items::*, mapgen::*, minds::*, ui::*, world::*};
 use atglyph::rand::Rng;
-use atglyph::rules::AbilityId;
-use atglyph::rules::TagDef;
-use atglyph::rules::Wits;
 use atglyph::rules::ai::tactics::{FleeWhenHurt, Hunt, MeleeAdjacent, Wander};
 use atglyph::rules::ai::tactics::{Scavenge, ThrowAtRange, UseAbility};
 use atglyph::rules::faction::FactionDef;
+use atglyph::rules::{AbilityId, TagDef, TagId, Wits};
 use bevy::prelude::*;
 use std::sync::Arc;
 
@@ -30,16 +25,15 @@ const ROWS: i32 = 40;
 const LOG_ROWS: i32 = 5;
 
 // ANCHOR: floors
-/// How deep the warren goes before it lets you out again.
-const FLOORS: u32 = 2;
+/// How deep the warren goes.
+const FLOORS: u32 = 4;
 
-/// The warren's floors are maps one upward, so a floor's number is its
-/// map's.
+/// Floor `n` is map `n`.
 fn map_of(floor: u32) -> MapId {
     MapId(floor)
 }
 
-/// The floor a map id is.
+/// The floor a map is.
 fn floor_of(map: MapId) -> u32 {
     map.0
 }
@@ -48,73 +42,100 @@ fn floor_of(map: MapId) -> u32 {
 fn name_of(floor: u32) -> &'static str {
     match floor {
         1 => "the Burrow",
-        _ => "the Deep Nest",
+        2 => "the Middens",
+        3 => "the Bone Nest",
+        _ => "the King's Chamber",
     }
 }
 // ANCHOR_END: floors
 
 // ANCHOR: main
 fn main() -> AppExit {
-    let mut app = App::new();
-    // What every game adds: the window and the glyph terminal, the turn
-    // loop, sight, the map in everything but the status row and the log, and the UI base.
-    app.add_plugins(RoguelikePlugins::new("Warren", COLS, ROWS).map(GridRect::new(0, 1, COLS, ROWS - 1 - LOG_ROWS)))
-        // Without this the world is lit everywhere and sight is geometry
-        // alone. With it, `visible` shrinks to what a light reaches.
-        .add_plugins((CombatPlugin, MindsPlugin, LightingPlugin, ItemsPlugin, ThrowingPlugin, AbilitiesPlugin, TargetViewPlugin))
-        .insert_resource(Lighting::dark())
-        // The effects an ability may name. The engine ships seven; a game
-        // adds its own beside them with `add_effect`.
-        .add_engine_effects()
-        .insert_resource(Seed(RunSeed(7)))
-        // Two panels: the vitals strip on the top row, the log along the
-        // bottom. Each draws itself; neither needs a system of yours.
-        .add_plugins(VitalsPanel::new(GridRect::new(0, 0, COLS, 1)).hints("[>]stairs [a]screech [g]et [e]at [r]ock [t]orch [.]wait [q]uit"))
-        .add_plugins(LogPanel::new(GridRect::new(0, ROWS - LOG_ROWS, COLS, LOG_ROWS)))
-        // The engine narrates blows, deaths and pickups into the log, naming
-        // things in their own colours. Warren changes one phrase: what a rat
-        // does to you is a bite.
-        .add_plugins(NarratorPlugin::default().phrase(Phrase::HitsYou, "{Who} bites you for {n}.", Tones::BAD))
-        // Escape opens the menu, and the run's end opens it by itself.
+    App::new()
+        // The map now leaves the top row for the vitals and the bottom rows
+        // for the log.
+        .add_plugins(RoguelikePlugins::new("Warren", COLS, ROWS).map(GridRect::new(0, 1, COLS, ROWS - 1 - LOG_ROWS)))
+        .add_plugins(Warren)
+        .add_plugins((
+            VitalsPanel::new(GridRect::new(0, 0, COLS - 13, 1)),
+            LogPanel::new(GridRect::new(0, ROWS - LOG_ROWS, COLS, LOG_ROWS)),
+            // `?` lists every key the game declared; the top-right corner
+            // says so.
+            ControlsPanel::new(GridRect::new(4, 3, COLS - 8, ROWS - LOG_ROWS - 6)).hint(GridRect::new(COLS - 13, 0, 12, 1)),
+        ))
+        // ANCHOR: target
+        // Draws the aiming cursor: the flight, who it would hit, and a box
+        // saying so. Without it the cursor still opens, unseen.
+        .add_plugins(TargetPanel::new(GridRect::new(1, ROWS - LOG_ROWS - 9, 44, 8)).hints("enter confirm  tab next  esc cancel"))
+        // ANCHOR_END: target
+        .add_plugins(narrator())
+        // Escape opens the menu, and dying opens it by itself.
         .add_plugins(GameMenuPanel::new(GridRect::new(COLS / 2 - 20, 8, 40, 12)).died("The warren keeps you."))
-        .add_systems(NewRun, start)
-        // A floor fills the first time it is entered, inside the turn.
-        .add_systems(Turn, (populate, eat, leave).in_set(TurnSet::React))
-        .add_systems(Update, note_bag.in_set(ViewSet::Annotate))
-        .add_systems(Update, narrate.in_set(PresentSet::Narrate))
-        // Once a frame, before the turns: whatever the player pressed of
-        // Warren's own keys becomes at most one intent, beside the standard
-        // keys, however many passes the turn loop then runs.
-        .add_systems(Update, (player_input, tend_lantern).in_set(EngineSet::Input))
-        .add_systems(Update, note_explored.in_set(ViewSet::Annotate));
-    // The floors, handed over once: the engine builds each the first time
-    // something enters it, from that floor's own seed.
-    let warren = Warren::new();
-    app.insert_resource(warren.appearance()).places(warren);
-    declare_controls(&mut app);
-    app.run()
+        .insert_resource(Seed(RunSeed(7)))
+        .run()
 }
 // ANCHOR_END: main
 
+// ANCHOR: narrator
+/// The engine narrates blows and deaths into the log. Warren changes one
+/// phrase: what a rat does to you is a bite.
+fn narrator() -> NarratorPlugin {
+    NarratorPlugin::default().phrase(Phrase::HitsYou, "{Who} bites you for {n}.", Tones::BAD)
+}
+// ANCHOR_END: narrator
+
+// ANCHOR: plugin
+/// The game: its floors, its start and its keys.
+struct Warren;
+
+impl Plugin for Warren {
+    fn build(&self, app: &mut App) {
+        let floors = Floors::new();
+        app.insert_resource(floors.appearance()).places(floors);
+        // Without lighting the world is lit everywhere. With it, you see
+        // only what a light reaches.
+        app.add_plugins(LightingPlugin).insert_resource(Lighting::dark());
+        // Combat resolves blows; minds decide the monsters' turns.
+        app.add_plugins((CombatPlugin, MindsPlugin));
+        // Items lie on the floor or in a bag; thrown ones fly. The target
+        // view runs the aiming cursor that `main` draws.
+        app.add_plugins((ItemsPlugin, ThrowingPlugin, TargetViewPlugin));
+        // Abilities, and the effects one may name: the engine's seven.
+        app.add_plugins(AbilitiesPlugin).add_engine_effects();
+        app.add_systems(NewRun, start);
+        // Inside the turn: a floor fills the first time it is entered, and
+        // a crust heals before the next rat bites.
+        app.add_systems(Turn, (populate, eat, leave).in_set(TurnSet::React));
+        app.add_systems(Update, narrate.in_set(PresentSet::Narrate));
+        // ANCHOR: gate
+        app.add_systems(Update, (player_input, tend_lantern).in_set(EngineSet::Input).run_if(no_modal));
+        // ANCHOR_END: gate
+        // The vitals view is data the panel in `main` draws; the game writes
+        // a line onto it, so the game adds it.
+        app.add_plugins(VitalsViewPlugin).add_systems(Update, (note_explored, note_bag).in_set(ViewSet::Annotate));
+        declare_controls(app);
+    }
+}
+// ANCHOR_END: plugin
+
 // ANCHOR: tiles
-/// The warren's tiles, and how each one looks in full light.
-struct Warren {
+/// The warren's tiles.
+struct Floors {
     tiles: TileRegistry,
 }
 
-impl Warren {
+impl Floors {
     fn new() -> Self {
         let mut tiles = TileRegistry::new();
         tiles.register(TileProps::wall("earth")).unwrap();
         tiles.register(TileProps::floor("dirt")).unwrap();
-        // Walkable and opaque: you can step through a curtain of roots,
-        // but you cannot see past one until you do.
+        // Walkable, but you cannot see through it.
         tiles.register(TileProps::floor("roots").opaque(true)).unwrap();
         Self { tiles }
     }
 
-    /// Both colours of every tile, and how much each cell jitters from
-    /// its neighbours. The renderer derives darkness and memory from these.
+    /// How each tile looks in full light: a glyph, its colour, the cell's
+    /// background, and how much each cell varies from its neighbours.
     fn appearance(&self) -> TileAppearance {
         let mut look = TileAppearance::new();
         let t = |name| self.tiles.expect(name);
@@ -127,23 +148,23 @@ impl Warren {
 // ANCHOR_END: tiles
 
 // ANCHOR: rules
-/// How a floor is built. The engine calls this once, the first time
-/// something enters the map, and keeps what comes back.
-impl PlaceRules for Warren {
+/// How a floor is built. The engine calls this the first time something
+/// enters the floor, with that floor's own seed, and keeps the result.
+impl PlaceRules for Floors {
     fn build(&self, map: MapId, seed: PlaceSeed) -> Result<PlaceBuild, BuildError> {
-        let depth = floor_of(map);
-        let (wall, open, roots) = (self.tiles.expect("earth"), self.tiles.expect("dirt"), self.tiles.expect("roots"));
+        let (wall, floor) = (self.tiles.expect("earth"), self.tiles.expect("dirt"));
         let mut ctx = BaseContext::blank(84, 42, self.tiles.clone(), wall);
-        // `seed` is this floor's own, handed in by the engine, so the second
-        // floor is the same whether or not you dawdled on the first.
-        let chain = match depth {
+        let chain = match floor_of(map) {
             // Dug rooms near the surface.
-            1 => Chain::new().then(dungeon::Rooms { floor: open, attempts: 40, min_size: 5, max_size: 10, min_rooms: 6 }).then(dungeon::Doors { door: roots }),
-            // Gnawed-out caves under them.
-            _ => Chain::new().then(passes::CellularCave { wall, floor: open, fill_pct: 45, ..Default::default() }).then(passes::KeepLargestRegion { wall }),
+            1 | 2 => Chain::new()
+                .then(dungeon::Rooms { floor, attempts: 40, min_size: 5, max_size: 10, min_rooms: 6 })
+                .then(dungeon::Doors { door: self.tiles.expect("roots") }),
+            // Gnawed-out caves below them.
+            3 => Chain::new().then(passes::CellularCave { wall, floor, fill_pct: 45, ..Default::default() }).then(passes::KeepLargestRegion { wall }),
+            // One wide chamber at the bottom.
+            _ => Chain::new().then(dungeon::Rooms { floor, attempts: 60, min_size: 12, max_size: 18, min_rooms: 2 }),
         };
-        // Every floor gets a start and a point as far from it as the floor
-        // allows: the stairs down on the first, the way out on the second.
+        // A start, and the point farthest from it: where the stairs down go.
         chain.then(dungeon::RandomStart).then(dungeon::FarthestExit).run(&mut ctx, seed)?;
         PlaceBuild::from_context(ctx)
     }
@@ -152,62 +173,65 @@ impl PlaceRules for Warren {
         self.tiles.tables()
     }
 
+    // ANCHOR: ladder
     /// The floors, top first, and how their stairs look. The engine lays a
-    /// stair up at every floor's start but the first's and a stair down
-    /// at every floor's far point but the last's, when the floor is built.
-    /// The last floor's far point is ours: the way out.
+    /// stair up at each floor's start and a stair down at its far point.
+    /// The last floor's far point is the game's: the way out.
     fn ladder(&self) -> Option<Ladder> {
         let stone = Rgb::new(204, 204, 219);
         let (up, down) = (StairLook::new('<', stone, "stairs up"), StairLook::new('>', stone, "stairs down"));
         Some(Ladder::new((1..=FLOORS).map(map_of), up, down).bottom(LadderEnd::Game))
     }
+    // ANCHOR_END: ladder
 }
 // ANCHOR_END: rules
 
 // ANCHOR: start
-/// Hands the engine what combat and the knacks read, then spawns the
-/// player into the warren, at the first floor's entry.
+/// Hands combat its registries and the rats their brain, then spawns the
+/// player at the first floor's start, lantern open.
 fn start(mut commands: Commands, seed: Res<Seed>, effect_kinds: Res<EffectKinds>, mut log: Log) {
-    // The two registries combat reads: what damage can be, and who hates
-    // whom. Both are the game's content, named nowhere in the engine.
+    // What damage can be, and who hates whom: the game's content, which
+    // the engine knows only by id.
     let kinds = Registry::from_defs(vec![DamageKind::new("bite"), DamageKind::new("kick"), DamageKind::new("din")]).unwrap();
     let sides = Registry::from_defs(vec![FactionDef::new("you"), FactionDef::new("vermin")]).unwrap();
     let (you, vermin) = (sides.expect("you"), sides.expect("vermin"));
     commands.insert_resource(CombatRules::new().hostile(you, vermin));
+    // ANCHOR: load
+    // A tag a gnaw's cost names, so a crust can be spent by it.
     let tags = Registry::from_defs(vec![TagDef::new("bread")]).unwrap();
     let bread = tags.expect("bread");
     let registries = Registries { damage_kinds: kinds.clone(), factions: sides, tags, ..default() };
-    // Loaded against the registries and the effects registered when the app
-    // was built, so a file naming either wrongly fails here and not later.
+    // Checked against the registries and the effects as it loads, so a
+    // misspelt name fails here, at startup.
     let knacks = Abilities::load(KNACKS_RON, &effect_kinds, &registries.names()).unwrap_or_else(|e| panic!("assets/knacks.ron: {e}"));
     let screech = knacks.defs().expect("screech");
     let gnaw = knacks.defs().expect("gnaw");
     commands.insert_resource(Knacks { screech });
     commands.insert_resource(knacks);
-    commands.insert_resource(registries);
+    // ANCHOR_END: load
     commands.insert_resource(Rats {
-        bread,
-        gnaw,
-        // A ratling has hands and a grudge: it fetches a rock and throws it,
-        // and leaves an enemy at its elbow to its teeth. A rat has neither.
+        // Asked in order, and the first that answers wins: bite what is
+        // beside you, run when badly hurt, chase what you see, else wander.
+        mind: Arc::new(Brain::new().then(MeleeAdjacent).then(FleeWhenHurt { at_pct: 30 }).then(Hunt).then(Wander { chance_pct: 40 })),
+        // A ratling has hands: it fetches rocks and throws them.
         ratling: Arc::new(
             Brain::new()
                 .then(MeleeAdjacent)
                 .then(FleeWhenHurt { at_pct: 25 })
-                // Scored by what the aim would land on, so a ratling at full
-                // health gains nothing by eating and does not bother.
+                // Uses a knack when it would help: a ratling gnaws its
+                // crust when hurt.
                 .then(UseAbility { chance_pct: 80 })
                 .then(ThrowAtRange { chance_pct: 60 })
                 .then(Scavenge { reach: 9 })
                 .then(Hunt)
                 .then(Wander { chance_pct: 30 }),
         ),
-        // Asked in order, first that answers wins: bite what is next to
-        // you, run when badly hurt, chase what you can see, else mill about.
-        mind: Arc::new(Brain::new().then(MeleeAdjacent).then(FleeWhenHurt { at_pct: 30 }).then(Hunt).then(Wander { chance_pct: 40 })),
         bite: kinds.expect("bite"),
         faction: vermin,
+        bread,
+        gnaw,
     });
+    commands.insert_resource(registries);
 
     commands.spawn_player(
         map_of(1),
@@ -216,123 +240,164 @@ fn start(mut commands: Commands, seed: Res<Seed>, effect_kinds: Res<EffectKinds>
             (Health::full(24), Armor(1), MeleeAttack::new(kinds.expect("kick"), DiceRoll::new(1, 6)), Inventory::default()),
         ),
     );
-    log.push(format!("Seed {}. You squeeze into the warren.", seed.0.0), Tones::NOTICE);
-    log.push("Something is scratching in the dark.", Tones::MUTED);
+    log.notice(format!("Seed {}. You squeeze into the warren.", seed.0.0));
+    log.muted("Something is scratching in the dark.");
 }
 // ANCHOR_END: start
 
-// ANCHOR: input
-/// The player, but only while it is holding the turn, and what it carries.
-type PlayerTurn<'w, 's> = Query<'w, 's, (Entity, Option<&'static Inventory>), (With<Player>, With<MyTurn>)>;
+// ANCHOR: keys
+/// Warren's own keys.
+#[derive(Resource, Clone, Copy)]
+struct Binds {
+    screech: ControlId,
+    eat: ControlId,
+    throw: ControlId,
+    lantern: ControlId,
+    quit: ControlId,
+}
 
-/// The standard keys. Walking, the stairs, picking up and waiting are the
-/// same in every roguelike, so they are the engine's `PlayerKeysPlugin`. A
-/// walk key writes a [`Bump`], which the engine resolves to a step, a blow
-/// at a foe, or opening a door, whichever is in the way; Enter, `>` or `<`
-/// take the stairs underfoot.
+/// Declares the keys. Walking and waiting are the engine's standard keys.
 fn declare_controls(app: &mut App) {
     app.add_plugins(
         PlayerKeysPlugin::new()
-            .walk("Move", "walk, or strike whoever is there")
+            .walk("Move", "walk or attack")
             .go_through("Move", "take the stairs")
             .pick_up("Act", "pick up what is here")
             .wait("Act", "wait a turn"),
     );
+    let binds = Binds {
+        screech: app.add_control("Act", "screech", KeyCode::KeyA),
+        eat: app.add_control("Act", "eat a crust", KeyCode::KeyE),
+        throw: app.add_control("Act", "throw a rock", KeyCode::KeyR),
+        lantern: app.add_control("Act", "lantern on or off", KeyCode::KeyT),
+        quit: app.add_control("Game", "quit", KeyCode::KeyQ),
+    };
+    app.insert_resource(binds);
 }
 
-/// Warren's own keys to intents. Writing an intent is the whole of asking
-/// to act: the engine claims the turn, charges it, and refuses what cannot
-/// be done.
-///
-/// `r` writes no intent at all: it opens the engine's aiming cursor, and
-/// the throw is written when the cursor is committed.
-fn player_input(keys: Res<ButtonInput<KeyCode>>, player: PlayerTurn, carried: Carried, mut intents: PlayerIntents, knacks: Res<Knacks>) {
-    if keys.just_pressed(KeyCode::KeyQ) {
-        intents.exit.write(AppExit::Success);
-        return;
+// ANCHOR_END: keys
+
+// ANCHOR: input
+/// The player, while it holds the turn, and its bag.
+type PlayerTurn<'w, 's> = Query<'w, 's, (Entity, &'static Inventory), (With<Player>, With<MyTurn>)>;
+
+/// Reads Warren's own keys once a frame. Asking to act is writing an
+/// intent: the engine spends the turn, or refuses what cannot be done.
+fn player_input(
+    keys: ControlInput,
+    binds: Res<Binds>,
+    player: PlayerTurn,
+    carried: Carried,
+    knacks: Res<Knacks>,
+    mut intents: PlayerIntents,
+    mut exit: MessageWriter<AppExit>,
+) {
+    if keys.just_pressed(binds.quit) {
+        exit.write(AppExit::Success);
     }
-    // No turn in hand means it is somebody else's move; the key is dropped.
+    // Not the player's turn: drop the key.
     let Ok((entity, bag)) = player.single() else { return };
-    if keys.just_pressed(KeyCode::KeyE) {
-        if let Some(crust) = bag.into_iter().flat_map(|b| b.items.iter().copied()).find(|i| carried.crusts.contains(*i)) {
+    if keys.just_pressed(binds.screech) {
+        // Opens the aiming cursor. The engine uses the knack on Enter.
+        intents.knacks.write(AimAt { user: entity, ability: knacks.screech });
+    } else if keys.just_pressed(binds.eat) {
+        if let Some(crust) = bag.items.iter().copied().find(|i| carried.crusts.contains(*i)) {
             intents.uses.write(Intent::new(entity, UseItem(crust)));
         }
-    } else if keys.just_pressed(KeyCode::KeyA) {
-        // The key writes an aim and stops. The cursor, the preview of what
-        // the burst would cover, and the spending of the turn are engine.
-        intents.aim_ability.write(AimAt { user: entity, ability: knacks.screech });
-    } else if keys.just_pressed(KeyCode::KeyR)
-        && let Some(rock) = bag.into_iter().flat_map(|b| b.items.iter().copied()).find(|i| carried.rocks.contains(*i))
+    } else if keys.just_pressed(binds.throw)
+        && let Some(rock) = bag.items.iter().copied().find(|i| carried.rocks.contains(*i))
     {
+        // Opens the aiming cursor. The engine writes the throw on Enter.
         intents.aims.write(AimThrow { user: entity, item: rock });
     }
 }
+
+/// Every intent Warren's keys write, in one parameter.
+#[derive(bevy::ecs::system::SystemParam)]
+struct PlayerIntents<'w> {
+    uses: MessageWriter<'w, Intent<UseItem>>,
+    aims: MessageWriter<'w, AimThrow>,
+    knacks: MessageWriter<'w, AimAt>,
+}
+
+/// What the bag might hold, so a key can pick the right thing.
+#[derive(bevy::ecs::system::SystemParam)]
+struct Carried<'w, 's> {
+    crusts: Query<'w, 's, (), With<Crust>>,
+    rocks: Query<'w, 's, (), With<Throwable>>,
+}
 // ANCHOR_END: input
 
-// ANCHOR: status
-/// The one thing the vitals panel cannot know: how much of the map is
-/// ours. A note on the view, in the game's own words.
-fn note_explored(mut vitals: ResMut<VitalsView>, knowledge: Res<Knowledge>) {
-    vitals.facets.push(Facet::new("explored", format!("{} tiles explored", knowledge.explored_count())));
-}
-// ANCHOR_END: status
-
 // ANCHOR: lantern
-/// What the lantern sheds when it is open: a warm, slightly restless pool.
+/// The lantern's light: warm, and a little restless.
 const LANTERN: LightSource = LightSource::new(150, 7, Rgb::new(255, 210, 140)).flickering(30);
 
-/// The player and whether its lantern is open, while it holds the turn.
+/// The player, while it holds the turn, and whether its lantern is open.
 type Lantern<'w, 's> = Query<'w, 's, (Entity, Has<LightSource>), (With<Player>, With<MyTurn>)>;
 
-/// `t` opens the lantern or shades it, and spends the turn either way.
-///
-/// The light is a component on the player, so shading it is removing one.
-/// Nothing else changes: sight is still sight, and the explored map still
-/// remembers what the light once reached.
-fn tend_lantern(keys: Res<ButtonInput<KeyCode>>, mut commands: Commands, player: Lantern, mut waits: MessageWriter<Intent<Wait>>, mut log: Log) {
-    if !keys.just_pressed(KeyCode::KeyT) {
+/// Opens or shades the lantern, which spends the turn. The light is a
+/// component, so shading it is removing it.
+fn tend_lantern(keys: ControlInput, binds: Res<Binds>, mut commands: Commands, player: Lantern, mut waits: MessageWriter<Intent<Wait>>, mut log: Log) {
+    if !keys.just_pressed(binds.lantern) {
         return;
     }
     let Ok((entity, lit)) = player.single() else { return };
     if lit {
         commands.entity(entity).remove::<LightSource>();
-        log.muted("You shade the lantern. The warren closes to arm's length.");
+        log.muted("You shade the lantern.");
     } else {
         commands.entity(entity).insert(LANTERN);
-        log.notice("You open the lantern. The dirt comes up warm around you.");
+        log.notice("You open the lantern.");
     }
     waits.write(Intent::new(entity, Wait));
 }
 // ANCHOR_END: lantern
 
+// ANCHOR: status
+/// Adds a line to the vitals panel: how much of the map you have seen.
+fn note_explored(mut vitals: ResMut<VitalsView>, knowledge: Res<Knowledge>) {
+    vitals.facets.push(Facet::new("explored", format!("explored {}", knowledge.explored_count())));
+}
+// ANCHOR_END: status
+
 // ANCHOR: creatures
-/// What every rat in the warren shares: one brain, one faction, one bite.
+/// What every rat shares: one brain, one bite, one side.
 #[derive(Resource)]
 struct Rats {
     mind: Arc<Brain<Entity>>,
-    /// The tag that says a thing is bread, and the knack that eats it.
-    bread: atglyph::rules::TagId,
-    gnaw: AbilityId,
-    /// The brain of something with hands.
     ratling: Arc<Brain<Entity>>,
     bite: atglyph::rules::damage::DamageKindId,
     faction: FactionId,
+    /// The tag that makes a crust food for a gnaw, and the gnaw.
+    bread: TagId,
+    gnaw: AbilityId,
 }
 // ANCHOR_END: creatures
 
 // ANCHOR: populate
-/// The stream the rats are placed from, named once and drawn from each
-/// floor's own seed: a spawner added later draws from a stream of its own
-/// and cannot shift what this one places, and the floors may be entered in
-/// any order.
+/// The random stream rats are placed from. Each floor draws it from its own
+/// seed, so floors can be entered in any order.
 const RATS: SeedDomain = SeedDomain::new(b"warren.rats");
 
-/// Fills the floor the one time it is built. `PlaceEntered::first` is
-/// true only on that arrival, so coming back does not restock it.
-fn populate(mut commands: Commands, mut entered: MessageReader<PlaceEntered>, rats: Res<Rats>, map: Res<WorldMap>, seed: Res<Seed>) {
+/// Fills a floor the first time it is entered.
+fn populate(
+    mut commands: Commands,
+    mut entered: MessageReader<PlaceEntered>,
+    rats: Res<Rats>,
+    map: Res<WorldMap>,
+    seed: Res<Seed>,
+    mut tell: MessageWriter<Tell>,
+) {
     for ev in entered.read() {
+        let depth = floor_of(ev.map);
+        tell.write(Tell::new(format!("Floor {depth}: {}.", name_of(depth)), Tones::NOTICE));
         if !ev.first {
             continue;
+        }
+        // The stairs are the engine's. The way out, at the last floor's far
+        // point, is an entity the game spawns.
+        if let Some(far) = ev.exit.filter(|_| depth == FLOORS) {
+            commands.spawn((Position(far), WayOut, Name::new("crack of daylight"), Glyph::new('<', Color::srgb(1.0, 0.95, 0.70)).on_layer(1)));
         }
         let Some(place) = map.place(ev.map) else { continue };
         let bounds = place.terrain.bounds();
@@ -340,29 +405,24 @@ fn populate(mut commands: Commands, mut entered: MessageReader<PlaceEntered>, ra
         let mut placed = 0;
         while placed < 16 {
             let p = Point::new(rng.random_range(bounds.x..bounds.right()), rng.random_range(bounds.y..bounds.bottom()));
-            // Not on top of the player, and not close enough to be unfair.
+            // On floor, and not close enough to the start to be unfair.
             if !map.is_walkable(p) || geometry::chebyshev(p, ev.entry) < 8 {
                 continue;
             }
-            // Every fourth is a ratling: the same body, a better mind.
+            // Every fourth is a ratling: the same body, a cleverer mind.
             let clever = placed % 4 == 3;
-            // A ratling carries its own supper. Nothing picks bread up off
-            // the floor: `Scavenge` fetches gear and missiles, not meals.
-            let supper = clever.then(|| {
-                commands
-                    .spawn((Item, Crust(6), Tagged(vec![rats.bread]), Name::new("crust of bread"), Glyph::new('%', Color::srgb(0.85, 0.72, 0.40)).on_layer(2)))
-                    .id()
-            });
-            let mut e = commands.spawn((
+            // A ratling carries its supper, and knows how to eat it.
+            let supper = clever.then(|| commands.spawn((Item, Crust(6), Tagged(vec![rats.bread]), Name::new("crust of bread"))).id());
+            let mut rat = commands.spawn((
                 (Actor, Blocks, Position(p), Speed(110), Faction(rats.faction)),
                 (Health::full(6), Armor(0), Perception(7), DarkSight(9)),
                 (MeleeAttack::new(rats.bite, DiceRoll::new(1, 3)),),
             ));
             if clever {
-                e.insert((
+                rat.insert((
                     Mind(rats.ratling.clone()),
-                    // Wits are what a mind is allowed to consider. A ratling
-                    // opens doors, fetches what it can throw, and throws it.
+                    // Wits say what a mind may consider: a ratling opens
+                    // doors, picks things up and throws them.
                     Intelligence(Wits::SAPIENT),
                     Inventory { items: supper.into_iter().collect() },
                     Grants(vec![rats.gnaw]),
@@ -370,69 +430,43 @@ fn populate(mut commands: Commands, mut entered: MessageReader<PlaceEntered>, ra
                     Name::new("ratling"),
                 ));
             } else {
-                e.insert((
-                    Mind(rats.mind.clone()),
-                    // An animal flees and searches, and that is all.
-                    Intelligence(Wits::ANIMAL),
-                    Glyph::new('r', Color::srgb(0.72, 0.55, 0.45)).on_layer(5),
-                    Name::new("rat"),
-                ));
+                rat.insert((Mind(rats.mind.clone()), Intelligence(Wits::ANIMAL), Glyph::new('r', Color::srgb(0.72, 0.55, 0.45)).on_layer(5), Name::new("rat")));
             }
             placed += 1;
         }
-        // The stairs are the engine's, laid from the ladder. The bottom of
-        // the ladder is ours: the way out, at the last floor's far point,
-        // an entity standing on a cell and nothing more.
-        if let Some(far) = ev.exit.filter(|_| floor_of(ev.map) == FLOORS) {
-            commands.spawn((Position(far), WayOut, Name::new("crack of daylight"), Glyph::new('<', Color::srgb(1.0, 0.95, 0.70)).on_layer(1)));
-        }
-        // Bread to mend with and rocks to throw, scattered the same way.
+        // Bread and rocks, scattered the same way.
         let mut dropped = 0;
         while dropped < 14 {
             let p = Point::new(rng.random_range(bounds.x..bounds.right()), rng.random_range(bounds.y..bounds.bottom()));
-            if !map.is_walkable(p) {
-                continue;
+            if map.is_walkable(p) {
+                litter(&mut commands, &rats, p, dropped % 2 == 0);
+                dropped += 1;
             }
-            litter(&mut commands, &rats, p, dropped % 2 == 0);
-            dropped += 1;
         }
     }
 }
 // ANCHOR_END: populate
 
-// ANCHOR: crust
-/// A crust of bread: the one item the warren has, and how much it heals.
+// ANCHOR: litter
+/// A crust of bread, and how much it heals.
 #[derive(Component, Clone, Copy)]
 struct Crust(i32);
-// ANCHOR_END: crust
 
-// ANCHOR: intents
-/// Everything the player's keys can ask for. A system may take seven
-/// parameters; bundling the writers into one `SystemParam` keeps room for
-/// as many actions as the game grows.
-#[derive(bevy::ecs::system::SystemParam)]
-struct PlayerIntents<'w> {
-    uses: MessageWriter<'w, Intent<UseItem>>,
-    aims: MessageWriter<'w, AimThrow>,
-    aim_ability: MessageWriter<'w, AimAt>,
-    exit: MessageWriter<'w, AppExit>,
+/// Drops a crust or a rock at `p`.
+fn litter(commands: &mut Commands, rats: &Rats, p: Point, bread: bool) {
+    if bread {
+        commands.spawn((Item, Crust(8), Name::new("crust of bread"), Position(p), Glyph::new('%', Color::srgb(0.85, 0.72, 0.40)).on_layer(2)));
+    } else {
+        // Thrown up to 7 cells, for 1d4.
+        let flies = Throwable::new(7, Some((rats.bite, DiceRoll::new(1, 4))));
+        commands.spawn((Item, flies, Name::new("rock"), Position(p), Glyph::new('*', Color::srgb(0.66, 0.66, 0.70)).on_layer(2)));
+    }
 }
-
-/// What the bag might hold, so the keys can tell one thing from another.
-#[derive(bevy::ecs::system::SystemParam)]
-struct Carried<'w, 's> {
-    crusts: Query<'w, 's, (), With<Crust>>,
-    rocks: Query<'w, 's, (), With<Throwable>>,
-}
-// ANCHOR_END: intents
+// ANCHOR_END: litter
 
 // ANCHOR: eat
-/// What eating a crust means. The engine has already spent the turn and
-/// taken the item out of the bag; this is the part only the game knows.
-///
-/// It runs in [`TurnSet::React`], inside the turn, so the healing lands
-/// before the next rat is dealt its move. In the drawing phase it would
-/// land a blow too late.
+/// What eating a crust does. The engine has spent the turn and taken the
+/// crust out of the bag; healing is the game's part.
 fn eat(mut commands: Commands, mut used: MessageReader<ItemEvent>, crusts: Query<&Crust>, mut eaters: Query<&mut Health>) {
     for ev in used.read() {
         let ItemEvent::Used { actor, item } = *ev else { continue };
@@ -441,11 +475,8 @@ fn eat(mut commands: Commands, mut used: MessageReader<ItemEvent>, crusts: Query
         commands.entity(item).despawn();
     }
 }
-// ANCHOR_END: eat
 
-// ANCHOR: narrate
-/// What only Warren can put into words. Blows, deaths and pickups are the
-/// engine's narrator's; what eating a crust means is this game's.
+/// The log line for eating. Blows, deaths and pickups the engine narrates.
 fn narrate(mut items: MessageReader<ItemEvent>, mut log: Log) {
     for ev in items.read() {
         if let ItemEvent::Used { .. } = *ev {
@@ -453,146 +484,154 @@ fn narrate(mut items: MessageReader<ItemEvent>, mut log: Log) {
         }
     }
 }
-// ANCHOR_END: narrate
 
-// ANCHOR: status
-/// What the engine cannot know: how many crusts are in the bag.
-fn note_bag(mut vitals: ResMut<VitalsView>, player: Query<(&Inventory, Option<&OnMap>), With<Player>>) {
-    let Ok((bag, on)) = player.single() else { return };
-    vitals.facets.push(Facet::new("crusts", format!("crusts {}", bag.items.len())));
-    // Which floor you are on is the game's to know: the engine has map ids
-    // and no names for them.
-    if let Some(depth) = on.map(|m| floor_of(m.0)) {
-        vitals.facets.push(Facet::new("floor", format!("floor {depth}/{FLOORS}: {}", name_of(depth))));
+/// Adds a line to the vitals panel: how many crusts you carry.
+fn note_bag(mut vitals: ResMut<VitalsView>, player: Query<&Inventory, With<Player>>, crusts: Query<(), With<Crust>>) {
+    let Ok(bag) = player.single() else { return };
+    let count = bag.items.iter().filter(|i| crusts.contains(**i)).count();
+    vitals.facets.push(Facet::new("crusts", format!("crusts {count}")));
+}
+// ANCHOR_END: eat
+
+// ANCHOR: way_out
+/// The crack of daylight on the last floor.
+#[derive(Component, Clone, Copy)]
+struct WayOut;
+
+/// Standing on the daylight wins the run, on the step that reached it.
+fn leave(player: Query<(&Position, &OnMap), With<Player>>, ways: Query<(&Position, &OnMap), With<WayOut>>, mut over: MessageWriter<RunOver>) {
+    let Ok((at, on)) = player.single() else { return };
+    if ways.iter().any(|(way, way_on)| way.0 == at.0 && way_on.0 == on.0) {
+        over.write(RunOver::won().saying("You come up into the roots, and the scratching stays below."));
     }
 }
-// ANCHOR_END: status
-
-// ANCHOR: litter
-/// What the floor is littered with: bread that mends, rocks that fly.
-fn litter(commands: &mut Commands, rats: &Rats, p: Point, bread: bool) {
-    if bread {
-        commands.spawn((Item, Crust(8), Name::new("crust of bread"), Position(p), Glyph::new('%', Color::srgb(0.85, 0.72, 0.40)).on_layer(2)));
-    } else {
-        commands.spawn((
-            Item,
-            Throwable::new(7, Some((rats.bite, DiceRoll::new(1, 4)))),
-            Name::new("rock"),
-            Position(p),
-            Glyph::new('*', Color::srgb(0.66, 0.66, 0.70)).on_layer(2),
-        ));
-    }
-}
-// ANCHOR_END: litter
+// ANCHOR_END: way_out
 
 // ANCHOR: knack
-/// The knacks this game loads, and the one the player is given.
+/// The knacks, compiled in so the binary runs from anywhere.
 const KNACKS_RON: &str = include_str!("../../assets/knacks.ron");
 
-/// The ability ids the game holds on to, so a key can name one.
+/// The knack the player's key names.
 #[derive(Resource)]
 struct Knacks {
     screech: AbilityId,
 }
 // ANCHOR_END: knack
 
-// ANCHOR: way_out
-/// The crack of daylight on the last floor. Standing on it ends the run.
-#[derive(Component, Clone, Copy)]
-struct WayOut;
-
-/// Winning is a component and an `if`. It runs inside the turn, so the run
-/// ends on the step that reached the daylight and not a frame later.
-fn leave(player: Query<(&Position, Option<&OnMap>), With<Player>>, ways: Query<(&Position, Option<&OnMap>), With<WayOut>>, mut over: MessageWriter<RunOver>) {
-    let Ok((at, on)) = player.single() else { return };
-    for (way, way_on) in &ways {
-        if way.0 == at.0 && way_on.map(|m| m.0) == on.map(|m| m.0) {
-            over.write(RunOver::won().saying("You come up into the roots, and the scratching stays below."));
-        }
-    }
-}
-// ANCHOR_END: way_out
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use atglyph::testing::{KeyScriptPlugin, at, headless, player, press, settle};
 
-    /// The warren with no window, wired as `main` wires it, input included.
+    // ANCHOR: headless
     fn started(seed: u64) -> (App, Entity) {
-        let mut app = atglyph::testing::windowless(RunSeed(seed));
-        app.add_plugins((CombatPlugin, MindsPlugin, LightingPlugin, ItemsPlugin, ThrowingPlugin, AbilitiesPlugin));
-        app.add_plugins(UiPlugin).add_plugins(TargetViewPlugin).add_plugins(atglyph::testing::KeyScriptPlugin);
-        app.add_engine_effects();
-        app.insert_resource(Lighting::dark())
-            .add_systems(NewRun, start)
-            .add_systems(Turn, (populate, eat, leave).in_set(TurnSet::React))
-            .add_systems(Update, (player_input, tend_lantern).in_set(EngineSet::Input))
-            .places(Warren::new());
-        declare_controls(&mut app);
-        app.update();
-        app.update();
-        let player = app.world_mut().query_filtered::<Entity, With<Player>>().single(app.world()).unwrap();
-        (app, player)
+        let mut app = headless(RunSeed(seed), narrator(), (Warren, KeyScriptPlugin));
+        let me = player(&mut app);
+        (app, me)
+    }
+    // ANCHOR_END: headless
+
+    /// A cell `steps` away from the player in some direction, with open
+    /// floor all the way, so a thrown rock can reach it.
+    fn open_line(app: &App, from: Point, steps: i32) -> Point {
+        let map = app.world().resource::<WorldMap>();
+        Direction::ALL
+            .into_iter()
+            .find(|d| (1..=steps).all(|n| map.is_walkable(Point::new(from.x + d.offset().x * n, from.y + d.offset().y * n))))
+            .map(|d| Point::new(from.x + d.offset().x * steps, from.y + d.offset().y * steps))
+            .expect("the start of a built floor has room around it")
     }
 
-    /// A key pressed through the real input path spends a turn. Tried in
-    /// every direction, so a wall beside the start cannot pass for a
-    /// dropped key.
     #[test]
-    fn a_pressed_direction_key_is_read_and_spends_a_turn() {
-        let (mut app, player) = started(7);
-        assert!(app.world().get::<Inventory>(player).is_some(), "the player carries a bag");
-        let mut moved = false;
+    fn a_pressed_direction_key_spends_a_turn() {
+        let (mut app, me) = started(7);
+        let before = (at(&app, me), app.world().resource::<Turns>().now());
         for key in [KeyCode::ArrowRight, KeyCode::ArrowLeft, KeyCode::ArrowUp, KeyCode::ArrowDown] {
-            let before = (app.world().get::<Position>(player).unwrap().0, app.world().resource::<Turns>().now());
-            atglyph::testing::press(&mut app, key);
-            for _ in 0..3 {
-                app.update();
-            }
-            if (app.world().get::<Position>(player).unwrap().0, app.world().resource::<Turns>().now()) != before {
-                moved = true;
-                break;
+            press(&mut app, key);
+            settle(&mut app);
+            if (at(&app, me), app.world().resource::<Turns>().now()) != before {
+                return;
             }
         }
-        assert!(moved, "no direction key moved the player or spent a turn: input never reached the game");
+        panic!("no direction key moved the player or spent a turn");
     }
 
-    /// Over a span of seeds, every floor has one way up, but the first,
-    /// where the run begins, and one way down, but the last, each a stair
-    /// the engine laid to the floor beside it; the last floor's far point
-    /// is the crack of daylight instead, which is ours, and nothing else
-    /// stands there.
+    /// `r` opens the aiming cursor on the rat, and Enter throws the rock at it.
     #[test]
-    fn every_floor_has_a_stair_to_each_floor_beside_it_and_the_last_its_daylight() {
-        for seed in 1u64..=8 {
-            let (mut app, player) = started(seed);
+    fn r_then_enter_throws_the_rock_at_the_rat() {
+        let (mut app, me) = started(7);
+        let here = at(&app, me);
+        let vermin = app.world().resource::<Rats>().faction;
+        let there = open_line(&app, here, 3);
+        app.world_mut().spawn((Actor, Blocks, Position(there), Faction(vermin), Health::full(6), Name::new("rat"), Glyph::new('r', Color::WHITE)));
+        let rock = app.world_mut().spawn((Item, Throwable::new(7, None), Name::new("rock"))).id();
+        app.world_mut().get_mut::<Inventory>(me).unwrap().items.push(rock);
+        settle(&mut app);
+
+        press(&mut app, KeyCode::KeyR);
+        settle(&mut app);
+        assert!(app.world().resource::<Modals>().any_open(), "r opened no aiming cursor");
+        let before = app.world().resource::<Turns>().now();
+        press(&mut app, KeyCode::Enter);
+        settle(&mut app);
+
+        assert!(!app.world().resource::<Modals>().any_open(), "the cursor is still open, holding the keys");
+        assert!(!app.world().get::<Inventory>(me).unwrap().items.contains(&rock), "the rock is still in the bag");
+        assert!(app.world().resource::<Turns>().now() > before, "the throw spent no time");
+        assert_eq!(app.world().get::<Position>(rock).map(|p| p.0), Some(there), "the rock did not land at the rat");
+    }
+
+    /// Every floor of a span of seeds has somewhere to stand at its start
+    /// and somewhere to go from there.
+    #[test]
+    fn every_floor_has_a_walkable_start_and_a_far_point() {
+        let floors = Floors::new();
+        let tables = floors.tiles.tables();
+        for seed in atglyph::testing::seeds(1..13) {
             for depth in 1..=FLOORS {
-                app.world_mut().write_message(WarpRequest::into_place(player, map_of(depth)));
-                app.update();
-                app.update();
-                let (entry, exit) = {
-                    let place = app.world().resource::<WorldMap>().place(map_of(depth)).expect("built");
-                    (place.entry, place.exit.expect("a far point"))
-                };
-                let world = app.world_mut();
-                let mut q = world.query::<(&Position, &OnMap, &Transition, &Stair)>();
-                let mut stairs: Vec<(Point, Destination, Climb)> =
-                    q.iter(world).filter(|(_, on, _, _)| on.0 == map_of(depth)).map(|(p, _, t, s)| (p.0, t.to, s.climb)).collect();
-                stairs.sort_by_key(|(p, _, c)| (*p, *c));
-                let mut expected = Vec::new();
-                if depth > 1 {
-                    expected.push((entry, Destination::Place { map: map_of(depth - 1), arrive: Arrive::Exit }, Climb::Up));
-                }
-                if depth < FLOORS {
-                    expected.push((exit, Destination::Place { map: map_of(depth + 1), arrive: Arrive::Entry }, Climb::Down));
-                }
-                expected.sort_by_key(|(p, _, c)| (*p, *c));
-                assert_eq!(stairs, expected, "seed {seed}, floor {depth}");
-                let daylight: Vec<Point> =
-                    world.query_filtered::<(&Position, &OnMap), With<WayOut>>().iter(world).filter(|(_, on)| on.0 == map_of(depth)).map(|(p, _)| p.0).collect();
-                let want: Vec<Point> = if depth == FLOORS { vec![exit] } else { Vec::new() };
-                assert_eq!(daylight, want, "seed {seed}, floor {depth}: the daylight is the last floor's far point, and nowhere else");
+                let built = floors.build(map_of(depth), PlaceSeed::of(RunSeed(seed), depth)).unwrap_or_else(|e| panic!("seed {seed} floor {depth}: {e}"));
+                let walkable = |p| built.terrain.get(p).is_some_and(|t: TileId| tables.walkable[t.index()]);
+                assert!(walkable(built.entry), "seed {seed} floor {depth}: the start is in rock");
+                assert!(built.exit.is_some_and(walkable), "seed {seed} floor {depth}: no far point");
             }
         }
+    }
+
+    /// The stairs lead down floor by floor, and the last has the daylight.
+    #[test]
+    fn the_stairs_lead_down_to_the_daylight() {
+        let (mut app, me) = started(7);
+        for depth in 1..FLOORS {
+            let down = app.world().resource::<WorldMap>().place(map_of(depth)).unwrap().exit.expect("a way down");
+            app.world_mut().write_message(WarpRequest { actor: me, to: Destination::Place { map: map_of(depth), arrive: Arrive::At(down) }, after: None });
+            settle(&mut app);
+            app.world_mut().write_message(Intent::new(me, GoThrough));
+            settle(&mut app);
+            assert_eq!(app.world().resource::<WorldMap>().current(), map_of(depth + 1), "took the stairs from floor {depth}");
+        }
+        let world = app.world_mut();
+        let daylight = world.query_filtered::<&OnMap, With<WayOut>>().iter(world).filter(|on| on.0 == map_of(FLOORS)).count();
+        assert_eq!(daylight, 1, "one way out, on the last floor");
+    }
+
+    /// `a` opens the aiming cursor on the rat, and Enter screeches at it.
+    #[test]
+    fn a_then_enter_screeches_at_the_rat() {
+        let (mut app, me) = started(7);
+        let here = at(&app, me);
+        let vermin = app.world().resource::<Rats>().faction;
+        let there = open_line(&app, here, 3);
+        let rat =
+            app.world_mut().spawn((Actor, Blocks, Position(there), Faction(vermin), Health::full(50), Name::new("rat"), Glyph::new('r', Color::WHITE))).id();
+        settle(&mut app);
+
+        press(&mut app, KeyCode::KeyA);
+        settle(&mut app);
+        assert!(app.world().resource::<Modals>().any_open(), "a opened no aiming cursor");
+        press(&mut app, KeyCode::Enter);
+        settle(&mut app);
+
+        assert!(!app.world().resource::<Modals>().any_open(), "the cursor is still open, holding the keys");
+        assert!(app.world().get::<Health>(rat).unwrap().current < 50, "the screech did not hurt the rat");
     }
 }

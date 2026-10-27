@@ -1,14 +1,13 @@
 //! Warren, step 2: what you can see, and a lantern to see it by.
 //!
-//! The guide chapter is `docs/guide/src/02-sight-and-light.md`. Sight is
-//! per actor and the floor is dark, so what you know of the warren is
-//! what your lantern has reached.
+//! The guide chapter is `docs/guide/src/02-sight-and-light.md`.
 //!
 //! `cargo run -p tutorial --bin step02_light`
 //!
-//! Keys: arrows, `hjklyubn` or the numpad to walk, `t` to open or shade
-//! the lantern, `.` to wait, `q` to quit.
+//! Keys: arrows, `hjklyubn` or the numpad to walk, `t` lantern, `.` wait,
+//! `q` quit.
 
+use atglyph::prelude::ui::*;
 use atglyph::prelude::*;
 use bevy::prelude::*;
 
@@ -18,57 +17,66 @@ const ROWS: i32 = 40;
 /// Rows at the bottom of the terminal given over to the message log.
 const LOG_ROWS: i32 = 5;
 
-/// The warren's one floor is map one.
-const WARREN: MapId = MapId(1);
-
 // ANCHOR: main
 fn main() -> AppExit {
-    let mut app = App::new();
-    // What every game adds: the window and the glyph terminal, the turn
-    // loop, sight, the map in everything but the status row and the log, and the UI base.
-    app.add_plugins(RoguelikePlugins::new("Warren", COLS, ROWS).map(GridRect::new(0, 1, COLS, ROWS - 1 - LOG_ROWS)))
-        // Without this the world is lit everywhere and sight is geometry
-        // alone. With it, `visible` shrinks to what a light reaches.
-        .add_plugins(LightingPlugin)
-        .insert_resource(Lighting::dark())
+    App::new()
+        // The map now leaves the top row for the vitals and the bottom rows
+        // for the log.
+        .add_plugins(RoguelikePlugins::new("Warren", COLS, ROWS).map(GridRect::new(0, 1, COLS, ROWS - 1 - LOG_ROWS)))
+        .add_plugins(Warren)
+        .add_plugins((
+            VitalsPanel::new(GridRect::new(0, 0, COLS - 13, 1)),
+            LogPanel::new(GridRect::new(0, ROWS - LOG_ROWS, COLS, LOG_ROWS)),
+            // `?` lists every key the game declared; the top-right corner
+            // says so.
+            ControlsPanel::new(GridRect::new(4, 3, COLS - 8, ROWS - LOG_ROWS - 6)).hint(GridRect::new(COLS - 13, 0, 12, 1)),
+        ))
         .insert_resource(Seed(RunSeed(7)))
-        // Two panels: the vitals strip on the top row, the log along the
-        // bottom. Each draws itself; neither needs a system of yours.
-        .add_plugins(VitalsPanel::new(GridRect::new(0, 0, COLS, 1)).hints("[t]orch  [.]wait  [q]uit"))
-        .add_plugins(LogPanel::new(GridRect::new(0, ROWS - LOG_ROWS, COLS, LOG_ROWS)))
-        .add_systems(NewRun, start)
-        // Once a frame, before the turns: the lantern is a key of Warren's
-        // own, read beside the standard ones.
-        .add_systems(Update, tend_lantern.in_set(EngineSet::Input))
-        .add_systems(Update, note_explored.in_set(ViewSet::Annotate));
-    // The floors, handed over once: the engine builds each the first time
-    // something enters it, from that floor's own seed.
-    let warren = Warren::new();
-    app.insert_resource(warren.appearance()).places(warren);
-    declare_controls(&mut app);
-    app.run()
+        .run()
 }
 // ANCHOR_END: main
 
+// ANCHOR: plugin
+/// The game: its floors, its start and its keys.
+struct Warren;
+
+impl Plugin for Warren {
+    fn build(&self, app: &mut App) {
+        let floors = Floors::new();
+        app.insert_resource(floors.appearance()).places(floors);
+        // Without lighting the world is lit everywhere. With it, you see
+        // only what a light reaches.
+        app.add_plugins(LightingPlugin).insert_resource(Lighting::dark());
+        app.add_systems(NewRun, start);
+        // ANCHOR: gate
+        app.add_systems(Update, (player_input, tend_lantern).in_set(EngineSet::Input).run_if(no_modal));
+        // ANCHOR_END: gate
+        // The vitals view is data the panel in `main` draws; the game writes
+        // a line onto it, so the game adds it.
+        app.add_plugins(VitalsViewPlugin).add_systems(Update, note_explored.in_set(ViewSet::Annotate));
+        declare_controls(app);
+    }
+}
+// ANCHOR_END: plugin
+
 // ANCHOR: tiles
-/// The warren's tiles, and how each one looks in full light.
-struct Warren {
+/// The warren's tiles.
+struct Floors {
     tiles: TileRegistry,
 }
 
-impl Warren {
+impl Floors {
     fn new() -> Self {
         let mut tiles = TileRegistry::new();
         tiles.register(TileProps::wall("earth")).unwrap();
         tiles.register(TileProps::floor("dirt")).unwrap();
-        // Walkable and opaque: you can step through a curtain of roots,
-        // but you cannot see past one until you do.
+        // Walkable, but you cannot see through it.
         tiles.register(TileProps::floor("roots").opaque(true)).unwrap();
         Self { tiles }
     }
 
-    /// Both colours of every tile, and how much each cell jitters from
-    /// its neighbours. The renderer derives darkness and memory from these.
+    /// How each tile looks in full light: a glyph, its colour, the cell's
+    /// background, and how much each cell varies from its neighbours.
     fn appearance(&self) -> TileAppearance {
         let mut look = TileAppearance::new();
         let t = |name| self.tiles.expect(name);
@@ -81,9 +89,9 @@ impl Warren {
 // ANCHOR_END: tiles
 
 // ANCHOR: rules
-/// How a floor is built. The engine calls this once, the first time
-/// something enters the map, and keeps what comes back.
-impl PlaceRules for Warren {
+/// How a floor is built. The engine calls this the first time something
+/// enters the floor, with that floor's own seed, and keeps the result.
+impl PlaceRules for Floors {
     fn build(&self, _: MapId, seed: PlaceSeed) -> Result<PlaceBuild, BuildError> {
         let (wall, floor) = (self.tiles.expect("earth"), self.tiles.expect("dirt"));
         let mut ctx = BaseContext::blank(84, 42, self.tiles.clone(), wall);
@@ -102,62 +110,81 @@ impl PlaceRules for Warren {
 // ANCHOR_END: rules
 
 // ANCHOR: start
-/// Spawns the player into the warren, at the first floor's entry.
+/// Spawns the player at the first floor's start, lantern open.
 fn start(mut commands: Commands, seed: Res<Seed>, mut log: Log) {
-    commands.spawn_player(WARREN, (Viewshed::new(9), RevealsMap, LANTERN, Glyph::new('@', Color::WHITE).on_layer(10)));
-    log.push(format!("Seed {}. You squeeze into the warren.", seed.0.0), Tones::NOTICE);
-    log.push("Walk with the arrows, hjklyubn or the numpad. t tends the lantern, . waits, q quits.", Tones::MUTED);
+    commands.spawn_player(MapId::FIRST, (Viewshed::new(9), RevealsMap, LANTERN, Glyph::new('@', Color::WHITE).on_layer(10)));
+    log.notice(format!("Seed {}. You squeeze into the warren.", seed.0.0));
 }
 // ANCHOR_END: start
 
-// ANCHOR: input
-/// The keys. Walking and waiting are the same in every roguelike, so they
-/// are the engine's `PlayerKeysPlugin`: each press becomes an intent, and
-/// the engine claims the turn, charges it, and refuses what cannot be done.
-/// Quitting is Warren's own.
+// ANCHOR: keys
+/// Warren's own keys.
+#[derive(Resource, Clone, Copy)]
+struct Binds {
+    lantern: ControlId,
+    quit: ControlId,
+}
+
+/// Declares the keys. Walking and waiting are the engine's standard keys.
 fn declare_controls(app: &mut App) {
     app.add_plugins(PlayerKeysPlugin::new().walk("Move", "walk").wait("Act", "wait a turn"));
-    let quit = app.add_control("Game", "quit", KeyCode::KeyQ);
-    app.add_systems(Update, move |keys: ControlInput, mut exit: MessageWriter<AppExit>| {
-        if keys.just_pressed(quit) {
-            exit.write(AppExit::Success);
-        }
-    });
+    let binds = Binds { lantern: app.add_control("Act", "lantern on or off", KeyCode::KeyT), quit: app.add_control("Game", "quit", KeyCode::KeyQ) };
+    app.insert_resource(binds);
+}
+
+// ANCHOR_END: keys
+
+// ANCHOR: input
+/// Reads Warren's own keys once a frame.
+fn player_input(keys: ControlInput, binds: Res<Binds>, mut exit: MessageWriter<AppExit>) {
+    if keys.just_pressed(binds.quit) {
+        exit.write(AppExit::Success);
+    }
 }
 // ANCHOR_END: input
 
-// ANCHOR: status
-/// The one thing the vitals panel cannot know: how much of the map is
-/// ours. A note on the view, in the game's own words.
-fn note_explored(mut vitals: ResMut<VitalsView>, knowledge: Res<Knowledge>) {
-    vitals.facets.push(Facet::new("explored", format!("{} tiles explored", knowledge.explored_count())));
-}
-// ANCHOR_END: status
-
 // ANCHOR: lantern
-/// What the lantern sheds when it is open: a warm, slightly restless pool.
+/// The lantern's light: warm, and a little restless.
 const LANTERN: LightSource = LightSource::new(150, 7, Rgb::new(255, 210, 140)).flickering(30);
 
-/// The player and whether its lantern is open, while it holds the turn.
+/// The player, while it holds the turn, and whether its lantern is open.
 type Lantern<'w, 's> = Query<'w, 's, (Entity, Has<LightSource>), (With<Player>, With<MyTurn>)>;
 
-/// `t` opens the lantern or shades it, and spends the turn either way.
-///
-/// The light is a component on the player, so shading it is removing one.
-/// Nothing else changes: sight is still sight, and the explored map still
-/// remembers what the light once reached.
-fn tend_lantern(keys: Res<ButtonInput<KeyCode>>, mut commands: Commands, player: Lantern, mut waits: MessageWriter<Intent<Wait>>, mut log: Log) {
-    if !keys.just_pressed(KeyCode::KeyT) {
+/// Opens or shades the lantern, which spends the turn. The light is a
+/// component, so shading it is removing it.
+fn tend_lantern(keys: ControlInput, binds: Res<Binds>, mut commands: Commands, player: Lantern, mut waits: MessageWriter<Intent<Wait>>, mut log: Log) {
+    if !keys.just_pressed(binds.lantern) {
         return;
     }
     let Ok((entity, lit)) = player.single() else { return };
     if lit {
         commands.entity(entity).remove::<LightSource>();
-        log.muted("You shade the lantern. The warren closes to arm's length.");
+        log.muted("You shade the lantern.");
     } else {
         commands.entity(entity).insert(LANTERN);
-        log.notice("You open the lantern. The dirt comes up warm around you.");
+        log.notice("You open the lantern.");
     }
     waits.write(Intent::new(entity, Wait));
 }
 // ANCHOR_END: lantern
+
+// ANCHOR: status
+/// Adds a line to the vitals panel: how much of the map you have seen.
+fn note_explored(mut vitals: ResMut<VitalsView>, knowledge: Res<Knowledge>) {
+    vitals.facets.push(Facet::new("explored", format!("explored {}", knowledge.explored_count())));
+}
+// ANCHOR_END: status
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use atglyph::testing::{at, headless, player};
+
+    #[test]
+    fn the_player_arrives_standing_on_floor() {
+        let mut app = headless(RunSeed(1), (), Warren);
+        let me = player(&mut app);
+        let here = at(&app, me);
+        assert!(app.world().resource::<WorldMap>().is_walkable(here), "arrived at {here:?}, which is not floor");
+    }
+}
