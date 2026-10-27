@@ -2,7 +2,7 @@
 
 All notable changes to atglyph are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-atglyph is not on crates.io yet, so a game depends on a release by its git tag: `atglyph = { git = "https://github.com/rudehn/rl-engine", tag = "v0.4.0" }`.
+atglyph is not on crates.io yet, so a game depends on a release by its git tag, as the README shows.
 
 ## [Unreleased]
 
@@ -38,7 +38,6 @@ atglyph is not on crates.io yet, so a game depends on a release by its git tag: 
 - Light from tiles and props, coloured light, three light bands, and ambient light per place.
 - Names drawn from syllables, `atglyph_rules::namegen`.
 - What every game wrote for itself: `RailLayout`, `PlayerKeysPlugin`, the `Standard` brain, and `atglyph::testing`.
-- `LaunchArgs::from_env()`, and `SavePlugin` continuing a run itself through `PrepareRun` and `RunResumed`.
 - Rules as tier 1 functions in `atglyph-rules`, testable without an `App`: damage, faction stance, bumps, trade, equipping, work and more.
 - `atglyph::bevy` and `atglyph::rand` re-export the Bevy and the `rand` the engine is built on.
 - Every crate packages for crates.io.
@@ -49,12 +48,19 @@ atglyph is not on crates.io yet, so a game depends on a release by its git tag: 
 - **Breaking:** every seed plays differently; re-baseline fingerprints and seed-pinned tests once.
 - **Breaking:** `use atglyph::prelude::*` holds only what a first game names; `atglyph::prelude::all::*` is everything, and topic modules hold the rest.
 - **Breaking:** each crate's `App` methods come through one trait, `EngineApp`, `UiApp` or `SaveApp`, which the prelude brings.
-- **Breaking:** `Afflict`, `Cure` and `Afflicted` are `ApplyStatus`, `RemoveStatus` and `ActiveStatuses`; `TurnHold` is `CueWait`; `Strikes` is `BonusDamage`; `Reach` is `DamageRoute`; `Rect` is `GridRect`; `Moment` is `TriggerKind`.
-- **Breaking:** a system writes to the log through the `Log` param, `log.notice(text)`, and a facet is `Facet::new("key", text)`.
-- **Breaking:** `PlaceRules::build(map, seed)` is handed the place's own `PlaceSeed`, and the place model is tier 1, in `atglyph::mapgen::place`.
+- **Breaking:** `Afflict`, `Cure` and `Afflicted` are `ApplyStatus`, `RemoveStatus` and `ActiveStatuses`; `Strikes` is `BonusDamage`; `Rect` is `GridRect`; `Moment` is `TriggerKind`.
+- **Breaking:** `TurnHold` is `CueWait`, with `hold` and `is_held` written `wait` and `is_waiting`.
+- **Breaking:** in `atglyph-bevy`, `Reach` is `DamageRoute` and `Offered` is `UsableAbilities`.
+- **Breaking:** in `atglyph-rules`, `Source` is `ModifierSource` and `Look` is `ParticleLook`; in `atglyph-ui`, `Heard` is `NarratedEvents`, `Change` is `ModifierRow` and the targeting view's `Reach` is `TargetReach`.
+- **Breaking:** a system writes to the log through the `Log` param, `log.notice(text)`, in place of `ResMut<MessageLog>`.
+- **Breaking:** a facet is `Facet::new("key", text)`, and the `Facets` resource is gone.
+- **Breaking:** `PlaceRules::build(map, seed)` is handed the place's own `PlaceSeed` and no world, and the new required `PlaceRules::tiles` names the tiles a place is built of.
+- **Breaking:** the place model is tier 1, in `atglyph::mapgen::place`.
 - **Breaking:** `app.places(rules)` and `commands.spawn_player(map, bundle)` replace setting up the world by hand, and play begins on its own.
 - **Breaking:** a draw is `seed.rng(DOMAIN, index)` over a `SeedDomain`, and `CombatRules::new()` takes no registry.
-- **Breaking:** a test imports from `atglyph::testing`.
+- **Breaking:** what every run stands on goes in the new `PrepareRun` schedule and what a continued run does after its restore in `RunResumed`; `SavePlugin` continues a run itself, so a game's own load-and-restore goes.
+- **Breaking:** `LaunchArgs::from_env()` replaces `replay::seed` and `replay::args`.
+- **Breaking:** a test imports from `atglyph::testing`, in place of `atglyph::ecs::testing` and `atglyph::ui::testing`.
 
 ### Removed
 

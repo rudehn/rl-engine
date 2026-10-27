@@ -33,7 +33,11 @@ if len(sys.argv) < 2:
     sys.exit(2)
 argv = sys.argv[1:]
 
-slots = int(os.environ.get("RL_BUILD_SLOTS") or os.cpu_count() or 8)
+# 0 or less reads as unset, as it did in the perl slot, rather than as a wait
+# that never ends.
+slots = int(os.environ.get("RL_BUILD_SLOTS") or 0)
+if slots < 1:
+    slots = os.cpu_count() or 8
 folder = "/tmp/rl-build-slots"
 os.makedirs(folder, exist_ok=True)
 held = None
@@ -62,7 +66,9 @@ for name, value in os.environ.items():
         env.setdefault(name[len("RL_"):], value)
 
 try:
-    pid = os.posix_spawnp(argv[0], argv, env)
+    # Python starts with SIGPIPE and SIGXFSZ ignored, and a spawned command
+    # would inherit that; it gets the defaults a shell would give it.
+    pid = os.posix_spawnp(argv[0], argv, env, setsigdef=(signal.SIGPIPE, signal.SIGXFSZ))
 except OSError as e:
     print(f"slot: cannot run {argv[0]}: {e.strerror}", file=sys.stderr)
     sys.exit(127 if e.errno == errno.ENOENT else 126)

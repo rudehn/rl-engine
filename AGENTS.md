@@ -69,7 +69,7 @@ The cheapest ways to keep a test fast while it still proves what it proved:
 - What does not change per seed is made once.
 - State is set up, not played to: the helpers in `atglyph::testing` stand someone where the test needs them in a frame.
 - A fingerprint is a tripwire; it is re-baselined on purpose, never sped up by changing what it plays.
-- `#[ignore]` is for a by-hand span or a tuning aid, its reason in the attribute.
+- `#[ignore]` is for a by-hand span or a tuning aid, its reason in the attribute, never for an everyday test that grew slow.
 
 ## Rules that only review enforces
 
@@ -79,14 +79,14 @@ The cheapest ways to keep a test fast while it still proves what it proved:
 - **Randomness** comes from `rand`, through `RunSeed::derive(domain, index)`: a subsystem's stream is a `Stream` registered with `add_stream`, derived from the run's `Seed`, and a game's own draws come from `Seed::stream`. Functions take `&mut impl Rng`. Never construct a generator from a constant or from entropy inside engine code.
 - **No `HashMap` or `HashSet` in gameplay or generation paths.** `BTreeMap`, `Vec`, or a `BitGrid`, with the reason stated.
 - **A subsystem is a plugin, and a plugin is opt-in.** Whether a system runs is decided by whether its plugin was added, never by whether a resource happens to be there. A plugin declares what it cannot work without with `app.needs::<R>(plugin, hint)`, and everything missing is reported together when play begins.
-- **A panel is a view, a collector and a presenter.** Never one system that queries and draws. The view is a resource of plain data with no `Color`, no `Rect` and no string the game did not supply; the collector refills it in `ViewSet::Collect`; the presenter draws it in a `PresentSet` layer and takes its rectangle in its constructor. `atglyph-ui/src/lib.rs` is the order to write them in.
+- **A panel is a view, a collector and a presenter.** Never one system that queries and draws. The view is a resource of plain data with no `Color`, no `Rect` and no string the game did not supply; the collector refills it in `ViewSet::Collect`; the presenter draws it in a `PresentSet` layer and takes its rectangle in its constructor. Arithmetic that is really about the rules goes to `atglyph-rules`, where it is tested without an `App`. `atglyph-ui/src/lib.rs` is the order to write them in.
 - **A widget takes a `ToneId`, never a `Color`.** Colours live in the `Palette`, indexed by an interned tone.
 - **What the engine cannot know is a `Facet`, not a field.** The game pushes `Facet { key, text, tone }` onto a row in `ViewSet::Annotate`. Two games pushing the same key is the signal the field belongs in the view.
 - **A game's rules answer the turn inside it.** Anything that reacts to what a turn caused goes in `TurnSet::React`; drawing goes in its `PresentSet` layer. Never order a system after another crate's system function.
 - **Costs and clocks are integers.** Hundredths of a step, the same unit everywhere.
 - **Doc comments say why and why-not**, at the density of `atglyph-core/src/turn.rs`, not more.
 - **A resource may still be optional data.** Whether it is depends on whether the subsystem is optional or the game's setup is wrong: `Lighting` absent means a lit world, but a `GearPanel` in a game with no `Registries` asserts. Read an optional one as `Option<Res<_>>` and say in the docs what its absence means.
-- **A game uses only the public API.** A game names its own systems and the engine's system sets, components, resources, messages and plugins, never an engine system function or a private path. [Undermere](https://github.com/rudehn/undermere) and [Foundry](https://github.com/rudehn/foundry) live in repositories of their own, pinned by tag, and are the proof.
+- **A game uses only the public API.** A game names its own systems and the engine's system sets, components, resources, messages and plugins, never an engine system function, a private path, or a name public only so a game's test can reach it; a check that needs an internal is the engine's own test. [Undermere](https://github.com/rudehn/undermere) and [Foundry](https://github.com/rudehn/foundry) live in repositories of their own, pinned by tag, and are the proof.
 - **Tests**: property-over-seed-range where a property exists, fingerprint tripwires labelled as such where none does, and a name that reads as a sentence describing the property.
 - **Every RON schema** carries a top-of-file comment listing the full option space.
 - **No `TODO` comments in source.** Outstanding work is tracked in `docs/TODO.md`, the plan's progress log, or an issue.
@@ -130,11 +130,11 @@ Each is documented in its crate's module docs and in the overview; writing its d
 Six parts, in this order: one paragraph saying what the system is, then `Turning it on`, `The model`, `Using it`, `The line`, `Where it lives`.
 `The line` says what the engine decides and what the game decides; it is the section a reader arrives for, so it is never the one cut.
 `The model` names the public surface and is written from the type definitions and the system bodies, since the code records what is and a design note what was intended.
-`Using it` opens with one sentence naming what the snippet is an instance of, then the snippet.
+`Using it` opens with one sentence naming what the snippet is an instance of, then the snippet; a second anchor only when turning the system on takes a step the first does not show.
 `Where it lives` says what the crate split buys, such as what can be tested without an `App`.
 No `Cost`, no `Risks`, no `Phases`; those stay in the design notes.
 
-Every code block is an `expand-guide.py` include of a real anchor in `examples/`, fenced `rust,no_run`; a page carries no invented code.
+Every code block is an `expand-guide.py` include of a real anchor in `examples/`, fenced `rust,no_run`; a page carries no invented code, and its only comments are the manifest and one `include:` marker per snippet.
 The manifest's `files:` lists every source file the page makes a claim about, not only the plugin's crate, because the fingerprint guards exactly what it lists.
 `crates/atglyph-bevy/src/plugin.rs` goes on a manifest only where the page says something only it can answer, such as what `CorePlugin` registers.
 Keep a page as short as what it says allows.
