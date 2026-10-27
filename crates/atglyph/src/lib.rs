@@ -47,18 +47,18 @@
 //! headless app with the UI base, the game's narrator and saves kept in
 //! memory, and every helper the engine's own tests drive and read one with.
 //!
-//! `atglyph::bevy` and `atglyph::rand` re-export the Bevy and the `rand`
-//! the engine is built on, so a game draws from `atglyph::rand` and lists no
-//! `rand` of its own. A game still lists `bevy` in its Cargo.toml, at the
-//! same version (`0.19`), because Bevy's derive macros look for it in the
-//! game's own manifest and emit paths that do not resolve without it.
+//! `atglyph::rand` re-exports the `rand` the engine is built on, so a game
+//! draws from it and lists no `rand` of its own. Bevy is not re-exported: a
+//! game lists `bevy` in its Cargo.toml, at the same version (`0.19`), because
+//! Bevy's derive macros look for it in the game's own manifest and emit
+//! paths that do not resolve without it.
 //!
 //! ```
 //! use atglyph::rand::{Rng, SeedableRng, rngs::StdRng};
 //! let mut rng = StdRng::seed_from_u64(7);
 //! let roll: i32 = rng.random_range(1..=6);
 //! assert!((1..=6).contains(&roll));
-//! let _app = atglyph::bevy::app::App::new();
+//! let _app = bevy::app::App::new();
 //! ```
 
 #![deny(missing_docs)]
@@ -70,7 +70,6 @@ use bevy::app::PluginGroupBuilder;
 use bevy::prelude::*;
 use bevy::window::WindowResolution;
 
-pub use bevy;
 pub use rand;
 
 pub use atglyph_bevy as ecs;

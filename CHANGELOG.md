@@ -10,6 +10,10 @@ atglyph is not on crates.io yet, so a game depends on a release by its git tag: 
 
 - [Undermere](https://github.com/rudehn/undermere) and [Foundry](https://github.com/rudehn/foundry) moved to repositories of their own; a game changes nothing.
 
+### Removed
+
+- **Breaking:** `atglyph::bevy`; name `bevy::` from the game's own `bevy = "0.19"` dependency, which Bevy's derive macros need anyway.
+
 ## [0.4.0] - 2026-10-24
 
 ### Added

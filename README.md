@@ -127,6 +127,10 @@ atglyph = { git = "https://github.com/rudehn/rl-engine", tag = "v0.4.0" }
 bevy = "0.19"
 ```
 
+Bevy is a dependency of your own, not only of the engine's.
+Its derive macros, `#[derive(Component)]`, `Resource`, `Message` and the rest, find Bevy by reading your game's `Cargo.toml`, so no re-export can stand in for that line.
+Keep it at the minor version atglyph is built on, so the build holds one Bevy rather than two.
+
 A game starts from `RoguelikePlugins`: a window sized to the glyph terminal, the engine's loop, sight, the map and the UI base.
 Everything else is a plugin you name, so this is a game with combat and nothing it did not ask for.
 
