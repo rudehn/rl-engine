@@ -111,14 +111,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      # From the changelog, so the page and CHANGELOG.md are one text. A tag
-      # pushed again, or a page made by hand first, is edited rather than
-      # refused.
+      # The page is the tag's CHANGELOG.md section, verbatim. A tag pushed
+      # again, or a page made by hand first, is edited rather than refused.
       - name: publish the release page
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          scripts/release-notes.sh "${GITHUB_REF_NAME#v}" > notes.md
+          awk -v v="${GITHUB_REF_NAME#v}" '/^## \[/ { f = index($0, "## [" v "]") == 1; next } /^\[[^]]+\]: / { f = 0 } f' CHANGELOG.md | sed '/./,$!d' > notes.md
+          test -s notes.md || { echo "CHANGELOG.md has no section for $GITHUB_REF_NAME" >&2; exit 1; }
           if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
             gh release edit "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-file notes.md
           else

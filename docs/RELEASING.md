@@ -11,8 +11,9 @@ The crates go to crates.io only once the repository variable `PUBLISH_CRATES` is
 2. Bump the workspace version, the internal dependency versions, the template's tag pin, the dependency lines' tag in the readme and in the Bevy-free crates' readmes and front pages, and the `--tag` in the readme, the guide and the facade's front page together; `scripts/check-template.sh` names any one left behind.
 3. **crates.io**: run `python3 scripts/publish.py --semver` and `scripts/check-publish.sh` by hand.
 4. **Nate**, **crates.io**, the first publishing release only: create the crates.io account, make an API token scoped to publishing new crates, store it as the `CARGO_REGISTRY_TOKEN` repository secret, and set the repository variable `PUBLISH_CRATES` to `true`.
-   At the same release, point the template's pin, the dependency lines of step 2, `scripts/release-notes.sh` and `scripts/check-template.sh` back at a version, `atglyph = "<version>"`, and the crates' readmes at crates.io and docs.rs.
-5. **Nate**, optional and later: rename the repository to `rudehn/atglyph` in GitHub's settings, then run `python3 scripts/rename-to-atglyph.py --urls` and commit, before the next tag.
+   At the same release, point the template's pin, the dependency lines of step 2 and `scripts/check-template.sh` back at a version, `atglyph = "<version>"`, and the crates' readmes at crates.io and docs.rs.
+5. **Nate**, optional and later: rename the repository to `rudehn/atglyph` in GitHub's settings, then rewrite the addresses and commit, before the next tag:
+   `git grep -lE 'rudehn/rl-engine|rudehn\.github\.io/rl-engine|cd rl-engine' | xargs perl -pi -e 's{github\.com/rudehn/rl-engine}{github.com/rudehn/atglyph}g; s{rudehn\.github\.io/rl-engine}{rudehn.github.io/atglyph}g; s{\bcd rl-engine\b}{cd atglyph}g'`.
    GitHub does not redirect the guide's address, so a tag cut before the commit would put the old `rudehn.github.io/rl-engine` into every game generated from that tag and, with crates.io on, into the crates' pages.
    Let Pages republish.
 6. **Nate**, **crates.io**, the first publishing release only: add the GitHub workflow (`release.yml` in the repository) as each crate's trusted publisher on crates.io, then delete the secret.
