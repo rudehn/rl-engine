@@ -239,9 +239,6 @@ The design docs still owed, and which files a slice owes, are in `AGENTS.md`.
 
 ## 6. Publish it
 
-- **The rename's script goes once the release has used it.**
-  `scripts/rename-to-atglyph.py` is run again after every rebase until the repository is renamed, an optional later step of `docs/RELEASING.md`, which runs its `--urls`.
-  After that, remove the script, its test `scripts/test_rename_to_atglyph.py` and its CI step in `.github/workflows/ci.yml`.
 - **The crates publish as `atglyph`, and every crate carries its readme, its version requirements and the license by its SPDX expression, with both texts in the root `LICENSE`.**
   `scripts/check-publish.sh` packages each one from its files alone, and `release.yml` publishes them in tier order on a `v*` tag once the repository variable `PUBLISH_CRATES` is `true`, which 0.4.0 left off to release on GitHub only; `docs/RELEASING.md` is the procedure.
 - **Nothing should go out while the API moves this fast.**

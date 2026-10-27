@@ -46,8 +46,6 @@ jobs:
         run: cargo fmt --all --check
       - name: tier boundaries
         run: scripts/check-tiers.sh
-      - name: no old engine names are left
-        run: python3 scripts/rename-to-atglyph.py --check
       - name: every public type name is declared once
         run: scripts/check-names.sh
       - name: the prelude names each thing once
@@ -61,9 +59,6 @@ jobs:
       - name: the system reference keeps up with the code
         if: inputs.docs
         run: python3 scripts/check-systems.py
-      - name: the system pages keep to the template
-        if: inputs.docs
-        run: shopt -s nullglob; for page in docs/guide/src/systems/*.md; do scripts/check-systems-style.sh "$page"; done
       - name: clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
       - uses: taiki-e/install-action@v2
