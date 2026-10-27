@@ -1,77 +1,83 @@
-#!/usr/bin/perl
+#!/usr/bin/python3 -IS
 # Runs a command while holding one of a fixed number of machine-wide slots:
 #
 #   scripts/slot <command> [args...]
 #
-# Every compile (through scripts/rustc-wrapper) of every checkout of this workspace runs
-# inside one, so however many agents build and test at once, the machine runs
-# about one of them per core. Each cargo and each nextest sizes itself to the
-# cores as if it had the machine alone, and several agents at once ran three or
-# four times as many processes as there are cores and swapped.
+# Every compile, through scripts/rustc-wrapper, of every checkout of this
+# workspace runs inside one, so however many agents build at once the machine
+# runs about one compile per core. Each cargo sizes itself to the cores as if
+# it had the machine alone, and several agents at once ran three or four times
+# as many processes as there are cores and swapped.
 #
 # A slot is an exclusive lock on one of the files in /tmp/rl-build-slots, held
 # by this process while it waits on the command, so the kernel releases it
 # however either ends. A shared jobserver was refused for exactly that: a token
-# taken by a cargo that is killed mid-build, which a timed-out tool call does,
-# is never given back. The command does not inherit the lock either, since an
-# sccache server a compile starts outlives the compile and would hold the slot
-# for as long as it runs.
+# taken by a cargo that is killed mid-build is never given back. The command
+# does not inherit the lock either, since an sccache server a compile starts
+# outlives the compile and would hold the slot for as long as it runs.
+#
+# The command is started with posix_spawn, never fork: macOS runs fork's child
+# handlers, and one of them, _asl_mt_shim_fork_child, was seen spinning forever
+# in a forked perl that had not yet reached exec, holding its slot.
 #
 #   RL_BUILD_SLOTS  how many commands may run at once; the core count if unset
-use strict;
-use warnings;
-use Cwd qw(abs_path);
-use Fcntl qw(:flock O_RDWR O_CREAT);
-use File::Basename qw(dirname);
-use File::Path qw(make_path);
-use POSIX qw(WIFSIGNALED WTERMSIG WEXITSTATUS);
-use Time::HiRes qw(usleep);
+import errno
+import fcntl
+import os
+import signal
+import sys
+import time
 
-die "slot: usage: scripts/slot <command> [args...]\n" unless @ARGV;
+if len(sys.argv) < 2:
+    print("slot: usage: scripts/slot <command> [args...]", file=sys.stderr)
+    sys.exit(2)
+argv = sys.argv[1:]
 
-my $slots = $ENV{RL_BUILD_SLOTS} || `getconf _NPROCESSORS_ONLN 2>/dev/null` || 8;
-chomp $slots;
-my $dir = '/tmp/rl-build-slots';
-mkdir $dir;
-my $held;
-until ($held) {
-    for my $i (0 .. $slots - 1) {
-        sysopen(my $fh, "$dir/$i", O_RDWR | O_CREAT) or next;
-        if (flock($fh, LOCK_EX | LOCK_NB)) {
-            $held = $fh;
-            last;
-        }
-        close $fh;
-    }
-    usleep(50_000) unless $held;
-}
+slots = int(os.environ.get("RL_BUILD_SLOTS") or os.cpu_count() or 8)
+folder = "/tmp/rl-build-slots"
+os.makedirs(folder, exist_ok=True)
+held = None
+while held is None:
+    for i in range(slots):
+        # Python opens every descriptor non-inheritable, so the command never
+        # sees the lock.
+        fd = os.open(f"{folder}/{i}", os.O_RDWR | os.O_CREAT, 0o666)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            held = fd
+            break
+        except BlockingIOError:
+            os.close(fd)
+    if held is None:
+        time.sleep(0.05)
 
 # macOS strips every DYLD_ variable from a protected binary's environment, and
-# /usr/bin/perl is one, so the loader paths nextest sets for a test, which find
-# the standard library and Bevy now that both are shared libraries, never
-# reach this script. nextest sets each again under a NEXTEST_ prefix for
-# exactly such a wrapper; the test, which is not protected, gets them back.
-# scripts/rustc-wrapper passes the toolchain's own under an RL_ prefix the
-# same way.
-for my $name (grep { /^(NEXTEST|RL)_(DYLD_|LD_)/ } keys %ENV) {
-    (my $original = $name) =~ s/^(NEXTEST|RL)_//;
-    $ENV{$original} //= $ENV{$name};
-}
+# /usr/bin/python3 is one, so the loader path scripts/rustc-wrapper sets, which
+# finds the toolchain's shared libraries, would never reach this script. The
+# wrapper passes it under an RL_ prefix instead, and the command, which is not
+# protected, gets it back here.
+env = dict(os.environ)
+for name, value in os.environ.items():
+    if name.startswith(("RL_DYLD_", "RL_LD_")):
+        env.setdefault(name[len("RL_"):], value)
 
-# Perl opens every handle close-on-exec, so the command never sees the lock.
-my $pid = fork() // die "slot: cannot fork: $!\n";
-if ($pid == 0) {
-    exec @ARGV or die "slot: cannot run $ARGV[0]: $!\n";
-}
-# A build or a test run is stopped by signalling its whole group, the command
-# included; this process only has to outlive it and then say how it ended.
-$SIG{$_} = 'IGNORE' for qw(INT TERM HUP);
-waitpid($pid, 0);
-my $status = $?;
-close $held;
+try:
+    pid = os.posix_spawnp(argv[0], argv, env)
+except OSError as e:
+    print(f"slot: cannot run {argv[0]}: {e.strerror}", file=sys.stderr)
+    sys.exit(127 if e.errno == errno.ENOENT else 126)
 
-if (WIFSIGNALED($status)) {
-    $SIG{$_} = 'DEFAULT' for qw(INT TERM HUP);
-    kill WTERMSIG($status), $$;
-}
-exit WEXITSTATUS($status);
+# A build is stopped by signalling its whole group, the command included; this
+# process only has to outlive it and then say how it ended.
+for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+    signal.signal(sig, signal.SIG_IGN)
+_, status = os.waitpid(pid, 0)
+os.close(held)
+
+if os.WIFSIGNALED(status):
+    sig = os.WTERMSIG(status)
+    # SIGKILL and SIGSTOP take no handler, and kill however they are set.
+    if sig not in (signal.SIGKILL, signal.SIGSTOP):
+        signal.signal(sig, signal.SIG_DFL)
+    os.kill(os.getpid(), sig)
+sys.exit(os.WEXITSTATUS(status))
