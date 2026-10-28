@@ -192,9 +192,12 @@ impl PlayerKeysPlugin {
         self.with(PlayerVerb::Wait, group, action, Otherwise::Nothing)
     }
 
-    /// Picking up what is underfoot, listed as `action` under `group`.
-    pub fn pick_up(self, group: &str, action: &str) -> Self {
-        self.with(PlayerVerb::PickUp, group, action, Otherwise::Nothing)
+    /// Picking up what is underfoot, listed as `action` under `group`:
+    /// one plain thing is picked up, and more opens the ground screen when
+    /// [`GroundPanel`](crate::GroundPanel) was added, or is all picked up
+    /// when it was not. With nothing underfoot it says `otherwise`.
+    pub fn pick_up(self, group: &str, action: &str, otherwise: Otherwise) -> Self {
+        self.with(PlayerVerb::PickUp, group, action, otherwise)
     }
 
     /// Firing through the targeting cursor, listed as `action` under
@@ -302,11 +305,34 @@ pub struct Pack<'w, 's> {
     tagged: Query<'w, 's, &'static Tagged>,
 }
 
+/// Where a thing lies, and how many of it.
+type Lying = (&'static Position, Option<&'static OnMap>, Option<&'static Stack>);
+
+/// What lies under the player, for the pick-up key: nothing says so, one
+/// plain thing is picked up, and more opens the ground screen when the game
+/// added one.
+#[derive(bevy::ecs::system::SystemParam)]
+pub struct Underfoot<'w, 's> {
+    map: Res<'w, WorldMap>,
+    standing: Query<'w, 's, &'static Position, With<Player>>,
+    items: Query<'w, 's, Lying, With<Item>>,
+    menu: Option<ResMut<'w, crate::panel::ground::GroundMenu>>,
+}
+
+impl Underfoot<'_, '_> {
+    /// How many of each thing lies under `who`: a stack's count, or one.
+    fn counts(&self, who: Entity) -> Vec<u32> {
+        let Ok(at) = self.standing.get(who) else { return Vec::new() };
+        let here = self.map.current();
+        self.items.iter().filter(|(pos, on, _)| pos.0 == at.0 && on.map_or(MapId::ZERO, |m| m.0) == here).map(|(_, _, s)| s.map_or(1, |s| s.count)).collect()
+    }
+}
+
 /// Turns the standard keys into an intent for the player while it holds
 /// the turn, and nothing at all while a screen is up.
 ///
 /// At most one verb a press, checked walk first and throw last.
-pub(crate) fn player_keys(mut kb: Keyboard, loadout: Loadout, mut pack: Pack, mut asks: KeyAsks) {
+pub(crate) fn player_keys(mut kb: Keyboard, loadout: Loadout, mut pack: Pack, mut asks: KeyAsks, mut underfoot: Underfoot) {
     if kb.modals.any_open() {
         return;
     }
@@ -331,10 +357,25 @@ pub(crate) fn player_keys(mut kb: Keyboard, loadout: Loadout, mut pack: Pack, mu
             false
         }
         PlayerVerb::PickUp => {
-            if let Some(pick_ups) = asks.pick_ups.as_mut() {
-                pick_ups.write(Intent::new(me, PickUp));
+            let counts = underfoot.counts(me);
+            let ground = crate::panel::ground::ground_modal(modals);
+            match (counts.as_slice(), ground) {
+                ([], _) => true,
+                // More than one plain thing, and a screen to ask which.
+                (counts, Some(ground)) if counts.len() > 1 || counts.iter().any(|c| *c > 1) => {
+                    if let Some(menu) = underfoot.menu.as_mut() {
+                        menu.selected = 0;
+                    }
+                    modals.open(ground);
+                    false
+                }
+                _ => {
+                    if let Some(pick_ups) = asks.pick_ups.as_mut() {
+                        pick_ups.write(Intent::new(me, PickUp));
+                    }
+                    false
+                }
             }
-            false
         }
         PlayerVerb::Fire => {
             let ready = loadout.ranged(me).is_some();
@@ -385,7 +426,7 @@ mod tests {
             .walk("Move", "walk")
             .go_through("Move", "go through")
             .wait("Act", "wait")
-            .pick_up("Act", "pick up")
+            .pick_up("Act", "pick up", Otherwise::Nothing)
             .fire("Act", "fire", Otherwise::say("Nothing to fire."))
             .throw("Act", "throw", Otherwise::Nothing)
     }

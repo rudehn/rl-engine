@@ -246,7 +246,7 @@ fn back_to_the_list(menu: &mut InventoryMenu) {
 }
 
 /// `at` moved `by` rows over `rows` of them, wrapping at either end.
-fn stepped(at: usize, by: i32, rows: usize) -> usize {
+pub(crate) fn stepped(at: usize, by: i32, rows: usize) -> usize {
     if rows == 0 {
         return 0;
     }
@@ -313,7 +313,8 @@ impl Plugin for InventoryPanel {
         app.insert_resource(self.0.clone()).init_resource::<InventoryMenu>().init_resource::<InventoryKeys>();
         // A game's own use key opens the bag choosing before the bag reads
         // its keys, so the press that asked is not read again inside it.
-        app.add_systems(Update, (choose_when_asked, inventory_keys).chain().in_set(EngineSet::Input))
+        crate::panel::ground::add_count_prompt(app);
+        app.add_systems(Update, (choose_when_asked, inventory_keys).chain().in_set(EngineSet::Input).before(crate::panel::ground::count_keys))
             .add_systems(Update, draw_inventory.in_set(PresentSet::Overlay));
     }
 
@@ -347,6 +348,10 @@ pub struct BagIntents<'w> {
     aimed_uses: MessageWriter<'w, AimUse>,
     throws: MessageWriter<'w, AimThrow>,
     interacts: MessageWriter<'w, Intent<Interact>>,
+    /// How many of a stack a drop asks, and where the bag is drawn, for the
+    /// prompt to sit over it.
+    counting: ResMut<'w, crate::panel::ground::Counting>,
+    layout: Res<'w, InventoryLayout>,
 }
 
 /// Opens the bag choosing for a thing a game's own use key asked to use,
@@ -503,6 +508,13 @@ pub(crate) fn inventory_keys(
         } else {
             false
         }
+    } else if binds.drop.just_pressed(input) && !row.stuck && row.count > 1 {
+        // A stack asks how many, over the bag, which a drop closes.
+        let rect = intents.layout.rect;
+        intents.counting.ask(crate::panel::ground::CountFor::Drop, item, &row.label, row.count, modal, rect);
+        let prompt = modals.get(crate::panel::ground::COUNT_MODAL).expect("the pack adds the count prompt");
+        modals.open(prompt);
+        false
     } else if binds.drop.just_pressed(input) && !row.stuck {
         intents.drops.write(Intent::new(user, DropItem::all(item)));
         true
@@ -555,7 +567,7 @@ fn a_letter(chord: &Chord) -> bool {
 /// letter is a row's: the vi keys would otherwise open a row in a long bag
 /// and walk a short one. A held key walks at
 /// [`RepeatPace`](crate::RepeatPace), the pace the look cursor steps at.
-fn walked(keys: &ControlInput) -> i32 {
+pub(crate) fn walked(keys: &ControlInput) -> i32 {
     let (input, directions) = (keys.input(), &keys.bindings().directions.0);
     let pressed = directions.iter().find(|(key, _)| !is_letter(*key) && input.just_pressed(*key)).map(|(_, d)| *d);
     // A repeat is of the first direction key held, as `advance_repeats`
@@ -1222,6 +1234,23 @@ mod tests {
 
     /// Each key writes the engine's own intent for the row picked out and
     /// puts every screen away, since the action spends the turn.
+    #[test]
+    fn the_packs_drop_asks_how_many_of_a_stack() {
+        let (mut stage, _, _, knives) = staged();
+        stage.press(KeyCode::KeyI);
+        let row = stage.app.world().resource::<InventoryView>().rows.iter().position(|r| r.entity == knives).expect("the knives are listed");
+        stage.press([KeyCode::KeyA, KeyCode::KeyB, KeyCode::KeyC][row]);
+        stage.press(KeyCode::KeyD);
+        let counting = stage.app.world().resource::<crate::panel::ground::Counting>();
+        assert_eq!((counting.count, counting.most), (3, 3), "a stack of three asks how many, starting at all");
+        stage.press(KeyCode::Digit2);
+        stage.press(KeyCode::Enter);
+        let drops: Vec<DropItem> = stage.app.world_mut().resource_mut::<Messages<Intent<DropItem>>>().drain().map(|i| i.action).collect();
+        assert_eq!(drops, vec![DropItem { item: knives, count: Some(2) }]);
+        let modals = stage.app.world().resource::<Modals>();
+        assert!(!modals.is_open(inventory_modal(modals)), "the drop closed the bag");
+    }
+
     #[test]
     fn the_keys_wear_drop_use_and_throw_the_row_picked_out() {
         let (mut stage, blade, hat, knives) = staged();

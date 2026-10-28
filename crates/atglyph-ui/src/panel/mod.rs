@@ -21,6 +21,7 @@ pub mod ability;
 pub mod container;
 pub mod controls;
 pub mod gear;
+pub mod ground;
 pub mod inspect;
 pub mod inventory;
 pub mod log;
@@ -40,6 +41,7 @@ pub use ability::{AbilityKeys, AbilityPanel, ability_modal};
 pub use container::{ContainerMenu, ContainerPanel, container_modal};
 pub use controls::{ControlsPanel, controls_modal};
 pub use gear::GearPanel;
+pub use ground::{CountFor, CountKeys, Counting, GroundMenu, GroundPanel, ground_modal};
 pub use inspect::InspectPanel;
 #[cfg(test)]
 pub(crate) use inventory::INVENTORY_MODAL;

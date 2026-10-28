@@ -191,7 +191,12 @@ struct Binds {
 
 /// Declares the keys. Walking and waiting are the engine's standard keys.
 fn declare_controls(app: &mut App) {
-    app.add_plugins(PlayerKeysPlugin::new().walk("Move", "walk or attack").pick_up("Act", "pick up what is here").wait("Act", "wait a turn"));
+    app.add_plugins(
+        PlayerKeysPlugin::new()
+            .walk("Move", "walk or attack")
+            .pick_up("Act", "pick up what is here", Otherwise::say("There is nothing here."))
+            .wait("Act", "wait a turn"),
+    );
     let binds = Binds {
         eat: app.add_control("Act", "eat a crust", KeyCode::KeyE),
         throw: app.add_control("Act", "throw a rock", KeyCode::KeyR),

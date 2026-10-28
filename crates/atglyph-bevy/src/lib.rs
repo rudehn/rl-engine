@@ -123,7 +123,7 @@ pub use fov::FovPlugin;
 pub use gas::{Breathed, GasPlugin, Gases, Release, Vents};
 pub use items::{
     Bestows, DropItem, Equip, EquipFromGround, Equipped, GearScore, Inventory, Item, ItemEvent, ItemRules, ItemsPlugin, LitWhenWorn, OwnBlowScore, PickUp,
-    Stack, StackLimit, Stuck, Tagged, Unequip, Unknown, UseItem, UseItemAt, UseOn, Wearable, WornStatuses, WornTimer, may_use, may_use_on,
+    PickUpItem, Stack, StackLimit, Stuck, Tagged, Unequip, Unknown, UseItem, UseItemAt, UseOn, Wearable, WornStatuses, WornTimer, may_use, may_use_on,
 };
 pub use knowledge::{Knowledge, KnowledgeSave, Recalled};
 pub use lighting::{
@@ -199,7 +199,7 @@ pub mod prelude {
 
     pub use crate::items::{
         Bestows, DropItem, Equip, EquipFromGround, Equipped, GearScore, Inventory, Item, ItemEvent, ItemRules, ItemsPlugin, LitWhenWorn, OwnBlowScore, PickUp,
-        Stack, StackLimit, Stuck, Tagged, Unequip, Unknown, UseItem, UseItemAt, UseOn, Wearable, WornStatuses, WornTimer,
+        PickUpItem, Stack, StackLimit, Stuck, Tagged, Unequip, Unknown, UseItem, UseItemAt, UseOn, Wearable, WornStatuses, WornTimer,
     };
 
     pub use crate::knowledge::Knowledge;
