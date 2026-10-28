@@ -12,7 +12,7 @@
 //!
 //! The Bevy layer turns each into the component it describes: a
 //! [`Melee`] into a `MeleeAttack`, a [`Ranged`] into a `RangedAttack`, a
-//! [`ThrowDef`] into a `Throwable`, a [`Wear`] into a `Wearable`, a
+//! [`ThrowDef`] into a `Throwable`, a [`LaunchDef`] into a `Launcher`, a [`Wear`] into a `Wearable`, a
 //! [`Charges`] into a `Consumable`, and a [`Level`] into what each level of
 //! a thing adds to all of those. The rest of what an item's line writes
 //! for the engine is a plain list, its armor, its tags, its effects and
@@ -43,6 +43,7 @@ use crate::equip::{EquipShape, SlotDef, pair_of};
 use crate::loot::{DropRow, DropTable};
 use crate::names::NameRef;
 use crate::stats::StatDef;
+use crate::tag::TagDef;
 
 /// Who else an attack strikes besides the one it was made at.
 ///
@@ -137,6 +138,23 @@ pub struct ThrowDef {
     /// `("1d6", "pierce")`; absent, nothing.
     #[serde(default)]
     pub strike: Option<(DiceRoll, NameRef<DamageKind>)>,
+}
+
+/// A launcher, as content writes it: `(ammo: "pellet", range: 4, damage:
+/// "1d4")`, the tag of what it launches, the cells it adds to how far that
+/// flies, and the roll it adds to what that strikes for.
+///
+/// Worn, it launches what its wearer throws that carries the tag; the
+/// thing launched flies and lands as any throw does.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LaunchDef {
+    /// The tag of what it launches.
+    pub ammo: NameRef<TagDef>,
+    /// The cells it adds to the reach, or to a thing's own range.
+    pub range: u32,
+    /// The roll it adds to the strike of what it launches.
+    pub damage: DiceRoll,
 }
 
 /// What happens to a thing when its last charge is spent.

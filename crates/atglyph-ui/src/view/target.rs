@@ -158,6 +158,10 @@ pub struct TargetView {
     /// the used or thrown item's. Empty for a shot, which has no name of its
     /// own.
     pub what: String,
+    /// What launches a thrown thing, by the name the game gave it: the
+    /// worn [`Launcher`](atglyph_bevy::Launcher) the throw goes from.
+    /// Empty for a thing thrown by hand, and for anything not thrown.
+    pub launcher: String,
     /// Whether what is named is a thing not yet known, [`Unknown`]: the box
     /// says so, and `span` is left out, since how far a thing reaches is
     /// part of what it is. A thing used at somewhere withholds the rest of
@@ -580,6 +584,7 @@ fn forget(view: &mut TargetView) {
     view.throwing = None;
     view.firing = false;
     view.what.clear();
+    view.launcher.clear();
     view.unknown = false;
     view.user = None;
     view.cells.clear();
@@ -722,6 +727,7 @@ pub(crate) fn collect_target(mut view: ResMut<TargetView>, modals: Res<Modals>, 
     if let Some(item) = view.throwing {
         let (Ok((_, name)), Some(throwable)) = (reach.missiles.get(item), reach.throws.of(user, item)) else { return };
         view.what = name.map(|n| n.as_str().to_string()).unwrap_or_default();
+        view.launcher = throwable.launched.and_then(|(e, _)| reach.names.get(e).ok()).map(|n| n.as_str().to_string()).unwrap_or_default();
         let thrown = flight(&reach.map, &reach.occupancy, from, view.cursor, throwable.range);
         // Rolled against whoever living the flight strikes first, as the
         // resolver rolls, which need not be who the cursor is on; the range
@@ -1122,6 +1128,35 @@ mod tests {
         stage.app.world_mut().resource_mut::<TargetView>().cursor = at.offset(2, 0);
         stage.tick();
         assert_eq!(stage.app.world().resource::<TargetView>().span.map(|s| s.max), Some(4));
+    }
+
+    /// The aim at a thing a worn launcher launches names the launcher and
+    /// spans the reach and the launcher's range together.
+    #[test]
+    fn the_aim_names_the_launcher_and_its_range() {
+        let mut stage = staged();
+        let (user, kind) = (stage.player, stage.kind);
+        stage.app.world_mut().resource_mut::<atglyph_bevy::CombatRules>().reach = Some(atglyph_bevy::ThrowReach { base: 4, stat: None });
+        let ammo = atglyph_rules::TagId::from_raw(0);
+        let shape = atglyph_rules::EquipShape::in_slot(atglyph_rules::SlotId::from_raw(0));
+        let launcher = atglyph_bevy::Launcher { ammo, range: 3, damage: atglyph_core::DiceRoll::flat(1) };
+        let sling = stage.app.world_mut().spawn((Item, Name::new("sling"), launcher, Wearable(shape.clone()))).id();
+        let pellet = stage
+            .app
+            .world_mut()
+            .spawn((Item, Name::new("pellet"), Tagged(vec![ammo]), Throwable::new(None, Some((kind, atglyph_core::DiceRoll::flat(2))))))
+            .id();
+        let mut worn = atglyph_rules::Equipment::with_slot_count(1);
+        worn.equip(sling, &shape).unwrap();
+        stage.app.world_mut().get_mut::<Inventory>(user).expect("a bag").items.extend([sling, pellet]);
+        stage.app.world_mut().entity_mut(user).insert(Equipped(worn));
+        stage.app.world_mut().write_message(AimThrow { user, item: pellet });
+        stage.tick();
+        let at = stage.at;
+        stage.app.world_mut().resource_mut::<TargetView>().cursor = at.offset(2, 0);
+        stage.tick();
+        let view = stage.app.world().resource::<TargetView>();
+        assert_eq!((view.launcher.as_str(), view.span.map(|s| s.max)), ("sling", Some(7)));
     }
 
     /// A shot, a throw and a bolt are one projectile, so sent at the same

@@ -31,7 +31,7 @@ use std::sync::Arc;
 
 use atglyph_core::{DiceRoll, Id};
 use atglyph_grid::Glow;
-use atglyph_rules::parts::{Charges, KeepAway, Level, Melee, Ranged, ThrowDef};
+use atglyph_rules::parts::{Charges, KeepAway, LaunchDef, Level, Melee, Ranged, ThrowDef};
 use atglyph_rules::stats::Op;
 use atglyph_rules::{
     AbilityId, Brain, DropTable, EquipShape, FactionId, HearingStats, NoticeStats, Registry, Repertoire, Resistances, StatId, Stats, StatusDef, StatusId,
@@ -54,7 +54,7 @@ use crate::registries::Registries;
 use crate::remains::LeavesRemains;
 use crate::status::{ActiveStatuses, StatBlock, WhileHolding};
 use crate::stealth::Notice;
-use crate::throwing::Throwable;
+use crate::throwing::{Launcher, Throwable};
 
 /// What something strikes, shoots and is thrown as: the attack parts of
 /// one definition, a weapon's or a monster's, with what one blow or shot
@@ -72,6 +72,8 @@ pub struct Attacks {
     pub ranged: Option<Ranged>,
     /// How it flies when thrown, for an item.
     pub throw: Option<ThrowDef>,
+    /// What it launches while worn, for an item.
+    pub launch: Option<LaunchDef>,
     /// What one blow or shot costs, in hundredths of a step; `None` is an
     /// ordinary turn.
     pub cost: Option<u32>,
@@ -79,8 +81,8 @@ pub struct Attacks {
 
 impl Attacks {
     /// Inserts on `e` the components these parts describe: a
-    /// [`MeleeAttack`], a [`RangedAttack`] and a [`Throwable`], each only
-    /// where its part is written.
+    /// [`MeleeAttack`], a [`RangedAttack`], a [`Throwable`] and a
+    /// [`Launcher`], each only where its part is written.
     pub fn insert(&self, e: &mut EntityCommands) {
         if let Some(melee) = &self.melee {
             e.insert(MeleeAttack::from_part(melee, self.cost));
@@ -90,6 +92,9 @@ impl Attacks {
         }
         if let Some(throw) = &self.throw {
             e.insert(Throwable::from_part(throw));
+        }
+        if let Some(launch) = &self.launch {
+            e.insert(Launcher::from_part(launch));
         }
     }
 }
@@ -210,6 +215,9 @@ impl ItemParts {
         if self.light_when == LightWhen::Worn && self.light.is_none() {
             wrong.push("a light that shines while worn, on a thing that sheds none".to_string());
         }
+        if self.attacks.launch.is_some() && self.wear.is_none() {
+            wrong.push("a launcher, on a thing that is never worn".to_string());
+        }
         if self.ammo.is_some() && self.attacks.ranged.is_none() {
             wrong.push("spends ammunition, on a thing that shoots nothing".to_string());
         }
@@ -248,8 +256,8 @@ impl ItemParts {
         self.armor + self.per(level, |l| l.armor)
     }
 
-    /// Its blow, its shot and its throw at `level`, each damage roll a
-    /// level's damage stronger.
+    /// Its blow, its shot, its throw and its launch at `level`, each
+    /// damage roll a level's damage stronger.
     pub fn attacks_at(&self, level: i32) -> Attacks {
         let damage = self.per(level, |l| l.damage);
         let plus = |roll: DiceRoll| DiceRoll { bonus: roll.bonus + damage, ..roll };
@@ -257,6 +265,7 @@ impl ItemParts {
             melee: self.attacks.melee.map(|m| Melee { roll: plus(m.roll), ..m }),
             ranged: self.attacks.ranged.map(|r| Ranged { roll: plus(r.roll), ..r }),
             throw: self.attacks.throw.map(|t| ThrowDef { strike: t.strike.map(|(roll, kind)| (plus(roll), kind)), ..t }),
+            launch: self.attacks.launch.map(|l| LaunchDef { damage: plus(l.damage), ..l }),
             cost: self.attacks.cost,
         }
     }
@@ -669,6 +678,7 @@ impl<I: Send + Sync + 'static> ActorParts<I> {
                 melee: self.attacks.melee.or(under.attacks.melee),
                 ranged: self.attacks.ranged.or(under.attacks.ranged),
                 throw: self.attacks.throw.or(under.attacks.throw),
+                launch: self.attacks.launch.or(under.attacks.launch),
                 cost: self.attacks.cost.or(under.attacks.cost),
             },
             keep_away: self.keep_away.or(under.keep_away),
@@ -952,6 +962,19 @@ mod tests {
         assert_eq!(loose.check(), vec!["a stack limit, on a thing that does not stack".to_string()]);
         let empty = ItemParts { stack: Some(1), stack_limit: Some(0), ..ItemParts::default() };
         assert_eq!(empty.check(), vec!["a stack limit of nothing: no stack of it could hold one".to_string()]);
+    }
+
+    #[test]
+    fn a_launcher_is_spawned_where_worn_and_refused_on_a_thing_never_worn() {
+        let ammo = atglyph_rules::TagId::from_raw(2);
+        let launch = LaunchDef { ammo: ammo.into(), range: 4, damage: DiceRoll::new(1, 4) };
+        let loose = ItemParts { attacks: Attacks { launch: Some(launch), ..Attacks::default() }, ..ItemParts::default() };
+        assert_eq!(loose.check(), vec!["a launcher, on a thing that is never worn".to_string()]);
+        let worn = Arc::new(ItemParts { wear: Some(EquipShape::in_slot(atglyph_rules::SlotId::from_raw(0))), ..loose });
+        assert!(worn.check().is_empty(), "{:?}", worn.check());
+        let mut world = World::new();
+        let (e, _) = spawned(&mut world, &worn, 0);
+        assert_eq!(world.get::<Launcher>(e), Some(&Launcher { ammo, range: 4, damage: DiceRoll::new(1, 4) }));
     }
 
     #[test]

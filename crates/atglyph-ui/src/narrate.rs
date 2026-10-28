@@ -188,6 +188,10 @@ pub enum Phrase {
     YouThrow,
     /// Someone else did.
     Throws,
+    /// Something you wear launched what you threw.
+    YouLaunch,
+    /// Something someone else wears did.
+    Launches,
     /// You used a thing that does something when used: drank it, lit it.
     YouUseThing,
     /// Someone else did.
@@ -503,6 +507,7 @@ impl Plugin for NarrationViewPlugin {
             .add_message::<Missed>()
             .add_message::<DeathEvent>()
             .add_message::<ItemEvent>()
+            .add_message::<Launched>()
             .add_message::<DoorEvent>()
             .add_message::<Bumped>()
             .add_message::<Swapped>()
@@ -534,6 +539,8 @@ pub struct NarratedEvents<'w, 's> {
     doors: MessageReader<'w, 's, DoorEvent>,
     travels: MessageReader<'w, 's, Travelled>,
     items: MessageReader<'w, 's, ItemEvent>,
+    /// What a worn launcher launched, so its throw is said as a shot.
+    launched: MessageReader<'w, 's, Launched>,
     reflected: MessageReader<'w, 's, Reflected>,
     dealt: MessageReader<'w, 's, DamageDealt>,
     healed: MessageReader<'w, 's, Healed>,
@@ -838,6 +845,7 @@ pub(crate) fn collect_narration(mut view: ResMut<NarrationView>, mut heard: Narr
         }
         rows.push(said);
     }
+    let shot: Vec<(Entity, Entity)> = heard.launched.read().map(|l| (l.actor, l.item)).collect();
     for ev in heard.items.read() {
         let (actor, item, phrase) = match *ev {
             ItemEvent::PickedUp { actor, item, merged_into } => {
@@ -859,7 +867,15 @@ pub(crate) fn collect_narration(mut view: ResMut<NarrationView>, mut heard: Narr
             // is a wait nobody needs told.
             ItemEvent::WouldNotComeOff { actor, item } if witness.is_you(actor) => (actor, item, Phrase::WillNotComeOff),
             ItemEvent::WouldNotComeOff { .. } => continue,
-            ItemEvent::Thrown { actor, item, .. } => (actor, item, if witness.is_you(actor) { Phrase::YouThrow } else { Phrase::Throws }),
+            ItemEvent::Thrown { actor, item, .. } => {
+                let phrase = match (shot.contains(&(actor, item)), witness.is_you(actor)) {
+                    (true, true) => Phrase::YouLaunch,
+                    (true, false) => Phrase::Launches,
+                    (false, true) => Phrase::YouThrow,
+                    (false, false) => Phrase::Throws,
+                };
+                (actor, item, phrase)
+            }
             // A use the engine landed is said; what using anything else
             // means is the game's, and so are the words.
             ItemEvent::Used { actor, item } if witness.used_to_effect(item) => {
@@ -1108,7 +1124,7 @@ pub struct Phrasebook {
 impl Default for Phrasebook {
     fn default() -> Self {
         use Phrase::*;
-        let table: [(Phrase, &str, ToneId); 79] = [
+        let table: [(Phrase, &str, ToneId); 81] = [
             (YouHit, "You hit {whom} for {n}.", Tones::HIT),
             (YouHitNothing, "You hit {whom}, to no effect.", Tones::MUTED),
             (HitsYou, "{Who} hits you for {n}.", Tones::BAD),
@@ -1166,6 +1182,8 @@ impl Default for Phrasebook {
             (WillNotComeOff, "{Your what} will not come off.", Tones::BAD),
             (YouThrow, "You throw {what}.", Tones::TEXT),
             (Throws, "{Who} throws {what}.", Tones::NOTICE),
+            (YouLaunch, "You shoot {what}.", Tones::TEXT),
+            (Launches, "{Who} shoots {what}.", Tones::NOTICE),
             (YouUseThing, "You use {what}.", Tones::TEXT),
             (UsesThing, "{Who} uses {what}.", Tones::NOTICE),
             (YouOpen, "You open the door.", Tones::MUTED),
@@ -1824,6 +1842,30 @@ mod tests {
         stage.app.world_mut().write_message(Intent::new(player, Throw { item: grenade, at }));
         stage.tick();
         assert_eq!(spoken(&stage, &["You throw"]), ["You throw a frag grenade."]);
+    }
+
+    /// A thing a worn launcher launched is said as shot, not thrown.
+    #[test]
+    fn a_launch_is_narrated_as_a_shot() {
+        let (mut stage, _) = with_things("[]");
+        let (player, kind) = (stage.player, stage.kind);
+        let ammo = atglyph_rules::TagId::from_raw(0);
+        let shape = atglyph_rules::EquipShape::in_slot(atglyph_rules::SlotId::from_raw(0));
+        let launcher = Launcher { ammo, range: 4, damage: atglyph_core::DiceRoll::flat(1) };
+        let sling = stage.app.world_mut().spawn((Item, Name::new("sling"), launcher, Wearable(shape.clone()))).id();
+        let pellet = stage
+            .app
+            .world_mut()
+            .spawn((Item, Name::new("pellet"), Tagged(vec![ammo]), Throwable::new(Some(6), Some((kind, atglyph_core::DiceRoll::flat(1))))))
+            .id();
+        let mut worn = atglyph_rules::Equipment::with_slot_count(1);
+        worn.equip(sling, &shape).unwrap();
+        stage.app.world_mut().entity_mut(player).insert((Inventory { items: vec![sling, pellet] }, Equipped(worn)));
+        stage.tick();
+        let at = stage.at.offset(3, 0);
+        stage.app.world_mut().write_message(Intent::new(player, Throw { item: pellet, at }));
+        stage.tick();
+        assert_eq!(spoken(&stage, &["You throw", "You shoot"]), ["You shoot a pellet."]);
     }
 
     /// The lines a test cares about, oldest first.

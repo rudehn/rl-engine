@@ -627,13 +627,18 @@ fn hints(view: &InventoryView, menu: &InventoryMenu, binds: &InventoryKeys, conf
     keys.join(" \u{2022} ")
 }
 
-/// A strike in words: `1d6 cutlass`, or `1d8 pistol to 6` with a reach.
+/// A strike in words: `1d6 cutlass`, or `1d8 pistol to 6` with a reach,
+/// and `1d2 + 1d4 kinetic to 9` with a launcher's roll beside its own.
 /// Shared with the look panel, so a thing reads the same on the floor as
 /// in the bag.
 pub(crate) fn strike(s: &Strike) -> String {
+    let rolls = match s.also {
+        Some(also) => format!("{} + {also}", s.dice),
+        None => s.dice.to_string(),
+    };
     match s.range {
-        Some(range) => format!("{} {} to {range}", s.dice, s.kind),
-        None => format!("{} {}", s.dice, s.kind),
+        Some(range) => format!("{rolls} {} to {range}", s.kind),
+        None => format!("{rolls} {}", s.kind),
     }
 }
 
@@ -858,6 +863,14 @@ mod tests {
     use atglyph_rules::Names;
     use atglyph_rules::content::Registry;
     use atglyph_rules::{EquipShape, Equipment, SlotDef};
+
+    #[test]
+    fn a_strike_with_a_launchers_roll_reads_both_rolls() {
+        let plain = Strike { kind: "kinetic".into(), dice: atglyph_core::DiceRoll::new(1, 2), range: Some(9), also: None };
+        assert_eq!(strike(&plain), "1d2 kinetic to 9");
+        let launched = Strike { also: Some(atglyph_core::DiceRoll::new(1, 4)), ..plain };
+        assert_eq!(strike(&launched), "1d2 + 1d4 kinetic to 9");
+    }
 
     /// A player with a worn blade, a hat in the bag and a stack of knives,
     /// and the bag drawn in a small frame.

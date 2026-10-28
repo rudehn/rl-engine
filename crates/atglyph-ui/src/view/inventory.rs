@@ -352,8 +352,12 @@ pub(crate) fn collect_inventory(
     let moments = moments.as_deref();
     let kind_name = |kind| registries.map(|r| r.damage_kinds.name(kind).to_string()).unwrap_or_default();
     let slot_name = |slot| registries.map(|r| r.slots.name(slot).to_string()).unwrap_or_default();
-    let strike =
-        |(kind, dice): (atglyph_rules::damage::DamageKindId, atglyph_core::DiceRoll), range: Option<i32>| Strike { kind: kind_name(kind), dice, range };
+    let strike = |(kind, dice): (atglyph_rules::damage::DamageKindId, atglyph_core::DiceRoll), range: Option<i32>| Strike {
+        kind: kind_name(kind),
+        dice,
+        range,
+        also: None,
+    };
     for &item in &bag.items {
         let Ok((
             (name, glyph, stack, wearable, _, tagged),
@@ -401,7 +405,7 @@ pub(crate) fn collect_inventory(
             goes_on: wearable.map(|w| w.0.any_of.iter().map(|s| slot_name(*s)).collect()).unwrap_or_default(),
             also_takes: wearable.map(|w| w.0.also.iter().map(|s| slot_name(*s)).collect()).unwrap_or_default(),
             throw_range: thrown.map(|t| t.range),
-            thrown: thrown.and_then(|t| t.strike.map(|s| strike(s, Some(t.range)))),
+            thrown: thrown.and_then(|t| t.strike.map(|s| Strike { also: t.launched.map(|(_, roll)| roll), ..strike(s, Some(t.range)) })),
             armor: armor.map_or(0, |a| a.0),
             resists: match (resists, registries) {
                 (Some(r), Some(registries)) => registries
@@ -451,6 +455,31 @@ mod tests {
         let row = &stage.app.world().resource::<InventoryView>().rows[0];
         assert_eq!(row.throw_range, Some(4));
         assert_eq!(row.thrown.as_ref().map(|s| s.range), Some(Some(4)));
+    }
+
+    /// A thing a worn launcher launches is listed at the reach and the
+    /// launcher's range together, its strike with the launcher's roll.
+    #[test]
+    fn a_launched_throw_is_listed_with_the_launchers_range_and_roll() {
+        let mut stage = Stage::new_with(InventoryViewPlugin, |app| {
+            let mut registries = app.world_mut().resource_mut::<Registries>();
+            registries.slots = Registry::from_defs(vec![SlotDef::new("hand")]).unwrap();
+            registries.tags = Registry::from_defs(vec![atglyph_rules::TagDef::new("pellet")]).unwrap();
+        });
+        let (player, kind) = (stage.player, stage.kind);
+        stage.app.world_mut().resource_mut::<atglyph_bevy::CombatRules>().reach = Some(atglyph_bevy::ThrowReach { base: 4, stat: None });
+        let ammo = atglyph_rules::TagId::from_raw(0);
+        let shape = EquipShape::in_slot(atglyph_rules::SlotId::from_raw(0));
+        let launcher = atglyph_bevy::Launcher { ammo, range: 3, damage: DiceRoll::new(1, 4) };
+        let sling = stage.app.world_mut().spawn((Item, Name::new("sling"), launcher, Wearable(shape.clone()))).id();
+        let pellet = stage.app.world_mut().spawn((Item, Name::new("pellet"), Tagged(vec![ammo]), Throwable::new(None, Some((kind, DiceRoll::new(1, 2)))))).id();
+        let mut worn = Equipment::with_slot_count(1);
+        worn.equip(sling, &shape).unwrap();
+        stage.app.world_mut().entity_mut(player).insert((Inventory { items: vec![sling, pellet] }, Equipped(worn)));
+        stage.tick();
+        let row = &stage.app.world().resource::<InventoryView>().rows[1];
+        assert_eq!(row.throw_range, Some(7));
+        assert_eq!(row.thrown.as_ref().map(|s| (s.dice, s.also)), Some((DiceRoll::new(1, 2), Some(DiceRoll::new(1, 4)))));
     }
 
     /// A row carries the item's own numbers in the registries' names, and

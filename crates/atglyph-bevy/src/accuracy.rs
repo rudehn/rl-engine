@@ -264,6 +264,6 @@ mod tests {
         assert_eq!(RangedAttack::new(kind, DiceRoll::flat(1), 12).effective_range(), 4);
         assert_eq!(RangedAttack::new(kind, DiceRoll::flat(1), 5).effective_range(), 1);
         assert_eq!(RangedAttack::new(kind, DiceRoll::flat(1), 12).effective_to(9).effective_range(), 9);
-        assert_eq!(crate::throwing::resolve(&crate::throwing::Throwable::new(Some(6), None), None).map(|t| t.effective), Some(2));
+        assert_eq!(crate::throwing::resolve(&crate::throwing::Throwable::new(Some(6), None), None, None).map(|t| t.effective), Some(2));
     }
 }

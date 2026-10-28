@@ -368,7 +368,7 @@ pub(crate) fn collect_inspect(mut view: ResMut<InspectView>, duelists: Duelists)
     if let Ok((armor, melee, ranged)) = duelists.items.get(entity)
         && !view.unknown
     {
-        let strike = |kind, dice, range| Strike { kind: duelists.registries.damage_kinds.name(kind).to_string(), dice, range };
+        let strike = |kind, dice, range| Strike { kind: duelists.registries.damage_kinds.name(kind).to_string(), dice, range, also: None };
         view.blow = melee.map(|m| strike(m.kind, m.dice, None));
         view.shot = ranged.map(|r| strike(r.kind, r.dice, Some(r.range)));
         view.armor = armor.map_or(0, |a| a.0);

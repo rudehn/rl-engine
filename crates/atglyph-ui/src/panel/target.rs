@@ -157,6 +157,7 @@ pub(crate) fn draw_target(
         }
     };
     let name = match (view.throwing, view.firing, view.what.is_empty()) {
+        (Some(_), _, _) if !view.launcher.is_empty() => format!("shoot {} from {}", view.what, view.launcher),
         (Some(_), _, _) => format!("throw {}", view.what),
         (None, true, true) => "fire".to_string(),
         (None, true, false) => format!("fire {}", view.what),
