@@ -352,7 +352,7 @@ fn litter(commands: &mut Commands, rats: &Rats, p: Point, bread: bool) {
         commands.spawn((Item, Crust(8), Name::new("crust of bread"), Position(p), Glyph::new('%', Color::srgb(0.85, 0.72, 0.40)).on_layer(2)));
     } else {
         // Thrown up to 7 cells, for 1d4.
-        let flies = Throwable::new(7, Some((rats.bite, DiceRoll::new(1, 4))));
+        let flies = Throwable::new(Some(7), Some((rats.bite, DiceRoll::new(1, 4))));
         commands.spawn((Item, flies, Name::new("rock"), Position(p), Glyph::new('*', Color::srgb(0.66, 0.66, 0.70)).on_layer(2)));
     }
 }
@@ -433,7 +433,7 @@ mod tests {
         let vermin = app.world().resource::<Rats>().faction;
         let there = open_line(&app, here, 3);
         app.world_mut().spawn((Actor, Blocks, Position(there), Faction(vermin), Health::full(6), Name::new("rat"), Glyph::new('r', Color::WHITE)));
-        let rock = app.world_mut().spawn((Item, Throwable::new(7, None), Name::new("rock"))).id();
+        let rock = app.world_mut().spawn((Item, Throwable::new(Some(7), None), Name::new("rock"))).id();
         app.world_mut().get_mut::<Inventory>(me).unwrap().items.push(rock);
         settle(&mut app);
 

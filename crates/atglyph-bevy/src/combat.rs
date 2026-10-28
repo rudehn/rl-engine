@@ -316,6 +316,19 @@ pub struct CombatRules {
     /// game says otherwise: one that revives, or plays on as a ghost, keeps
     /// the ending for itself.
     pub death_ends_run: bool,
+    /// How far a thrower throws a thing with no range of its own, if
+    /// throws reach at all: see [`reach`](Self::reach).
+    pub reach: Option<ThrowReach>,
+}
+
+/// How far an actor throws a thing that names no range of its own: `base`,
+/// plus its value of `stat` when one is named.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ThrowReach {
+    /// The cells everyone reaches.
+    pub base: i32,
+    /// The stat whose value is added, if any.
+    pub stat: Option<StatId>,
 }
 
 impl Default for CombatRules {
@@ -329,7 +342,17 @@ impl CombatRules {
     /// pair is named, no stat read by a blow, no blow harder for surprise,
     /// and the player's death the end of the run.
     pub fn new() -> Self {
-        Self { factions: Factions::new(), armor: None, attack: None, accuracy: None, evasion: None, mending: None, unaware: None, death_ends_run: true }
+        Self {
+            factions: Factions::new(),
+            armor: None,
+            attack: None,
+            accuracy: None,
+            evasion: None,
+            mending: None,
+            unaware: None,
+            death_ends_run: true,
+            reach: None,
+        }
     }
 
     /// The player's death does not end the run; the game says when it ends.
@@ -349,6 +372,15 @@ impl CombatRules {
     /// the blow and the shot.
     pub fn attack_stat(mut self, stat: StatId) -> Self {
         self.attack = Some(stat);
+        self
+    }
+
+    /// A thing with no range of its own flies `base` cells from whoever
+    /// throws it, plus the thrower's value of `stat`, when one is named;
+    /// one with a range of its own keeps it. With no reach, a thing with no
+    /// range of its own cannot be thrown.
+    pub fn reach(mut self, base: i32, stat: Option<StatId>) -> Self {
+        self.reach = Some(ThrowReach { base, stat });
         self
     }
 

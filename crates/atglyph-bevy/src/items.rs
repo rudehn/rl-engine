@@ -59,7 +59,6 @@ use crate::lighting::{DarkSight, DarkSightSuppressed, LightSource, OwnDarkSight,
 use crate::minds::{Sight, Thinking};
 use crate::places::{MapId, OnMap};
 use crate::status::{ActiveStatuses, RemoveStatus, StatBlock};
-use crate::throwing::Throwable;
 use crate::turn::{Action, Intent, Occupancy, Resolution, Turns};
 use crate::world::WorldMap;
 
@@ -1115,13 +1114,14 @@ pub(crate) fn drop_what_the_dead_carried(
 }
 
 /// An item lying about, as a mind weighs it.
-type Lying = (Entity, &'static Position, Option<&'static OnMap>, Option<&'static Throwable>, Option<&'static Wearable>, Option<&'static GearScore>);
+type Lying = (Entity, &'static Position, Option<&'static OnMap>, Option<&'static Wearable>, Option<&'static GearScore>);
 
 /// What a mind carries and wears, and what it might see lying about.
 #[derive(bevy::ecs::system::SystemParam)]
 pub struct Belongings<'w, 's> {
     bags: Query<'w, 's, (Option<&'static Inventory>, Option<&'static Equipped>)>,
-    missiles: Query<'w, 's, &'static Throwable>,
+    /// How far the thinker throws each thing, by its own reach.
+    throws: crate::throwing::Throws<'w, 's>,
     scores: Query<'w, 's, &'static GearScore>,
     lying: Query<'w, 's, Lying, With<Item>>,
     blows: Query<'w, 's, (), (With<Item>, With<crate::combat::MeleeAttack>)>,
@@ -1139,7 +1139,7 @@ impl Belongings<'_, '_> {
     /// What `thinker` carries that it could throw.
     fn missiles(&self, thinker: Entity) -> Vec<atglyph_rules::Missile<Entity>> {
         let Ok((Some(bag), _)) = self.bags.get(thinker) else { return Vec::new() };
-        bag.items.iter().filter_map(|item| self.missiles.get(*item).ok().map(|t| atglyph_rules::Missile { item: *item, range: t.range })).collect()
+        bag.items.iter().filter_map(|item| self.throws.of(thinker, *item).map(|t| atglyph_rules::Missile { item: *item, range: t.range })).collect()
     }
 
     /// What `thinker` carries that it could use, by [`may_use`], the rule
@@ -1202,13 +1202,14 @@ pub(crate) fn perceive_belongings(mut thinking: ResMut<Thinking>, sight: Sight, 
     let carried = if wits.has(atglyph_rules::Wits::USES) { belongings.carried(thinker) } else { Vec::new() };
     let mut items = Vec::new();
     if wits.has(atglyph_rules::Wits::PICKS_UP) || wits.has(atglyph_rules::Wits::EQUIPS) {
-        for (item, pos, on, throwable, wearable, score) in belongings.lying.iter() {
+        for (item, pos, on, wearable, score) in belongings.lying.iter() {
             let underfoot = pos.0 == thinking.at() && on.map(|m| m.0).unwrap_or(MapId::ZERO) == sight.current_map();
             if !underfoot && !sight.perceives(&thinking, pos.0, on) {
                 continue;
             }
             let gain = wearable.zip(score).and_then(|(shape, score)| belongings.gain(thinker, item, shape, score));
-            items.push(atglyph_rules::ItemView { id: item, pos: pos.0, throw_range: throwable.map(|t| t.range), gain });
+            let throw_range = belongings.throws.of(thinker, item).map(|t| t.range);
+            items.push(atglyph_rules::ItemView { id: item, pos: pos.0, throw_range, gain });
         }
     }
     if let Some(snapshot) = thinking.snapshot_mut() {

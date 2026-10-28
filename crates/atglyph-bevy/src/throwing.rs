@@ -34,23 +34,27 @@ use crate::world::WorldMap;
 ///
 /// Items without one cannot be thrown. A flask that should only shatter
 /// where it lands has no strike, and the game answers
-/// [`ItemEvent::Thrown`] to spill whatever was in it.
+/// [`ItemEvent::Thrown`] to spill whatever was in it. How far one actually
+/// flies from a given thrower is [`Throws::of`]'s to say, since a thing
+/// with no range of its own goes as far as its thrower reaches.
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Throwable {
-    /// The furthest cell it reaches.
-    pub range: i32,
+    /// The furthest cell it reaches whoever throws it, or `None` to fly as
+    /// far as its thrower's reach, [`CombatRules::reach`](crate::combat::CombatRules::reach).
+    pub range: Option<i32>,
     /// The kind of damage and the roll it deals whoever it strikes, if any.
     pub strike: Option<(DamageKindId, DiceRoll)>,
     /// The furthest cell with no range penalty, for a hit model that reads
-    /// one. `None` is a third of `range`.
+    /// one. `None` is a third of how far it flies.
     pub effective: Option<i32>,
 }
 
 impl Throwable {
-    /// Reaching `range` and striking with `strike`, its effective range a
-    /// third of that. A constructor rather than a literal, so a field only
-    /// some games want is added without touching every call site.
-    pub const fn new(range: i32, strike: Option<(DamageKindId, DiceRoll)>) -> Self {
+    /// Reaching `range`, or its thrower's reach for `None`, and striking
+    /// with `strike`, its effective range a third of how far it flies. A
+    /// constructor rather than a literal, so a field only some games want
+    /// is added without touching every call site.
+    pub const fn new(range: Option<i32>, strike: Option<(DamageKindId, DiceRoll)>) -> Self {
         Self { range, strike, effective: None }
     }
 
@@ -64,14 +68,60 @@ impl Throwable {
         self.effective = Some(cells);
         self
     }
+}
 
-    /// The furthest cell with no range penalty: the one set, or a third of
-    /// the range.
-    pub const fn effective_range(&self) -> i32 {
-        match self.effective {
-            Some(cells) => cells,
-            None => self.range / 3,
-        }
+/// A throw as it flies from one thrower: how far, how far before its aim
+/// falls off, and what it strikes with.
+///
+/// What every reader of a throw reads rather than the item's
+/// [`Throwable`], so the aim, the throw itself, the odds and every mind
+/// weighing a missile agree on it: [`Throws::of`] makes one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ThrowAs {
+    /// The furthest cell it reaches.
+    pub range: i32,
+    /// The furthest cell with no range penalty.
+    pub effective: i32,
+    /// The kind of damage and the roll it deals whoever it strikes, if any.
+    pub strike: Option<(DamageKindId, DiceRoll)>,
+}
+
+/// How `own` flies from a thrower who reaches `reach`, if it can be thrown:
+/// its own range, or the reach for a thing with none, and its effective
+/// range its own or a third of that. `None` for a thing with no range
+/// thrown by someone with no reach, which nobody can throw.
+pub fn resolve(own: &Throwable, reach: Option<i32>) -> Option<ThrowAs> {
+    let range = own.range.or(reach)?;
+    Some(ThrowAs { range, effective: own.effective.unwrap_or(range / 3), strike: own.strike })
+}
+
+/// The one answer to how far and how hard a thrower throws a thing.
+///
+/// A parameter rather than a function of the item, because the answer
+/// depends on who throws: its reach, by [`CombatRules::reach`](crate::combat::CombatRules::reach),
+/// is a base plus one of its stats.
+#[derive(bevy::ecs::system::SystemParam)]
+pub struct Throws<'w, 's> {
+    combat: Option<Res<'w, crate::combat::CombatRules>>,
+    registries: Option<Res<'w, crate::registries::Registries>>,
+    stats: Query<'w, 's, &'static crate::status::StatBlock>,
+    missiles: Query<'w, 's, &'static Throwable>,
+}
+
+impl Throws<'_, '_> {
+    /// How far `thrower` throws a thing with no range of its own, or `None`
+    /// when the game gives throws no reach.
+    pub fn reach(&self, thrower: Entity) -> Option<i32> {
+        let rule = self.combat.as_ref()?.reach?;
+        let stat = rule.stat.and_then(|stat| Some(self.stats.get(thrower).ok()?.value(stat, &self.registries.as_ref()?.stats)));
+        Some(rule.base + stat.unwrap_or(0))
+    }
+
+    /// How `item` flies when `thrower` throws it, or `None` when it cannot
+    /// throw it: the item is not [`Throwable`], or has no range and the
+    /// game gives throws no reach.
+    pub fn of(&self, thrower: Entity, item: Entity) -> Option<ThrowAs> {
+        resolve(self.missiles.get(item).ok()?, self.reach(thrower))
     }
 }
 
@@ -127,6 +177,8 @@ pub struct Launch<'w, 's> {
     airborne: ResMut<'w, Airborne<ThrowLanding>>,
     /// The odds of striking whoever the flight meets.
     marks: crate::accuracy::Marksmanship<'w, 's>,
+    /// How far and how hard the thrower throws it.
+    throws: Throws<'w, 's>,
 }
 
 /// A throw that has left the hand and not yet come down: what it will do
@@ -159,13 +211,13 @@ pub(crate) fn resolve_throws(
     mut reports: ThrowReports,
     stuck: Query<(), With<crate::items::Stuck>>,
 ) {
-    let Launch { map, occupancy, mut rng, mut throwers, mut missiles, alive, mut cues, mut cue_wait, mut airborne, marks } = launch;
+    let Launch { map, occupancy, mut rng, mut throwers, mut missiles, alive, mut cues, mut cue_wait, mut airborne, marks, throws } = launch;
     for intent in intents.read() {
         let (actor, Throw { item, at }) = (intent.actor, intent.action);
         if !resolution.claim(actor) {
             continue;
         }
-        let (Ok((pos, mut bag, worn)), Ok((throwable, stack))) = (throwers.get_mut(actor), missiles.get_mut(item)) else {
+        let (Ok((pos, mut bag, worn)), Ok((_, stack)), Some(thrown_as)) = (throwers.get_mut(actor), missiles.get_mut(item), throws.of(actor, item)) else {
             resolution.failed(actor, BASE_ACTION_COST);
             continue;
         };
@@ -178,8 +230,7 @@ pub(crate) fn resolve_throws(
             resolution.failed(actor, BASE_ACTION_COST);
             continue;
         }
-        let thrown_as = *throwable;
-        let Throwable { range, strike, .. } = thrown_as;
+        let ThrowAs { range, strike, .. } = thrown_as;
         let Flight { struck, rests, .. } = flight(&map, &occupancy, pos.0, at, range);
 
         // One leaves the hand: off the top of a stack, which makes it a
@@ -333,7 +384,7 @@ mod tests {
 
         /// A stack of `count` knives in the player's bag.
         fn knives(&mut self, count: u32) -> Entity {
-            let knife = Throwable::new(5, Some((self.sides.kind, DiceRoll::flat(3))));
+            let knife = Throwable::new(Some(5), Some((self.sides.kind, DiceRoll::flat(3))));
             let stack = self.app.world_mut().spawn((Item, knife, Stack { key: 1, count }, Name::new("knife"))).id();
             self.app.world_mut().get_mut::<Inventory>(self.player).unwrap().items.push(stack);
             stack
@@ -359,9 +410,29 @@ mod tests {
                 .expect("the trigger builds")
             };
             let spent = crate::consumable::Consumable::new(1, crate::consumable::WhenEmpty::Destroyed);
-            let stack = self.app.world_mut().spawn((Item, Throwable::new(6, None), spent, triggers, Stack { key: 2, count }, Name::new("grenade"))).id();
+            let stack = self.app.world_mut().spawn((Item, Throwable::new(Some(6), None), spent, triggers, Stack { key: 2, count }, Name::new("grenade"))).id();
             self.app.world_mut().get_mut::<Inventory>(self.player).unwrap().items.push(stack);
             stack
+        }
+
+        /// A stone in the player's bag: no range of its own, so it flies as
+        /// far as its thrower reaches, and struck for 2.
+        fn stone(&mut self) -> Entity {
+            let stone = Throwable::new(None, Some((self.sides.kind, DiceRoll::flat(2))));
+            let e = self.app.world_mut().spawn((Item, stone, Name::new("stone"))).id();
+            self.app.world_mut().get_mut::<Inventory>(self.player).unwrap().items.push(e);
+            e
+        }
+
+        /// Throws reach `base` plus a stat, which the player holds at `stat`.
+        fn reach(&mut self, base: i32, stat: i32) {
+            let stats = atglyph_rules::Registry::from_defs(vec![atglyph_rules::StatDef::new("heft", 0)]).unwrap();
+            let heft = stats.expect("heft");
+            self.app.world_mut().resource_mut::<crate::registries::Registries>().stats = stats;
+            self.app.world_mut().resource_mut::<crate::combat::CombatRules>().reach = Some(crate::combat::ThrowReach { base, stat: Some(heft) });
+            let mut block = atglyph_rules::stats::Stats::new();
+            block.set_base(heft, stat);
+            self.app.world_mut().entity_mut(self.player).insert(crate::status::StatBlock(block));
         }
 
         /// Every item lying on `at`.
@@ -410,6 +481,55 @@ mod tests {
         fn odds(&self, shot: &atglyph_rules::accuracy::Shot) -> Option<atglyph_rules::Odds> {
             Some(atglyph_rules::Odds::new(u32::from(shot.distance == self.0), 1, Vec::new()))
         }
+    }
+
+    #[test]
+    fn a_throw_with_no_range_resolves_to_its_throwers_reach_and_one_with_a_range_keeps_it() {
+        let kind = atglyph_rules::damage::DamageKindId::from_raw(0);
+        let strike = Some((kind, DiceRoll::flat(1)));
+        let rangeless = Throwable::new(None, strike);
+        assert_eq!(resolve(&rangeless, Some(6)), Some(ThrowAs { range: 6, effective: 2, strike }));
+        assert_eq!(resolve(&rangeless, None), None, "no range and no reach: it cannot be thrown");
+        let ranged = Throwable::new(Some(9), strike).effective_to(4);
+        assert_eq!(resolve(&ranged, Some(6)), Some(ThrowAs { range: 9, effective: 4, strike }));
+        assert_eq!(resolve(&ranged, None), Some(ThrowAs { range: 9, effective: 4, strike }));
+    }
+
+    #[test]
+    fn a_stone_with_no_range_flies_as_far_as_its_throwers_reach() {
+        let mut rig = Rig::new();
+        rig.reach(3, 2);
+        let near = rig.mark(5);
+        let stone = rig.stone();
+        rig.throw(stone, 5);
+        assert_eq!(rig.hp(near), 18, "five away is in reach");
+
+        let mut rig = Rig::new();
+        rig.reach(3, 2);
+        let far = rig.mark(6);
+        let stone = rig.stone();
+        rig.throw(stone, 6);
+        assert_eq!(rig.hp(far), 20, "six away is not");
+        let short = rig.start.offset(5, 0);
+        assert_eq!(rig.lying_at(short), vec![stone], "it came down at the end of its reach");
+    }
+
+    #[test]
+    fn an_item_with_its_own_range_keeps_it_whatever_its_thrower_reaches() {
+        let mut rig = Rig::new();
+        rig.reach(9, 0);
+        let far = rig.mark(6);
+        let knife = rig.knives(1);
+        rig.throw(knife, 6);
+        assert_eq!(rig.hp(far), 20, "the knife flies five, not nine");
+    }
+
+    #[test]
+    fn with_no_reach_rule_a_rangeless_throw_is_refused() {
+        let mut rig = Rig::new();
+        let stone = rig.stone();
+        assert!(rig.throw(stone, 2).is_empty(), "nothing thrown");
+        assert!(rig.app.world().get::<Inventory>(rig.player).unwrap().contains(stone), "still carried");
     }
 
     #[test]
@@ -556,7 +676,7 @@ mod tests {
         let mut rig = Rig::new();
         let knives = rig.knives(2);
         assert!(rig.throw(knives, 0).is_empty(), "not at your own feet");
-        let lying = rig.app.world_mut().spawn((Item, Position(rig.start.offset(1, 0)), Throwable::new(3, None))).id();
+        let lying = rig.app.world_mut().spawn((Item, Position(rig.start.offset(1, 0)), Throwable::new(Some(3), None))).id();
         assert!(rig.throw(lying, 3).is_empty(), "not what lies on the ground");
         let stone = rig.app.world_mut().spawn(Item).id();
         rig.app.world_mut().get_mut::<Inventory>(rig.player).unwrap().items.push(stone);

@@ -342,6 +342,7 @@ pub(crate) fn collect_inventory(
     player: Query<(Entity, &Inventory, Option<&Equipped>), With<Player>>,
     items: Query<(Looks, Arms, Does, Marks), With<Item>>,
     tags: Query<&Tagged>,
+    throws: atglyph_bevy::Throws,
 ) {
     view.rows.clear();
     view.entity = None;
@@ -355,7 +356,7 @@ pub(crate) fn collect_inventory(
         |(kind, dice): (atglyph_rules::damage::DamageKindId, atglyph_core::DiceRoll), range: Option<i32>| Strike { kind: kind_name(kind), dice, range };
     for &item in &bag.items {
         let Ok((
-            (name, glyph, stack, wearable, throwable, tagged),
+            (name, glyph, stack, wearable, _, tagged),
             (armor, resists, melee, ranged, strikes, bestows),
             (triggers, consumable, pulse, attuned, bonus),
             (unknown, stuck),
@@ -364,6 +365,8 @@ pub(crate) fn collect_inventory(
             continue;
         };
         let slot = worn.and_then(|w| w.slot_of(item));
+        // How it flies from the player, its own range or the player's reach.
+        let thrown = throws.of(entity, item);
         // What its use may be made on, by the rule the resolver takes a
         // choice by, among the things the bag lists.
         let asks = triggers.and_then(Triggers::asks).map(|asks| Asking {
@@ -397,8 +400,8 @@ pub(crate) fn collect_inventory(
             slot_name: slot.map(slot_name).unwrap_or_default(),
             goes_on: wearable.map(|w| w.0.any_of.iter().map(|s| slot_name(*s)).collect()).unwrap_or_default(),
             also_takes: wearable.map(|w| w.0.also.iter().map(|s| slot_name(*s)).collect()).unwrap_or_default(),
-            throw_range: throwable.map(|t| t.range),
-            thrown: throwable.and_then(|t| t.strike.map(|s| strike(s, Some(t.range)))),
+            throw_range: thrown.map(|t| t.range),
+            thrown: thrown.and_then(|t| t.strike.map(|s| strike(s, Some(t.range)))),
             armor: armor.map_or(0, |a| a.0),
             resists: match (resists, registries) {
                 (Some(r), Some(registries)) => registries
@@ -435,6 +438,21 @@ mod tests {
     use atglyph_rules::content::Registry;
     use atglyph_rules::{EquipShape, Equipment, SlotDef, StatDef};
 
+    /// A thing with no range of its own is listed as flying as far as the
+    /// player reaches.
+    #[test]
+    fn a_rangeless_throw_is_listed_at_the_players_reach() {
+        let mut stage = Stage::new(InventoryViewPlugin);
+        let (player, kind) = (stage.player, stage.kind);
+        stage.app.world_mut().resource_mut::<atglyph_bevy::CombatRules>().reach = Some(atglyph_bevy::ThrowReach { base: 4, stat: None });
+        let stone = stage.app.world_mut().spawn((Item, Name::new("stone"), Throwable::new(None, Some((kind, DiceRoll::new(1, 3)))))).id();
+        stage.app.world_mut().entity_mut(player).insert(Inventory { items: vec![stone] });
+        stage.tick();
+        let row = &stage.app.world().resource::<InventoryView>().rows[0];
+        assert_eq!(row.throw_range, Some(4));
+        assert_eq!(row.thrown.as_ref().map(|s| s.range), Some(Some(4)));
+    }
+
     /// A row carries the item's own numbers in the registries' names, and
     /// says where it is worn and where it could be.
     #[test]
@@ -464,8 +482,11 @@ mod tests {
         let mut resists = atglyph_rules::Resistances::new();
         resists.set(kind, 10);
         let hat = stage.app.world_mut().spawn((Item, Name::new("a hat"), Wearable(EquipShape::in_slot(head)), Armor(1), Resists(resists))).id();
-        let knives =
-            stage.app.world_mut().spawn((Item, Name::new("knife"), Stack { key: 1, count: 3 }, Throwable::new(5, Some((kind, DiceRoll::new(1, 4)))))).id();
+        let knives = stage
+            .app
+            .world_mut()
+            .spawn((Item, Name::new("knife"), Stack { key: 1, count: 3 }, Throwable::new(Some(5), Some((kind, DiceRoll::new(1, 4))))))
+            .id();
         let mut worn = Equipped(Equipment::with_slot_count(2));
         worn.equip(blade, &EquipShape::in_slot(hand)).unwrap();
         stage.app.world_mut().entity_mut(player).insert((Inventory { items: vec![knives, blade, hat] }, worn));

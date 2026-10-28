@@ -886,8 +886,11 @@ mod tests {
         let mut resists = atglyph_rules::Resistances::new();
         resists.set(kind, 10);
         let hat = stage.app.world_mut().spawn((Item, Name::new("a hat"), Wearable(EquipShape::in_slot(head)), Armor(1), Resists(resists))).id();
-        let knives =
-            stage.app.world_mut().spawn((Item, Name::new("knife"), Stack { key: 1, count: 3 }, Throwable::new(5, Some((kind, DiceRoll::new(1, 4)))))).id();
+        let knives = stage
+            .app
+            .world_mut()
+            .spawn((Item, Name::new("knife"), Stack { key: 1, count: 3 }, Throwable::new(Some(5), Some((kind, DiceRoll::new(1, 4))))))
+            .id();
         let mut worn = Equipped(Equipment::with_slot_count(2));
         worn.equip(blade, &EquipShape::in_slot(hand)).unwrap();
         stage.app.world_mut().entity_mut(player).insert((Inventory { items: vec![blade, hat, knives] }, worn));
@@ -1352,7 +1355,7 @@ mod tests {
         let (mut stage, triggers) = with_triggers(r#"[(on: "land", area: Burst(radius: 1), effects: [(kind: "Harm", args: (kind: "kinetic", roll: "3"))])]"#);
         let player = stage.player;
         let grenade =
-            stage.app.world_mut().spawn((Item, Name::new("grenade"), triggers, Consumable::new(1, WhenEmpty::Destroyed), Throwable::new(6, None))).id();
+            stage.app.world_mut().spawn((Item, Name::new("grenade"), triggers, Consumable::new(1, WhenEmpty::Destroyed), Throwable::new(Some(6), None))).id();
         stage.app.world_mut().entity_mut(player).insert(Inventory { items: vec![grenade] });
         stage.tick();
 

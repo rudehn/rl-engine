@@ -1762,6 +1762,13 @@ mod tests {
     /// A thrower with nothing in hand, a knife a step away and the player six
     /// off, run for a dozen turns of the player waiting.
     fn with_a_knife_in_reach(wits: Wits) -> (App, Entity, Entity) {
+        knife_scene(wits, Some(6), None)
+    }
+
+    /// As [`with_a_knife_in_reach`], the knife flying `range`, or its
+    /// thrower's reach for `None`, and every thrower reaching `reach`, if
+    /// throws reach at all.
+    fn knife_scene(wits: Wits, range: Option<i32>, reach: Option<i32>) -> (App, Entity, Entity) {
         use atglyph_rules::ai::tactics::{Scavenge, ThrowAtRange};
         let mut app = headless_app();
         app.add_plugins((crate::fov::FovPlugin, CombatPlugin, MindsPlugin, crate::items::ItemsPlugin, crate::throwing::ThrowingPlugin));
@@ -1780,7 +1787,10 @@ mod tests {
                 MeleeAttack::new(sides.kind, DiceRoll::flat(1)),
             ))
             .id();
-        let knife = app.world_mut().spawn((Item, Position(start.offset(5, 0)), Throwable::new(6, Some((sides.kind, DiceRoll::flat(4)))))).id();
+        if let Some(base) = reach {
+            app.world_mut().resource_mut::<crate::combat::CombatRules>().reach = Some(crate::combat::ThrowReach { base, stat: None });
+        }
+        let knife = app.world_mut().spawn((Item, Position(start.offset(5, 0)), Throwable::new(range, Some((sides.kind, DiceRoll::flat(4)))))).id();
         app.world_mut().spawn((
             Actor,
             Blocks,
@@ -1813,6 +1823,14 @@ mod tests {
         assert_eq!(app.world().get::<Health>(player).unwrap().current, 30, "an animal has no use for a knife");
         let start = app.world().get::<Position>(player).unwrap().0;
         assert_eq!(app.world().get::<Position>(knife).map(|p| p.0), Some(start.offset(5, 0)), "which lies where it lay");
+    }
+
+    #[test]
+    fn a_mind_counts_a_rangeless_missile_by_its_own_reach() {
+        let (app, player, _) = knife_scene(Wits::SAPIENT, None, Some(6));
+        assert_eq!(app.world().get::<Health>(player).unwrap().current, 26, "it reaches six, so the knife was worth taking and throwing");
+        let (app, player, _) = knife_scene(Wits::SAPIENT, None, None);
+        assert_eq!(app.world().get::<Health>(player).unwrap().current, 30, "with no reach the knife flies nowhere, and is never thrown");
     }
 
     #[test]

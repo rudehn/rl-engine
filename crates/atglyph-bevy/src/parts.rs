@@ -852,7 +852,7 @@ mod tests {
         let kind = atglyph_rules::damage::DamageKindId::from_raw(0);
         let stat = StatId::from_raw(0);
         let melee = Melee { roll: DiceRoll::new(1, 6), kind: kind.into(), look: None, shape: None, unaware: None };
-        let throw = ThrowDef { range: 5, effective: None, strike: Some((DiceRoll::new(1, 4), kind.into())) };
+        let throw = ThrowDef { range: Some(5), effective: None, strike: Some((DiceRoll::new(1, 4), kind.into())) };
         let level = Level { min: Some(-2), max: Some(5), damage: Some(1), charges: Some(1), stats: vec![(stat.into(), 5)], ..Level::default() };
         Arc::new(ItemParts {
             attacks: Attacks { melee: Some(melee), throw: Some(throw), ..Attacks::default() },

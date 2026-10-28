@@ -1813,8 +1813,11 @@ mod tests {
     fn a_thing_spent_where_it_lands_is_named_when_it_is_thrown() {
         let (mut stage, triggers) = with_things(r#"[(on: "land", effects: [(kind: "Mend", args: (roll: "1"))])]"#);
         let player = stage.player;
-        let grenade =
-            stage.app.world_mut().spawn((Item, Name::new("frag grenade"), triggers, Consumable::new(1, WhenEmpty::Destroyed), Throwable::new(6, None))).id();
+        let grenade = stage
+            .app
+            .world_mut()
+            .spawn((Item, Name::new("frag grenade"), triggers, Consumable::new(1, WhenEmpty::Destroyed), Throwable::new(Some(6), None)))
+            .id();
         stage.app.world_mut().entity_mut(player).insert(Inventory { items: vec![grenade] });
         stage.tick();
         let at = stage.at.offset(3, 0);

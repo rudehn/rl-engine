@@ -614,6 +614,8 @@ pub struct TargetReach<'w, 's> {
     users: Query<'w, 's, (&'static Position, Option<&'static Viewshed>, Option<&'static Inventory>)>,
     subjects: Query<'w, 's, Standing>,
     missiles: Query<'w, 's, (&'static Throwable, Option<&'static Name>)>,
+    /// How far and how hard the user throws a thing.
+    throws: atglyph_bevy::Throws<'w, 's>,
     /// The shot the preview reaches with and whether a blow is in hand
     /// point blank: the user's own or a worn item's, as the resolver
     /// strikes.
@@ -718,7 +720,7 @@ pub(crate) fn collect_target(mut view: ResMut<TargetView>, modals: Res<Modals>, 
     }
 
     if let Some(item) = view.throwing {
-        let Ok((throwable, name)) = reach.missiles.get(item) else { return };
+        let (Ok((_, name)), Some(throwable)) = (reach.missiles.get(item), reach.throws.of(user, item)) else { return };
         view.what = name.map(|n| n.as_str().to_string()).unwrap_or_default();
         let thrown = flight(&reach.map, &reach.occupancy, from, view.cursor, throwable.range);
         // Rolled against whoever living the flight strikes first, as the
@@ -731,13 +733,13 @@ pub(crate) fn collect_target(mut view: ResMut<TargetView>, modals: Res<Modals>, 
             _ => view.cursor,
         };
         view.unknown = reach.unknown.contains(item);
-        let span = AimRange { distance: atglyph_core::geometry::chebyshev(from, reaches), effective: throwable.effective_range(), max: throwable.range };
+        let span = AimRange { distance: atglyph_core::geometry::chebyshev(from, reaches), effective: throwable.effective, max: throwable.range };
         view.span = (!view.unknown).then_some(span);
         // Whether a throw is rolled at all, only a thing that strikes being
         // rolled, and how far it flies without penalty are the thing's, so
         // one not yet known gives no chance, as its bag row gives no strike.
         let shift = -reach.seems.get(user).map_or(0, |s| s.accuracy);
-        view.odds = struck.filter(|_| !view.unknown).and_then(|who| reach.marks.odds(user, who, Attempt::Throw(throwable), shift));
+        view.odds = struck.filter(|_| !view.unknown).and_then(|who| reach.marks.odds(user, who, Attempt::Throw(&throwable), shift));
         view.seeming = shift != 0 && view.odds.is_some();
         // It lands on whoever it strikes, or wherever it comes to rest.
         let lands = match (thrown.struck, thrown.path.last()) {
@@ -1105,6 +1107,23 @@ mod tests {
         assert!(view.legal);
     }
 
+    /// The aim at a thing with no range of its own spans the thrower's
+    /// reach.
+    #[test]
+    fn the_aim_at_a_rangeless_throw_spans_the_throwers_reach() {
+        let mut stage = staged();
+        let (user, kind) = (stage.player, stage.kind);
+        stage.app.world_mut().resource_mut::<atglyph_bevy::CombatRules>().reach = Some(atglyph_bevy::ThrowReach { base: 4, stat: None });
+        let stone = stage.app.world_mut().spawn((Item, Name::new("stone"), Throwable::new(None, Some((kind, atglyph_core::DiceRoll::flat(2)))))).id();
+        stage.app.world_mut().get_mut::<Inventory>(user).expect("a bag").items.push(stone);
+        stage.app.world_mut().write_message(AimThrow { user, item: stone });
+        stage.tick();
+        let at = stage.at;
+        stage.app.world_mut().resource_mut::<TargetView>().cursor = at.offset(2, 0);
+        stage.tick();
+        assert_eq!(stage.app.world().resource::<TargetView>().span.map(|s| s.max), Some(4));
+    }
+
     /// A shot, a throw and a bolt are one projectile, so sent at the same
     /// wall all three come to rest on the same cell, the open one in front
     /// of it, and none flies into it: what each preview marks is what its
@@ -1114,7 +1133,7 @@ mod tests {
         let mut stage = staged();
         let (bolt, _, _) = arm(&mut stage);
         let (user, kind, at) = (stage.player, stage.kind, stage.at);
-        let knife = stage.app.world_mut().spawn((Item, Name::new("knife"), Throwable::new(6, Some((kind, atglyph_core::DiceRoll::flat(2)))))).id();
+        let knife = stage.app.world_mut().spawn((Item, Name::new("knife"), Throwable::new(Some(6), Some((kind, atglyph_core::DiceRoll::flat(2)))))).id();
         stage.app.world_mut().get_mut::<Inventory>(user).expect("a bag").items.push(knife);
         stage.app.world_mut().entity_mut(user).insert(RangedAttack::new(kind, atglyph_core::DiceRoll::flat(2), 6));
         let wall = at.offset(3, 0);
@@ -1276,7 +1295,7 @@ mod tests {
         let mut stage = Stage::new_with((ThrowingPlugin, TargetViewPlugin), |_| {});
         stage.tick();
         let (user, kind) = (stage.player, stage.kind);
-        let knife = stage.app.world_mut().spawn((Item, Name::new("knife"), Throwable::new(6, Some((kind, atglyph_core::DiceRoll::flat(2)))))).id();
+        let knife = stage.app.world_mut().spawn((Item, Name::new("knife"), Throwable::new(Some(6), Some((kind, atglyph_core::DiceRoll::flat(2)))))).id();
         stage.app.world_mut().get_mut::<Inventory>(user).expect("a bag").items.push(knife);
         stage.actor("near", 'n', 2, 0);
         stage.actor("far", 'f', 4, 0);
@@ -1404,8 +1423,11 @@ mod tests {
     fn a_throw_is_rolled_against_the_body_it_strikes_first_at_that_bodys_distance() {
         let mut stage = Stage::new_with(TargetViewPlugin, percent);
         let (user, kind) = (stage.player, stage.kind);
-        let knife =
-            stage.app.world_mut().spawn((Item, Name::new("knife"), Throwable::new(9, Some((kind, atglyph_core::DiceRoll::flat(2)))).effective_to(1))).id();
+        let knife = stage
+            .app
+            .world_mut()
+            .spawn((Item, Name::new("knife"), Throwable::new(Some(9), Some((kind, atglyph_core::DiceRoll::flat(2)))).effective_to(1)))
+            .id();
         stage.app.world_mut().get_mut::<Inventory>(user).expect("a bag").items.push(knife);
         stage.actor("near", 'n', 2, 0);
         stage.actor("far", 'f', 6, 0);
@@ -1426,7 +1448,7 @@ mod tests {
     fn a_throw_stopped_by_something_that_cannot_be_hurt_shows_no_odds() {
         let mut stage = Stage::new_with(TargetViewPlugin, percent);
         let (user, kind) = (stage.player, stage.kind);
-        let knife = stage.app.world_mut().spawn((Item, Name::new("knife"), Throwable::new(9, Some((kind, atglyph_core::DiceRoll::flat(2)))))).id();
+        let knife = stage.app.world_mut().spawn((Item, Name::new("knife"), Throwable::new(Some(9), Some((kind, atglyph_core::DiceRoll::flat(2)))))).id();
         stage.app.world_mut().get_mut::<Inventory>(user).expect("a bag").items.push(knife);
         let at = stage.at;
         stage.app.world_mut().spawn((Blocks, Position(at.offset(2, 0)), Name::new("crate")));
@@ -1443,7 +1465,7 @@ mod tests {
     fn a_grenade_has_no_odds() {
         let mut stage = Stage::new_with(TargetViewPlugin, percent);
         let user = stage.player;
-        let grenade = stage.app.world_mut().spawn((Item, Name::new("grenade"), Throwable::new(6, None))).id();
+        let grenade = stage.app.world_mut().spawn((Item, Name::new("grenade"), Throwable::new(Some(6), None))).id();
         stage.app.world_mut().get_mut::<Inventory>(user).expect("a bag").items.push(grenade);
         stage.actor("droid", 'd', 3, 0);
         stage.tick();
@@ -1463,7 +1485,7 @@ mod tests {
     fn an_unknown_thrown_thing_paints_its_flight_and_landing_cell_and_gives_no_chance_to_hit() {
         let mut stage = Stage::new_with(TargetViewPlugin, percent);
         let (user, kind) = (stage.player, stage.kind);
-        let knife = || (Item, Name::new("knife"), Throwable::new(6, Some((kind, atglyph_core::DiceRoll::flat(2)))));
+        let knife = || (Item, Name::new("knife"), Throwable::new(Some(6), Some((kind, atglyph_core::DiceRoll::flat(2)))));
         let (known, unknown) = (stage.app.world_mut().spawn(knife()).id(), stage.app.world_mut().spawn((knife(), atglyph_bevy::Unknown)).id());
         stage.app.world_mut().get_mut::<Inventory>(user).expect("a bag").items.extend([known, unknown]);
         stage.actor("droid", 'd', 3, 0);

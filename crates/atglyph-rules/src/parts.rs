@@ -118,16 +118,19 @@ pub struct Ranged {
 }
 
 /// A throw, as content writes it: `(range: 6)`, with an optional
-/// `effective` and the `strike` it deals whoever it hits.
+/// `effective` and the `strike` it deals whoever it hits, or `()` with no
+/// range, to fly as far as its thrower reaches.
 ///
 /// A thing with no strike hits nobody for damage: a flask is thrown for its
 /// `land` trigger, not for the bruise.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ThrowDef {
-    /// The furthest cell it reaches.
-    pub range: i32,
-    /// The furthest cell with no range penalty; absent, a third of `range`.
+    /// The furthest cell it reaches; absent, as far as its thrower's reach.
+    #[serde(default)]
+    pub range: Option<i32>,
+    /// The furthest cell with no range penalty; absent, a third of how far
+    /// it flies.
     #[serde(default)]
     pub effective: Option<i32>,
     /// The roll and damage kind it strikes whoever it hits with, as

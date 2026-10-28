@@ -1159,7 +1159,7 @@ mod tests {
         let (mut field, hidden) = armed_field(4);
         let (player, watcher) = (field.player, field.watcher);
         let kind = field.app.world().resource::<crate::registries::Registries>().damage_kinds.expect("kinetic");
-        let knife = field.app.world_mut().spawn((crate::items::Item, crate::throwing::Throwable::new(6, Some((kind, DiceRoll::flat(1)))))).id();
+        let knife = field.app.world_mut().spawn((crate::items::Item, crate::throwing::Throwable::new(Some(6), Some((kind, DiceRoll::flat(1)))))).id();
         field.app.world_mut().get_mut::<crate::items::Inventory>(player).unwrap().items.push(knife);
         hide(&mut field, hidden);
         field.app.world_mut().resource_mut::<crate::cue::CueWait>().watch();

@@ -21,7 +21,7 @@ use crate::components::Position;
 use crate::lighting::{Lighting, band_at};
 use crate::registries::Registries;
 use crate::status::StatBlock;
-use crate::throwing::Throwable;
+use crate::throwing::ThrowAs;
 
 /// The game's hit model. [`Certain`] by default, which rolls nothing and
 /// draws nothing, so a game that never chose accuracy plays and replays
@@ -61,8 +61,8 @@ pub enum Attempt<'a> {
     Blow,
     /// A shot with this weapon.
     Shot(&'a RangedAttack),
-    /// A throw of this.
-    Throw(&'a Throwable),
+    /// A throw, as it flies from the attacker.
+    Throw(&'a ThrowAs),
 }
 
 /// The facts a hit model reads, and the one call that asks it.
@@ -100,7 +100,7 @@ impl Marksmanship<'_, '_> {
             Attempt::Shot(gun) => (Delivery::Shot, gun.effective_range(), gun.range),
             Attempt::Throw(thrown) => {
                 thrown.strike?;
-                (Delivery::Thrown, thrown.effective_range(), thrown.range)
+                (Delivery::Thrown, thrown.effective, thrown.range)
             }
         };
         let shot = Shot {
@@ -264,6 +264,6 @@ mod tests {
         assert_eq!(RangedAttack::new(kind, DiceRoll::flat(1), 12).effective_range(), 4);
         assert_eq!(RangedAttack::new(kind, DiceRoll::flat(1), 5).effective_range(), 1);
         assert_eq!(RangedAttack::new(kind, DiceRoll::flat(1), 12).effective_to(9).effective_range(), 9);
-        assert_eq!(crate::throwing::Throwable::new(6, None).effective_range(), 2);
+        assert_eq!(crate::throwing::resolve(&crate::throwing::Throwable::new(Some(6), None), None).map(|t| t.effective), Some(2));
     }
 }
