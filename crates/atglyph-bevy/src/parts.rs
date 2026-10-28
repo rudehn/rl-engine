@@ -445,6 +445,9 @@ pub fn level_up(world: &mut World, item: Entity, by: i32) -> Option<i32> {
     if let Some(throw) = attacks.throw {
         e.insert(Throwable::from_part(&throw));
     }
+    if let Some(launch) = attacks.launch {
+        e.insert(Launcher::from_part(&launch));
+    }
     match parts.armor_at(level) {
         0 => e.remove::<Armor>(),
         armor => e.insert(Armor(armor)),
@@ -925,6 +928,18 @@ mod tests {
         let (e, at) = spawned(&mut world, &parts, 4);
         assert_eq!((at, read(&world, e)), (0, (None, 0, 1, Some(0), 1, vec![])));
         assert_eq!(level_up(&mut world, e, 1), None, "and none is added to it");
+    }
+
+    #[test]
+    fn levelling_up_a_launcher_fits_its_roll_as_spawning_at_that_level_does() {
+        let launch = LaunchDef { ammo: atglyph_rules::TagId::from_raw(0).into(), range: 4, damage: DiceRoll::new(1, 4) };
+        let parts = Arc::new(ItemParts { attacks: Attacks { launch: Some(launch), ..blade().attacks }, ..(*blade()).clone() });
+        let mut world = World::new();
+        let (stepped, _) = spawned(&mut world, &parts, 0);
+        let (jumped, _) = spawned(&mut world, &parts, 1);
+        level_up(&mut world, stepped, 1);
+        assert_eq!(world.get::<Launcher>(stepped), world.get::<Launcher>(jumped));
+        assert_eq!(world.get::<Launcher>(stepped).map(|l| l.damage.bonus), Some(1), "a level's damage on its roll");
     }
 
     #[test]

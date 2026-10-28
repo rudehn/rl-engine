@@ -19,7 +19,7 @@
             crates/atglyph-bevy/src/cue.rs
             crates/atglyph-grid/src/targeting.rs
             crates/atglyph-ui/src/narrate.rs
-     fingerprint: 102bd858 -->
+     fingerprint: 0203d2c1 -->
 
 # Effects
 

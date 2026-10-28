@@ -817,8 +817,10 @@ pub(crate) fn resolve_takes(
             let stack_of = |e: Entity| stacks.get(e).ok().map(|(s, limit)| (*s, limit.map(|l| l.0)));
             let mut filling = crate::items::Filling::of(&bag, stack_of);
             for item in taking {
-                let merged_into = filling.arrive(&mut commands, &mut bag, item, stack_of(item));
-                events.write(crate::items::ItemEvent::PickedUp { actor, item, merged_into });
+                let stack = stack_of(item);
+                let merged_into = filling.arrive(&mut commands, &mut bag, item, stack);
+                let count = stack.map_or(1, |(s, _)| s.count);
+                events.write(crate::items::ItemEvent::PickedUp { actor, item, merged_into, count });
             }
         }
         resolution.done(actor, atglyph_core::turn::BASE_ACTION_COST);

@@ -7,7 +7,7 @@
             crates/atglyph-rules/src/items.rs
             crates/atglyph-ui/src/view/trade.rs
             crates/atglyph-ui/src/panel/trade.rs
-     fingerprint: b8946a52 -->
+     fingerprint: 33654159 -->
 
 # Trade
 

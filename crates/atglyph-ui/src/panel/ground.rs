@@ -340,7 +340,14 @@ pub(crate) fn draw_ground(mut terminal: ResMut<Terminal>, screen: GroundDrawn) {
 
 /// Draws the count prompt across the middle of the screen it was opened
 /// over.
-pub(crate) fn draw_count(mut terminal: ResMut<Terminal>, counting: Res<Counting>, binds: Res<CountKeys>, modals: Res<Modals>, palette: Res<Palette>) {
+pub(crate) fn draw_count(
+    mut terminal: ResMut<Terminal>,
+    counting: Res<Counting>,
+    binds: Res<CountKeys>,
+    keys: ControlInput,
+    modals: Res<Modals>,
+    palette: Res<Palette>,
+) {
     if !modals.is_open(count_modal(&modals)) {
         return;
     }
@@ -350,7 +357,14 @@ pub(crate) fn draw_count(mut terminal: ResMut<Terminal>, counting: Res<Counting>
         CountFor::PickUp => "Pick up",
         CountFor::Drop => "Drop",
     };
-    let hints = format!("{}/{} more or fewer \u{2022} enter ok", key_name(binds.less), key_name(binds.more));
+    let cursor = &keys.bindings().cursor;
+    let hints = format!(
+        "{}/{} fewer or more \u{2022} {} ok \u{2022} {} back",
+        key_name(binds.less),
+        key_name(binds.more),
+        key_name(cursor.confirm),
+        key_name(cursor.close)
+    );
     clear(&mut terminal, rect, &palette);
     frame(&mut terminal, rect, "", &hints, &palette);
     let width = (rect.width - 4).max(0) as usize;

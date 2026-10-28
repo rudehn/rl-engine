@@ -20,6 +20,7 @@ atglyph is not on crates.io yet, so a game depends on a release by its git tag, 
 - **Breaking:** `Throwable::range` and `ThrowDef::range` are `Option<i32>`, `None` flying as far as the thrower's reach; write `Throwable::new(Some(n), strike)`, and a RON throw keeps `range: n` under `implicit_some`.
 - **Breaking:** `Attacks` has a `launch` field and `Strike` an `also` field; a literal adds `launch: None` or `also: None`.
 - **Breaking:** `DropItem(item)` is `DropItem { item, count }`; write `DropItem::all(item)`.
+- **Breaking:** `ItemEvent::PickedUp` has a `count`, how many were picked up, which the narrator names the thing at; a pattern adds `count` or `..`.
 - **Breaking:** `PlayerKeysPlugin::pick_up` takes an `Otherwise`, said when nothing lies underfoot; write `Otherwise::Nothing` to say nothing.
 - **Breaking:** `Throwable::effective_range` is gone, since how far a thing flies depends on its thrower; read `Throws::of(thrower, item)`'s `effective`. `Attempt::Throw` takes the `ThrowAs`.
 

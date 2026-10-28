@@ -332,7 +332,9 @@ pub struct Aiming<'w, 's> {
     bystanders: Bystanders<'w, 's>,
     users: Query<'w, 's, (&'static Position, Option<&'static Viewshed>)>,
     living: Query<'w, 's, &'static Health, Without<Dead>>,
-    missiles: Query<'w, 's, (), With<Throwable>>,
+    /// Whether the user can throw a thing at all: a thing with no range
+    /// cannot be in a game with no reach.
+    throws: atglyph_bevy::Throws<'w, 's>,
     /// Whether a user has a shot at all: its own, or a worn gun's, read
     /// the way the resolver fires it, so a gun in hand opens the cursor.
     loadout: Loadout<'w, 's>,
@@ -477,7 +479,7 @@ pub(crate) fn aim_cursor(mut view: ResMut<TargetView>, mut modals: ResMut<Modals
         }
     }
     for request in requests.throws.read() {
-        if aiming.missiles.contains(request.item) {
+        if aiming.throws.of(request.user, request.item).is_some() {
             asked = Some((request.user, Pointing::Throw(request.item)));
         }
     }
@@ -1113,6 +1115,20 @@ mod tests {
         assert!(view.legal);
     }
 
+    /// A thing its thrower cannot throw, one with no range in a game with
+    /// no reach, opens no aim, as a thing that cannot be thrown opens none.
+    #[test]
+    fn a_throw_with_no_range_and_no_reach_opens_no_aim() {
+        let mut stage = staged();
+        let (user, kind) = (stage.player, stage.kind);
+        let stone = stage.app.world_mut().spawn((Item, Name::new("stone"), Throwable::new(None, Some((kind, atglyph_core::DiceRoll::flat(2)))))).id();
+        stage.app.world_mut().get_mut::<Inventory>(user).expect("a bag").items.push(stone);
+        stage.app.world_mut().write_message(AimThrow { user, item: stone });
+        stage.tick();
+        assert_eq!(stage.app.world().resource::<TargetView>().throwing, None);
+        assert!(!stage.app.world().resource::<Modals>().any_open());
+    }
+
     /// The aim at a thing with no range of its own spans the thrower's
     /// reach.
     #[test]
@@ -1140,15 +1156,15 @@ mod tests {
         let ammo = atglyph_rules::TagId::from_raw(0);
         let shape = atglyph_rules::EquipShape::in_slot(atglyph_rules::SlotId::from_raw(0));
         let launcher = atglyph_bevy::Launcher { ammo, range: 3, damage: atglyph_core::DiceRoll::flat(1) };
-        let sling = stage.app.world_mut().spawn((Item, Name::new("sling"), launcher, Wearable(shape.clone()))).id();
+        let launcher_item = stage.app.world_mut().spawn((Item, Name::new("launcher"), launcher, Wearable(shape.clone()))).id();
         let pellet = stage
             .app
             .world_mut()
             .spawn((Item, Name::new("pellet"), Tagged(vec![ammo]), Throwable::new(None, Some((kind, atglyph_core::DiceRoll::flat(2))))))
             .id();
         let mut worn = atglyph_rules::Equipment::with_slot_count(1);
-        worn.equip(sling, &shape).unwrap();
-        stage.app.world_mut().get_mut::<Inventory>(user).expect("a bag").items.extend([sling, pellet]);
+        worn.equip(launcher_item, &shape).unwrap();
+        stage.app.world_mut().get_mut::<Inventory>(user).expect("a bag").items.extend([launcher_item, pellet]);
         stage.app.world_mut().entity_mut(user).insert(Equipped(worn));
         stage.app.world_mut().write_message(AimThrow { user, item: pellet });
         stage.tick();
@@ -1156,7 +1172,7 @@ mod tests {
         stage.app.world_mut().resource_mut::<TargetView>().cursor = at.offset(2, 0);
         stage.tick();
         let view = stage.app.world().resource::<TargetView>();
-        assert_eq!((view.launcher.as_str(), view.span.map(|s| s.max)), ("sling", Some(7)));
+        assert_eq!((view.launcher.as_str(), view.span.map(|s| s.max)), ("launcher", Some(7)));
     }
 
     /// A shot, a throw and a bolt are one projectile, so sent at the same

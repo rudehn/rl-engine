@@ -690,6 +690,13 @@ impl Witness<'_, '_> {
         Some(called(name?, stack.map_or(1, |s| s.count), mass))
     }
 
+    /// The same for `count` of a thing, whatever its stack holds now: a
+    /// pick-up of part of a pile, or of a pile that filled another stack.
+    fn called_at(&self, e: Option<Entity>, count: u32) -> Option<Called> {
+        let (name, _, mass) = self.names.get(e?).ok()?;
+        Some(called(name?, count, mass))
+    }
+
     /// The same for one of a thing, whatever its stack holds: a use takes
     /// one, and by the time the row is made the stack already counts one
     /// fewer.
@@ -848,8 +855,15 @@ pub(crate) fn collect_narration(mut view: ResMut<NarrationView>, mut heard: Narr
     let shot: Vec<(Entity, Entity)> = heard.launched.read().map(|l| (l.actor, l.item)).collect();
     for ev in heard.items.read() {
         let (actor, item, phrase) = match *ev {
-            ItemEvent::PickedUp { actor, item, merged_into } => {
-                (actor, merged_into.unwrap_or(item), if witness.is_you(actor) { Phrase::YouPickUp } else { Phrase::PicksUp })
+            // Named at how many were picked up, not at the stack they
+            // joined or were left over from.
+            ItemEvent::PickedUp { actor, item, merged_into, count } => {
+                let named = merged_into.unwrap_or(item);
+                let mut said = say(if witness.is_you(actor) { Phrase::YouPickUp } else { Phrase::PicksUp }, Some(actor), None);
+                said.what = Some(named);
+                said.called_thing = witness.called_at(Some(named), count);
+                rows.push(said);
+                continue;
             }
             ItemEvent::Dropped { actor, item, .. } => (actor, item, if witness.is_you(actor) { Phrase::YouDrop } else { Phrase::Drops }),
             ItemEvent::Equipped { actor, item } => {
@@ -1089,7 +1103,8 @@ pub(crate) fn collect_narration(mut view: ResMut<NarrationView>, mut heard: Narr
             witness.called_thing(said.what)
         };
         said.called = [witness.called_actor(said.who), witness.called_actor(said.whom)];
-        said.called_thing = thing;
+        // A row that already said how many of its thing keeps it.
+        said.called_thing = said.called_thing.take().or(thing);
     }
     view.rows.extend(first);
     view.rows.extend(rows);
@@ -1844,6 +1859,26 @@ mod tests {
         assert_eq!(spoken(&stage, &["You throw"]), ["You throw a frag grenade."]);
     }
 
+    /// A pick-up says how many were picked up, whatever stack they joined
+    /// or were left over from.
+    #[test]
+    fn a_pick_up_says_how_many_were_picked_up() {
+        let (mut stage, _) = with_things("[]");
+        let (player, at) = (stage.player, stage.at);
+        let pellets = |count| (Item, Name::new("pellet"), Stack { key: 1, count }, atglyph_bevy::StackLimit(50));
+        let held = stage.app.world_mut().spawn(pellets(45)).id();
+        stage.app.world_mut().entity_mut(player).insert(Inventory { items: vec![held] });
+        stage.app.world_mut().spawn((pellets(10), Position(at)));
+        stage.tick();
+        stage.app.world_mut().write_message(Intent::new(player, PickUp));
+        stage.tick();
+        let pile = stage.app.world_mut().spawn((pellets(20), Position(at))).id();
+        stage.tick();
+        stage.app.world_mut().write_message(Intent::new(player, atglyph_bevy::PickUpItem { item: pile, count: Some(7) }));
+        stage.tick();
+        assert_eq!(spoken(&stage, &["You pick up"]), ["You pick up 10 pellets.", "You pick up 7 pellets."]);
+    }
+
     /// A thing a worn launcher launched is said as shot, not thrown.
     #[test]
     fn a_launch_is_narrated_as_a_shot() {
@@ -1852,15 +1887,15 @@ mod tests {
         let ammo = atglyph_rules::TagId::from_raw(0);
         let shape = atglyph_rules::EquipShape::in_slot(atglyph_rules::SlotId::from_raw(0));
         let launcher = Launcher { ammo, range: 4, damage: atglyph_core::DiceRoll::flat(1) };
-        let sling = stage.app.world_mut().spawn((Item, Name::new("sling"), launcher, Wearable(shape.clone()))).id();
+        let launcher_item = stage.app.world_mut().spawn((Item, Name::new("launcher"), launcher, Wearable(shape.clone()))).id();
         let pellet = stage
             .app
             .world_mut()
             .spawn((Item, Name::new("pellet"), Tagged(vec![ammo]), Throwable::new(Some(6), Some((kind, atglyph_core::DiceRoll::flat(1))))))
             .id();
         let mut worn = atglyph_rules::Equipment::with_slot_count(1);
-        worn.equip(sling, &shape).unwrap();
-        stage.app.world_mut().entity_mut(player).insert((Inventory { items: vec![sling, pellet] }, Equipped(worn)));
+        worn.equip(launcher_item, &shape).unwrap();
+        stage.app.world_mut().entity_mut(player).insert((Inventory { items: vec![launcher_item, pellet] }, Equipped(worn)));
         stage.tick();
         let at = stage.at.offset(3, 0);
         stage.app.world_mut().write_message(Intent::new(player, Throw { item: pellet, at }));

@@ -25,7 +25,7 @@
             crates/atglyph-ui/src/view/ground.rs
             crates/atglyph-ui/src/player_keys.rs
             crates/atglyph-ui/src/narrate.rs
-     fingerprint: cf815c49 -->
+     fingerprint: 5f75eb75 -->
 
 # Items and equipment
 
@@ -70,7 +70,7 @@ What it does is untouched, so an unknown draught drunk does what it does and an 
 Only being worn holds it, so in the bag a stuck thing is put on, dropped and thrown as anything else is, and dying lets it fall.
 `EquipFromGround` costs `ItemRules::equip_from_ground`, by default half a step more than picking up or putting on alone, so taking up a sword in the middle of a fight is a real choice rather than a free one or two turns wasted.
 `resolve_items` reads all nine intents into one list, so one turn spends one item action whichever kind it is, and asks `atglyph_rules::items::resolve_item` what each comes to; an impossible one is refused for the player and charged as a wait to anyone else, the way an impossible move is, and what refuses a use is told in [Uses and charges](uses.md).
-`ItemEvent` is what happened: `PickedUp` with the stack it `merged_into` when it merged whole, the last one it filled, and `None` when some of it joined the bag as a stack of its own, `Dropped`, `Equipped`, `Unequipped` for an item taken off by choice or displaced, `Used`, `Thrown`, and `WouldNotComeOff`.
+`ItemEvent` is what happened: `PickedUp` with how many were picked up, its `count`, and the stack it `merged_into` when it merged whole, the last one it filled, and `None` when some of it joined the bag as a stack of its own, `Dropped`, `Equipped`, `Unequipped` for an item taken off by choice or displaced, `Used`, `Thrown`, and `WouldNotComeOff`.
 `fold_gear` runs whenever `Equipped` changed and rebuilds rather than edits: every modifier tagged `Source::Item` is dropped and each worn item's `Bestows` put back in slot order, so an item taken off takes its changes with it and a run restored from a save rebuilds its gear modifiers for nothing, while a status's modifiers and anything the game filed under `Source::Game` carry tags of their own and are left where they are.
 `Loadout` reads an item's `Armor`, `Resists`, `MeleeAttack`, `RangedAttack` and `BonusDamage` straight off it at the moment of a blow, which is the other half of wearing something and needs no fold at all.
 `drop_what_the_dead_carried` lets a dead non-player's bag fall where it died, and `forget_removed_items` drops a despawned item from every bag and every slot.

@@ -23,7 +23,8 @@ pub struct GroundRow {
     pub name: String,
 }
 
-/// Everything lying on the player's cell, oldest first.
+/// Everything lying on the player's cell, in the order its entities were
+/// made, which holds steady from one frame to the next.
 #[derive(Resource, Debug, Default)]
 pub struct GroundView {
     /// What lies there.
@@ -46,8 +47,8 @@ impl Plugin for GroundViewPlugin {
 /// A thing lying somewhere, as the ground screen lists it.
 type Lying = (Entity, &'static Position, Option<&'static OnMap>, Option<&'static Name>, Option<&'static Glyph>, Option<&'static Stack>);
 
-/// What lies under the player, by entity order, which is the order things
-/// were made in, so a pile reads the same from one frame to the next.
+/// What lies under the player, by entity index, so a pile reads the same
+/// from one frame to the next.
 pub(crate) fn collect_ground(mut view: ResMut<GroundView>, map: Res<WorldMap>, player: Query<&Position, With<Player>>, items: Query<Lying, With<Item>>) {
     view.rows.clear();
     let Ok(at) = player.single() else { return };

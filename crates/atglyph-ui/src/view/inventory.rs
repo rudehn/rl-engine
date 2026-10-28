@@ -471,11 +471,11 @@ mod tests {
         let ammo = atglyph_rules::TagId::from_raw(0);
         let shape = EquipShape::in_slot(atglyph_rules::SlotId::from_raw(0));
         let launcher = atglyph_bevy::Launcher { ammo, range: 3, damage: DiceRoll::new(1, 4) };
-        let sling = stage.app.world_mut().spawn((Item, Name::new("sling"), launcher, Wearable(shape.clone()))).id();
+        let launcher_item = stage.app.world_mut().spawn((Item, Name::new("launcher"), launcher, Wearable(shape.clone()))).id();
         let pellet = stage.app.world_mut().spawn((Item, Name::new("pellet"), Tagged(vec![ammo]), Throwable::new(None, Some((kind, DiceRoll::new(1, 2)))))).id();
         let mut worn = Equipment::with_slot_count(1);
-        worn.equip(sling, &shape).unwrap();
-        stage.app.world_mut().entity_mut(player).insert((Inventory { items: vec![sling, pellet] }, Equipped(worn)));
+        worn.equip(launcher_item, &shape).unwrap();
+        stage.app.world_mut().entity_mut(player).insert((Inventory { items: vec![launcher_item, pellet] }, Equipped(worn)));
         stage.tick();
         let row = &stage.app.world().resource::<InventoryView>().rows[1];
         assert_eq!(row.throw_range, Some(7));

@@ -315,7 +315,7 @@ impl Plugin for InventoryPanel {
         // its keys, so the press that asked is not read again inside it.
         crate::panel::ground::add_count_prompt(app);
         app.add_systems(Update, (choose_when_asked, inventory_keys).chain().in_set(EngineSet::Input).before(crate::panel::ground::count_keys))
-            .add_systems(Update, draw_inventory.in_set(PresentSet::Overlay));
+            .add_systems(Update, draw_inventory.in_set(PresentSet::Overlay).before(crate::panel::ground::draw_count));
     }
 
     fn finish(&self, app: &mut App) {
@@ -1234,6 +1234,17 @@ mod tests {
 
     /// Each key writes the engine's own intent for the row picked out and
     /// puts every screen away, since the action spends the turn.
+    #[test]
+    fn the_drop_prompt_is_drawn_over_the_pack() {
+        let (mut stage, _, _, knives) = staged();
+        stage.press(KeyCode::KeyI);
+        let row = stage.app.world().resource::<InventoryView>().rows.iter().position(|r| r.entity == knives).expect("the knives are listed");
+        stage.press([KeyCode::KeyA, KeyCode::KeyB, KeyCode::KeyC][row]);
+        stage.press(KeyCode::KeyD);
+        stage.tick();
+        assert!(stage.rows().iter().any(|line| line.contains("Drop how many knives?")), "{:#?}", stage.rows());
+    }
+
     #[test]
     fn the_packs_drop_asks_how_many_of_a_stack() {
         let (mut stage, _, _, knives) = staged();

@@ -14,7 +14,7 @@
             crates/atglyph-rules/src/status.rs
             crates/atglyph-bevy/src/ability.rs
             crates/atglyph-bevy/src/lighting.rs
-     fingerprint: 0615bef1 -->
+     fingerprint: f2c0ef23 -->
 
 # Narration
 

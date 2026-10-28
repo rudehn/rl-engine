@@ -298,7 +298,8 @@ impl WornTimer {
 #[derive(Message, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ItemEvent {
     /// `actor` took `item` off the ground. `merged_into` names the carried
-    /// stack it joined, in which case `item` no longer exists.
+    /// stack it joined wholly, in which case `item` no longer exists; part
+    /// of it filling a stack to its limit leaves `item` holding the rest.
     PickedUp {
         /// Who.
         actor: Entity,
@@ -306,6 +307,8 @@ pub enum ItemEvent {
         item: Entity,
         /// The stack it was merged into, if any.
         merged_into: Option<Entity>,
+        /// How many were picked up: the stack's count as it arrived, or one.
+        count: u32,
     },
     /// `actor` put `item` on the ground at `at`, or let it fall there on
     /// dying.
@@ -829,7 +832,8 @@ fn resolve_one(commands: &mut Commands, world: &ItemWorld, carrier: Holding, act
                         None
                     }
                 };
-                writes.events.write(ItemEvent::PickedUp { actor, item, merged_into });
+                let count = stack.map_or(1, |(s, _)| s.count);
+                writes.events.write(ItemEvent::PickedUp { actor, item, merged_into, count });
             }
             ItemOutcome::Dropped(item) => {
                 // Part of a stack is split off, and the rest stays carried.
@@ -1432,7 +1436,10 @@ mod tests {
         let sword = r.app.world_mut().spawn((Item, Position(r.start), Wearable(EquipShape::in_slot(r.main)))).id();
         r.app.update();
         let events = act(&mut r, EquipFromGround(sword));
-        assert_eq!(events, vec![ItemEvent::PickedUp { actor: r.player, item: sword, merged_into: None }, ItemEvent::Equipped { actor: r.player, item: sword }]);
+        assert_eq!(
+            events,
+            vec![ItemEvent::PickedUp { actor: r.player, item: sword, merged_into: None, count: 1 }, ItemEvent::Equipped { actor: r.player, item: sword }]
+        );
         assert_eq!(r.app.world().get::<Equipped>(r.player).unwrap().in_slot(r.main), Some(sword), "worn");
         assert!(r.app.world().get::<Inventory>(r.player).unwrap().contains(sword), "and carried");
         assert!(r.app.world().get::<Position>(sword).is_none(), "and off the ground");
@@ -1472,7 +1479,7 @@ mod tests {
 
     /// A stack of `count` under key 7, at most 50 to a stack, lying where
     /// the player stands, or carried by them.
-    fn arrows(r: &mut Rig, count: u32, carried: bool) -> Entity {
+    fn pellets(r: &mut Rig, count: u32, carried: bool) -> Entity {
         let e = r.app.world_mut().spawn((Item, Stack { key: 7, count }, StackLimit(50))).id();
         if carried {
             r.app.world_mut().get_mut::<Inventory>(r.player).unwrap().items.push(e);
@@ -1490,23 +1497,23 @@ mod tests {
     #[test]
     fn a_pickup_fills_the_carried_stack_to_its_limit_and_keeps_the_rest_apart() {
         let mut r = rig();
-        let held = arrows(&mut r, 45, true);
-        let more = arrows(&mut r, 10, false);
+        let held = pellets(&mut r, 45, true);
+        let more = pellets(&mut r, 10, false);
         let events = act(&mut r, PickUp);
         assert_eq!(counts(&r), vec![50, 5]);
         assert_eq!(r.app.world().get::<Inventory>(r.player).unwrap().items, vec![held, more], "the rest is the arriving stack");
-        assert_eq!(events, vec![ItemEvent::PickedUp { actor: r.player, item: more, merged_into: None }], "not wholly merged");
+        assert_eq!(events, vec![ItemEvent::PickedUp { actor: r.player, item: more, merged_into: None, count: 10 }], "not wholly merged");
     }
 
     #[test]
     fn a_pickup_fills_two_part_stacks_in_bag_order() {
         let mut r = rig();
-        arrows(&mut r, 48, true);
-        arrows(&mut r, 30, true);
-        let more = arrows(&mut r, 5, false);
+        pellets(&mut r, 48, true);
+        pellets(&mut r, 30, true);
+        let more = pellets(&mut r, 5, false);
         assert_eq!(
             act(&mut r, PickUp),
-            vec![ItemEvent::PickedUp { actor: r.player, item: more, merged_into: Some(r.app.world().get::<Inventory>(r.player).unwrap().items[1]) }]
+            vec![ItemEvent::PickedUp { actor: r.player, item: more, merged_into: Some(r.app.world().get::<Inventory>(r.player).unwrap().items[1]), count: 5 }]
         );
         assert_eq!(counts(&r), vec![50, 33]);
     }
@@ -1514,9 +1521,9 @@ mod tests {
     #[test]
     fn two_piles_picked_up_at_once_never_overfill_a_stack() {
         let mut r = rig();
-        arrows(&mut r, 45, true);
-        arrows(&mut r, 4, false);
-        arrows(&mut r, 4, false);
+        pellets(&mut r, 45, true);
+        pellets(&mut r, 4, false);
+        pellets(&mut r, 4, false);
         act(&mut r, PickUp);
         assert_eq!(counts(&r), vec![50, 3]);
     }
@@ -1541,7 +1548,7 @@ mod tests {
     #[test]
     fn picking_up_part_of_a_stack_leaves_the_rest_on_the_ground() {
         let mut r = rig();
-        let pile = arrows(&mut r, 20, false);
+        let pile = pellets(&mut r, 20, false);
         act(&mut r, PickUpItem { item: pile, count: Some(7) });
         assert_eq!(counts(&r), vec![7]);
         assert_eq!(lying(&mut r), vec![pile], "the pile is still there");
@@ -1552,8 +1559,8 @@ mod tests {
     #[test]
     fn picking_up_part_of_a_stack_merges_it_into_one_carried() {
         let mut r = rig();
-        arrows(&mut r, 10, true);
-        let pile = arrows(&mut r, 20, false);
+        pellets(&mut r, 10, true);
+        let pile = pellets(&mut r, 20, false);
         act(&mut r, PickUpItem { item: pile, count: Some(7) });
         assert_eq!(counts(&r), vec![17]);
     }
@@ -1571,7 +1578,7 @@ mod tests {
     fn picking_up_what_is_not_underfoot_or_none_of_it_is_refused_for_free() {
         let mut r = rig();
         let beside = r.app.world_mut().spawn((Item, Position(r.start.offset(1, 0)))).id();
-        let pile = arrows(&mut r, 20, false);
+        let pile = pellets(&mut r, 20, false);
         r.app.update();
         assert!(act(&mut r, PickUpItem { item: beside, count: None }).is_empty());
         assert!(act(&mut r, PickUpItem { item: pile, count: Some(0) }).is_empty());
@@ -1581,7 +1588,7 @@ mod tests {
     #[test]
     fn dropping_part_of_a_stack_keeps_the_rest_in_the_bag() {
         let mut r = rig();
-        let held = arrows(&mut r, 20, true);
+        let held = pellets(&mut r, 20, true);
         let events = act(&mut r, DropItem { item: held, count: Some(5) });
         assert_eq!(counts(&r), vec![15]);
         let dropped = lying(&mut r);
@@ -1597,7 +1604,7 @@ mod tests {
         act(&mut r, PickUp);
         let more = r.app.world_mut().spawn((Item, Position(r.start), Stack { key: 7, count: 3 })).id();
         let events = act(&mut r, PickUp);
-        assert_eq!(events, vec![ItemEvent::PickedUp { actor: r.player, item: more, merged_into: Some(coins) }]);
+        assert_eq!(events, vec![ItemEvent::PickedUp { actor: r.player, item: more, merged_into: Some(coins), count: 3 }]);
         assert_eq!(r.app.world().get::<Stack>(coins).unwrap().count, 8);
         assert!(r.app.world().get_entity(more).is_err(), "the merged stack is gone");
         assert_eq!(r.app.world().get::<Inventory>(r.player).unwrap().items, vec![coins]);

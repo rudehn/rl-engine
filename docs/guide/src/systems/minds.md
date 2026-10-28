@@ -18,7 +18,7 @@
             crates/atglyph-bevy/src/fire.rs
             crates/atglyph-bevy/src/noise.rs
             crates/atglyph-bevy/src/effects/mod.rs
-     fingerprint: 26c188d2 -->
+     fingerprint: 5f0f9bcb -->
 
 # Minds
 

@@ -41,7 +41,7 @@
             crates/atglyph-bevy/src/turn.rs
             crates/atglyph-render/src/terminal.rs
             crates/atglyph-render/src/map_view.rs
-     fingerprint: 35719289 -->
+     fingerprint: 4653eb4d -->
 
 # Panels
 
@@ -98,7 +98,7 @@ Each of `InspectView::facets` is drawn whole or not at all, wrapped on spaces on
 Its `facets` are what the game added about the aim in `ViewSet::Annotate`, which the box prints under the chance, as a game that writes `odds` again with unknown gear counted as it seems says so.
 `TargetPanel` draws the footprint over the map and describes the aim in a framed box, drawn only while the cursor is up so a game sets it over the bottom of its rail: what is aimed, `throw knife`, or `shoot pellet from sling` for a thing a worn launcher launches, the range, the target in its relation's tone, then the chance to hit and each of the model's lines, or the reason the aim is refused where the chance would be; a thing's use is boxed as an ability is, with no chance, since a use is never rolled, and a thing not yet known is boxed by its name and `unknown` alone, with no range or target.
 The view also holds the `AimRange`, how far the aim reaches against how far the weapon reaches with no penalty and at all, and the `Odds` against whoever living a shot or a throw would strike, asked of `Marksmanship` as the resolver asks it, so a throw a body intercepts shows the chance against that body and the range to it; a throw's range is read from `Throws::of`, the thrower's own reach for a thing with no range of its own and a worn launcher's added, as the throw itself is.
-`AimAt`, `AimUse`, `AimThrow` and `AimFire` are how a key asks for a cursor, and the cursor writes the `Intent` itself on confirm; `AimUse` uses at once a thing whose use lands on its user, opens the bag choosing for one whose use asks for a thing, and opens nothing for one that cannot be used now, so a game's use key writes it for anything.
+`AimAt`, `AimUse`, `AimThrow` and `AimFire` are how a key asks for a cursor, and the cursor writes the `Intent` itself on confirm; `AimUse` uses at once a thing whose use lands on its user, opens the bag choosing for one whose use asks for a thing, and opens nothing for one that cannot be used now, so a game's use key writes it for anything; `AimThrow` likewise opens nothing for a thing its thrower cannot throw, one with no range in a game with no reach.
 `OffersView` is an `OfferRow` per verb the player is offered where it stands, with its cost in hundredths and the reason a refused one is refused.
 `SheetView` is the character sheet: stats with every `ModifierRow` that made them what they are, resists, strikes, each a `Strike` of kind, dice, range and `also`, the worn launcher's roll a pack row adds beside a launched thing's own and the sheet leaves empty, its speed as `Speeds` reads it for the queue, statuses with their turns left and what is worn, and the sheet shows a status put on until it is cured with no count at all.
 A presenter reads a view, reads the `Palette`, and writes cells to the `Terminal`; it owns no state and makes no decision a game might want made differently.
