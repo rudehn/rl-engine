@@ -399,7 +399,11 @@ fn declare_controls(app: &mut App) {
     app.add_plugins(
         PlayerKeysPlugin::new()
             .walk("Move", "walk, or strike whoever is there")
-            .pick_up("Act", "pick up what is here")
+            .pick_up(
+                "Act",
+                "pick up what is here",
+                Otherwise::say("There is nothing here."),
+            )
             .wait("Act", "wait a turn"),
     );
     let binds = Binds {
