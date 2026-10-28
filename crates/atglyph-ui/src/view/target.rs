@@ -159,7 +159,7 @@ pub struct TargetView {
     /// own.
     pub what: String,
     /// What launches a thrown thing, by the name the game gave it: the
-    /// worn [`Launcher`](atglyph_bevy::Launcher) the throw goes from.
+    /// worn [`Launcher`] the throw goes from.
     /// Empty for a thing thrown by hand, and for anything not thrown.
     pub launcher: String,
     /// Whether what is named is a thing not yet known, [`Unknown`]: the box

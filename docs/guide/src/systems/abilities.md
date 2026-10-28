@@ -20,7 +20,7 @@
             crates/atglyph-ui/src/view/target.rs
             crates/atglyph-ui/src/view/inventory.rs
             crates/atglyph-save/src/engine.rs
-     fingerprint: eb891c86 -->
+     fingerprint: d4ef0dd2 -->
 
 # Abilities
 

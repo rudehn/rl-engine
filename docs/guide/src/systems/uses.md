@@ -15,7 +15,7 @@
             crates/atglyph-ui/src/view/target.rs
             crates/atglyph-ui/src/panel/inventory.rs
             crates/atglyph-ui/src/narrate.rs
-     fingerprint: 5f5c7872 -->
+     fingerprint: 388fa7f4 -->
 
 # Uses and charges
 
