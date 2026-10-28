@@ -15,7 +15,7 @@
             crates/atglyph-bevy/src/minds.rs
             crates/atglyph-bevy/src/title.rs
             crates/atglyph-save/src/lib.rs
-     fingerprint: 2b07ed69 -->
+     fingerprint: c2311bdf -->
 
 # Saving and the ending screen
 

@@ -4,7 +4,8 @@
             crates/atglyph-bevy/src/combat.rs
             crates/atglyph-bevy/src/items.rs
             crates/atglyph-ui/src/view/gear.rs
-     fingerprint: a4cea01b -->
+            crates/atglyph-bevy/src/throwing.rs
+     fingerprint: 8fc9c62c -->
 
 # Ammunition
 
@@ -39,6 +40,7 @@ A fed weapon is one spawned with `Ammo { tag }` beside its `RangedAttack`, and w
 
 The engine decides what a shot spends, when a weapon is dry, and that a dry weapon has no shot to offer a player, a mind or a forecast.
 The game decides which weapons are fed and by what tag, how many a stack holds, and what is said when one runs dry or loads again, in its own words over `AmmoChanged`.
+A worn `Launcher` names a tag too, and is not ammunition: what it launches is thrown, flies and lands as any throw does and is picked up again, so nothing is spent and nothing goes dry, as [Abilities](abilities.md) says.
 A weapon is dry for want of its tag in its wielder's bag and for nothing else: there is no magazine and no count kept on the weapon, so two weapons on one tag share one supply, and a game that wants reloading writes it as the stack a reload makes.
 Ammunition was one game's own until a second game had a bow, and the loop the first wrote, spending on a shot and drying on an empty bag, was the loop every game with a gun would have copied, so the loop moved into the engine and the game kept its content and its words.
 What a row says of a dry weapon is a facet rather than a field of `Row`, because `Row` is the shape vitals and nearby share too, and a magazine's count is a fact about a fed weapon and not about every row a panel shows.

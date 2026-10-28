@@ -7,7 +7,7 @@
             crates/atglyph-bevy/src/noise.rs
             crates/atglyph-rules/src/ai/snapshot.rs
             crates/atglyph-save/src/run.rs
-     fingerprint: 2971e3a4 -->
+     fingerprint: af7a6d07 -->
 
 # Remains
 

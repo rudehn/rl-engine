@@ -19,7 +19,7 @@
             crates/atglyph-save/src/engine.rs
             crates/atglyph-bevy/src/lighting.rs
             crates/atglyph-bevy/src/app.rs
-     fingerprint: e5a3d2d2 -->
+     fingerprint: 0007db88 -->
 
 # Props
 
@@ -61,7 +61,7 @@ Verbs are interned by `Verbs`, `OPEN` and `SEARCH` first and the rest through `a
 A container's `contents` are `ContentRoll`s, each a `Stock::Item` by name in a count or a `Stock::Tag` in a number of draws, with a `band` offset for a tag.
 Stocking rolls each row's count from `PropRng` and asks with `FillContainer { prop, what, count, band }`, keyed on a `Stocked` marker rather than on `Added` because a stream derived from the run's seed may not exist on the frame a place is built.
 With `LootPlugin` the engine answers it, drawing a tag from the game's loot table at the container's band plus the offset, so one locker holds better things deeper; without one, a game answers a named item itself, and a container asking by tag is refused as play begins, since there is nothing to draw it from.
-`Take { from, item }` moves one or all into the taker's bag, merging stacks and writing `ItemEvent::PickedUp` the way the ground does, and costs one turn either way.
+`Take { from, item }` moves one or all into the taker's bag, filling its stacks to their `StackLimit` and writing `ItemEvent::PickedUp` the way the ground does, and costs one turn either way.
 A container is marked `Emptied` only when its definition gives an opened look, so a crate that cannot show it is done goes on offering and the screen says it is empty.
 Each trigger is the `TriggerSpec` an item's are, an `on` trigger kind by name, an `Area`, an optional `fires` count and effects, a word it does not read failing the load, and a prop answers two of the engine's trigger kinds, `entered` and `destroyed`.
 Every trigger and every offer is built once on the first frame, after the last game-registered effect and trigger kind are in, with the game's sounds in scope when it has any, so an alarm plate names its sound as it names a status, and reports every spec that would not build with the prop's name and which list it was in, because a trap that silently does nothing is the worst kind of trap.

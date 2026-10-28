@@ -12,12 +12,13 @@
             crates/atglyph-bevy/src/combat.rs
             crates/atglyph-bevy/src/stealth.rs
             crates/atglyph-bevy/src/items.rs
+            crates/atglyph-bevy/src/throwing.rs
             crates/atglyph-bevy/src/ability.rs
             crates/atglyph-bevy/src/props.rs
             crates/atglyph-bevy/src/fire.rs
             crates/atglyph-bevy/src/noise.rs
             crates/atglyph-bevy/src/effects/mod.rs
-     fingerprint: aeec0d09 -->
+     fingerprint: 26c188d2 -->
 
 # Minds
 
@@ -50,7 +51,7 @@ A `WARY` mind, which `SAPIENT` is and `ANIMAL` is not, prices a cell under a sho
 `Snapshot` carries `me`, `enemies`, `allies`, `others`, `items`, `props`, `missiles`, `usable`, `carried`, `reach`, `last_known`, `came_from`, `wits` and the game's own `senses`.
 An `ActorView` holds `health` and `faction` as options, so a civilian in a game with no combat is still someone a mind sees and steps round, and `is_hurt` is false when health is unknown rather than true.
 `Thinking` is that snapshot while it is being filled, plus `mark_hazard` for a cell no mind will step on and `offer_trail` for something worth walking to, the freshest offer becoming `last_known` when the snapshot closes.
-The five phases fill it in turn: `Begin` opens it, `Roster` sorts everyone in sight into the three lists by the faction matrix, `Filter` is where stealth drops the unseen and the hiders the mind has not noticed and offers what it lost, and `Annotate` is where combat says how far its own shot carries, items what it carries and sees lying about and, for a mind with `Wits::USES`, what it may use from its own pack as `carried`, abilities what it may use, props what stands about, fire where not to step, hearing where a sound came from, `sense_posts` where the mind's post is, `sense_leaders` where its leader stands and `sense_ways` which ways out it sees; `Weigh` then keeps a self-aimed ability only when `Effect::would_act` says its landing would act on something.
+The five phases fill it in turn: `Begin` opens it, `Roster` sorts everyone in sight into the three lists by the faction matrix, `Filter` is where stealth drops the unseen and the hiders the mind has not noticed and offers what it lost, and `Annotate` is where combat says how far its own shot carries, items what it carries and sees lying about, each missile at the range `Throws::of` gives for that mind, its own reach for a thing with no range of its own, so a mind with no reach weighs no such thing as a missile, and, for a mind with `Wits::USES`, what it may use from its own pack as `carried`, abilities what it may use, props what stands about, fire where not to step, hearing where a sound came from, `sense_posts` where the mind's post is, `sense_leaders` where its leader stands and `sense_ways` which ways out it sees; `Weigh` then keeps a self-aimed ability only when `Effect::would_act` says its landing would act on something.
 `decide_minds` sorts the snapshot once, there and nowhere else, so the order the contributors ran in cannot reach a tactic.
 `TacticCtx` then offers `step_toward` and `step_away_from` over `FlowFields`, keyed by the goal cells, the movement class, whether the walker opens doors and which way it is going, stamped with the map's cost epoch and capped at `FIELD_CACHE`, the field asked for longest ago going first: fifty hunters after one player cost one flood.
 A field floods round whatever stands that is no actor, a blocking prop above all, so a mind behind a rack takes a way round it rather than walking into it.

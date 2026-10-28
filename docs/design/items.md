@@ -143,14 +143,15 @@ What moved is `atglyph_rules::parts`, a set of authored parts, each the type of 
 | --- | --- | --- |
 | `Melee` | `roll`, `kind`, `look`, `shape`, `unaware` | `MeleeAttack` |
 | `Ranged` | `range`, `effective`, `roll`, `kind`, `look` | `RangedAttack` |
-| `ThrowDef` | `range`, `effective`, `strike` | `Throwable` |
+| `ThrowDef` | `range`, `effective`, `strike`, `range` left out to fly as far as the thrower reaches | `Throwable` |
+| `LaunchDef` | `ammo`, `range`, `damage` | `Launcher`, worn, adding its range and roll to what it launches |
 | `Wear` | `slot`, `either`, `also` | `Wearable(EquipShape)`, the pair `either` reaches for read from the slot registry's `SlotDef::pair` |
 | `Charges` | `charges`, `when_empty`, `recharge`, `while_worn` | `Consumable`, its `Recharge` in hundredths of a step, and `Attuned` |
 | `Level` | `min`, `max`, `armor`, `damage`, `amount`, `turns`, `pulse`, `charges`, `dark_sight`, `stats` | what each level adds to all of the above, in section 7 |
 
-The rest of what an item's line says for the engine is a plain list, its armor, its tags, its effects and triggers, its bestows and caps, its ammunition tag, whether it stacks, its `Glow` and when it shines, the statuses it holds on its wearer and the sight in the dark it lends, needing no part of its own; `parts::resistances` reads the one list that adds up, a kind written twice resisting by both, as two worn things' resistances add on a wearer.
+The rest of what an item's line says for the engine is a plain list, its armor, its tags, its effects and triggers, its bestows and caps, its ammunition tag, whether it stacks and how many one stack holds, its `Glow` and when it shines, the statuses it holds on its wearer and the sight in the dark it lends, needing no part of its own; `parts::resistances` reads the one list that adds up, a kind written twice resisting by both, as two worn things' resistances add on a wearer.
 A game builds an `atglyph_bevy::ItemParts` from its own fields once at load, its triggers built and its wear resolved, and keeps it beside its definition; `insert_parts` spawns a thing of it at a level and `ItemParts::check` names what the engine would never play, a worn stack or a pulse on a thing never worn.
-`Attacks { melee, ranged, throw, cost }` is the attack half on its own, which a monster uses, since a blow is one thing whoever strikes it: [Foundry](https://github.com/rudehn/foundry)'s droids and Undermere's monsters write their attacks as the same parts their weapons do.
+`Attacks { melee, ranged, throw, launch, cost }` is the attack half on its own, which a monster uses, since a blow is one thing whoever strikes it: [Foundry](https://github.com/rudehn/foundry)'s droids and Undermere's monsters write their attacks as the same parts their weapons do.
 
 Every field past the essentials is optional, and absent means the engine's plain behaviour, never a mechanic switched on: a thing with no `Level` takes no level, a `Level` grows only the amounts it writes, and no part has a default the engine chose.
 That is the line drawn by the guardrail the user set: the engine shares the shape of what it already plays, and a game's rules stay in the game.

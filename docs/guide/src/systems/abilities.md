@@ -8,6 +8,9 @@
             crates/atglyph-bevy/src/effects/mod.rs
             crates/atglyph-bevy/src/effects/engine.rs
             crates/atglyph-bevy/src/throwing.rs
+            crates/atglyph-bevy/src/combat.rs
+            crates/atglyph-bevy/src/parts.rs
+            crates/atglyph-rules/src/parts.rs
             crates/atglyph-bevy/src/cue.rs
             crates/atglyph-bevy/src/items.rs
             crates/atglyph-bevy/src/props.rs
@@ -15,8 +18,9 @@
             crates/atglyph-bevy/src/gas.rs
             crates/atglyph-bevy/src/noise.rs
             crates/atglyph-ui/src/view/target.rs
+            crates/atglyph-ui/src/view/inventory.rs
             crates/atglyph-save/src/engine.rs
-     fingerprint: 037f1991 -->
+     fingerprint: edd05b68 -->
 
 # Abilities
 
@@ -34,7 +38,7 @@ It adds `offer_abilities` in `DecideSet::Offer`, `perceive_abilities` in `Percei
 `EffectsPlugin` registers `ApplyStatus`, `RemoveStatus`, `DamageEvent` and `Heal`: `EffectWorld` writes all four, a writer for an unregistered message fails its system at startup, and a game with abilities should not have to add the status and combat plugins to find that out.
 Every `Actor` is given an empty `Known`, `Pools` and `Cooldowns` as it is spawned, so an actor carrying nothing but `Grants` can use what it was granted.
 The engine's own effects are registered separately, by `add_engine_effects()` for the seven that need no subsystem and by `FirePlugin`, `GasPlugin` and `NoisePlugin` for the three that do, so an ability file naming `Ignite`, `Emit` or `Noise` loads exactly when the game has fire, gas or hearing.
-`ThrowingPlugin` is its own opt-in and depends on items and combat both, because a throw is an item leaving a bag and a blow down the damage pipeline, and neither of those plugins has to know the other exists.
+`ThrowingPlugin` is its own opt-in and depends on items and combat both, because a throw is an item leaving a bag and a blow down the damage pipeline, and neither of those plugins has to know the other exists; it registers `Throw`, the `Fired` a landing reports and `Launched`.
 
 ## The model
 
@@ -74,6 +78,10 @@ The effects module holds `Effects` and ten effects: `add_engine_effects()` regis
 `UsableAbilities` is the turn-holder's abilities sorted into usable and refused once a pass by the gate the resolver uses, read through `why_for`, which answers only for the actor it was worked out for.
 `perceive_abilities` copies `usable` into `Snapshot::usable` as `Usable { ability, aim, mode }`, everything the `UseAbility` tactic needs to score a footprint and nothing about what the ability does.
 Throwing is the smaller half: `Throwable::new(range, strike)` is an item made to be thrown, with an optional `effective` range a hit model reads, `Throw { item, at }` its action, and `flight` the one answer to where it goes, shared with the cursor that previews it.
+Its `range` is an `Option`: a thing that names one flies that far whoever throws it, and one with `None` flies as far as its thrower reaches, `CombatRules::reach(base, stat)`, a `ThrowReach` of `base` cells plus the thrower's value of `stat` when one is named; with no reach set, a thing with no range of its own cannot be thrown at all.
+How far a thing flies therefore depends on who throws it, so `Throws::of(thrower, item)` is the one answer, a `ThrowAs` of its range, its effective range, its own or a third of how far it flies, its strike and what launches it, or `None` when that thrower cannot throw it, and the throw, its odds, the aiming cursor, the pack's rows and every mind weighing a missile read it rather than the item's `Throwable`; `ThrowRules::by(thrower, item, worn)` is the same answer for a system already holding what is worn.
+A `Launcher { ammo, range, damage }` on a wearable thing, spawned from a `LaunchDef` in `Attacks::launch`, launches what its wearer throws that is tagged `ammo`: the first worn launcher in slot order for one of the thing's tags adds its `range` to how far it flies and its `damage` to what it strikes for, rolled beside the thing's own roll, and in the pack it launches nothing.
+A launched thing flies, strikes and lands as any throw does and lies where it came down to be picked up again, and `Launched { actor, item, launcher }` is written beside its `ItemEvent::Thrown`, so whatever tells of throws can tell a shot.
 A thrown knife and a bolt stop at the same first wall or body, and each hangs in the air until whatever is watching has seen it fly.
 
 ## Using it
@@ -132,6 +140,7 @@ A thing not yet known is landed through them too, but neither previewed nor refu
 A key aims nothing itself; it writes `AimAt`, or `AimUse` for a thing, and stops, and whether a cursor opens, where it opens and what the use costs are the engine's, which is why a game's input never learns what a broadside does.
 A mind is handed only what the gate already allowed, which is why it cannot loop on something it cannot afford, and it scores by `Aim` alone, so a monster given a new ability needs no new tactic.
 A self-aimed one is weighed once more before that, by `weigh_self_abilities`, which keeps only those `Effect::would_act` says would act on something landed now, a mend kept for an actor that is hurt and a mend with nobody hurt left out, so a mind never spends its turn casting one that does nothing.
+How far a throw flies and what a worn launcher adds are the engine's to work out, once, for the throw and everything that forecasts it; what each thing's range is, or that it has none, what a thrower's reach is built from, and which tag a launcher is for are the game's content.
 An ability is never rolled to hit: it lands unconditionally, where a blow and a shot are rolled by `HitRules`, as [Combat](combat.md) says.
 Ability trees, schools, levelling, spell failure and casting interrupted by a blow are each a game's rule over this data, and the engine should not guess which of them a game wants.
 Saving is the engine's: `EngineSave` writes each actor's pools and cooldowns, so a game that saves keeps a cooling ability cooling without writing a line for it.

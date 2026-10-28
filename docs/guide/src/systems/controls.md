@@ -13,7 +13,7 @@
             crates/atglyph-bevy/src/replay.rs
             crates/atglyph-bevy/src/seed.rs
             crates/atglyph-bevy/src/testing.rs
-     fingerprint: 81a60f86 -->
+     fingerprint: 54832241 -->
 
 # Controls, modals and cursors
 
@@ -66,8 +66,8 @@ Resume is offered only while playing, `Settings` only when a `SettingsPanel` has
 With nothing open and something in sight picked out, the close key lets go of it rather than opening the menu, so backing out of the nearby list takes the same key as backing out of a cursor, and the next press opens the menu.
 `Recording` is a run written down: the seed, the command line it was run with, and every frame that pressed something as a `Pressed` of a turn clock, the keys and whether Shift was with them.
 `KeyScript` is the test keyboard: `press` for one frame, `hold` until `release`, which is what a finger resting on a key does.
-`PlayerVerb` is the six standard verbs, `Walk` writing a `Bump`, `GoThrough`, `Wait`, `PickUp`, `Fire` opening the targeting cursor when the player has a shot, and `Throw` opening the pack on the first thing that can be thrown, each on the keys every roguelike here chose unless `keys` binds others.
-Fire or throw with nothing to act on spends no turn, says the game's `Otherwise` line if it gave one, and writes a `Declined { actor, verb }` for a game that says why in its own words.
+`PlayerVerb` is the six standard verbs, `Walk` writing a `Bump`, `GoThrough`, `Wait`, `PickUp`, which picks up the one plain thing underfoot and opens the ground screen on more when the game added `GroundPanel`, as [Items](items.md) says, `Fire` opening the targeting cursor when the player has a shot, and `Throw` opening the pack on the first thing that can be thrown, each on the keys every roguelike here chose unless `keys` binds others.
+Pick up, fire or throw with nothing to act on spends no turn, says the game's `Otherwise` line if it gave one, and writes a `Declined { actor, verb }` for a game that says why in its own words.
 
 ## Using it
 
@@ -92,7 +92,7 @@ fn declare_controls(app: &mut App) {
         PlayerKeysPlugin::new()
             .walk("Move", "walk or attack")
             .go_through("Move", "take the stairs")
-            .pick_up("Act", "pick up what is here")
+            .pick_up("Act", "pick up what is here", Otherwise::say("There is nothing here."))
             .wait("Act", "wait a turn"),
     );
     let binds = Binds {

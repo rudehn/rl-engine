@@ -26,15 +26,16 @@ fn litter(commands: &mut Commands, rats: &Rats, p: Point, bread: bool) {
         commands.spawn((Item, Crust(8), Name::new("crust of bread"), Position(p), Glyph::new('%', Color::srgb(0.85, 0.72, 0.40)).on_layer(2)));
     } else {
         // Thrown up to 7 cells, for 1d4.
-        let flies = Throwable::new(7, Some((rats.bite, DiceRoll::new(1, 4))));
+        let flies = Throwable::new(Some(7), Some((rats.bite, DiceRoll::new(1, 4))));
         commands.spawn((Item, flies, Name::new("rock"), Position(p), Glyph::new('*', Color::srgb(0.66, 0.66, 0.70)).on_layer(2)));
     }
 }
 ```
 
 An item is an entity with `Item` and a `Position`.
-Picking one up moves it into an `Inventory`, which `ItemsPlugin` does when you press `g`.
+Picking one up moves it into an `Inventory`, which `ItemsPlugin` does when you press `g`; with nothing underfoot, `g` says the `Otherwise` it was declared with.
 `Crust` is Warren's own component; `Throwable` is the engine's, with a range and a damage roll.
+A range of `None` flies as far as the thrower reaches, which `CombatRules::reach` sets; a rock names its own.
 
 ## The plugins
 
@@ -100,7 +101,12 @@ struct Binds {
 
 /// Declares the keys. Walking and waiting are the engine's standard keys.
 fn declare_controls(app: &mut App) {
-    app.add_plugins(PlayerKeysPlugin::new().walk("Move", "walk or attack").pick_up("Act", "pick up what is here").wait("Act", "wait a turn"));
+    app.add_plugins(
+        PlayerKeysPlugin::new()
+            .walk("Move", "walk or attack")
+            .pick_up("Act", "pick up what is here", Otherwise::say("There is nothing here."))
+            .wait("Act", "wait a turn"),
+    );
     let binds = Binds {
         eat: app.add_control("Act", "eat a crust", KeyCode::KeyE),
         throw: app.add_control("Act", "throw a rock", KeyCode::KeyR),

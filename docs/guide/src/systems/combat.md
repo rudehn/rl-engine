@@ -17,7 +17,7 @@
             crates/atglyph-bevy/src/ammo.rs
             crates/atglyph-bevy/src/effects/mod.rs
             crates/atglyph-bevy/src/effects/engine.rs
-     fingerprint: ab088697 -->
+     fingerprint: a325ec09 -->
 
 # Combat and loadout
 
@@ -41,10 +41,10 @@ Nothing here decides who strikes whom: minds choose for monsters, `Bump` turns a
 
 `Health` is `current` and `max`, and `Health::full(n)` is both.
 `Faction` puts an actor on a side, and `CombatRules` holds who hates whom: `hostile` sets a pair both ways, `hunts` sets one way only, and `allied` sets help both ways, into a `Factions` that keeps only the pairs named and works out the rest, a side allied with itself and neutral to everyone else, so it needs no registry and is asymmetric because a grudge need not be returned.
-`CombatRules` also carries `armor` and `attack`, each an optional `StatId`, `unaware`, an optional percent a blow on the unaware lands at, and `death_ends_run`, which `death_is_not_the_end()` clears for a game that revives or plays on as a ghost.
+`CombatRules` also carries `armor` and `attack`, each an optional `StatId`, `unaware`, an optional percent a blow on the unaware lands at, `death_ends_run`, which `death_is_not_the_end()` clears for a game that revives or plays on as a ghost, and `reach`, a `ThrowReach` set by `reach(base, stat)`, how far an actor throws a thing that names no range of its own, as [Abilities](abilities.md) says.
 `MeleeAttack` is a `kind`, a `dice` roll, an optional `cost` in hundredths of a step, an optional `look`, an optional `shape` and an optional `unaware` percent of its own; `RangedAttack` is the same with a `range` and no `unaware`, built by `new` and narrowed by `costing`, `looking`, `shaped` and, for a blow, `unaware`, so a field only some games want is added without touching every call site.
 `AttackShape` is who else an attack strikes besides its target, read from RON as `Sweep`, every foe beside the attacker, or `Pierce(n)`, the target and every foe in the next `n` cells beyond it in line, short of a wall or a shut door and, for a shot, of its range.
-`RangedAttack` and `Throwable` also carry an optional `effective` range, a third of `range` when left out, which is as far as a hit model charges nothing for distance.
+`RangedAttack` and `Throwable` also carry an optional `effective` range, which is as far as a hit model charges nothing for distance: left out, a third of a shot's `range`, and a third of how far a throw flies from its thrower, which `Throws::of` works out and `Attempt::Throw` carries as a `ThrowAs`.
 `HitRules` holds the game's `HitModel`, `Certain` unless the game inserts another, and `Marksmanship` gathers what a model reads into a `Shot`: how the attack travels, the distance, the effective range and reach, the `LightBand` at the target, and the stats `accuracy_stat` and `evasion_stat` name.
 `Armor` is flat damage removed and `BonusDamage` is a list of extra rolls every hit carries, a flaming blade's fire or a venomed edge's poison.
 All four sit on an actor or on an item, and that is the whole of how gear fights: a jerkin is an item with `Armor(1)` and nothing copies the 1 onto whoever puts it on.

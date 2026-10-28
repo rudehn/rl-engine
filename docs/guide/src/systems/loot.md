@@ -5,7 +5,7 @@
             crates/atglyph-bevy/src/loot.rs
             crates/atglyph-bevy/src/props.rs
             crates/atglyph-bevy/src/parts.rs
-     fingerprint: 30c89e66 -->
+     fingerprint: 5b88c7be -->
 
 # Loot
 

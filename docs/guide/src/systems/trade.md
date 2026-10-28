@@ -3,9 +3,11 @@
      files: crates/atglyph-bevy/src/trade.rs
             crates/atglyph-rules/src/trade.rs
             crates/atglyph-bevy/src/props.rs
+            crates/atglyph-bevy/src/items.rs
+            crates/atglyph-rules/src/items.rs
             crates/atglyph-ui/src/view/trade.rs
             crates/atglyph-ui/src/panel/trade.rs
-     fingerprint: f1599438 -->
+     fingerprint: b8946a52 -->
 
 # Trade
 
@@ -34,7 +36,8 @@ Taking up the offer opens a trade the player's screen reads from `Trading`, whos
 A trade is the player's only, and is closed in any pass where either side is out of the other's reach, dead or gone, so a screen never deals with someone who has walked off.
 A mind that trades writes the deals itself.
 `Buy { customer, trader, item, count }` buys from what the trader carries and `Sell` sells from what the customer carries, `count` capped at what a stack holds.
-Each is dropped without a word when it could not be meant, and otherwise answered with `Traded { customer, trader, deal, item, count, price }`, `item` as its new holder carries it, or with `TradeRefused { customer, trader, deal, item, why }`, nothing changing hands, for a game's line saying why.
+What changes hands, the thing bought or sold and the currency paid for it, goes into the new holder's bag the way the ground does, filling the stacks of its kind already carried to their `StackLimit` in bag order and keeping the rest a stack of its own, so buying keeps to a stack's limit as picking up does.
+Each is dropped without a word when it could not be meant, and otherwise answered with `Traded { customer, trader, deal, item, count, price }`, `item` as its new holder carries it, the stack it was wholly merged into or the stack of its own the rest makes, or with `TradeRefused { customer, trader, deal, item, why }`, nothing changing hands, for a game's line saying why.
 `Trader::each` is what one of a `Ware` changes hands for, its worth bought and the trader's share of it sold, and `Trader::quote` is what a count comes to or the `TradeRefusal` it is refused for: worn, sold to a trader that does not buy its kind, no worth, or a short purse, checked in that order.
 `quote` is the one rule the resolver strikes every deal by, public so a screen greys a row by the same rule.
 `pay(world, payer, payee, amount, currency)` moves currency from one bag to the other, drawing the payer's pieces down in the order they are carried, and is the one way the engine spends it, a deal's price and a priced offer's alike.

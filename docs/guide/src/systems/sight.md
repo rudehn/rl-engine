@@ -9,7 +9,7 @@
             crates/atglyph-grid/src/light.rs
             crates/atglyph-bevy/src/items.rs
             crates/atglyph-mapgen/src/place.rs
-     fingerprint: 2cce5dec -->
+     fingerprint: 03562a80 -->
 
 # Sight and lighting
 

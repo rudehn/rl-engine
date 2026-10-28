@@ -3,6 +3,7 @@
      files: crates/atglyph-ui/src/narrate.rs
             crates/atglyph-core/src/noun.rs
             crates/atglyph-bevy/src/items.rs
+            crates/atglyph-bevy/src/throwing.rs
             crates/atglyph-bevy/src/status.rs
             crates/atglyph-ui/src/log.rs
             crates/atglyph-ui/src/tone.rs
@@ -13,7 +14,7 @@
             crates/atglyph-rules/src/status.rs
             crates/atglyph-bevy/src/ability.rs
             crates/atglyph-bevy/src/lighting.rs
-     fingerprint: 788823c2 -->
+     fingerprint: 0615bef1 -->
 
 # Narration
 
@@ -45,6 +46,7 @@ A status landing on the player is `YouAreAfflicted`, or `YouGainABoon` for a `St
 Every one of them says "you are", because a status is named as what its holder is, `warded` or `scorched`, and each is told when a status begins and never when a `StatusEvent::Renewed` keeps it up, so a cloud is told once and not every turn it is breathed.
 `called` is what `who` and `whom` were called when the row was made, and `called_thing` what `what` was, a `Called` of its name, its count and whether it takes an article, filled in by the collector, because a row is made inside the pass and spoken after it and things change in between: what dies becomes remains and is renamed, what is thrown merges into a stack.
 A use is named as one of the thing, `You use a stim.`, since the stack already counts one fewer, and only a use of a thing with a `use` trigger is said at all: what using anything else means is the game's to say, the way a crust of bread is.
+A throw is `YouThrow` or `Throws`, and one a worn launcher launched, which a `Launched` beside its `ItemEvent::Thrown` marks, is `YouLaunch` or `Launches`, `You shoot a pellet.`, so what a launcher sends is told as shot rather than thrown.
 What the player puts on, wields, takes off and drops is said as theirs, `You drop your sword.`, where `a sword` read as though it were any sword.
 A worn thing that would not come off when the player tried is `WillNotComeOff`, `Your ring will not come off.`, told as bad news.
 A death on the player's side, as `CombatRules` says, is `AllyDies`, `KillsAlly` or `YouKillAlly` in the bad tone, and one that came through a way after the player is told as following them, `FollowsYou`, where anyone else leaving is `Leaves`.
