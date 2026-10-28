@@ -781,7 +781,7 @@ pub(crate) fn resolve_takes(
     mut resolution: Resolution,
     mut takers: Query<(&Position, &mut Inventory), Without<Container>>,
     mut held: Query<(&Position, &mut Inventory, Option<&mut crate::items::Equipped>), With<Container>>,
-    stacks: Query<&crate::items::Stack>,
+    stacks: Query<(&crate::items::Stack, Option<&crate::items::StackLimit>)>,
 ) {
     for intent in intents.read() {
         let actor = intent.actor;
@@ -812,16 +812,12 @@ pub(crate) fn resolve_takes(
             }
         }
         if let Ok((_, mut bag)) = takers.get_mut(actor) {
+            // Into the bag the way the ground goes, stacks filled to their
+            // limits.
+            let stack_of = |e: Entity| stacks.get(e).ok().map(|(s, limit)| (*s, limit.map(|l| l.0)));
+            let mut filling = crate::items::Filling::of(&bag, stack_of);
             for item in taking {
-                let merged_into = stacks.get(item).ok().and_then(|s| bag.items.iter().copied().find(|c| stacks.get(*c).is_ok_and(|t| t.key == s.key)));
-                match merged_into {
-                    Some(into) => {
-                        let add = stacks.get(item).map(|s| s.count).unwrap_or(1);
-                        commands.entity(into).entry::<crate::items::Stack>().and_modify(move |mut s| s.count += add);
-                        commands.entity(item).despawn();
-                    }
-                    None => bag.items.push(item),
-                }
+                let merged_into = filling.arrive(&mut commands, &mut bag, item, stack_of(item));
                 events.write(crate::items::ItemEvent::PickedUp { actor, item, merged_into });
             }
         }
@@ -2138,6 +2134,7 @@ mod actor_offers {
 mod containers {
     use super::*;
     use crate::components::{Actor, Blocks, Player, Viewshed};
+    use crate::items::StackLimit;
     use crate::items::{Item, Stack};
     use crate::state::EngineState;
     use crate::testing::headless_app;
@@ -2238,6 +2235,21 @@ mod containers {
         let names: Vec<String> = held.iter().filter_map(|i| it.app.world().get::<Name>(*i).map(|n| n.as_str().to_string())).collect();
         assert_eq!(names.iter().filter(|n| *n == "slug").count(), 2);
         assert_eq!(names.iter().filter(|n| *n == "medkit").count(), 1);
+    }
+
+    /// Taking out of a container keeps to a stack's limit as picking up
+    /// does: what does not fit stays a stack of its own.
+    #[test]
+    fn taking_from_a_container_keeps_the_stack_limit() {
+        let mut it = chest("supply crate");
+        let slugs: Vec<Entity> = bag_of(&it.app, it.prop).into_iter().filter(|i| it.app.world().get::<Stack>(*i).is_some()).collect();
+        for slug in &slugs {
+            it.app.world_mut().entity_mut(*slug).insert(StackLimit(1));
+        }
+        it.app.world_mut().write_message(Intent::new(it.player, Take { from: it.prop, item: None }));
+        it.app.update();
+        let carried: Vec<u32> = bag_of(&it.app, it.player).iter().filter_map(|i| it.app.world().get::<Stack>(*i).map(|s| s.count)).collect();
+        assert_eq!(carried, vec![1, 1], "two stacks of one, not one of two");
     }
 
     /// Taking one moves it into the bag and merges stacks the way the

@@ -106,7 +106,7 @@ pub mod items {
     pub use atglyph_bevy::consumable::{Attuned, Consumable, WhenEmpty};
     pub use atglyph_bevy::items::{
         Bestows, DropItem, Equip, EquipFromGround, Equipped, GearScore, Inventory, Item, ItemEvent, ItemRules, ItemsPlugin, LitWhenWorn, OwnBlowScore, PickUp,
-        Stack, Stuck, Tagged, Unequip, Unknown, UseItem, UseItemAt, UseOn, Wearable, WornStatuses, WornTimer,
+        Stack, StackLimit, Stuck, Tagged, Unequip, Unknown, UseItem, UseItemAt, UseOn, Wearable, WornStatuses, WornTimer,
     };
     pub use atglyph_bevy::loot::{Drops, Found, ItemMaker, LootArea, LootPlugin, LootSet, Provenance};
     pub use atglyph_bevy::parts::{ActorParts, Attacks, ItemLevel, ItemParts, LightWhen, innate_statuses, insert_parts};

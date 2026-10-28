@@ -6,6 +6,14 @@ atglyph is not on crates.io yet, so a game depends on a release by its git tag, 
 
 ## [Unreleased]
 
+### Added
+
+- A stack's limit: `ItemParts::stack_limit`, spawned as `StackLimit`, the most one stack of a thing holds. Picking up, taking from a container and buying fill the carried stacks of a kind to their limits in bag order and keep the rest a stack of its own, and `atglyph::rules::items::fill_stacks` is that rule.
+
+### Changed
+
+- **Breaking:** `ItemParts` has a `stack_limit` field; a literal adds `stack_limit: None`, or ends in `..ItemParts::default()`.
+
 ## [0.5.0] - 2026-10-26
 
 ### Added

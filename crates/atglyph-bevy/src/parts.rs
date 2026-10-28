@@ -45,7 +45,7 @@ use crate::combat::{Armor, BenchedAttack, Faction, Health, MeleeAttack, RangedAt
 use crate::components::Speed;
 use crate::consumable::{Attuned, Consumable};
 use crate::effects::{EffectBonus, TriggerKindId, TriggerKinds, Triggers};
-use crate::items::{Bestows, Equipped, Item, LitWhenWorn, Stack, Tagged, Wearable, WornStatuses, WornTimer};
+use crate::items::{Bestows, Equipped, Item, LitWhenWorn, Stack, StackLimit, Tagged, Wearable, WornStatuses, WornTimer};
 use crate::lighting::{DarkSight, LightSource, OwnDarkSight, WornDarkSight};
 use crate::loot::Drops;
 use crate::minds::{Intelligence, Mind, Perception};
@@ -130,6 +130,9 @@ pub struct ItemParts {
     /// The key copies merge under, for a thing that stacks; the game's,
     /// usually its definition's index.
     pub stack: Option<u64>,
+    /// The most one stack of it holds, for a thing that stacks: what a
+    /// merge into a carried stack fills it to. `None` holds any number.
+    pub stack_limit: Option<u32>,
     /// The light it sheds, where it lies and from whoever carries it, or
     /// only from whoever wears it, as [`light_when`](Self::light_when) says.
     pub light: Option<Glow>,
@@ -174,6 +177,12 @@ impl ItemParts {
         let moment = |on: TriggerKindId| self.triggers.0.iter().any(|t| t.on == on);
         if self.stack.is_some() && self.wear.is_some() {
             wrong.push("a worn item cannot stack".to_string());
+        }
+        if self.stack_limit.is_some() && self.stack.is_none() {
+            wrong.push("a stack limit, on a thing that does not stack".to_string());
+        }
+        if self.stack.is_some() && self.stack_limit == Some(0) {
+            wrong.push("a stack limit of nothing: no stack of it could hold one".to_string());
         }
         if self.stack.is_some() && self.level.is_some() {
             wrong.push("a thing that stacks takes no level: every copy in a stack is one thing to the bag, and a level is one thing's own".to_string());
@@ -368,6 +377,9 @@ pub fn insert_parts(e: &mut EntityCommands, parts: &Arc<ItemParts>, level: i32) 
     }
     if let Some(key) = parts.stack {
         e.insert(Stack { key, count: 1 });
+        if let Some(most) = parts.stack_limit {
+            e.insert(StackLimit(most));
+        }
     }
     let armor = parts.armor_at(level);
     if armor != 0 {
@@ -932,6 +944,23 @@ mod tests {
         assert_eq!(wrong.len(), 2, "{wrong:?}");
         assert!(wrong[0].starts_with("a worn item cannot stack") && wrong[1].starts_with("a thing that stacks takes no level"), "{wrong:?}");
         assert!(blade().check().is_empty(), "{:?}", blade().check());
+    }
+
+    #[test]
+    fn a_stack_limit_on_a_thing_that_does_not_stack_or_of_nothing_is_refused() {
+        let loose = ItemParts { stack_limit: Some(10), ..ItemParts::default() };
+        assert_eq!(loose.check(), vec!["a stack limit, on a thing that does not stack".to_string()]);
+        let empty = ItemParts { stack: Some(1), stack_limit: Some(0), ..ItemParts::default() };
+        assert_eq!(empty.check(), vec!["a stack limit of nothing: no stack of it could hold one".to_string()]);
+    }
+
+    #[test]
+    fn a_stack_limit_is_spawned_on_the_thing() {
+        let parts = Arc::new(ItemParts { stack: Some(3), stack_limit: Some(20), ..ItemParts::default() });
+        let mut world = World::new();
+        let (e, _) = spawned(&mut world, &parts, 0);
+        assert_eq!(world.get::<StackLimit>(e), Some(&StackLimit(20)));
+        assert_eq!(world.get::<Stack>(e), Some(&Stack { key: 3, count: 1 }));
     }
 
     /// What spawning `parts` puts on an actor, by component name, sorted.

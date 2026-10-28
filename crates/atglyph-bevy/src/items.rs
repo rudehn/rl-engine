@@ -46,7 +46,7 @@
 use crate::app::EngineApp;
 use atglyph_core::Point;
 use atglyph_core::turn::BASE_ACTION_COST;
-use atglyph_rules::items::{ItemAsk, ItemFacts, ItemOutcome, ItemRefusal, resolve_item};
+use atglyph_rules::items::{ItemAsk, ItemFacts, ItemOutcome, ItemRefusal, fill_stacks, resolve_item};
 use atglyph_rules::stats::{Modifier, ModifierSource, Op};
 use atglyph_rules::{EquipShape, Equipment, StatId, StatusId};
 use bevy::prelude::*;
@@ -168,6 +168,64 @@ pub struct Stack {
     pub key: u64,
     /// How many.
     pub count: u32,
+}
+
+/// The most units one [`Stack`] of a thing holds: a merge into a carried
+/// stack fills it this far and leaves the rest a stack of its own.
+///
+/// A component of its own rather than a field of [`Stack`], so a stack
+/// with no limit, every stack before limits, is written as it always was.
+/// The engine never splits a stack bigger than its limit: the limit is
+/// what a merge keeps to.
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StackLimit(pub u32);
+
+/// The stacks one bag holds, as a run of arrivals fills them.
+///
+/// Counts are kept here as they are set, since what a command sets lands
+/// only when the commands run, and a second arrival in the same pass,
+/// a pile picked up whole, must find the stack the first one filled.
+pub(crate) struct Filling {
+    held: Vec<(Entity, Stack, Option<u32>)>,
+}
+
+impl Filling {
+    /// The stacks in `bag`, read through `stack_of`.
+    pub(crate) fn of(bag: &Inventory, stack_of: impl Fn(Entity) -> Option<(Stack, Option<u32>)>) -> Self {
+        Self { held: bag.items.iter().filter_map(|&e| stack_of(e).map(|(s, limit)| (e, s, limit))).collect() }
+    }
+
+    /// Takes `item` into `bag`: a stack fills the carried stacks of its key
+    /// in bag order, each to its limit, by [`fill_stacks`], and what is
+    /// left joins the bag as `item`, holding the rest; anything else joins
+    /// the bag as it is. The stack it was wholly merged into, the last one
+    /// filled, when it was, and it is despawned.
+    pub(crate) fn arrive(&mut self, commands: &mut Commands, bag: &mut Inventory, item: Entity, stack: Option<(Stack, Option<u32>)>) -> Option<Entity> {
+        let Some((stack, limit)) = stack else {
+            bag.items.push(item);
+            return None;
+        };
+        let same: Vec<usize> = (0..self.held.len()).filter(|&i| self.held[i].1.key == stack.key).collect();
+        let (takes, left) = fill_stacks(&same.iter().map(|&i| (self.held[i].1.count, self.held[i].2)).collect::<Vec<_>>(), stack.count);
+        let mut last = None;
+        for (&i, take) in same.iter().zip(takes) {
+            if take > 0 {
+                let (into, held, _) = &mut self.held[i];
+                held.count += take;
+                commands.entity(*into).insert(*held);
+                last = Some(*into);
+            }
+        }
+        if left == 0 && last.is_some() {
+            commands.entity(item).despawn();
+            return last;
+        }
+        let rest = Stack { count: left, ..stack };
+        commands.entity(item).insert(rest);
+        bag.items.push(item);
+        self.held.push((item, rest, limit));
+        None
+    }
 }
 
 /// A thing not yet known: shown by its name and where it is worn, and
@@ -319,7 +377,7 @@ type Ground<'w, 's> = Query<'w, 's, (Entity, &'static Position, Option<&'static 
 #[derive(bevy::ecs::system::SystemParam)]
 pub struct ItemWorld<'w, 's> {
     ground: Ground<'w, 's>,
-    stacks: Query<'w, 's, &'static Stack>,
+    stacks: Query<'w, 's, (&'static Stack, Option<&'static StackLimit>)>,
     wearables: Query<'w, 's, &'static Wearable>,
     consumables: Query<'w, 's, &'static crate::consumable::Consumable>,
     map: Res<'w, WorldMap>,
@@ -476,6 +534,11 @@ fn cost(ask: Which, rules: &ItemRules) -> u32 {
 }
 
 impl ItemWorld<'_, '_> {
+    /// `item`'s stack and the most it holds, if it stacks.
+    fn stack_of(&self, item: Entity) -> Option<(Stack, Option<u32>)> {
+        self.stacks.get(item).ok().map(|(s, limit)| (*s, limit.map(|l| l.0)))
+    }
+
     /// Whether `actor` does not know `item`, which only the player ever
     /// does: `Unknown` is the player's ignorance, so a mind using what it
     /// carries is refused for everything the thing truly is.
@@ -702,26 +765,20 @@ fn resolve_one(commands: &mut Commands, world: &ItemWorld, carrier: Holding, act
         Err(_) => return false,
     };
     let this_map = world.map.current();
+    let mut filling = Filling::of(&bag, |e| world.stack_of(e));
     for outcome in outcomes {
         match outcome {
             ItemOutcome::PickedUp(item) => {
                 commands.entity(item).remove::<(Position, OnMap)>();
-                // Picked up, a stack joins one of its kind already carried;
-                // a thing put on from the ground is taken as it is.
+                // Picked up, a stack fills those of its kind already
+                // carried; a thing put on from the ground is taken as it is.
                 let merged_into = match ask {
-                    ItemAsk::PickUp => {
-                        world.stacks.get(item).ok().and_then(|s| bag.items.iter().copied().find(|c| world.stacks.get(*c).is_ok_and(|t| t.key == s.key)))
+                    ItemAsk::PickUp => filling.arrive(commands, &mut bag, item, world.stack_of(item)),
+                    _ => {
+                        bag.items.push(item);
+                        None
                     }
-                    _ => None,
                 };
-                match merged_into {
-                    Some(into) => {
-                        let add = world.stacks.get(item).map(|s| s.count).unwrap_or(1);
-                        commands.entity(into).entry::<Stack>().and_modify(move |mut s| s.count += add);
-                        commands.entity(item).despawn();
-                    }
-                    None => bag.items.push(item),
-                }
                 writes.events.write(ItemEvent::PickedUp { actor, item, merged_into });
             }
             ItemOutcome::Dropped(item) => {
@@ -1351,6 +1408,67 @@ mod tests {
         assert!(act(&mut r, EquipFromGround(plain)).is_empty(), "and what cannot be worn is not put on");
         assert_eq!(r.app.world().resource::<Turns>().now(), 0, "refusals cost nothing");
         assert_eq!(r.app.world().get::<Position>(beside).unwrap().0, r.start.offset(1, 0));
+    }
+
+    /// A stack of `count` under key 7, at most 50 to a stack, lying where
+    /// the player stands, or carried by them.
+    fn arrows(r: &mut Rig, count: u32, carried: bool) -> Entity {
+        let e = r.app.world_mut().spawn((Item, Stack { key: 7, count }, StackLimit(50))).id();
+        if carried {
+            r.app.world_mut().get_mut::<Inventory>(r.player).unwrap().items.push(e);
+        } else {
+            r.app.world_mut().entity_mut(e).insert(Position(r.start));
+        }
+        e
+    }
+
+    fn counts(r: &Rig) -> Vec<u32> {
+        let bag = &r.app.world().get::<Inventory>(r.player).unwrap().items;
+        bag.iter().map(|e| r.app.world().get::<Stack>(*e).unwrap().count).collect()
+    }
+
+    #[test]
+    fn a_pickup_fills_the_carried_stack_to_its_limit_and_keeps_the_rest_apart() {
+        let mut r = rig();
+        let held = arrows(&mut r, 45, true);
+        let more = arrows(&mut r, 10, false);
+        let events = act(&mut r, PickUp);
+        assert_eq!(counts(&r), vec![50, 5]);
+        assert_eq!(r.app.world().get::<Inventory>(r.player).unwrap().items, vec![held, more], "the rest is the arriving stack");
+        assert_eq!(events, vec![ItemEvent::PickedUp { actor: r.player, item: more, merged_into: None }], "not wholly merged");
+    }
+
+    #[test]
+    fn a_pickup_fills_two_part_stacks_in_bag_order() {
+        let mut r = rig();
+        arrows(&mut r, 48, true);
+        arrows(&mut r, 30, true);
+        let more = arrows(&mut r, 5, false);
+        assert_eq!(
+            act(&mut r, PickUp),
+            vec![ItemEvent::PickedUp { actor: r.player, item: more, merged_into: Some(r.app.world().get::<Inventory>(r.player).unwrap().items[1]) }]
+        );
+        assert_eq!(counts(&r), vec![50, 33]);
+    }
+
+    #[test]
+    fn two_piles_picked_up_at_once_never_overfill_a_stack() {
+        let mut r = rig();
+        arrows(&mut r, 45, true);
+        arrows(&mut r, 4, false);
+        arrows(&mut r, 4, false);
+        act(&mut r, PickUp);
+        assert_eq!(counts(&r), vec![50, 3]);
+    }
+
+    #[test]
+    fn a_stack_with_no_limit_merges_whole_as_before() {
+        let mut r = rig();
+        let held = r.app.world_mut().spawn((Item, Stack { key: 7, count: 90 })).id();
+        r.app.world_mut().get_mut::<Inventory>(r.player).unwrap().items.push(held);
+        r.app.world_mut().spawn((Item, Position(r.start), Stack { key: 7, count: 30 }));
+        act(&mut r, PickUp);
+        assert_eq!(counts(&r), vec![120]);
     }
 
     #[test]

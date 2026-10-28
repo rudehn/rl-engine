@@ -257,6 +257,29 @@ fn put_on<I: Copy + Eq>(
     }
 }
 
+/// How `count` arriving units of a kind fill the stacks of it already
+/// carried, each given as how many it holds and the most it may, in bag
+/// order: what each one takes, and what is left over to lie in the bag as
+/// a stack of its own.
+///
+/// In bag order, so a part stack fills before a later one starts; a stack
+/// with no limit takes everything that reaches it, and one already past its
+/// limit takes nothing, since the limit is what a merge keeps to, not a
+/// rule that empties a stack a game made bigger.
+pub fn fill_stacks(held: &[(u32, Option<u32>)], count: u32) -> (Vec<u32>, u32) {
+    let mut left = count;
+    let takes = held
+        .iter()
+        .map(|&(has, limit)| {
+            let room = limit.map_or(u32::MAX, |most| most.saturating_sub(has));
+            let take = room.min(left);
+            left -= take;
+            take
+        })
+        .collect();
+    (takes, left)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -476,5 +499,30 @@ mod tests {
         assert_eq!(resolve_item(ItemAsk::UseOn(7, 8), &ItemFacts { usable: true, ..ItemFacts::default() }, None), Err(No::AsksNothing));
         assert_eq!(resolve_item(ItemAsk::UseOn(7, 8), &ItemFacts { usable: false, ..asks.clone() }, None), Err(No::Unusable));
         assert_eq!(resolve_item(ItemAsk::UseOn(7, 8), &ItemFacts { choice_refused: true, ..asks }, None), Err(No::ChoiceRefused));
+    }
+
+    #[test]
+    fn an_arrival_fills_the_carried_stack_to_its_limit_and_leaves_the_rest() {
+        assert_eq!(fill_stacks(&[(45, Some(50))], 10), (vec![5], 5));
+    }
+
+    #[test]
+    fn an_arrival_fills_part_stacks_in_bag_order() {
+        assert_eq!(fill_stacks(&[(48, Some(50)), (30, Some(50))], 5), (vec![2, 3], 0));
+    }
+
+    #[test]
+    fn a_stack_with_no_limit_takes_the_whole_arrival() {
+        assert_eq!(fill_stacks(&[(5, None), (2, None)], 3), (vec![3, 0], 0));
+    }
+
+    #[test]
+    fn a_stack_already_past_its_limit_takes_nothing() {
+        assert_eq!(fill_stacks(&[(60, Some(50))], 4), (vec![0], 4));
+    }
+
+    #[test]
+    fn with_nothing_carried_the_whole_arrival_is_left() {
+        assert_eq!(fill_stacks(&[], 4), (vec![], 4));
     }
 }

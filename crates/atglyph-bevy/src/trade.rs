@@ -24,6 +24,7 @@
 
 use crate::app::EngineApp;
 use atglyph_rules::TagId;
+use atglyph_rules::items::fill_stacks;
 pub use atglyph_rules::trade::{Deal, TradeRefusal};
 use atglyph_rules::trade::{TradeItem, draw_down};
 use bevy::ecs::message::MessageCursor;
@@ -31,7 +32,7 @@ use bevy::prelude::*;
 
 use crate::combat::Dead;
 use crate::components::{Player, Position};
-use crate::items::{Equipped, Inventory, Stack, Tagged};
+use crate::items::{Equipped, Inventory, Stack, StackLimit, Tagged};
 use crate::places::{MapId, OnMap};
 use crate::props::{Interacted, Verbs};
 
@@ -299,25 +300,36 @@ fn hand_over(world: &mut World, from: Entity, to: Entity, item: Entity, count: u
             item
         }
     };
-    let joins = stack.and_then(|s| {
-        let bag = world.get::<Inventory>(to)?;
-        bag.items.iter().copied().find(|c| world.get::<Stack>(*c).is_some_and(|t| t.key == s.key))
-    });
-    match joins {
-        Some(into) => {
-            if let Some(mut s) = world.get_mut::<Stack>(into) {
-                s.count += count;
-            }
-            world.despawn(moving);
-            into
-        }
-        None => {
-            if let Some(mut bag) = world.get_mut::<Inventory>(to) {
-                bag.items.push(moving);
-            }
-            moving
+    // Into the buyer's bag the way the ground goes: the stacks of its kind
+    // filled to their limits, and the rest a stack of its own.
+    let moved = stack.map_or(1, |s| count.min(s.count));
+    let same: Vec<Entity> = match (stack, world.get::<Inventory>(to)) {
+        (Some(s), Some(bag)) => bag.items.iter().copied().filter(|c| *c != moving && world.get::<Stack>(*c).is_some_and(|t| t.key == s.key)).collect(),
+        _ => Vec::new(),
+    };
+    let held: Vec<(u32, Option<u32>)> =
+        same.iter().map(|c| (world.get::<Stack>(*c).map_or(0, |t| t.count), world.get::<StackLimit>(*c).map(|l| l.0))).collect();
+    let (takes, left) = fill_stacks(&held, moved);
+    let mut last = None;
+    for (into, take) in same.into_iter().zip(takes) {
+        if take > 0
+            && let Some(mut s) = world.get_mut::<Stack>(into)
+        {
+            s.count += take;
+            last = Some(into);
         }
     }
+    if let (0, Some(into)) = (left, last) {
+        world.despawn(moving);
+        return into;
+    }
+    if let Some(mut s) = world.get_mut::<Stack>(moving) {
+        s.count = left;
+    }
+    if let Some(mut bag) = world.get_mut::<Inventory>(to) {
+        bag.items.push(moving);
+    }
+    moving
 }
 
 /// Moves `amount` of the currency from `payer`'s bag to `payee`'s,
@@ -666,6 +678,18 @@ mod tests {
 
         assert_eq!(rig.now(), 0, "no time passed");
         assert!(rig.app.world().get::<MyTurn>(rig.player).is_some(), "and the player still holds the turn");
+    }
+
+    /// A buy fills a carried stack to its limit, and what does not fit is
+    /// a stack of its own.
+    #[test]
+    fn a_buy_keeps_the_stack_limit() {
+        let mut rig = Rig::new();
+        let tools = rig.bag(rig.trader)[1];
+        rig.app.world_mut().entity_mut(tools).insert(StackLimit(2));
+        rig.buy(tools, 1);
+        rig.buy(tools, 2);
+        assert_eq!(rig.holds(rig.player), vec![(Some(SCRIP), 20), (Some(TOOL), 2), (Some(TOOL), 1)]);
     }
 
     /// A trader pays its share of each one's worth rounded down, so a
