@@ -6,8 +6,11 @@ atglyph is not on crates.io yet, so a game depends on a release by its git tag, 
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-27
+
 ### Added
 
+- A tile carries its look: `TileProps::look`, a `TileLook` of glyph and colours, set with a builder or read from a tiles file. `atglyph::rules::tiles::load` reads a whole `TileRegistry` from the file, one line a tile, and `TileAppearance::from_tiles` builds the colour table from it.
 - A stack's limit: `ItemParts::stack_limit`, spawned as `StackLimit`, the most one stack of a thing holds. Picking up, taking from a container and buying fill the carried stacks of a kind to their limits in bag order and keep the rest a stack of its own, and `atglyph::rules::items::fill_stacks` is that rule.
 - A thrower's reach: `CombatRules::reach(base, stat)`, a `ThrowReach`. A thing whose throw names no range flies as far as its thrower reaches, a base plus the thrower's value of a stat. `Throws::of(thrower, item)` answers how a thrower throws a thing, a `ThrowAs`, and the throw, its odds, the aim, the pack's rows and every mind weighing a missile read it.
 - Launchers: a `LaunchDef` part in `Attacks::launch`, spawned as `Launcher`, worn, adds its range to how far a thing it launches flies and its roll to what that strikes for; the thing lands as any throw does, `Launched` is written beside its `ItemEvent::Thrown`, the narrator says it as shot, the aim names the launcher in `TargetView::launcher`, and a pack row's `Strike::also` holds the launcher's roll. `ThrowRules` answers as `Throws` does for a system already holding what is worn.
@@ -16,6 +19,8 @@ atglyph is not on crates.io yet, so a game depends on a release by its git tag, 
 
 ### Changed
 
+- [Undermere](https://github.com/rudehn/undermere) and [Foundry](https://github.com/rudehn/foundry) moved to repositories of their own; a game changes nothing.
+- The tutorial's nine steps share the starter template's shape, one game plugin that `main` and the tests both add, and each step only adds to the one before; its chapters are shorter.
 - **Breaking:** `ItemParts` has a `stack_limit` field; a literal adds `stack_limit: None`, or ends in `..ItemParts::default()`.
 - **Breaking:** `Throwable::range` and `ThrowDef::range` are `Option<i32>`, `None` flying as far as the thrower's reach; write `Throwable::new(Some(n), strike)`, and a RON throw keeps `range: n` under `implicit_some`.
 - **Breaking:** `Attacks` has a `launch` field and `Strike` an `also` field; a literal adds `launch: None` or `also: None`.
@@ -23,17 +28,6 @@ atglyph is not on crates.io yet, so a game depends on a release by its git tag, 
 - **Breaking:** `ItemEvent::PickedUp` has a `count`, how many were picked up, which the narrator names the thing at; a pattern adds `count` or `..`.
 - **Breaking:** `PlayerKeysPlugin::pick_up` takes an `Otherwise`, said when nothing lies underfoot; write `Otherwise::Nothing` to say nothing.
 - **Breaking:** `Throwable::effective_range` is gone, since how far a thing flies depends on its thrower; read `Throws::of(thrower, item)`'s `effective`. `Attempt::Throw` takes the `ThrowAs`.
-
-## [0.5.0] - 2026-10-26
-
-### Added
-
-- A tile carries its look: `TileProps::look`, a `TileLook` of glyph and colours, set with a builder or read from a tiles file. `atglyph::rules::tiles::load` reads a whole `TileRegistry` from the file, one line a tile, and `TileAppearance::from_tiles` builds the colour table from it.
-
-### Changed
-
-- [Undermere](https://github.com/rudehn/undermere) and [Foundry](https://github.com/rudehn/foundry) moved to repositories of their own; a game changes nothing.
-- The tutorial's nine steps share the starter template's shape, one game plugin that `main` and the tests both add, and each step only adds to the one before; its chapters are shorter.
 
 ### Removed
 
