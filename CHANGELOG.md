@@ -11,12 +11,14 @@ atglyph is not on crates.io yet, so a game depends on a release by its git tag, 
 - A stack's limit: `ItemParts::stack_limit`, spawned as `StackLimit`, the most one stack of a thing holds. Picking up, taking from a container and buying fill the carried stacks of a kind to their limits in bag order and keep the rest a stack of its own, and `atglyph::rules::items::fill_stacks` is that rule.
 - A thrower's reach: `CombatRules::reach(base, stat)`, a `ThrowReach`. A thing whose throw names no range flies as far as its thrower reaches, a base plus the thrower's value of a stat. `Throws::of(thrower, item)` answers how a thrower throws a thing, a `ThrowAs`, and the throw, its odds, the aim, the pack's rows and every mind weighing a missile read it.
 - Launchers: a `LaunchDef` part in `Attacks::launch`, spawned as `Launcher`, worn, adds its range to how far a thing it launches flies and its roll to what that strikes for; the thing lands as any throw does, `Launched` is written beside its `ItemEvent::Thrown`, the narrator says it as shot, the aim names the launcher in `TargetView::launcher`, and a pack row's `Strike::also` holds the launcher's roll. `ThrowRules` answers as `Throws` does for a system already holding what is worn.
+- `PickUpItem { item, count }`: one thing lying underfoot, or part of its stack, the rest left lying; `DropItem`'s count drops part of a stack and keeps the rest carried.
 
 ### Changed
 
 - **Breaking:** `ItemParts` has a `stack_limit` field; a literal adds `stack_limit: None`, or ends in `..ItemParts::default()`.
 - **Breaking:** `Throwable::range` and `ThrowDef::range` are `Option<i32>`, `None` flying as far as the thrower's reach; write `Throwable::new(Some(n), strike)`, and a RON throw keeps `range: n` under `implicit_some`.
 - **Breaking:** `Attacks` has a `launch` field and `Strike` an `also` field; a literal adds `launch: None` or `also: None`.
+- **Breaking:** `DropItem(item)` is `DropItem { item, count }`; write `DropItem::all(item)`.
 - **Breaking:** `Throwable::effective_range` is gone, since how far a thing flies depends on its thrower; read `Throws::of(thrower, item)`'s `effective`. `Attempt::Throw` takes the `ThrowAs`.
 
 ## [0.5.0] - 2026-10-26

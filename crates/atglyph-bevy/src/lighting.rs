@@ -1029,7 +1029,7 @@ mod tests {
         rig.act(Step(atglyph_core::Direction::West));
         assert_eq!(rig.app.world().resource::<Lighting>().at(Point::new(5, 4)).intensity, 180);
         assert!(rig.sees(Point::new(8, 4)) && !rig.sees(Point::new(10, 4)));
-        rig.act(DropItem(torch));
+        rig.act(DropItem::all(torch));
         rig.act(Step(atglyph_core::Direction::West));
         rig.act(Step(atglyph_core::Direction::West));
         rig.act(Step(atglyph_core::Direction::West));

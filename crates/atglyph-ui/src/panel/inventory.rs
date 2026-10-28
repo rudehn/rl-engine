@@ -504,7 +504,7 @@ pub(crate) fn inventory_keys(
             false
         }
     } else if binds.drop.just_pressed(input) && !row.stuck {
-        intents.drops.write(Intent::new(user, DropItem(item)));
+        intents.drops.write(Intent::new(user, DropItem::all(item)));
         true
     } else if confirmed {
         // What does something when used, with a charge to spend. Anything
@@ -1230,7 +1230,7 @@ mod tests {
             let w = stage.app.world_mut();
             let unequips: Vec<Entity> = w.resource_mut::<Messages<Intent<Unequip>>>().drain().map(|i| i.action.0).collect();
             let equips: Vec<Entity> = w.resource_mut::<Messages<Intent<Equip>>>().drain().map(|i| i.action.0).collect();
-            let drops: Vec<Entity> = w.resource_mut::<Messages<Intent<DropItem>>>().drain().map(|i| i.action.0).collect();
+            let drops: Vec<Entity> = w.resource_mut::<Messages<Intent<DropItem>>>().drain().map(|i| i.action.item).collect();
             let uses: Vec<Entity> = w.resource_mut::<Messages<Intent<UseItem>>>().drain().map(|i| i.action.0).collect();
             let throws: Vec<Entity> = w.resource_mut::<Messages<AimThrow>>().drain().map(|a| a.item).collect();
             (unequips, equips, drops, uses, throws)

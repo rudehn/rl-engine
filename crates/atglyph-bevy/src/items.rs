@@ -413,10 +413,45 @@ pub struct ItemWrites<'w> {
 pub struct PickUp;
 impl Action for PickUp {}
 
-/// Put a carried item on the ground.
+/// Take one thing lying on the actor's cell, or `count` of its stack.
+///
+/// A count below the stack's splits that many off, which joins the bag as
+/// a pick-up does, and leaves the rest lying; `None`, or a count at or
+/// above the stack's, takes it whole. A count of nothing is refused.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct DropItem(pub Entity);
+pub struct PickUpItem {
+    /// What is picked up.
+    pub item: Entity,
+    /// How many of its stack, or `None` for all of it.
+    pub count: Option<u32>,
+}
+impl Action for PickUpItem {}
+
+/// Put a carried item on the ground, or `count` of its stack, keeping the
+/// rest in the bag. A count of nothing is refused.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DropItem {
+    /// What is dropped.
+    pub item: Entity,
+    /// How many of its stack, or `None` for all of it.
+    pub count: Option<u32>,
+}
 impl Action for DropItem {}
+
+impl DropItem {
+    /// `item`, all of it.
+    pub const fn all(item: Entity) -> Self {
+        Self { item, count: None }
+    }
+}
+
+/// Splits `count` off `item`, a stack of `stack`, as a thing of its own,
+/// leaving the rest as `item`: the part split off, which is every
+/// component of `item` with its own count.
+pub(crate) fn split_off(commands: &mut Commands, item: Entity, stack: Stack, count: u32) -> Entity {
+    commands.entity(item).insert(Stack { count: stack.count - count, ..stack });
+    commands.entity(item).clone_and_spawn().insert(Stack { count, ..stack }).id()
+}
 
 /// Put a carried item on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -579,6 +614,7 @@ impl ItemWorld<'_, '_> {
                 facts.here = self.ground.iter().filter(|(_, p, on)| p.0 == pos && on.map(|m| m.0).unwrap_or(MapId::ZERO) == here).map(|(e, _, _)| e).collect();
             }
             ItemAsk::Drop(item) | ItemAsk::Unequip(item) => facts.carried = bag.contains(item),
+            ItemAsk::PickUpItem(item) => facts.underfoot = self.lies_at(item, pos),
             ItemAsk::Equip(item) | ItemAsk::EquipFromGround(item) => {
                 facts.carried = bag.contains(item);
                 facts.underfoot = self.lies_at(item, pos);
@@ -627,6 +663,7 @@ impl ItemWorld<'_, '_> {
 #[derive(bevy::ecs::system::SystemParam)]
 pub struct ItemIntents<'w, 's> {
     pick_ups: MessageReader<'w, 's, Intent<PickUp>>,
+    pick_ones: MessageReader<'w, 's, Intent<PickUpItem>>,
     drops: MessageReader<'w, 's, Intent<DropItem>>,
     equips: MessageReader<'w, 's, Intent<Equip>>,
     from_ground: MessageReader<'w, 's, Intent<EquipFromGround>>,
@@ -637,15 +674,17 @@ pub struct ItemIntents<'w, 's> {
 }
 
 impl ItemIntents<'_, '_> {
-    fn drain(&mut self) -> Vec<(Entity, Which)> {
-        let mut out: Vec<(Entity, Which)> = self.pick_ups.read().map(|i| (i.actor, Which::PickUp)).collect();
-        out.extend(self.drops.read().map(|i| (i.actor, Which::Drop(i.action.0))));
-        out.extend(self.equips.read().map(|i| (i.actor, Which::Equip(i.action.0))));
-        out.extend(self.from_ground.read().map(|i| (i.actor, Which::EquipFromGround(i.action.0))));
-        out.extend(self.unequips.read().map(|i| (i.actor, Which::Unequip(i.action.0))));
-        out.extend(self.uses.read().map(|i| (i.actor, Which::Use(i.action.0))));
-        out.extend(self.uses_at.read().map(|i| (i.actor, Which::UseAt(i.action.item, i.action.at))));
-        out.extend(self.uses_on.read().map(|i| (i.actor, Which::UseOn(i.action.item, i.action.on))));
+    /// Every ask, with how many of a stack it moves, `None` for all.
+    fn drain(&mut self) -> Vec<(Entity, Which, Option<u32>)> {
+        let mut out: Vec<(Entity, Which, Option<u32>)> = self.pick_ups.read().map(|i| (i.actor, Which::PickUp, None)).collect();
+        out.extend(self.pick_ones.read().map(|i| (i.actor, Which::PickUpItem(i.action.item), i.action.count)));
+        out.extend(self.drops.read().map(|i| (i.actor, Which::Drop(i.action.item), i.action.count)));
+        out.extend(self.equips.read().map(|i| (i.actor, Which::Equip(i.action.0), None)));
+        out.extend(self.from_ground.read().map(|i| (i.actor, Which::EquipFromGround(i.action.0), None)));
+        out.extend(self.unequips.read().map(|i| (i.actor, Which::Unequip(i.action.0), None)));
+        out.extend(self.uses.read().map(|i| (i.actor, Which::Use(i.action.0), None)));
+        out.extend(self.uses_at.read().map(|i| (i.actor, Which::UseAt(i.action.item, i.action.at), None)));
+        out.extend(self.uses_on.read().map(|i| (i.actor, Which::UseOn(i.action.item, i.action.on), None)));
         out
     }
 }
@@ -715,13 +754,19 @@ pub(crate) fn resolve_items(
     rules: Res<ItemRules>,
     mut writes: ItemWrites,
 ) {
-    for (actor, ask) in intents.drain() {
+    for (actor, ask, count) in intents.drain() {
+        // None of a stack is nothing to do: refused before the turn is
+        // claimed, as nothing to pick up is.
+        if count == Some(0) {
+            resolution.refuse(actor, cost(ask, &rules));
+            continue;
+        }
         if !resolution.claim(actor) {
             continue;
         }
         // An actor with no bag to act on has failed like any other
         // impossible item action, rather than holding a claimed turn.
-        let done = carriers.get_mut(actor).is_ok_and(|carrier| resolve_one(&mut commands, &world, carrier, actor, ask, &mut writes));
+        let done = carriers.get_mut(actor).is_ok_and(|carrier| resolve_one(&mut commands, &world, carrier, actor, ask, count, &mut writes));
         if done {
             resolution.done(actor, cost(ask, &rules));
         } else {
@@ -735,7 +780,7 @@ type Holding<'a> = (&'a Position, Mut<'a, Inventory>, Option<Mut<'a, Equipped>>,
 
 /// Decides `actor`'s `ask` and applies it, holding its carrier; whether it
 /// was done.
-fn resolve_one(commands: &mut Commands, world: &ItemWorld, carrier: Holding, actor: Entity, ask: Which, writes: &mut ItemWrites) -> bool {
+fn resolve_one(commands: &mut Commands, world: &ItemWorld, carrier: Holding, actor: Entity, ask: Which, count: Option<u32>, writes: &mut ItemWrites) -> bool {
     let (pos, mut bag, mut worn, sight) = carrier;
     let (facts, at) = world.gather(actor, ask, pos.0, &bag, worn.as_deref(), sight);
     // Marked changed only when something went on or came off, so a refused
@@ -768,11 +813,17 @@ fn resolve_one(commands: &mut Commands, world: &ItemWorld, carrier: Holding, act
     for outcome in outcomes {
         match outcome {
             ItemOutcome::PickedUp(item) => {
+                // Part of a stack is split off, and the rest lies where it was.
+                let whole = world.stack_of(item);
+                let (item, stack) = match (whole, count) {
+                    (Some((s, limit)), Some(n)) if n < s.count => (split_off(commands, item, s, n), Some((Stack { count: n, ..s }, limit))),
+                    _ => (item, whole),
+                };
                 commands.entity(item).remove::<(Position, OnMap)>();
                 // Picked up, a stack fills those of its kind already
                 // carried; a thing put on from the ground is taken as it is.
                 let merged_into = match ask {
-                    ItemAsk::PickUp => filling.arrive(commands, &mut bag, item, world.stack_of(item)),
+                    ItemAsk::PickUp | ItemAsk::PickUpItem(_) => filling.arrive(commands, &mut bag, item, stack),
                     _ => {
                         bag.items.push(item);
                         None
@@ -781,7 +832,14 @@ fn resolve_one(commands: &mut Commands, world: &ItemWorld, carrier: Holding, act
                 writes.events.write(ItemEvent::PickedUp { actor, item, merged_into });
             }
             ItemOutcome::Dropped(item) => {
-                bag.remove(item);
+                // Part of a stack is split off, and the rest stays carried.
+                let item = match (world.stack_of(item), count) {
+                    (Some((stack, _)), Some(n)) if n < stack.count => split_off(commands, item, stack, n),
+                    _ => {
+                        bag.remove(item);
+                        item
+                    }
+                };
                 // On the map it is put down on, whichever it was picked up from.
                 commands.entity(item).insert((*pos, OnMap(this_map)));
                 writes.events.write(ItemEvent::Dropped { actor, item, at: *pos });
@@ -1244,6 +1302,7 @@ impl Plugin for ItemsPlugin {
             .add_message::<DeathEvent>()
             .add_action::<PickUp>()
             .add_action::<DropItem>()
+            .add_action::<PickUpItem>()
             .add_action::<Equip>()
             .add_action::<EquipFromGround>()
             .add_action::<Unequip>()
@@ -1357,7 +1416,7 @@ mod tests {
         assert_eq!(worn.in_slot(r.off), Some(axe));
         assert!(r.app.world().get::<Inventory>(r.player).unwrap().contains(sword), "still carried");
 
-        let events = act(&mut r, DropItem(axe));
+        let events = act(&mut r, DropItem::all(axe));
         assert_eq!(
             events,
             vec![ItemEvent::Unequipped { actor: r.player, item: axe }, ItemEvent::Dropped { actor: r.player, item: axe, at: Position(r.start) }]
@@ -1470,6 +1529,65 @@ mod tests {
         r.app.world_mut().spawn((Item, Position(r.start), Stack { key: 7, count: 30 }));
         act(&mut r, PickUp);
         assert_eq!(counts(&r), vec![120]);
+    }
+
+    fn lying(r: &mut Rig) -> Vec<Entity> {
+        let start = r.start;
+        let world = r.app.world_mut();
+        let mut q = world.query_filtered::<(Entity, &Position), With<Item>>();
+        q.iter(world).filter(|(_, p)| p.0 == start).map(|(e, _)| e).collect()
+    }
+
+    #[test]
+    fn picking_up_part_of_a_stack_leaves_the_rest_on_the_ground() {
+        let mut r = rig();
+        let pile = arrows(&mut r, 20, false);
+        act(&mut r, PickUpItem { item: pile, count: Some(7) });
+        assert_eq!(counts(&r), vec![7]);
+        assert_eq!(lying(&mut r), vec![pile], "the pile is still there");
+        assert_eq!(r.app.world().get::<Stack>(pile).unwrap().count, 13, "holding the rest");
+        assert_eq!(r.app.world().resource::<Turns>().now(), 100, "for one turn");
+    }
+
+    #[test]
+    fn picking_up_part_of_a_stack_merges_it_into_one_carried() {
+        let mut r = rig();
+        arrows(&mut r, 10, true);
+        let pile = arrows(&mut r, 20, false);
+        act(&mut r, PickUpItem { item: pile, count: Some(7) });
+        assert_eq!(counts(&r), vec![17]);
+    }
+
+    #[test]
+    fn picking_up_one_thing_of_three_leaves_two() {
+        let mut r = rig();
+        let things: Vec<Entity> = (0..3).map(|_| r.app.world_mut().spawn((Item, Position(r.start))).id()).collect();
+        act(&mut r, PickUpItem { item: things[1], count: None });
+        assert_eq!(r.app.world().get::<Inventory>(r.player).unwrap().items, vec![things[1]]);
+        assert_eq!(lying(&mut r).len(), 2);
+    }
+
+    #[test]
+    fn picking_up_what_is_not_underfoot_or_none_of_it_is_refused_for_free() {
+        let mut r = rig();
+        let beside = r.app.world_mut().spawn((Item, Position(r.start.offset(1, 0)))).id();
+        let pile = arrows(&mut r, 20, false);
+        r.app.update();
+        assert!(act(&mut r, PickUpItem { item: beside, count: None }).is_empty());
+        assert!(act(&mut r, PickUpItem { item: pile, count: Some(0) }).is_empty());
+        assert_eq!(r.app.world().resource::<Turns>().now(), 0);
+    }
+
+    #[test]
+    fn dropping_part_of_a_stack_keeps_the_rest_in_the_bag() {
+        let mut r = rig();
+        let held = arrows(&mut r, 20, true);
+        let events = act(&mut r, DropItem { item: held, count: Some(5) });
+        assert_eq!(counts(&r), vec![15]);
+        let dropped = lying(&mut r);
+        assert_eq!(dropped.len(), 1);
+        assert_eq!(r.app.world().get::<Stack>(dropped[0]).unwrap().count, 5);
+        assert_eq!(events, vec![ItemEvent::Dropped { actor: r.player, item: dropped[0], at: Position(r.start) }]);
     }
 
     #[test]
@@ -1612,7 +1730,7 @@ mod tests {
         let before = r.app.world().resource::<Turns>().now();
         let held = vec![ItemEvent::WouldNotComeOff { actor: r.player, item: ring }];
         assert_eq!(act(&mut r, Unequip(ring)), held, "taking it off is refused, and says why");
-        assert_eq!(act(&mut r, DropItem(ring)), held, "and so is dropping it");
+        assert_eq!(act(&mut r, DropItem::all(ring)), held, "and so is dropping it");
         assert_eq!(r.app.world().get::<Equipped>(r.player).unwrap().in_slot(r.main), Some(ring), "still worn");
         assert!(r.app.world().get::<Inventory>(r.player).unwrap().contains(ring), "and carried");
         assert_eq!(r.app.world().resource::<Turns>().now(), before, "for nothing");

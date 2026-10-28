@@ -640,7 +640,7 @@ mod tests {
     #[test]
     fn dropping_a_worn_thing_ends_what_it_holds() {
         let (mut app, player, plate, hidden) = used_while_worn(true);
-        app.world_mut().write_message(Intent::new(player, crate::items::DropItem(plate)));
+        app.world_mut().write_message(Intent::new(player, crate::items::DropItem::all(plate)));
         app.update();
         assert!(!hides(&app, player, hidden), "on the floor, and it ended");
         assert_eq!(cured(&app, player, hidden), 1);

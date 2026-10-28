@@ -310,11 +310,7 @@ pub(crate) fn resolve_throws(
         // One leaves the hand: off the top of a stack, which makes it a
         // thing of its own, or the item itself.
         let thrown = match stack {
-            Some(mut stack) if stack.count > 1 => {
-                stack.count -= 1;
-                let key = stack.key;
-                commands.entity(item).clone_and_spawn().insert(Stack { key, count: 1 }).id()
-            }
+            Some(stack) if stack.count > 1 => crate::items::split_off(&mut commands, item, *stack, 1),
             _ => {
                 bag.remove(item);
                 if let Some(mut worn) = worn

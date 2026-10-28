@@ -1932,7 +1932,7 @@ mod tests {
         stage.tick();
         stage.app.world_mut().write_message(Intent::new(player, Unequip(mail)));
         stage.tick();
-        stage.app.world_mut().write_message(Intent::new(player, DropItem(mail)));
+        stage.app.world_mut().write_message(Intent::new(player, DropItem::all(mail)));
         stage.tick();
         stage.app.world_mut().write_message(Intent::new(player, PickUp));
         stage.tick();
@@ -1943,7 +1943,7 @@ mod tests {
         stage.app.world_mut().write_message(Intent::new(player, PickUp));
         stage.tick();
         assert_eq!(spoken(&stage, &["You pick up a"]), ["You pick up a sword."], "a thing counted one at a time takes an article");
-        stage.app.world_mut().write_message(Intent::new(player, DropItem(sword)));
+        stage.app.world_mut().write_message(Intent::new(player, DropItem::all(sword)));
         stage.tick();
         assert_eq!(spoken(&stage, &["You drop your s"]), ["You drop your sword."]);
     }
@@ -1964,7 +1964,7 @@ mod tests {
         stage.tick();
         stage.app.world_mut().write_message(Intent::new(player, Unequip(crown)));
         stage.tick();
-        stage.app.world_mut().write_message(Intent::new(player, DropItem(crown)));
+        stage.app.world_mut().write_message(Intent::new(player, DropItem::all(crown)));
         stage.tick();
         stage.app.world_mut().write_message(Intent::new(player, PickUp));
         stage.tick();

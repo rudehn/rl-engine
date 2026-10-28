@@ -895,7 +895,7 @@ mod tests {
         let cave = MapId(3);
         r.app.world_mut().write_message(WarpRequest::into_place(r.player, cave));
         r.app.update();
-        intend(&mut r, DropItem(coin));
+        intend(&mut r, DropItem::all(coin));
         assert_eq!(r.app.world().get::<OnMap>(coin).map(|m| m.0), Some(cave), "it lies on the map it was dropped on");
         intend(&mut r, PickUp);
         assert!(r.app.world().get::<Inventory>(r.player).unwrap().contains(coin), "and can be taken back up there");

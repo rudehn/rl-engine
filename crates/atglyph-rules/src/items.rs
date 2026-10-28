@@ -23,6 +23,8 @@ use crate::equip::{EquipError, EquipShape, Equipment};
 pub enum ItemAsk<I> {
     /// Take everything lying on the actor's cell.
     PickUp,
+    /// Take one thing lying on the actor's cell.
+    PickUpItem(I),
     /// Put a carried thing on the ground.
     Drop(I),
     /// Put a carried thing on.
@@ -53,7 +55,7 @@ pub struct ItemFacts<'a, I> {
     /// [`ItemAsk::Drop`] and [`ItemAsk::Equip`].
     pub carried: bool,
     /// Whether the thing asked about lies on the actor's cell, on the map
-    /// it stands on. Read by [`ItemAsk::EquipFromGround`].
+    /// it stands on. Read by [`ItemAsk::PickUpItem`] and [`ItemAsk::EquipFromGround`].
     pub underfoot: bool,
     /// Where the thing asked about goes when worn, `None` for a thing that
     /// cannot be. Read by both equips.
@@ -120,7 +122,8 @@ pub enum ItemRefusal<I> {
     NothingHere,
     /// A drop or an equip of a thing the actor does not carry.
     NotCarried,
-    /// An equip from the ground of a thing not lying under the actor.
+    /// A pick-up of one thing, or an equip from the ground, of a thing not
+    /// lying under the actor.
     NotUnderfoot,
     /// An equip of a thing that cannot be worn.
     NotWearable,
@@ -188,6 +191,8 @@ pub fn resolve_item<I: Copy + Eq>(ask: ItemAsk<I>, facts: &ItemFacts<'_, I>, wor
             }
             put_on(worn, item, shape, &facts.stuck, Vec::new())
         }
+        ItemAsk::PickUpItem(item) if facts.underfoot => Ok(vec![Out::PickedUp(item)]),
+        ItemAsk::PickUpItem(_) => Err(No::NotUnderfoot),
         ItemAsk::EquipFromGround(item) => {
             let (Some(worn), Some(shape)) = (worn, facts.shape) else { return Err(refuse_equip(facts.shape)) };
             if !facts.underfoot {
@@ -524,5 +529,12 @@ mod tests {
     #[test]
     fn with_nothing_carried_the_whole_arrival_is_left() {
         assert_eq!(fill_stacks(&[], 4), (vec![], 4));
+    }
+
+    #[test]
+    fn picking_up_one_thing_takes_it_only_from_underfoot() {
+        let here = ItemFacts { underfoot: true, ..ItemFacts::default() };
+        assert_eq!(resolve_item(ItemAsk::PickUpItem(7), &here, None), Ok(vec![PickedUp(7)]));
+        assert_eq!(resolve_item(ItemAsk::PickUpItem(7), &ItemFacts::default(), None), Err(No::NotUnderfoot));
     }
 }

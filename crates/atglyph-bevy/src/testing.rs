@@ -333,7 +333,7 @@ pub fn take_up(app: &mut App, who: Entity) {
 
 /// Puts `thing` down where `who` stands, as the pack's key does.
 pub fn put_down(app: &mut App, who: Entity, thing: Entity) {
-    app.world_mut().write_message(Intent::new(who, DropItem(thing)));
+    app.world_mut().write_message(Intent::new(who, DropItem::all(thing)));
     settle(app);
 }
 
