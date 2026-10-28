@@ -57,6 +57,12 @@ Everything in the first band is either a bug, or cheap enough that the reasoning
 | 35 | The API review's renames | 10 | low | high |
 | 36 | A run whose start builds no world sits idle without a word | 3 | medium | medium |
 | 37 | The guide's game never runs in a terminal | 5 | medium | low |
+| 38 | An arriving stack of none joins the bag | 3 | low | low |
+| 39 | The count prompt's keys are half fixed | 3 | low | low |
+| 40 | A launcher on an actor is taken without a word | 3 | low | low |
+| 41 | A launcher's roll is tested flat | 3 | low | low |
+| 42 | Reach has no floor | 3 | low | low |
+| 43 | The count prompt and the ground screen write their own English | 3 | low | medium |
 | - | Everything in 5 and 6 | 5, 6 | gated | gated |
 
 The first eight items of the order this file opened with were built on 2026-09-22, and the plan's progress log says how.
@@ -161,6 +167,28 @@ The five items that opened this section were built in the six stages of `docs/de
   `docs/guide/src/systems/combat.md` says that out loud and gives the workaround, rolling the block inside a stage of the game's own, which is correct and is why this is an engine gap rather than a documentation one.
   Either the stage goes, or `Defender` gains a way to be filled: a component `apply_damage` reads, or a seam that lets one stage set the flag for a later one.
   Found on 2026-09-22 while writing that page.
+
+- **An arriving stack of none joins the bag.**
+  `Filling::arrive` in `crates/atglyph-bevy/src/items.rs` despawns an arriving stack only when it filled a carried one, so a stack of count 0 picked up or taken joins the bag as an empty row; before stack limits it merged and was gone.
+  Treat nothing left over as despawned whether or not anything was filled.
+  Found by the review of the stack-limit work, 2026-10-27.
+
+- **The count prompt's keys are half fixed.**
+  `CountKeys` names less, more, fewest and most, but Shift for a step of ten is hardcoded in `count_keys` and only the top-row digits type; the numpad's digits are direction keys, which a game that walks on WASD would want typing.
+  Put the step's modifier in `CountKeys` and let a game add the numpad digits.
+
+- **A launcher on an actor is taken without a word.**
+  `ActorParts` accepts `attacks.launch`, which puts an inert `Launcher` on a monster, as it already does `throw`; `ActorParts::check` should refuse both on an actor, the way `ItemParts::check` refuses a launcher on a thing never worn.
+
+- **A launcher's roll is tested flat.**
+  The launcher tests in `throwing.rs` use flat dice, so nothing shows the strike rolls the missile's dice and the launcher's apart and sums them; a span-of-rolls test over a fixed seed would.
+
+- **Reach has no floor.**
+  `resolve` adds the reach rule's base and stat with nothing under it, so a stat below minus the base gives a range of none or less; floor the reach at one cell, or refuse the throw, and say which in `CombatRules::reach`.
+
+- **The count prompt and the ground screen write their own English.**
+  The prompt's question, `Pick up how many pellets?`, its `[n] of m`, and the ground screen's default title `Here` are the engine's words, beside the items page's line that the engine names nothing; the target box's `throw` and `fire` are the same kind of word.
+  Either a words resource like `TradeWords` the game can rewrite, or the guide says plainly which presenter words are the engine's.
 
 ## 4. Simplify
 
