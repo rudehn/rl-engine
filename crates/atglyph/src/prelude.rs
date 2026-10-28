@@ -226,19 +226,19 @@ pub mod ui {
     pub use atglyph_ui::modal::{ModalId, Modals, modal_is, modal_open, no_modal};
     pub use atglyph_ui::narrate::{MassNoun, NarrationView, Phrasebook, Said, Tell, Words};
     pub use atglyph_ui::panel::{
-        AbilityKeys, AbilityPanel, ActivityWords, AlertWords, Choosing, ChoosingFor, Confirming, ContainerPanel, ControlsPanel, GearPanel, InspectPanel,
-        InventoryKeys, InventoryMenu, InventoryPanel, NearbyPanel, OfferChoice, OffersPanel, ScrollbackKeys, ScrollbackPanel, SettingsPanel, TargetPanel,
-        TitleMenu, TitlePanel, TitleRow, TitleSet, TitleWords, ability_modal, container_modal, controls_modal, inventory_modal, offers_modal, settings_modal,
-        title_is_up,
+        AbilityKeys, AbilityPanel, ActivityWords, AlertWords, Choosing, ChoosingFor, Confirming, ContainerPanel, ControlsPanel, CountFor, CountKeys, Counting,
+        GearPanel, GroundMenu, GroundPanel, InspectPanel, InventoryKeys, InventoryMenu, InventoryPanel, NearbyPanel, OfferChoice, OffersPanel, ScrollbackKeys,
+        ScrollbackPanel, SettingsPanel, TargetPanel, TitleMenu, TitlePanel, TitleRow, TitleSet, TitleWords, ability_modal, container_modal, controls_modal,
+        ground_modal, inventory_modal, offers_modal, settings_modal, title_is_up,
     };
     pub use atglyph_ui::player_keys::{Declined, Otherwise, PlayerKeysSet, PlayerVerb};
     pub use atglyph_ui::replay::ReplayPlugin;
     pub use atglyph_ui::tone::{Palette, ToneId, readable};
     pub use atglyph_ui::view::{
         AbilityRow, AbilityView, AbilityViewPlugin, AimAt, AimFire, AimRange, AimThrow, AimUse, Asking, Bar, ContainerView, ContainerViewPlugin, EndingSection,
-        EndingView, GearView, GearViewPlugin, InspectView, InspectViewPlugin, InventoryView, InventoryViewPlugin, ItemRow, NearbyFollowers, NearbyStatuses,
-        NearbyView, NearbyViewPlugin, OfferRow, OffersView, OffersViewPlugin, OpenContainer, Row, Seems, TargetView, TargetViewPlugin, VitalsViewPlugin,
-        WorkRow, target_modal,
+        EndingView, GearView, GearViewPlugin, GroundRow, GroundView, GroundViewPlugin, InspectView, InspectViewPlugin, InventoryView, InventoryViewPlugin,
+        ItemRow, NearbyFollowers, NearbyStatuses, NearbyView, NearbyViewPlugin, OfferRow, OffersView, OffersViewPlugin, OpenContainer, Row, Seems, TargetView,
+        TargetViewPlugin, VitalsViewPlugin, WorkRow, target_modal,
     };
     pub use atglyph_ui::{UiPlugin, panel};
 }
