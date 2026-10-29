@@ -13,6 +13,12 @@
 //! different are given different characters, which a game drawn in glyphs
 //! wants anyway. A character with no picture is drawn as its glyph, so a
 //! sheet may cover as little of a game as it has pictures for.
+//!
+//! A tile drawn in several glyphs has its glyph picked per cell before the
+//! tileset is asked, so each glyph is a character like any other: naming a
+//! picture for each draws the tile in several pictures, picked as the
+//! glyphs are, and naming one picture for all of them draws it in that
+//! one. A glyph of the list with no picture is drawn as itself.
 
 use std::collections::BTreeMap;
 

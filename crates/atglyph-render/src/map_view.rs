@@ -6,7 +6,8 @@
 //! creature is never remembered, since where one stood says nothing of
 //! where it is. What a tile looks like is the game's
 //! business: it fills a [`TileAppearance`] table keyed by [`TileId`], with
-//! a glyph, both colours, and how the tile varies from cell to cell; the
+//! a glyph or several each cell picks among by its world position, both
+//! colours, and how the tile varies from cell to cell; the
 //! standard tiles it leaves out are drawn in the engine's plain look. With
 //! lighting turned on, a visible tile's glyph and background and whatever
 //! stands on it are coloured by the light that lands there; see
@@ -30,7 +31,7 @@ use atglyph_bevy::Recalled;
 use atglyph_bevy::prelude::*;
 use atglyph_core::Grid2D;
 use atglyph_core::{GridRect, Point};
-use atglyph_grid::{Light, Rgb, TileId};
+use atglyph_grid::{Light, Rgb, TileGlyphs, TileId};
 use atglyph_rules::GasId;
 use bevy::color::Mix;
 use bevy::prelude::*;
@@ -69,13 +70,44 @@ impl Glyph {
 /// Built from the looks a game's tiles carry by
 /// [`from_tiles`](Self::from_tiles). The standard tiles a game gives no
 /// look are drawn in the engine's, by [`fill_standard`](Self::fill_standard).
+/// A tile whose look names several glyphs draws in each cell the one
+/// [`TileGlyphs::at`] picks for its world position, seen or remembered
+/// alike; a look [`set`](Self::set) by hand is drawn in its cell's one glyph.
 #[derive(Resource, Debug, Clone, Default)]
 pub struct TileAppearance {
-    looks: Vec<Option<(Cell, Vary)>>,
+    looks: Vec<Option<Look>>,
     /// How a remembered tile is drawn.
     pub memory: Memory,
     /// How light, flicker and jitter become colour.
     pub shading: Shading,
+}
+
+/// One tile's entry in the table: its cell in full light, the glyphs a
+/// cell picks among, the cell's own glyph first, and how it varies.
+#[derive(Debug, Clone)]
+pub(crate) struct Look {
+    pub(crate) cell: Cell,
+    pub(crate) glyphs: TileGlyphs,
+    pub(crate) vary: Vary,
+}
+
+impl Look {
+    /// `cell` in every cell, varying by `vary`.
+    fn plain(cell: Cell, vary: Vary) -> Self {
+        Self { cell, glyphs: TileGlyphs::from(cell.glyph), vary }
+    }
+
+    /// The cell at `p` before any jitter: the glyph picked there, in the
+    /// authored colours.
+    fn at(&self, p: Point) -> Cell {
+        Cell { glyph: self.glyphs.at(p), ..self.cell }
+    }
+}
+
+/// What a tile nobody described is drawn as: a magenta question mark, so
+/// the gap is visible rather than blank.
+fn missing() -> Look {
+    Look::plain(Cell::new('?', Color::srgb(1.0, 0.0, 1.0)), Vary::NONE)
 }
 
 impl TileAppearance {
@@ -91,11 +123,16 @@ impl TileAppearance {
 
     /// Sets the appearance of `id`, varying from cell to cell by `vary`.
     pub fn set_varied(&mut self, id: TileId, cell: Cell, vary: Vary) {
+        self.put(id, Look::plain(cell, vary));
+    }
+
+    /// Sets the whole entry of `id`, its glyphs with it.
+    pub(crate) fn put(&mut self, id: TileId, look: Look) {
         let i = id.index();
         if self.looks.len() <= i {
             self.looks.resize(i + 1, None);
         }
-        self.looks[i] = Some((cell, vary));
+        self.looks[i] = Some(look);
     }
 
     /// Gives each of [`TileRegistry::standard`](atglyph_grid::TileRegistry::standard)'s
@@ -110,34 +147,45 @@ impl TileAppearance {
     pub fn fill_standard(&mut self, names: &[String]) {
         for (i, name) in names.iter().enumerate() {
             let has_look = self.looks.get(i).is_some_and(Option::is_some);
-            if let (false, Some((cell, vary)), Ok(raw)) = (has_look, standard_look(name), u16::try_from(i)) {
-                self.set_varied(TileId(raw), cell, vary);
+            if let (false, Some(look), Ok(raw)) = (has_look, standard_look(name), u16::try_from(i)) {
+                self.put(TileId(raw), look);
             }
         }
     }
 
-    /// The authored appearance of `id`; a magenta question mark for an id
-    /// the game never described, so the gap is visible rather than blank.
+    /// The authored appearance of `id`, its first glyph for a tile of
+    /// several; a magenta question mark for an id the game never
+    /// described, so the gap is visible rather than blank.
     pub fn lit(&self, id: TileId) -> Cell {
-        self.look(id).0
+        self.looks.get(id.index()).and_then(Option::as_ref).map_or_else(|| missing().cell, |look| look.cell)
     }
 
-    fn look(&self, id: TileId) -> (Cell, Vary) {
-        self.looks.get(id.index()).copied().flatten().unwrap_or((Cell::new('?', Color::srgb(1.0, 0.0, 1.0)), Vary::NONE))
+    /// Calls `draw` with the look of `id`, or the missing one.
+    fn with_look<T>(&self, id: TileId, draw: impl FnOnce(&Look) -> T) -> T {
+        match self.looks.get(id.index()).and_then(Option::as_ref) {
+            Some(look) => draw(look),
+            None => draw(&missing()),
+        }
     }
 
-    /// `id` as seen at `p` at time `t`, before light: jittered per cell.
+    /// `id` as seen at `p` at time `t`, before light: its glyph picked for
+    /// `p` and its colours jittered there.
     pub(crate) fn seen(&self, id: TileId, p: Point, t: f32) -> Cell {
-        let (cell, vary) = self.look(id);
-        Cell { glyph: cell.glyph, fg: self.shading.vary(cell.fg, vary, p, t), bg: self.shading.vary(cell.bg, vary, p, t) }
+        self.with_look(id, |look| {
+            let cell = look.at(p);
+            Cell { fg: self.shading.vary(cell.fg, look.vary, p, t), bg: self.shading.vary(cell.bg, look.vary, p, t), ..cell }
+        })
     }
 
-    /// `id` as remembered at `p`: jittered as it was seen, then faded.
+    /// `id` as remembered at `p`: the glyph and jitter it was seen with,
+    /// then faded.
     pub(crate) fn remembered(&self, id: TileId, p: Point) -> Cell {
-        let (cell, vary) = self.look(id);
-        let still = Vary { shimmer: 0.0, ..vary };
-        let fade = |c| self.memory.recall(self.shading.vary(c, still, p, 0.0));
-        Cell { glyph: cell.glyph, fg: fade(cell.fg), bg: fade(cell.bg) }
+        self.with_look(id, |look| {
+            let cell = look.at(p);
+            let still = Vary { shimmer: 0.0, ..look.vary };
+            let fade = |c| self.memory.recall(self.shading.vary(c, still, p, 0.0));
+            Cell { fg: fade(cell.fg), bg: fade(cell.bg), ..cell }
+        })
     }
 
     /// `ground`, a remembered tile, with `thing` drawn on it in the colours
@@ -155,7 +203,7 @@ impl TileAppearance {
 
 /// The engine's look for a tile of [`TileRegistry::standard`](atglyph_grid::TileRegistry::standard),
 /// by its name: the look that tile carries.
-fn standard_look(name: &str) -> Option<(Cell, Vary)> {
+fn standard_look(name: &str) -> Option<Look> {
     let standard = atglyph_grid::TileRegistry::standard();
     standard.id(name).and_then(|id| standard.get(id).look.as_ref()).map(crate::looks::drawn)
 }

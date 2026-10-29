@@ -31,6 +31,8 @@
 //!   registry the game populates. Engine code asks the registry and never
 //!   matches on a tile enum, which is what lets a game add force fields or
 //!   ice without forking anything.
+//! - [`TileLook`] and [`TileGlyphs`]: how a tile looks, on its own record,
+//!   in one glyph or several a cell picks among by its position.
 //! - [`Terrain`]: a grid of tile ids for one map or chunk.
 //! - [`OpacitySource`] and [`CostSource`]: the two questions every grid
 //!   algorithm asks. Implement them on a newtype that wraps a terrain view to
@@ -76,7 +78,7 @@ pub use light::{Emitter, Glow, Light, LightBand, LightField, Rgb};
 pub use spatial::SpatialGrid;
 pub use targeting::{Footprint, TargetMode, burst, clear_shot, footprint};
 pub use terrain::{CostSource, OpacitySource, Terrain, TerrainView};
-pub use tile::{Burn, Kindling, TileId, TileLook, TileProps, TileRegistry, TileTables};
+pub use tile::{Burn, Kindling, TileGlyphs, TileId, TileLook, TileProps, TileRegistry, TileTables};
 
 /// The names most callers want in scope.
 pub mod prelude {
@@ -90,5 +92,5 @@ pub mod prelude {
     pub use crate::spatial::SpatialGrid;
     pub use crate::targeting::{Footprint, TargetMode, burst, clear_shot, footprint};
     pub use crate::terrain::{CostSource, OpacitySource, Terrain, TerrainView};
-    pub use crate::tile::{Burn, Kindling, TileId, TileLook, TileProps, TileRegistry, TileTables};
+    pub use crate::tile::{Burn, Kindling, TileGlyphs, TileId, TileLook, TileProps, TileRegistry, TileTables};
 }

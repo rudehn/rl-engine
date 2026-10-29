@@ -15,7 +15,9 @@
 //   burn:               optional; (catch_pct:, turns:, leaves:), how it burns
 //   light:              optional; (intensity:, radius:, color: (r:, g:, b:))
 // How it looks:
-//   glyph:              one character
+//   glyph:              one character, '.', or a list of them, ['"', '"', ','],
+//                       each cell drawing the one its position picks; a glyph
+//                       listed twice is picked twice as often
 //   fg:                 (r, g, b) in 0..=1, the glyph's colour
 //   bg:                 optional; (r, g, b), the cell's fill; black
 //   vary:               optional; (brightness, hue), how far each cell strays

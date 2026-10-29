@@ -6,6 +6,14 @@ atglyph is not on crates.io yet, so a game depends on a release by its git tag, 
 
 ## [Unreleased]
 
+### Added
+
+- A tile drawn in several glyphs: a tiles file's `glyph` takes one character, `glyph: '.'`, as before, or a list, `glyph: ['"', '"', ',']`, and `TileLook::new` a `char` or an array. Each cell draws the glyph `TileGlyphs::at` picks by a hash of its world position, alike every frame and in memory, a glyph listed twice picked twice as often; under a `Tileset` each glyph is its own picture.
+
+### Changed
+
+- **Breaking:** `TileLook::glyph` is a `TileGlyphs` rather than a `char`, and `TileLook` is no longer `Copy`, nor `TileLook::new` a `const fn`; read one glyph as `look.glyph.first()` or compare `look.glyph == '#'`, borrow a look with `.as_ref()` where it was copied, and a literal writes `glyph: '#'.into()`.
+
 ## [0.5.0] - 2026-10-27
 
 ### Added

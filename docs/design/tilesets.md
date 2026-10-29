@@ -30,6 +30,7 @@ A game's own overlay is drawn in pictures the day the game adds a tileset, witho
 
 A picture is chosen by the character in the cell, not by what the thing is.
 Two things that should look different are given different characters, which a game drawn in letters wants anyway, and a game with more things than letters has the rest of Unicode.
+A tile drawn in several glyphs has its glyph picked by the cell's position before the terminal is written, so each glyph is a character like any other: a picture for each draws the tile in several pictures, picked as the glyphs are, and one picture for all of them draws it in one.
 
 Declined: choosing by content id, a tile's or a monster's.
 The terminal holds characters and colours and knows nothing of content, which is why every panel and every game can draw into it, and a cell that also carried an id would be a second thing for every writer to fill.
