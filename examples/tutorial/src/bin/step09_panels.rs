@@ -531,7 +531,7 @@ fn populate(
             bestiary.spawn(&mut commands, bestiary.defs.expect("rat king"), far);
         }
         let Some(place) = map.place(ev.map) else { continue };
-        let bounds = place.terrain.bounds();
+        let bounds = place.bounds();
         let mut rng = seed.place(ev.map).rng(RATS, 0);
         // Groups, not single rats: the table says what may live at this
         // depth, how likely it is, and how many come together.

@@ -35,7 +35,7 @@ use std::collections::BTreeMap;
 use std::marker::PhantomData;
 
 use atglyph_core::seed::position_hash;
-use atglyph_core::{Grid2D, Id, Point, SeedDomain};
+use atglyph_core::{Id, Point, SeedDomain};
 use atglyph_rules::loot::{DropTable, Layout, LootTable, ScatterRules, plan_scatter};
 use atglyph_rules::prop::Stock;
 use bevy::prelude::*;
@@ -232,7 +232,9 @@ pub struct Floor<'w, 's, M: ItemMaker> {
 pub(crate) fn scatter_places<M: ItemMaker>(mut commands: Commands, mut entered: MessageReader<PlaceEntered>, floor: Floor<M>) {
     let Floor { maker, registries, map, seed, props } = &floor;
     for ev in entered.read().filter(|ev| ev.first) {
-        let Some(place) = map.place(ev.map) else { continue };
+        // A streamed place is never all there to scatter over; a game puts
+        // what lies on each chunk there as the chunk first loads.
+        let Some(place) = map.place(ev.map).filter(|p| p.streamed().is_none()) else { continue };
         let area = LootArea::Place(ev.map);
         let (band, rules) = (maker.band(area), maker.scatter());
         // The place's own stream, so nothing that happened elsewhere first
@@ -242,7 +244,7 @@ pub(crate) fn scatter_places<M: ItemMaker>(mut commands: Commands, mut entered: 
         let standing = standing(props, ev.map);
         let mut free = |p: Point| map.is_walkable(p) && !standing.contains(&p);
         let loose = maker.loose(area, rules.loose_count(band, &mut rng));
-        for placed in plan_scatter(maker.table(), band, &rules, Layout { marks: &marks, bounds: place.terrain.bounds() }, loose, &mut free, &mut rng) {
+        for placed in plan_scatter(maker.table(), band, &rules, Layout { marks: &marks, bounds: place.bounds() }, loose, &mut free, &mut rng) {
             lay(&mut commands, &**maker, registries, (placed.item, placed.count, placed.at), ev.map, Provenance { found: Found::Scatter, band }, &mut rng);
         }
     }

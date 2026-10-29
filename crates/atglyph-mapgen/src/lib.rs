@@ -117,7 +117,7 @@ pub use context::{BaseContext, Outputs};
 pub use dress::{DistrictDressings, Dress, Dressed, Dressing};
 pub use lakes::{Bridge, Bridges, Lake, Lakes};
 pub use loops::OpenLoops;
-pub use place::{Climb, Ladder, LadderEnd, LadderStair, Lock, MapId, PlaceBuild, PlaceRules, Spot, StairLook};
+pub use place::{Climb, Ladder, LadderEnd, LadderStair, Lock, MapId, PlaceBuild, PlaceRules, Spot, StairLook, Streamed};
 pub use pool::{DressAt, Lay, PoolPick, Prefer, StampPicks};
 pub use secrets::{HideOpenings, SecretCell};
 pub use survey::{AreaFacts, Require, Survey, Surveyed};
@@ -135,7 +135,7 @@ pub mod prelude {
     pub use crate::lakes::{Bridges, Lakes};
     pub use crate::loops::OpenLoops;
     pub use crate::passes;
-    pub use crate::place::{Ladder, MapId, PlaceBuild, PlaceRules, StairLook};
+    pub use crate::place::{Ladder, MapId, PlaceBuild, PlaceRules, StairLook, Streamed};
     pub use crate::pool::{DressAt, Lay, PoolPick, Prefer, StampPicks};
     pub use crate::prefab::{Orient, Placement, Prefab, PrefabShape, StampEachRoom, StampOneOf, StampPrefab, Stamped};
     pub use crate::secrets::{HideOpenings, SecretCell};

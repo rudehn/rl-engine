@@ -287,6 +287,7 @@ impl Plugin for CorePlugin {
             .add_message::<places::MapChanged>()
             .add_message::<places::Travelled>()
             .add_message::<places::PlaceEntered>()
+            .add_message::<places::ChunkLoaded>()
             .add_message::<crate::doors::DoorEvent>()
             .add_message::<crate::bump::Bumped>()
             // A bump may come to a blow, so the message it would write exists
@@ -376,10 +377,12 @@ impl Plugin for CorePlugin {
                     crate::doors::resolve_opens,
                     crate::doors::resolve_closes,
                     places::resolve_warps,
+                    places::stream_places,
                 )
                     .chain()
                     .in_set(ResolveSet::Travel),
             )
+            .add_systems(Update, places::stream_places.in_set(EngineSet::Stream))
             .add_systems(Turn, (turn::cleanup_turns, turn::forget_removed_blockers).chain().in_set(CleanupSet::Requeue))
             .add_systems(Turn, crate::cue::wait_for_cues.in_set(TurnSet::Cleanup))
             .needs::<WorldMap>("CorePlugin", "`WorldMap::new(tiles.tables())`, the map every engine system reads")

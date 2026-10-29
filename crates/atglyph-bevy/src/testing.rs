@@ -111,6 +111,76 @@ pub fn ground_with(app: &mut App, tiles: TileRegistry) -> Point {
     start
 }
 
+/// How many chunks a side [`streamed_ground`] is, and how many tiles a
+/// side each chunk is.
+pub const STREAMED_CHUNKS: i32 = 8;
+/// A chunk's side on [`streamed_ground`].
+pub const STREAMED_CHUNK: i32 = 16;
+
+/// Open ground built a chunk at a time: map zero, [`STREAMED_CHUNKS`]
+/// chunks a side of [`STREAMED_CHUNK`] tiles, keeping the chunks one each
+/// way round the player's loaded, floor everywhere but a wall round the
+/// whole place. A test that walks a streamed place, or leaves part of one
+/// behind, stands on this.
+#[derive(Debug, Clone)]
+pub struct StreamedGround(pub TileRegistry);
+
+impl StreamedGround {
+    /// The layout every streamed ground has, its entry at its middle.
+    pub fn layout() -> crate::places::Streamed {
+        let side = STREAMED_CHUNKS * STREAMED_CHUNK;
+        crate::places::Streamed {
+            chunk: STREAMED_CHUNK,
+            chunks: (STREAMED_CHUNKS, STREAMED_CHUNKS),
+            reach: 1,
+            entry: Point::new(side / 2, side / 2),
+            ambient: atglyph_grid::Light::DARK,
+            peaceful: false,
+        }
+    }
+}
+
+impl crate::places::PlaceRules for StreamedGround {
+    fn build(&self, map: MapId, _: atglyph_core::PlaceSeed) -> Result<PlaceBuild, atglyph_mapgen::BuildError> {
+        Err(atglyph_mapgen::BuildError::new("streamed ground", format!("{map:?} is streamed, never built whole")))
+    }
+
+    fn tiles(&self) -> atglyph_grid::TileTables {
+        self.0.tables()
+    }
+
+    fn streamed(&self, _: MapId) -> Option<crate::places::Streamed> {
+        Some(Self::layout())
+    }
+
+    fn build_chunk(&self, _: MapId, chunk: Point, _: atglyph_core::PlaceSeed) -> Result<Terrain, atglyph_mapgen::BuildError> {
+        let (wall, floor) = (self.0.expect("wall"), self.0.expect("floor"));
+        let edge = STREAMED_CHUNKS * STREAMED_CHUNK - 1;
+        let origin = Point::new(chunk.x * STREAMED_CHUNK, chunk.y * STREAMED_CHUNK);
+        Ok(Terrain::from_fn(STREAMED_CHUNK, STREAMED_CHUNK, |p| {
+            let at = p + origin;
+            if at.x == 0 || at.y == 0 || at.x == edge || at.y == edge { wall } else { floor }
+        }))
+    }
+}
+
+/// Installs [`StreamedGround`] over the standard tiles as map zero, its
+/// rules as the game's and the [`TEST_SEED`] as the run's, makes it the
+/// map being read with its chunks loaded round the entry, and returns the
+/// entry. Inserts the [`WorldMap`].
+pub fn streamed_ground(app: &mut App) -> Point {
+    let rules = StreamedGround(TileRegistry::standard());
+    let layout = StreamedGround::layout();
+    let mut map = WorldMap::new(rules.0.tables());
+    map.install_streamed(MapId::ZERO, layout);
+    map.switch_to(MapId::ZERO);
+    map.visit(MapId::ZERO);
+    let seed = atglyph_core::PlaceSeed::of(TEST_SEED, 0);
+    map.stream(MapId::ZERO, layout.entry, |chunk| crate::places::PlaceRules::build_chunk(&rules, MapId::ZERO, chunk, seed)).expect("open ground builds");
+    app.insert_resource(map).insert_resource(crate::places::PlaceRulesRes(Box::new(rules))).insert_resource(crate::seed::Seed(TEST_SEED));
+    layout.entry
+}
+
 /// Two sides at war and the one kind of damage between them, as
 /// [`two_sides`] registered them.
 #[derive(Debug, Clone, Copy)]

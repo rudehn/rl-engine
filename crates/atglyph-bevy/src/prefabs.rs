@@ -212,7 +212,7 @@ where
                     }
                 },
             };
-            let walkable = place.terrain.get(spot.at).is_some_and(|t| map.tables().walkable[t.index()]);
+            let walkable = place.tile(spot.at).is_some_and(|t| map.tables().walkable[t.index()]);
             if spot.at == ev.entry || !walkable || filled.contains(&spot.at) {
                 continue;
             }

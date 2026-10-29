@@ -66,6 +66,7 @@ pub mod fields;
 pub mod fire;
 pub mod fov;
 pub mod gas;
+mod ground;
 pub mod items;
 pub mod knowledge;
 pub mod lighting;

@@ -1397,9 +1397,11 @@ impl Plugin for PropsPlugin {
             // down mid-frame and a step reached before the next frame's stock.
             .add_systems(Turn, arm_props.in_set(crate::plugin::TurnSet::Schedule))
             // At the end of the travel it reads, after every step, swap and
-            // warp, so every action in the pass is ordered after it and a
-            // plate's report is in before `ResolveSet::Triggers` lands it.
-            .add_systems(Turn, report_entered.in_set(ResolveSet::Travel).after(crate::places::resolve_warps))
+            // warp, and after a streamed place's window has followed them, so
+            // a plate on a chunk the step brought in is there to read; every
+            // action in the pass is ordered after it and a plate's report is
+            // in before `ResolveSet::Triggers` lands it.
+            .add_systems(Turn, report_entered.in_set(ResolveSet::Travel).after(crate::places::stream_places))
             .add_systems(Turn, report_destroyed.in_set(crate::plugin::TurnSet::React))
             .add_systems(OnEnter(crate::state::EngineState::Playing), check_tagged_contents);
     }

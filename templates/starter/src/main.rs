@@ -502,7 +502,7 @@ fn populate(
         };
         let mut rng = seed.place(ev.map).rng(POPULATE, 0);
         let walkable = |p| map.is_walkable(p);
-        let stock = stock(place.terrain.bounds(), ev.entry, walkable, &mut rng);
+        let stock = stock(place.bounds(), ev.entry, walkable, &mut rng);
 
         for at in stock.braziers {
             // A fixture: it never moves, so its light is cast once.

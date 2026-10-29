@@ -7,13 +7,18 @@
 //! so with a [`Ladder`], whose [`stairs`](Ladder::stairs) are each floor's
 //! [`LadderStair`]s.
 //!
+//! A place too large to build whole is [`Streamed`]: the rules describe it
+//! once, and build it a chunk at a time with
+//! [`build_chunk`](PlaceRules::build_chunk), as whoever is in it comes near
+//! each chunk.
+//!
 //! Kept here rather than in the Bevy layer so a terminal game, a tool or a
 //! test builds the very places the framework does, with no `App`. The
 //! framework, `atglyph-bevy`, re-exports every one of these from its
 //! `places` module, keeps each build as a place of its world map, and lays
 //! each ladder stair as an entity a traveller goes through.
 
-use atglyph_core::{PlaceSeed, Point};
+use atglyph_core::{GridRect, PlaceSeed, Point};
 use atglyph_grid::{Light, Rgb, Terrain, TileTables};
 
 use crate::accrete::{Join, Opening};
@@ -151,6 +156,67 @@ impl PlaceBuild {
     }
 }
 
+/// A place built a chunk at a time round whoever is in it, rather than
+/// whole: a surface too large to build in one go, or to keep in one piece.
+///
+/// The place is [`chunks`](Self::chunks) chunks across and down, each
+/// [`chunk`](Self::chunk) tiles a side, in one coordinate space from the
+/// north-west corner of the first, so a tile of it is addressed as a tile
+/// of any place is. The framework keeps the chunks within [`reach`](Self::reach)
+/// of the player's own loaded, builds each as it comes into reach from
+/// [`PlaceRules::build_chunk`], and lets one go as it leaves, keeping only
+/// what was changed on it, which it lays back on the rebuilt chunk when
+/// the chunk comes into reach again.
+///
+/// So a chunk's build must be a pure function of the run and the chunk:
+/// built twice, it is the same both times, and two chunks built in either
+/// order agree along the edge they share. Whatever the game puts on a
+/// chunk besides its tiles, it puts there itself, the first time the chunk
+/// is loaded.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct Streamed {
+    /// A chunk's side, in tiles.
+    pub chunk: i32,
+    /// How many chunks the place is, across and down.
+    pub chunks: (i32, i32),
+    /// How many chunks each way round the player's are kept loaded: one
+    /// keeps three by three. Wide enough that sight never reaches past
+    /// what is loaded, so with a chunk wider than sight, one.
+    pub reach: i32,
+    /// Where an arrival from above stands.
+    pub entry: Point,
+    /// The light everywhere in it before anything is lit.
+    pub ambient: Light,
+    /// Whether nothing in it is harmed.
+    pub peaceful: bool,
+}
+
+impl Streamed {
+    /// The whole place, in tiles.
+    pub fn bounds(&self) -> GridRect {
+        GridRect::new(0, 0, self.chunks.0 * self.chunk, self.chunks.1 * self.chunk)
+    }
+
+    /// The tiles `chunk` covers.
+    pub fn chunk_bounds(&self, chunk: Point) -> GridRect {
+        GridRect::new(chunk.x * self.chunk, chunk.y * self.chunk, self.chunk, self.chunk)
+    }
+
+    /// The chunk tile `p` lies in, or `None` off the place.
+    pub fn chunk_of(&self, p: Point) -> Option<Point> {
+        self.bounds().contains(p).then(|| Point::new(p.x / self.chunk, p.y / self.chunk))
+    }
+
+    /// The chunks kept loaded while the player stands on `p`: the
+    /// player's own and every one within [`reach`](Self::reach) of it, cut
+    /// short by the place's edge, in chunks. `None` off the place.
+    pub fn window_round(&self, p: Point) -> Option<GridRect> {
+        let at = self.chunk_of(p)?;
+        let wanted = GridRect::new(at.x - self.reach, at.y - self.reach, 2 * self.reach + 1, 2 * self.reach + 1);
+        wanted.intersection(&GridRect::new(0, 0, self.chunks.0, self.chunks.1))
+    }
+}
+
 /// How the game builds a place the first time it is entered.
 ///
 /// The framework asks it once a place, the first time anything enters;
@@ -201,6 +267,26 @@ pub trait PlaceRules: Send + Sync {
     /// The tile tables every place of the game is built of. The framework
     /// makes the run's world map over them when a start makes none.
     fn tiles(&self) -> TileTables;
+
+    /// Whether `map` is [`Streamed`], built a chunk at a time with
+    /// [`build_chunk`](Self::build_chunk) rather than whole with
+    /// [`build`](Self::build), and how. `None`, the default, is a place
+    /// built whole, as every place of a game with no surface is.
+    fn streamed(&self, map: MapId) -> Option<Streamed> {
+        let _ = map;
+        None
+    }
+
+    /// Builds `chunk` of the [`Streamed`] place `map`, from `seed`, the
+    /// place's own share of the run's seed, the same for every chunk of
+    /// it: `chunk` tiles a side, row by row from the chunk's north-west
+    /// corner. A pure function of the two, since a chunk is built again
+    /// every time it comes back into reach. Only asked of a map
+    /// [`streamed`](Self::streamed) names.
+    fn build_chunk(&self, map: MapId, chunk: Point, seed: PlaceSeed) -> Result<Terrain, BuildError> {
+        let _ = (chunk, seed);
+        Err(BuildError::new("build_chunk", format!("{map:?} is not streamed")))
+    }
 
     /// The floors this game's places stand in one under another, if they
     /// do, for the engine to lay the stairs between them. `None`, the

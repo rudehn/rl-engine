@@ -635,24 +635,37 @@ pub(crate) fn tick_fuel(
 /// entered, since a fixture on a map nobody reads is never cast. A tile
 /// that changes later keeps the fixture it was given: what a game does to
 /// the map after it is built is the game's to light.
+///
+/// A streamed place is lit a chunk at a time, each time a chunk loads:
+/// the fixtures of a chunk that left stay where they were, and are cast
+/// only while the window holds them.
 pub(crate) fn light_places(mut commands: Commands, map: Option<ResMut<WorldMap>>) {
     let Some(mut map) = map else { return };
     // Asked through a shared borrow first, so a pass with nothing to light
     // never marks the map changed.
-    if map.unlit_places().next().is_none() {
+    let chunks = map.unlit_chunks();
+    if map.unlit_places().next().is_none() && chunks.is_empty() {
         return;
     }
+    let mut glow_at = |map: &WorldMap, id: MapId, p: Point, tile: atglyph_grid::TileId| {
+        if let Some(glow) = map.tables().lights.get(tile.index()).copied().flatten() {
+            commands.spawn((Position(p), OnMap(id), LightSource(glow)));
+        }
+    };
     let unlit: Vec<MapId> = map.unlit_places().collect();
     for id in unlit {
-        if let Some(place) = map.place(id) {
-            let lights = &map.tables().lights;
-            for (p, tile) in place.terrain.iter() {
-                if let Some(glow) = lights.get(tile.index()).copied().flatten() {
-                    commands.spawn((Position(p), OnMap(id), LightSource(glow)));
-                }
+        if let Some(terrain) = map.place(id).and_then(|place| place.terrain()) {
+            for (p, tile) in terrain.iter() {
+                glow_at(&map, id, p, tile);
             }
         }
         map.mark_lit(id);
+    }
+    for (id, chunk) in chunks {
+        for (p, tile) in map.chunk_tiles(id, chunk) {
+            glow_at(&map, id, p, tile);
+        }
+        map.mark_chunk_lit(id, chunk);
     }
 }
 

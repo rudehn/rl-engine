@@ -337,7 +337,7 @@ fn populate(mut commands: Commands, mut entered: MessageReader<PlaceEntered>, ra
             continue;
         }
         let Some(place) = map.place(ev.map) else { continue };
-        let bounds = place.terrain.bounds();
+        let bounds = place.bounds();
         let mut rng = seed.place(ev.map).rng(RATS, 0);
         let mut placed = 0;
         while placed < 16 {

@@ -3,21 +3,29 @@
 //! Everything that reads tiles reads through [`WorldMap`], in the current
 //! place's own coordinates (see [`places`](crate::places)), and gets `None`
 //! outside it or while no place is current.
+//!
+//! What readers can read of the current place is its window: the whole of
+//! a place built whole, and the chunks loaded round the player of a
+//! [`Streamed`] one, which [`stream`](WorldMap::stream) moves as the player
+//! does. A tile outside the window is not there to read, as a tile off the
+//! map is not.
 
 use std::collections::BTreeMap;
 
 use atglyph_core::{Grid2D, GridRect, Point};
-use atglyph_grid::{BitGrid, CostSource, OpacitySource, TileId, TileTables};
+use atglyph_grid::{BitGrid, CostSource, OpacitySource, Terrain, TileId, TileTables};
 use bevy::prelude::*;
 
-use crate::places::{Lock, MapId, PlaceBuild, Spot};
+use crate::ground::{Ground, Loaded, Surface};
+use crate::places::{BuildError, ChunkLoaded, Lock, MapId, PlaceBuild, Spot, Streamed};
 use crate::secrets::Secret;
 
-/// A built place, kept whole.
+/// A built place: its tiles, kept whole or streamed, and what its builder
+/// said of it.
 #[derive(Debug)]
 pub struct PlaceMap {
     /// The tiles, edits included.
-    pub terrain: atglyph_grid::Terrain,
+    ground: Ground,
     /// Where an arrival from above stands.
     pub entry: Point,
     /// Where an arrival from below stands, if it goes deeper.
@@ -26,7 +34,7 @@ pub struct PlaceMap {
     pub spots: Vec<Spot>,
     /// Every lock and seal not yet opened or lifted.
     pub locks: Vec<Lock>,
-    /// Every cell still hiding what it is, walled over in `terrain`.
+    /// Every cell still hiding what it is, walled over in its tiles.
     pub secrets: Vec<Secret>,
     /// The light everywhere in it before anything is lit, as its builder
     /// chose.
@@ -43,6 +51,36 @@ pub struct PlaceMap {
     /// tiles', so a restored place puts it up again from them, the way its
     /// building did.
     lit: bool,
+}
+
+impl PlaceMap {
+    /// The whole place, in its own coordinates, loaded or not.
+    pub fn bounds(&self) -> GridRect {
+        self.ground.bounds()
+    }
+
+    /// The tile at `p`, or `None` off the place or, on a streamed place, on
+    /// a chunk not loaded.
+    pub fn tile(&self, p: Point) -> Option<TileId> {
+        self.ground.get(p)
+    }
+
+    /// Every tile of a place built whole; `None` for a streamed one, which
+    /// is never all there at once.
+    pub fn terrain(&self) -> Option<&Terrain> {
+        match &self.ground {
+            Ground::Whole(terrain) => Some(terrain),
+            Ground::Streamed(_) => None,
+        }
+    }
+
+    /// How the place is streamed, or `None` for a place built whole.
+    pub fn streamed(&self) -> Option<&Streamed> {
+        match &self.ground {
+            Ground::Whole(_) => None,
+            Ground::Streamed(surface) => Some(&surface.layout),
+        }
+    }
 }
 
 /// The map every reader reads: every built place, one of which may be the
@@ -156,7 +194,7 @@ impl WorldMap {
     pub fn install_place(&mut self, map: MapId, build: PlaceBuild) {
         let secrets = build.secrets.into_iter().map(|s| Secret::hidden(s, build.terrain.get(s.at).unwrap_or(s.is))).collect();
         let place = PlaceMap {
-            terrain: build.terrain,
+            ground: Ground::Whole(build.terrain),
             entry: build.entry,
             exit: build.exit,
             spots: build.spots,
@@ -200,10 +238,10 @@ impl WorldMap {
         place.secrets = kept;
         let mut sight_changed = false;
         for secret in &found {
-            if place.terrain.get(secret.at) != Some(secret.shows) {
+            if place.ground.get(secret.at) != Some(secret.shows) {
                 continue;
             }
-            place.terrain.set(secret.at, secret.is);
+            place.ground.set(secret.at, secret.is);
             sight_changed |= self.tables.opaque[secret.shows.index()] != self.tables.opaque[secret.is.index()];
         }
         if map == self.current {
@@ -236,7 +274,7 @@ impl WorldMap {
     /// one being read: an arrival on a map nobody is looking at still has
     /// to land on floor. False where the tile is not known.
     pub fn is_walkable_on(&self, map: MapId, p: Point) -> bool {
-        let tile = self.places.get(&map).and_then(|place| place.terrain.get(p));
+        let tile = self.places.get(&map).and_then(|place| place.ground.get(p));
         tile.is_some_and(|t| self.tables.walkable[t.index()])
     }
 
@@ -254,12 +292,99 @@ impl WorldMap {
         true
     }
 
-    /// The current place's whole bounds; empty while no place is current.
+    /// What readers can read of the current place: the whole of a place
+    /// built whole, the loaded chunks of a streamed one; empty while no
+    /// place is current.
     pub fn window_tiles(&self) -> GridRect {
-        self.active_place().map_or(GridRect::new(0, 0, 0, 0), |place| place.terrain.bounds())
+        self.active_place().map_or(GridRect::new(0, 0, 0, 0), |place| place.ground.window())
     }
 
-    /// Changes whenever the current map changes.
+    /// Keeps a streamed place, nothing of it loaded yet. Does not switch to
+    /// it; [`stream`](Self::stream) loads what is round whoever arrives.
+    pub fn install_streamed(&mut self, map: MapId, layout: Streamed) {
+        let place = PlaceMap {
+            ground: Ground::Streamed(Surface::new(layout)),
+            entry: layout.entry,
+            exit: None,
+            spots: Vec::new(),
+            locks: Vec::new(),
+            secrets: Vec::new(),
+            ambient: layout.ambient,
+            peaceful: layout.peaceful,
+            visited: false,
+            lit: false,
+        };
+        self.places.insert(map, place);
+    }
+
+    /// Moves the window of the streamed place `map` to the chunks round
+    /// `around`, building what comes into it with `build` and letting go
+    /// of what leaves, and answers every chunk that came in. Nothing for a
+    /// place built whole, or one already loaded round `around`.
+    ///
+    /// When `map` is the one being read, everything cast over the window
+    /// is stale once it moves, so the generation and both epochs move with
+    /// it and the veil is lifted.
+    pub fn stream(&mut self, map: MapId, around: Point, build: impl FnMut(Point) -> Result<Terrain, BuildError>) -> Result<Vec<ChunkLoaded>, BuildError> {
+        let Some(Ground::Streamed(surface)) = self.places.get_mut(&map).map(|p| &mut p.ground) else { return Ok(Vec::new()) };
+        let Some(wanted) = surface.layout.window_round(around) else { return Ok(Vec::new()) };
+        if surface.holds(wanted) {
+            return Ok(Vec::new());
+        }
+        let loaded = surface.load(wanted, build)?;
+        let layout = surface.layout;
+        if map == self.current {
+            self.generation += 1;
+            self.opacity_epoch += 1;
+            self.cost_epoch += 1;
+            self.lift_veil();
+        }
+        Ok(loaded.into_iter().map(|Loaded { chunk, first }| ChunkLoaded { map, chunk, bounds: layout.chunk_bounds(chunk), first }).collect())
+    }
+
+    /// Whether the streamed place `map` would move its window to stand
+    /// round `around`: false for a place built whole, or one already
+    /// loaded round it.
+    pub(crate) fn wants_streaming(&self, map: MapId, around: Point) -> bool {
+        let Some(Ground::Streamed(surface)) = self.places.get(&map).map(|p| &p.ground) else { return false };
+        surface.layout.window_round(around).is_some_and(|wanted| !surface.holds(wanted))
+    }
+
+    /// Whether `p` on `map` is there to read, whether or not `map` is the
+    /// one being read.
+    pub fn is_loaded_on(&self, map: MapId, p: Point) -> bool {
+        self.places.get(&map).is_some_and(|place| place.ground.get(p).is_some())
+    }
+
+    /// Every loaded chunk of a streamed place whose glowing tiles have no
+    /// light up yet, by place.
+    pub(crate) fn unlit_chunks(&self) -> Vec<(MapId, Point)> {
+        self.places
+            .iter()
+            .filter_map(|(id, p)| match &p.ground {
+                Ground::Streamed(surface) => Some(surface.unlit().map(move |c| (*id, c))),
+                Ground::Whole(_) => None,
+            })
+            .flatten()
+            .collect()
+    }
+
+    /// The tiles of a loaded chunk of the streamed place `map`, by cell.
+    pub(crate) fn chunk_tiles(&self, map: MapId, chunk: Point) -> Vec<(Point, TileId)> {
+        match self.places.get(&map).map(|p| &p.ground) {
+            Some(Ground::Streamed(surface)) => surface.chunk_tiles(chunk).collect(),
+            _ => Vec::new(),
+        }
+    }
+
+    /// Notes that `chunk` of `map` has its light up.
+    pub(crate) fn mark_chunk_lit(&mut self, map: MapId, chunk: Point) {
+        if let Some(Ground::Streamed(surface)) = self.places.get_mut(&map).map(|p| &mut p.ground) {
+            surface.mark_lit(chunk);
+        }
+    }
+
+    /// Changes whenever the current map changes or its window moves.
     pub(crate) fn generation(&self) -> u64 {
         self.generation
     }
@@ -282,17 +407,14 @@ impl WorldMap {
 
     /// The tile at `p`, or `None` outside the current map.
     pub fn tile(&self, p: Point) -> Option<TileId> {
-        self.active_place()?.terrain.get(p)
+        self.active_place()?.ground.get(p)
     }
 
     /// Sets the tile at `p` of the current map. Returns whether `p` was
     /// there to write.
     pub fn set_tile(&mut self, p: Point, id: TileId) -> bool {
         let Some(place) = self.places.get_mut(&self.current) else { return false };
-        let Some(was) = place.terrain.get(p) else { return false };
-        if !place.terrain.set(p, id) {
-            return false;
-        }
+        let Some(was) = place.ground.set(p, id) else { return false };
         let (was, now) = (was.index(), id.index());
         if self.tables.opaque[was] != self.tables.opaque[now] {
             self.opacity_epoch += 1;
@@ -349,9 +471,10 @@ impl WorldMap {
         self.tables.walkable[t.index()].then(|| self.tables.move_cost[t.index()])
     }
 
-    /// Whether `p` is inside the current map.
+    /// Whether `p` is inside the current map's window: anywhere on a place
+    /// built whole, on a loaded chunk of a streamed one.
     pub fn is_loaded(&self, p: Point) -> bool {
-        self.active_place().is_some_and(|place| place.terrain.bounds().contains(p))
+        self.tile(p).is_some()
     }
 
     /// World coordinates of window-local `local`.
@@ -380,16 +503,25 @@ impl WorldMap {
         WindowView { map: self, opening: true }
     }
 
-    /// Every built place, for saving.
+    /// Every built place, for saving: a place built whole with every
+    /// tile, a streamed one with only what was changed on it and which of
+    /// its chunks were ever built.
     pub fn export(&self) -> WorldMapSave {
         let places = self
             .places
             .iter()
             .map(|(id, p)| {
+                let (terrain, streamed) = match &p.ground {
+                    Ground::Whole(terrain) => (terrain.clone(), None),
+                    Ground::Streamed(surface) => {
+                        (Terrain::filled(0, 0, TileId(0)), Some(StreamedSave { layout: surface.layout, edits: surface.edits(), made: surface.made() }))
+                    }
+                };
                 (
                     *id,
                     PlaceSave {
-                        terrain: p.terrain.clone(),
+                        terrain,
+                        streamed,
                         entry: p.entry,
                         exit: p.exit,
                         spots: p.spots.clone(),
@@ -405,18 +537,24 @@ impl WorldMap {
         WorldMapSave { current: self.current, places }
     }
 
-    /// Restores places from a save and switches to its current map.
+    /// Restores places from a save and switches to its current map. A
+    /// streamed place comes back with nothing loaded, and is streamed in
+    /// again round the player before anyone is dealt a turn on it.
     pub fn import(&mut self, save: WorldMapSave) {
         self.places = save
             .places
             .into_iter()
             .map(|(id, p)| {
+                let ground = match p.streamed {
+                    Some(StreamedSave { layout, edits, made }) => Ground::Streamed(Surface::restored(layout, edits, made)),
+                    None => Ground::Whole(p.terrain),
+                };
                 let mut secrets = p.secrets;
                 for s in secrets.iter_mut().filter(|s| s.shows == Secret::unread()) {
-                    s.shows = p.terrain.get(s.at).unwrap_or(s.is);
+                    s.shows = ground.get(s.at).unwrap_or(s.is);
                 }
                 let place = PlaceMap {
-                    terrain: p.terrain,
+                    ground,
                     entry: p.entry,
                     exit: p.exit,
                     spots: p.spots,
@@ -439,8 +577,14 @@ impl WorldMap {
 /// A place as saved.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct PlaceSave {
-    /// The tiles.
+    /// The tiles of a place built whole; none for a streamed place, whose
+    /// chunks are built again from its rules.
     pub terrain: atglyph_grid::Terrain,
+    /// How a streamed place is laid out and what was changed on it; none
+    /// for a place built whole, and in a save written before places could
+    /// be streamed.
+    #[serde(default)]
+    pub streamed: Option<StreamedSave>,
     /// The entry.
     pub entry: Point,
     /// The exit.
@@ -472,6 +616,19 @@ pub struct PlaceSave {
 
 fn visited_by_default() -> bool {
     true
+}
+
+/// A streamed place as saved: its layout, the edits of every chunk that
+/// has any, each tile's last by its index in the chunk, and every chunk
+/// ever built.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct StreamedSave {
+    /// How the place is laid out.
+    pub layout: Streamed,
+    /// What was changed, chunk by chunk.
+    pub edits: Vec<(Point, Vec<(u32, TileId)>)>,
+    /// Every chunk built before the save, so none is populated twice.
+    pub made: Vec<Point>,
 }
 
 /// What [`WorldMap::export`] produces.

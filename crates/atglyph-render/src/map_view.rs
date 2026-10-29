@@ -28,7 +28,6 @@ use std::collections::btree_map::Entry;
 
 use atglyph_bevy::Recalled;
 use atglyph_bevy::prelude::*;
-use atglyph_core::Grid2D;
 use atglyph_core::{GridRect, Point};
 use atglyph_grid::{Light, Rgb, TileId};
 use atglyph_rules::GasId;
@@ -532,7 +531,7 @@ pub(crate) fn follow_player(mut view: ResMut<MapView>, map: Res<WorldMap>, playe
     let Ok(pos) = player.single() else { return };
     view.center_on(pos.0);
     if let Some(place) = map.place(map.current()) {
-        view.clamp_to(place.terrain.bounds());
+        view.clamp_to(place.bounds());
     }
 }
 

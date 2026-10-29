@@ -58,7 +58,31 @@ A fresh run's world is built from the places' tiles after `NewRun`, not between 
 A place keeps what its builder said of it with its map and its save, rather than in a flag a game keeps in step with whichever map is current: its locks, its secrets, its ambient light and whether it is peaceful.
 Each was a game's own system first, [Undermere](https://github.com/rudehn/undermere)'s town's peace and both games' ambient set from the current map every frame, and each moved onto the build when a second thing needed to read it.
 
-## 6. What is not here
+## 6. A place too large to build whole is streamed
 
-- Places streamed in around the player: the open world went on 2026-10-19 with no example using it, and every map is a place.
+A game's rules say a place is streamed with `PlaceRules::streamed`, a `Streamed` layout: chunks of one size, how many across and down, how many each way round the player's are kept loaded, and what a whole build would have said of the place, its entry, its ambient light and its peace.
+Each chunk is built with `PlaceRules::build_chunk` as it comes into reach, and let go as it leaves, keeping only what was changed on it, the last change to each tile, which is laid back on the chunk when it is built again.
+So a chunk's build is a pure function of the run and the chunk, and an untouched chunk costs nothing to keep however much of the place has been walked: a save holds a streamed place's changes and which chunks were ever built, never its tiles.
+
+It is a place like any other, not a second kind of map beside the places: an arrival, `PlaceEntered`, the map being read, a save and a continue are the same calls on it.
+What changes is what readers can read.
+The window was always the thing every reader read, the field of view, the light, the flow fields, the fire and gas, the noise, in window-local cells with the window's origin; a place built whole is a window of all of it, and a streamed place's window is the chunks loaded round the player.
+When it moves, the generation and both epochs move, so everything cast over it is cast again.
+An actor standing on a chunk not loaded is not where play is, so it keeps its place in the queue and is dealt no turn until its chunk loads again: a monster out of reach is frozen, as one on another map is.
+
+`ChunkLoaded` is written for every chunk each time it loads, and is `first` the once it is built for the first time in the run, which is when a game puts on a chunk whatever its tiles do not say, the way it stocks a place on its first arrival; the engine's own scatter of a place's loot skips a streamed place for that reason.
+A chunk's glowing tiles are lit as it loads, and a restored run lights each chunk again as it loads, as a restored place is lit again.
+
+The window is kept round the player once a frame before anyone is dealt a turn, which is what loads a continued run's place, and again inside every turn pass straight after the moves and warps, so a step across a chunk's edge is followed in the same pass.
+An arrival by warp loads the window round the player's landing, and round anyone else's only where nothing is loaded there yet, so a monster that climbs out of a dungeon never drags the player's window away.
+
+Rejected:
+
+- A surface as a map of its own beside the places, as the open world had before 2026-10-19: every place call then had two answers, and every reader asked which kind of map it was on.
+- One place built whole and kept whole, with a window round the player: the tiles fit, 7.4 million at 3840 by 1920, but building them is seconds at the start of every run and every test, and a save carries all of them.
+- Keeping every chunk ever built: memory grows with the walking, and a save with it, for tiles the rules make again for nothing.
+
+## 7. What is not here
+
 - A place that rebuilds or decays while nobody is on it: a place is frozen, and what changes it is the game's.
+- Actors simulated coarsely while their chunk is not loaded: they wait where they were.

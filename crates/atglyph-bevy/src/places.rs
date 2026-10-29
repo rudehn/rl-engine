@@ -43,9 +43,9 @@
 //! walled over, each something else once found.
 
 use atglyph_core::turn::BASE_ACTION_COST;
-use atglyph_core::{PlaceSeed, Point};
-use atglyph_mapgen::BuildError;
-pub use atglyph_mapgen::place::{Climb, Ladder, LadderEnd, LadderStair, Lock, MapId, PlaceBuild, PlaceRules, Spot, StairLook};
+use atglyph_core::{GridRect, PlaceSeed, Point};
+pub(crate) use atglyph_mapgen::BuildError;
+pub use atglyph_mapgen::place::{Climb, Ladder, LadderEnd, LadderStair, Lock, MapId, PlaceBuild, PlaceRules, Spot, StairLook, Streamed};
 use atglyph_rules::Wits;
 use bevy::prelude::*;
 
@@ -239,6 +239,23 @@ pub struct PlaceEntered {
     pub exit: Option<Point>,
 }
 
+/// A chunk of a [`Streamed`] place came into the loaded window, built
+/// afresh with whatever was changed on it laid back. Written for every
+/// chunk each time it loads; `first` the once it is built for the first
+/// time in the run, which is when a game puts on it whatever its tiles do
+/// not say, as it does on a place on its first arrival.
+#[derive(Message, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ChunkLoaded {
+    /// Which place.
+    pub map: MapId,
+    /// Which chunk, in chunks.
+    pub chunk: Point,
+    /// The tiles it covers.
+    pub bounds: GridRect,
+    /// Whether this is the first time it has been built.
+    pub first: bool,
+}
+
 /// The maps and indexes a warp rewrites.
 #[derive(bevy::ecs::system::SystemParam)]
 pub(crate) struct Maps<'w> {
@@ -256,6 +273,7 @@ pub(crate) struct WarpReport<'w> {
     changed: MessageWriter<'w, MapChanged>,
     entered: MessageWriter<'w, PlaceEntered>,
     travelled: MessageWriter<'w, Travelled>,
+    loaded: MessageWriter<'w, ChunkLoaded>,
 }
 
 /// Anyone who might travel: where it stands, whether it is the player,
@@ -399,21 +417,10 @@ fn warp(
     let Destination::Place { map: target_map, arrive } = to;
     if !maps.map.has_place(target_map) {
         let rules = maps.rules.as_ref().ok_or_else(|| BuildError::new("warp", "no PlaceRulesRes to build a place with"))?;
-        let seed = maps.seed.as_ref().ok_or_else(|| BuildError::new("warp", "no Seed to build a place from"))?;
-        let build = rules.0.build(target_map, PlaceSeed::of(seed.0, target_map.0))?;
-        let stairs = rules.0.ladder().map(|ladder| ladder.stairs(target_map, build.entry, build.exit)).unwrap_or_default();
-        maps.map.install_place(target_map, build);
-        // Laid with the build, by whoever's arrival built it, so a floor
-        // has its way back up before anyone stands on it.
-        for LadderStair { at, climb, look, to } in stairs {
-            // A stair up lands where the floor above goes down, and a stair
-            // down where the floor below comes up.
-            let arrive = match climb {
-                Climb::Up => Arrive::Exit,
-                Climb::Down => Arrive::Entry,
-            };
-            let name = Name::new(look.name.clone());
-            commands.spawn((Position(at), OnMap(target_map), Transition { to: Destination::Place { map: to, arrive } }, Stair { climb, look }, name));
+        if let Some(layout) = rules.0.streamed(target_map) {
+            maps.map.install_streamed(target_map, layout);
+        } else {
+            install_whole(commands, maps, target_map)?;
         }
     }
     let Ok((_, (mut pos, viewshed, on, blocks, player, ..))) = travellers.get_mut(actor) else {
@@ -426,6 +433,12 @@ fn warp(
         (Arrive::Exit, Some(place)) => place.exit.unwrap_or(place.entry),
         (_, None) => return Err(BuildError::new("warp", "a place built but not kept")),
     };
+    // A streamed place is loaded round the player's arrival, and round
+    // anyone else's only where nothing is loaded yet, so a monster
+    // climbing to the surface never drags the player's window away.
+    if player || !maps.map.is_loaded_on(target_map, want) {
+        stream_round(maps, &mut report.loaded, target_map, want)?;
+    }
     // Found before anything is switched, so a refused arrival leaves the
     // traveller and the maps exactly as they were.
     let landing = if blocks {
@@ -473,6 +486,64 @@ fn warp(
         commands.entity(actor).remove::<Post>();
     }
     Ok(())
+}
+
+/// Builds `map` whole from the rules and keeps it, laying its ladder's
+/// stairs with it.
+fn install_whole(commands: &mut Commands, maps: &mut Maps, map: MapId) -> Result<(), BuildError> {
+    let rules = maps.rules.as_ref().ok_or_else(|| BuildError::new("warp", "no PlaceRulesRes to build a place with"))?;
+    let seed = maps.seed.as_ref().ok_or_else(|| BuildError::new("warp", "no Seed to build a place from"))?;
+    let build = rules.0.build(map, PlaceSeed::of(seed.0, map.0))?;
+    let stairs = rules.0.ladder().map(|ladder| ladder.stairs(map, build.entry, build.exit)).unwrap_or_default();
+    maps.map.install_place(map, build);
+    // Laid with the build, by whoever's arrival built it, so a floor has
+    // its way back up before anyone stands on it.
+    for LadderStair { at, climb, look, to } in stairs {
+        // A stair up lands where the floor above goes down, and a stair
+        // down where the floor below comes up.
+        let arrive = match climb {
+            Climb::Up => Arrive::Exit,
+            Climb::Down => Arrive::Entry,
+        };
+        let name = Name::new(look.name.clone());
+        commands.spawn((Position(at), OnMap(map), Transition { to: Destination::Place { map: to, arrive } }, Stair { climb, look }, name));
+    }
+    Ok(())
+}
+
+/// Loads the chunks of the streamed place `map` round `around`, building
+/// each from the rules, and says which came in. Nothing for a place built
+/// whole.
+fn stream_round(maps: &mut Maps, loaded: &mut MessageWriter<ChunkLoaded>, map: MapId, around: Point) -> Result<(), BuildError> {
+    if !maps.map.place(map).is_some_and(|p| p.streamed().is_some()) {
+        return Ok(());
+    }
+    let rules = maps.rules.as_ref().ok_or_else(|| BuildError::new("stream", "no PlaceRulesRes to build a chunk with"))?;
+    let seed = maps.seed.as_ref().ok_or_else(|| BuildError::new("stream", "no Seed to build a chunk from"))?;
+    let place_seed = PlaceSeed::of(seed.0, map.0);
+    for chunk in maps.map.stream(map, around, |chunk| rules.0.build_chunk(map, chunk, place_seed))? {
+        loaded.write(chunk);
+    }
+    Ok(())
+}
+
+/// Keeps the current place's chunks loaded round the player, when the
+/// current place is streamed: once a frame before anyone is dealt a turn,
+/// which is what loads a continued run's surface, and again inside every
+/// turn pass after the moves, so a step across a chunk's edge is followed
+/// by its window in the same pass, before anything reacts to the step.
+///
+/// Asked through a shared borrow first, so a frame on a place built whole
+/// or a window already in place never marks the map changed.
+pub(crate) fn stream_places(mut maps: Maps, mut loaded: MessageWriter<ChunkLoaded>, player: Query<&Position, With<Player>>) {
+    let Ok(at) = player.single() else { return };
+    let here = maps.map.current();
+    if !maps.map.wants_streaming(here, at.0) {
+        return;
+    }
+    if let Err(e) = stream_round(&mut maps, &mut loaded, here, at.0) {
+        error!("streaming {here:?} round {:?} failed: {e}", at.0);
+    }
 }
 
 /// Puts anything that just gained a position on the current map, unless
@@ -1094,5 +1165,115 @@ mod tests {
         assert_eq!(r.app.world().resource::<WorldMap>().current(), MapId(3));
         assert!(ways(&mut r.app, MapId(3)).is_empty());
         assert_eq!(r.app.world_mut().query::<&Stair>().iter(r.app.world()).count(), 0);
+    }
+
+    /// Every chunk loaded, recorded by a reader.
+    #[derive(Resource, Default)]
+    struct Loads(Vec<ChunkLoaded>);
+
+    fn record_loads(mut events: MessageReader<ChunkLoaded>, mut loads: ResMut<Loads>) {
+        loads.0.extend(events.read().copied());
+    }
+
+    /// A player standing on the middle of [`crate::testing::streamed_ground`],
+    /// every chunk load recorded.
+    fn streamed_rig() -> Rig {
+        let mut app = headless_app();
+        app.add_plugins(crate::fov::FovPlugin).init_resource::<Loads>().add_systems(Last, record_loads);
+        let start = crate::testing::streamed_ground(&mut app);
+        let player = app.world_mut().spawn((Actor, Player, Blocks, Position(start), Viewshed::new(6), RevealsMap)).id();
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        app.update();
+        app.update();
+        Rig { app, player, start }
+    }
+
+    fn walk(r: &mut Rig, way: atglyph_core::Direction, steps: usize) {
+        for _ in 0..steps {
+            intend(r, crate::turn::Step(way));
+            r.app.update();
+        }
+    }
+
+    #[test]
+    fn walking_across_a_chunk_edge_loads_what_is_beyond_and_a_change_left_behind_comes_back() {
+        use crate::testing::STREAMED_CHUNK;
+        let mut r = streamed_rig();
+        let wall = TileRegistry::standard().expect("wall");
+        let changed = r.start.offset(0, 2);
+        assert!(r.app.world_mut().resource_mut::<WorldMap>().set_tile(changed, wall));
+        let window = r.app.world().resource::<WorldMap>().window_tiles();
+        assert_eq!((window.width, window.height), (3 * STREAMED_CHUNK, 3 * STREAMED_CHUNK), "the player's chunk and one each way");
+
+        walk(&mut r, atglyph_core::Direction::East, STREAMED_CHUNK as usize);
+        let map = r.app.world().resource::<WorldMap>();
+        assert_eq!(map.window_tiles().x, window.x + STREAMED_CHUNK, "the window followed the player a chunk east");
+        assert!(r.app.world().resource::<Loads>().0.iter().all(|l| l.first), "every chunk so far is new");
+
+        walk(&mut r, atglyph_core::Direction::East, 2 * STREAMED_CHUNK as usize);
+        let map = r.app.world().resource::<WorldMap>();
+        assert!(!map.is_loaded(changed) && map.tile(changed).is_none(), "the changed chunk left the window");
+
+        r.app.world_mut().resource_mut::<Loads>().0.clear();
+        walk(&mut r, atglyph_core::Direction::West, 3 * STREAMED_CHUNK as usize);
+        let map = r.app.world().resource::<WorldMap>();
+        assert_eq!(map.tile(changed), Some(wall), "the change was laid back on the rebuilt chunk");
+        let loads = &r.app.world().resource::<Loads>().0;
+        assert!(!loads.is_empty() && loads.iter().all(|l| !l.first), "and no chunk came back as new");
+    }
+
+    /// Streamed everywhere: every map these rules are asked about is
+    /// built a chunk at a time.
+    struct StreamedOnly(crate::testing::StreamedGround);
+
+    impl PlaceRules for StreamedOnly {
+        fn build(&self, map: MapId, seed: PlaceSeed) -> Result<PlaceBuild, BuildError> {
+            self.0.build(map, seed)
+        }
+
+        fn tiles(&self) -> TileTables {
+            self.0.tiles()
+        }
+
+        fn streamed(&self, map: MapId) -> Option<Streamed> {
+            self.0.streamed(map)
+        }
+
+        fn build_chunk(&self, map: MapId, chunk: Point, seed: PlaceSeed) -> Result<atglyph_grid::Terrain, BuildError> {
+            self.0.build_chunk(map, chunk, seed)
+        }
+    }
+
+    #[test]
+    fn a_warp_into_a_streamed_place_lands_on_its_entry_with_the_chunks_round_it_loaded() {
+        let mut r = rig();
+        r.app.init_resource::<Loads>().add_systems(Last, record_loads).init_resource::<Entered>().add_systems(Last, record_entered);
+        r.app.insert_resource(PlaceRulesRes(Box::new(StreamedOnly(crate::testing::StreamedGround(TileRegistry::standard())))));
+        r.app.world_mut().write_message(WarpRequest::into_place(r.player, MapId(1)));
+        r.app.update();
+        r.app.update();
+        let entry = crate::testing::StreamedGround::layout().entry;
+        assert_eq!((r.app.world().resource::<WorldMap>().current(), at(&r, r.player)), (MapId(1), entry));
+        let loads = &r.app.world().resource::<Loads>().0;
+        assert_eq!(loads.len(), 9, "the entry's chunk and the eight round it");
+        assert!(loads.iter().all(|l| l.map == MapId(1) && l.first));
+        assert!(r.app.world().resource::<Entered>().0.iter().any(|e| e.map == MapId(1) && e.first && e.entry == entry));
+        assert!(r.app.world().resource::<WorldMap>().place(MapId(1)).is_some_and(|p| p.terrain().is_none() && p.streamed().is_some()));
+    }
+
+    #[test]
+    fn a_streamed_place_comes_back_from_a_save_with_its_changes_and_nothing_new() {
+        let mut r = streamed_rig();
+        let wall = TileRegistry::standard().expect("wall");
+        let changed = r.start.offset(1, 1);
+        r.app.world_mut().resource_mut::<WorldMap>().set_tile(changed, wall);
+        let text = ron::to_string(&r.app.world().resource::<WorldMap>().export()).unwrap();
+        let mut back = WorldMap::new(TileRegistry::standard().tables());
+        back.import(ron::from_str(&text).unwrap());
+        assert_eq!(back.tile(changed), None, "nothing is loaded until it is streamed");
+        let rules = crate::testing::StreamedGround(TileRegistry::standard());
+        let loaded = back.stream(MapId::ZERO, r.start, |c| rules.build_chunk(MapId::ZERO, c, PlaceSeed::of(crate::testing::TEST_SEED, 0))).unwrap();
+        assert_eq!(back.tile(changed), Some(wall));
+        assert!(loaded.iter().all(|l| !l.first), "every chunk was built before the save");
     }
 }
