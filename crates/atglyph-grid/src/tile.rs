@@ -7,8 +7,9 @@
 //! floors and doors for free; a game that wants vacuum, force fields or
 //! lava registers them and they are first-class from the first frame.
 //!
-//! A tile carries its own look, a [`TileLook`] of plain data: a glyph and
-//! its colours. Keeping it on the record means a tile is defined in one
+//! A tile carries its own look, a [`TileLook`] of plain data: a glyph, or
+//! several a cell picks among by where it is, and its colours. Keeping it
+//! on the record means a tile is defined in one
 //! place, a line of a file or a builder in code, and read once; the map's
 //! hot tables never hold it, and a renderer turns it into colour. The
 //! light a tile sheds is a [`Glow`] on the record too, which the Bevy
@@ -16,11 +17,14 @@
 //!
 //! A tiles file is a list of [`TileProps`], one a line, the look's fields
 //! written beside the rest: `(tile: "roots", walkable: true, opaque: true,
-//! glyph: '+', fg: (0.55, 0.74, 0.45))`.
+//! glyph: '+', fg: (0.55, 0.74, 0.45))`, or `glyph: ['"', '"', ',']` for a
+//! tile drawn in several.
 
 use std::collections::BTreeMap;
 
-use serde::{Deserialize, Serialize};
+use atglyph_core::Point;
+use atglyph_core::seed::position_hash;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::light::Glow;
 
@@ -82,10 +86,11 @@ pub struct TileProps {
 
 /// How a tile looks in full light: a glyph and its colours, plain data a
 /// renderer turns into colour. Colours are `(r, g, b)` in `0..=1`.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TileLook {
-    /// The character drawn.
-    pub glyph: char,
+    /// The character drawn, or the characters a cell picks among by where
+    /// it is.
+    pub glyph: TileGlyphs,
     /// The glyph's colour.
     pub fg: (f32, f32, f32),
     /// The cell's fill; black when `None`.
@@ -99,9 +104,10 @@ pub struct TileLook {
 }
 
 impl TileLook {
-    /// `glyph` in `fg` on black, the same in every cell.
-    pub const fn new(glyph: char, fg: (f32, f32, f32)) -> Self {
-        Self { glyph, fg, bg: None, vary: None, shimmer: 0.0 }
+    /// `glyph` in `fg` on black, the same in every cell: one character, or
+    /// an array of them a cell picks among, as [`TileGlyphs`] says.
+    pub fn new(glyph: impl Into<TileGlyphs>, fg: (f32, f32, f32)) -> Self {
+        Self { glyph: glyph.into(), fg, bg: None, vary: None, shimmer: 0.0 }
     }
 
     /// Builder: the cell's fill.
@@ -123,6 +129,134 @@ impl TileLook {
     }
 }
 
+/// The glyphs a tile is drawn in: one, or several interchangeable ones each
+/// cell picks among, so a meadow reads as grass rather than as one
+/// character repeated to the horizon.
+///
+/// A cell's pick is a hash of its world position, never the time or a
+/// draw, so a tile looks the same every frame, in memory as in sight, and
+/// does not shimmer as the view scrolls over it; nor does it spend a draw
+/// from any stream, since how a tile looks is cosmetic. A glyph listed
+/// twice is picked twice as often. Never empty.
+///
+/// Written in a file as one character, `glyph: '.'`, or a list of them,
+/// `glyph: ['"', '"', ',']`, and read back the same way; in code, a `char`
+/// or an array of them converts into one.
+///
+/// ```
+/// use atglyph_core::Point;
+/// use atglyph_grid::TileGlyphs;
+///
+/// let grass = TileGlyphs::from(['"', '"', ',']);
+/// let here = Point::new(12, 7);
+/// assert_eq!(grass.at(here), grass.at(here), "the same cell, the same glyph");
+/// assert!(grass.as_slice().contains(&grass.at(here)));
+/// assert_eq!(TileGlyphs::from('.').at(here), '.');
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TileGlyphs(Vec<char>);
+
+/// Salt for the pick, so which glyph a cell draws owes nothing to any
+/// other hash of its position, a renderer's jitter among them.
+const GLYPH_SALT: u64 = 0x6c79_7068_7069_636b;
+
+impl TileGlyphs {
+    /// The glyphs of `glyphs`, in order, repeats kept as weight; `None`
+    /// when there are none.
+    pub fn new(glyphs: impl IntoIterator<Item = char>) -> Option<Self> {
+        let glyphs: Vec<char> = glyphs.into_iter().collect();
+        (!glyphs.is_empty()).then_some(Self(glyphs))
+    }
+
+    /// The glyph drawn where a cell's place does not matter: a key, a
+    /// legend, a tile named rather than shown. The only one, for a tile of
+    /// one.
+    pub fn first(&self) -> char {
+        self.0[0]
+    }
+
+    /// The glyph the cell at world position `p` draws.
+    pub fn at(&self, p: Point) -> char {
+        match self.0.as_slice() {
+            [one] => *one,
+            many => many[(position_hash(GLYPH_SALT, p.x, p.y) % many.len() as u64) as usize],
+        }
+    }
+
+    /// Every glyph, in the order written and with its repeats: for a check
+    /// that each can be drawn, say that the font has it.
+    pub fn as_slice(&self) -> &[char] {
+        &self.0
+    }
+}
+
+impl From<char> for TileGlyphs {
+    fn from(glyph: char) -> Self {
+        Self(vec![glyph])
+    }
+}
+
+impl<const N: usize> From<[char; N]> for TileGlyphs {
+    fn from(glyphs: [char; N]) -> Self {
+        // An empty array fails to compile where it is converted, rather than
+        // at the first cell drawn.
+        const { assert!(N > 0, "a tile is drawn in at least one glyph") };
+        Self(glyphs.to_vec())
+    }
+}
+
+/// A tile of one glyph is that glyph, so a check written against one
+/// character reads as it did; a tile of several is no single character.
+impl PartialEq<char> for TileGlyphs {
+    fn eq(&self, other: &char) -> bool {
+        self.0 == [*other]
+    }
+}
+
+impl Serialize for TileGlyphs {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self.0.as_slice() {
+            [one] => serializer.serialize_char(*one),
+            many => many.serialize(serializer),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for TileGlyphs {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct Glyphs;
+        impl<'de> serde::de::Visitor<'de> for Glyphs {
+            type Value = TileGlyphs;
+
+            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                f.write_str("a glyph, or a list of at least one")
+            }
+
+            fn visit_char<E: serde::de::Error>(self, glyph: char) -> Result<TileGlyphs, E> {
+                Ok(TileGlyphs::from(glyph))
+            }
+
+            // A one-character string, for a format with no characters of its own.
+            fn visit_str<E: serde::de::Error>(self, text: &str) -> Result<TileGlyphs, E> {
+                let mut chars = text.chars();
+                match (chars.next(), chars.next()) {
+                    (Some(glyph), None) => Ok(TileGlyphs::from(glyph)),
+                    _ => Err(E::invalid_value(serde::de::Unexpected::Str(text), &self)),
+                }
+            }
+
+            fn visit_seq<A: serde::de::SeqAccess<'de>>(self, mut seq: A) -> Result<TileGlyphs, A::Error> {
+                let mut glyphs = Vec::new();
+                while let Some(glyph) = seq.next_element::<char>()? {
+                    glyphs.push(glyph);
+                }
+                TileGlyphs::new(glyphs).ok_or_else(|| serde::de::Error::invalid_length(0, &self))
+            }
+        }
+        deserializer.deserialize_any(Glyphs)
+    }
+}
+
 /// One line of a tiles file: a tile with its look's fields written beside
 /// the rest, which is how [`TileProps`] reads and writes itself.
 ///
@@ -130,7 +264,8 @@ impl TileLook {
 /// `blocks_projectiles`, false when left out; `passable`, as `walkable`;
 /// `move_cost`, normal; `opens_to`, `closes_to`, `burn` and `light`, none;
 /// and the look, `glyph` and `fg` together or neither, with `bg`, `vary`
-/// and `shimmer` only beside them.
+/// and `shimmer` only beside them. `glyph` is one character, `'.'`, or a
+/// list of at least one a cell picks among, `['"', '"', ',']`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct TileLine {
     #[serde(alias = "name")]
@@ -154,7 +289,7 @@ struct TileLine {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     light: Option<Glow>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    glyph: Option<char>,
+    glyph: Option<TileGlyphs>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     fg: Option<(f32, f32, f32)>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -192,7 +327,10 @@ impl TryFrom<TileLine> for TileProps {
 
 impl From<TileProps> for TileLine {
     fn from(t: TileProps) -> Self {
-        let look = t.look;
+        let (glyph, fg, bg, vary, shimmer) = match t.look {
+            Some(l) => (Some(l.glyph), Some(l.fg), l.bg, l.vary, Some(l.shimmer).filter(|s| *s != 0.0)),
+            None => (None, None, None, None, None),
+        };
         Self {
             tile: t.name,
             walkable: t.walkable,
@@ -204,11 +342,11 @@ impl From<TileProps> for TileLine {
             closes_to: t.closes_to,
             burn: t.burn,
             light: t.light,
-            glyph: look.map(|l| l.glyph),
-            fg: look.map(|l| l.fg),
-            bg: look.and_then(|l| l.bg),
-            vary: look.and_then(|l| l.vary),
-            shimmer: look.map(|l| l.shimmer).filter(|s| *s != 0.0),
+            glyph,
+            fg,
+            bg,
+            vary,
+            shimmer,
         }
     }
 }
@@ -632,5 +770,48 @@ mod tests {
         assert_eq!(tables.lights[r.expect("rock").index()], None);
         r.set_light(r.expect("rock"), Some(Glow::darkness(255, 2)));
         assert_eq!(r.tables().lights[r.expect("rock").index()], Some(Glow::darkness(255, 2)), "and a light set after registering lands too");
+    }
+
+    /// A tile of one glyph draws it everywhere and reads and writes as the
+    /// one character it always was.
+    #[test]
+    fn a_tile_of_one_glyph_draws_it_in_every_cell_and_round_trips_as_one_character() {
+        let p: TileProps = ron::from_str(r#"(name: "floor", walkable: true, glyph: Some('.'), fg: Some((0.5, 0.5, 0.5)))"#).unwrap();
+        let look = p.look.clone().expect("a look");
+        assert_eq!(look, TileLook::new('.', (0.5, 0.5, 0.5)));
+        assert!(look.glyph == '.', "a single glyph compares as its character");
+        assert!((-20..20).all(|x| look.glyph.at(Point::new(x, x * 3 - 7)) == '.'));
+        let written = ron::to_string(&p).unwrap();
+        assert!(written.contains("glyph:Some('.')"), "written as one character, not a list: {written}");
+        assert_eq!(ron::from_str::<TileProps>(&written).unwrap(), p);
+    }
+
+    /// A list is picked from by position alone, so the same cell draws the
+    /// same glyph however often it is asked, every glyph turns up across a
+    /// patch of ground, and one listed twice turns up about twice as often.
+    #[test]
+    fn a_tile_of_several_glyphs_picks_one_by_position_and_shows_every_one_in_its_weight() {
+        let p: TileProps = ron::from_str(r#"(name: "grass", walkable: true, glyph: Some(['"', '"', ',']), fg: Some((0.3, 0.6, 0.2)))"#).unwrap();
+        let glyphs = p.look.as_ref().expect("a look").glyph.clone();
+        assert_eq!(glyphs.as_slice(), ['"', '"', ','], "in the order written, repeats kept");
+        assert_eq!(glyphs.first(), '"');
+        assert!(glyphs != '"', "several glyphs are no one character");
+        let patch: Vec<Point> = (-16..16).flat_map(|y| (-16..16).map(move |x| Point::new(x, y))).collect();
+        assert!(patch.iter().all(|&at| glyphs.at(at) == glyphs.at(at)));
+        let (quotes, commas) = (patch.iter().filter(|&&at| glyphs.at(at) == '"').count(), patch.iter().filter(|&&at| glyphs.at(at) == ',').count());
+        assert_eq!(quotes + commas, patch.len(), "only listed glyphs are drawn");
+        assert!(commas > 0, "every glyph turns up");
+        assert!((1.6..2.4).contains(&(quotes as f64 / commas as f64)), "twice listed, about twice as often: {quotes} to {commas}");
+        let written = ron::to_string(&p).unwrap();
+        assert_eq!(ron::from_str::<TileProps>(&written).unwrap(), p, "and it reads back as written: {written}");
+        assert_eq!(TileLook::new(['"', '"', ','], (0.3, 0.6, 0.2)).glyph, glyphs, "in code, an array of them");
+    }
+
+    #[test]
+    fn a_tile_drawn_in_no_glyph_at_all_is_refused() {
+        let err = ron::from_str::<TileProps>(r#"(name: "nothing", glyph: Some([]), fg: Some((1.0, 1.0, 1.0)))"#).unwrap_err();
+        assert!(err.to_string().contains("at least one"), "{err}");
+        assert_eq!(TileGlyphs::new([]), None);
+        assert_eq!(TileGlyphs::new("ab".chars()).map(|g| g.as_slice().to_vec()), Some(vec!['a', 'b']));
     }
 }

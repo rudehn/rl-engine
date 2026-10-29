@@ -9,10 +9,12 @@ atglyph is not on crates.io yet, so a game depends on a release by its git tag, 
 ### Added
 
 - Streamed places: `PlaceRules::streamed` names a place built a chunk at a time, a `Streamed` layout, and `PlaceRules::build_chunk` builds each chunk. The chunks within the layout's `reach` of the player are kept loaded, a chunk that leaves keeps only what was changed on it and has it laid back when it returns, an actor on a chunk not loaded is dealt no turn, `ChunkLoaded` is written for every chunk that loads with `first` the first time, and a save keeps a streamed place's changes rather than its tiles. `WorldMap::stream`, `install_streamed` and `is_loaded_on`, `PlaceMap::bounds`, `tile`, `terrain` and `streamed`, and `testing::streamed_ground`.
+- A tile drawn in several glyphs: a tiles file's `glyph` takes one character, `glyph: '.'`, as before, or a list, `glyph: ['"', '"', ',']`, and `TileLook::new` a `char` or an array. Each cell draws the glyph `TileGlyphs::at` picks by a hash of its world position, alike every frame and in memory, a glyph listed twice picked twice as often; under a `Tileset` each glyph is its own picture.
 
 ### Changed
 
 - **Breaking:** `PlaceMap::terrain` is no longer a field; read `place.bounds()` for its extent, `place.tile(p)` for a tile, and `place.terrain()` for every tile of a place built whole, `None` for a streamed one.
+- **Breaking:** `TileLook::glyph` is a `TileGlyphs` rather than a `char`, and `TileLook` is no longer `Copy`, nor `TileLook::new` a `const fn`; read one glyph as `look.glyph.first()` or compare `look.glyph == '#'`, borrow a look with `.as_ref()` where it was copied, and a literal writes `glyph: '#'.into()`.
 
 ## [0.5.0] - 2026-10-27
 

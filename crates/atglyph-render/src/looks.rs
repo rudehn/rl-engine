@@ -7,6 +7,11 @@
 //! those looks into the renderer's colour table, so a tile is defined in
 //! one place and read once.
 //!
+//! A look that names several glyphs keeps them all, and each cell draws
+//! the one [`TileGlyphs::at`](atglyph_grid::TileGlyphs::at) picks for its
+//! world position; under a [`Tileset`](crate::Tileset) each is its own
+//! character, so it is its own picture where the sheet names one.
+//!
 //! Every tile must have a look: a tile with none would be drawn as a
 //! magenta question mark, so the table is refused at startup, naming every
 //! tile left without one, rather than the gap being found on the map.
@@ -29,20 +34,20 @@ use atglyph_grid::{TileLook, TileRegistry};
 use atglyph_rules::ContentError;
 use bevy::prelude::Color;
 
-use crate::map_view::TileAppearance;
+use crate::map_view::{Look, TileAppearance};
 use crate::shade::Vary;
 use crate::terminal::Cell;
 
-/// A tile's look as the renderer draws it: the cell in full light and how
-/// it varies from cell to cell.
-pub(crate) fn drawn(look: &TileLook) -> (Cell, Vary) {
+/// A tile's look as the renderer draws it: the cell in full light, the
+/// glyphs a cell picks among, and how it varies from cell to cell.
+pub(crate) fn drawn(look: &TileLook) -> Look {
     let color = |(r, g, b): (f32, f32, f32)| Color::srgb(r, g, b);
-    let mut cell = Cell::new(look.glyph, color(look.fg));
+    let mut cell = Cell::new(look.glyph.first(), color(look.fg));
     if let Some(bg) = look.bg {
         cell = cell.on(color(bg));
     }
     let vary = look.vary.map_or(Vary::NONE, |(brightness, hue)| Vary::new(brightness, hue)).shimmering(look.shimmer);
-    (cell, vary)
+    Look { cell, glyphs: look.glyph.clone(), vary }
 }
 
 impl TileAppearance {
@@ -57,10 +62,7 @@ impl TileAppearance {
         let mut errors = Vec::new();
         for (id, props) in tiles.iter() {
             match &props.look {
-                Some(look) => {
-                    let (cell, vary) = drawn(look);
-                    out.set_varied(id, cell, vary);
-                }
+                Some(look) => out.put(id, drawn(look)),
                 None => errors.push(format!("{}: has no look", props.name)),
             }
         }
@@ -89,6 +91,26 @@ mod tests {
         let p = atglyph_core::Point::new(3, 4);
         assert_eq!(look.seen(tiles.expect("moss"), p, 0.0), look.seen(tiles.expect("moss"), p, 1.0), "moss sits still");
         assert_ne!(look.seen(tiles.expect("rock"), p, 0.0), look.seen(tiles.expect("rock"), p, 1.0), "rock shimmers");
+    }
+
+    /// A tile of several glyphs draws in each cell the one its world
+    /// position picks, the same in every frame and in memory as in sight,
+    /// with every glyph showing somewhere; its authored cell is the first.
+    #[test]
+    fn a_tile_of_several_glyphs_draws_each_cell_by_its_position_alike_in_sight_and_memory() {
+        let tiles = atglyph_rules::tiles::load(r#"[(tile: "grass", walkable: true, glyph: ['"', '"', ','], fg: (0.3, 0.6, 0.2), shimmer: 0.4)]"#).unwrap();
+        let grass = tiles.expect("grass");
+        let look = TileAppearance::from_tiles(&tiles).unwrap();
+        assert_eq!(look.lit(grass).glyph, '"');
+        let patch: Vec<_> = (0..12).flat_map(|y| (0..12).map(move |x| atglyph_core::Point::new(x, y))).collect();
+        for &p in &patch {
+            let glyph = look.seen(grass, p, 0.0).glyph;
+            assert_eq!(look.seen(grass, p, 7.5).glyph, glyph, "{p:?} keeps its glyph as time passes");
+            assert_eq!(look.remembered(grass, p).glyph, glyph, "{p:?} is remembered as it was seen");
+        }
+        for glyph in ['"', ','] {
+            assert!(patch.iter().any(|&p| look.seen(grass, p, 0.0).glyph == glyph), "{glyph:?} shows somewhere");
+        }
     }
 
     /// Every tile left without a look is named at once.
