@@ -56,7 +56,7 @@ pub use atglyph_grid::tile::{TileLook, TileProps, TileRegistry, TileTables};
 pub use atglyph_mapgen::chain::{BuildError, Chain};
 pub use atglyph_mapgen::context::BaseContext;
 pub use atglyph_mapgen::dungeon;
-pub use atglyph_render::map_view::{Glyph, TileAppearance};
+pub use atglyph_render::map_view::{CellBrightness, Glyph, TileAppearance};
 pub use atglyph_render::shade::Vary;
 pub use atglyph_render::terminal::Cell;
 pub use atglyph_rules::ai::Brain;

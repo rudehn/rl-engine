@@ -11,7 +11,10 @@
 //! standard tiles it leaves out are drawn in the engine's plain look. With
 //! lighting turned on, a visible tile's glyph and background and whatever
 //! stands on it are coloured by the light that lands there; see
-//! [`shade`](crate::shade) for how.
+//! [`shade`](crate::shade) for how. A game may draw a place brighter or
+//! darker cell by cell with a [`CellBrightness`], high ground brighter
+//! than low, say, which scales a tile's colours before light and memory
+//! touch them, so a cell remembered is as bright as it was seen.
 //!
 //! Fire and gas are drawn over the tiles they are on, from
 //! [`FieldAppearance`]: a flame over every burning cell with embers rising
@@ -26,6 +29,7 @@
 
 use std::collections::BTreeMap;
 use std::collections::btree_map::Entry;
+use std::sync::Arc;
 
 use atglyph_bevy::Recalled;
 use atglyph_bevy::prelude::*;
@@ -36,7 +40,7 @@ use bevy::color::Mix;
 use bevy::prelude::*;
 
 use crate::fields::{ShownFields, Wavefronts, churn, track_fields};
-use crate::shade::{Memory, Shading, Vary};
+use crate::shade::{Memory, Shading, Vary, brighten};
 use crate::terminal::{Cell, Terminal};
 
 /// How an entity is drawn.
@@ -61,6 +65,34 @@ impl Glyph {
         self.layer = layer;
         self
     }
+}
+
+/// How bright the game draws each cell of a map, as a share of its tile's
+/// colours: 1 as authored, more brighter and less darker. A tile cannot
+/// say it, since the same tile stands in a valley and on a ridge. It is
+/// cosmetic, as the rest of shading is, and no rule reads it.
+///
+/// Absent, every cell is drawn as authored.
+#[derive(Resource, Clone)]
+pub struct CellBrightness(Arc<dyn Fn(MapId, Point) -> f32 + Send + Sync>);
+
+impl CellBrightness {
+    /// The brightness `at` gives the cell `p` of a map. It is asked of
+    /// every cell drawn, every frame, so it should be cheap: a lookup, not
+    /// a generation.
+    pub fn new(at: impl Fn(MapId, Point) -> f32 + Send + Sync + 'static) -> Self {
+        Self(Arc::new(at))
+    }
+
+    /// How bright the cell `p` of `map` is drawn.
+    pub fn at(&self, map: MapId, p: Point) -> f32 {
+        (self.0)(map, p)
+    }
+}
+
+/// `cell` with both its colours scaled by `by`.
+fn brighter(cell: Cell, by: f32) -> Cell {
+    Cell { fg: brighten(cell.fg, by), bg: brighten(cell.bg, by), ..cell }
 }
 
 /// What each tile looks like in full light, indexed by [`TileId`], and
@@ -638,11 +670,12 @@ pub struct Scene<'w, 's> {
     fields: Res<'w, FieldAppearance>,
     shown: Res<'w, ShownFields>,
     registries: Option<Res<'w, Registries>>,
+    brightness: Option<Res<'w, CellBrightness>>,
 }
 
 /// Paints the viewport: lit where the player sees, dim where remembered.
 pub(crate) fn draw_map(mut terminal: ResMut<Terminal>, mut actors: ResMut<DrawnActors>, scene: Scene) {
-    let Scene { time, view, map, look, knowledge, lighting, overlay, player, glyphs, sight, fields, shown, registries } = &scene;
+    let Scene { time, view, map, look, knowledge, lighting, overlay, player, glyphs, sight, fields, shown, registries, brightness } = &scene;
     let now = time.elapsed_secs();
     let t = (now * ANIMATION_RATE).floor() / ANIMATION_RATE;
     let viewshed = player.single().ok();
@@ -651,15 +684,22 @@ pub(crate) fn draw_map(mut terminal: ResMut<Terminal>, mut actors: ResMut<DrawnA
     let sees = |p: Point| viewshed.is_some_and(|v| v.can_see(p));
     let cloud = shown.clouds_in_sight(view.tiles(), now, sees, |p| knowledge.is_explored(p));
     for p in view.tiles() {
+        let bright = brightness.as_deref().map_or(1.0, |b| b.at(map.current(), p));
         let mut cell = match (map.tile(p), viewshed.is_some_and(|v| v.can_see(p))) {
-            (Some(id), true) => match lighting {
-                Some(l) => look.under(look.seen(id, p, t), l.at(p), p, t),
-                None => look.seen(id, p, t),
-            },
-            (Some(id), false) if knowledge.is_explored(p) => match knowledge.recalled(p) {
-                Some(thing) => look.recalled(look.remembered(id, p), thing),
-                None => look.remembered(id, p),
-            },
+            (Some(id), true) => {
+                let seen = brighter(look.seen(id, p, t), bright);
+                match lighting {
+                    Some(l) => look.under(seen, l.at(p), p, t),
+                    None => seen,
+                }
+            }
+            (Some(id), false) if knowledge.is_explored(p) => {
+                let ground = brighter(look.remembered(id, p), bright);
+                match knowledge.recalled(p) {
+                    Some(thing) => look.recalled(ground, thing),
+                    None => ground,
+                }
+            }
             _ => Cell::default(),
         };
         let here = shown.at(p, now);
@@ -848,6 +888,25 @@ mod tests {
             "an ordinary sight stops at the wall: the ground behind is remembered, and the creature seen standing on it is not"
         );
         assert_eq!(drawn_for(Viewshed::everywhere()), ['#', '.', 'g'], "one that sees everywhere is shown what is behind it");
+    }
+
+    /// The same tile stands high and low, so how bright a cell is drawn is
+    /// the game's to say: its colours scaled by it, in sight and in memory.
+    #[test]
+    fn a_cell_is_drawn_as_bright_as_the_game_says_in_sight_and_remembered() {
+        let (mut app, start, player) = open_ground();
+        let (raised, beside) = (start.offset(2, 0), start.offset(2, 1));
+        let red = |c: Cell| c.fg.to_linear().red;
+        let (plain, plain_beside) = (drawn_at(&app, raised), drawn_at(&app, beside));
+        app.insert_resource(CellBrightness::new(move |_, p| if p == raised { 1.5 } else { 1.0 }));
+        app.update();
+        assert!((red(drawn_at(&app, raised)) - red(plain) * 1.5).abs() < 1e-5, "half as bright again in sight");
+        assert_eq!(drawn_at(&app, beside), plain_beside, "and the cell beside it as authored");
+        stand_at(&mut app, player, start.offset(-12, 0));
+        let remembered = red(drawn_at(&app, raised));
+        app.world_mut().remove_resource::<CellBrightness>();
+        app.update();
+        assert!((remembered - red(drawn_at(&app, raised)) * 1.5).abs() < 1e-5, "and as bright again remembered");
     }
 
     /// A player with ordinary sight on open ground, drawn on a terminal,

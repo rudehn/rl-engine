@@ -20,7 +20,8 @@
 //! - [`layout`] and [`pointer`](mod@pointer): where the cells go in a window of any
 //!   size, and which cell the mouse is over.
 //! - [`map_view`]: the map drawn from the player's point of view, each
-//!   tile's look and the actors over it.
+//!   tile's look, how bright the game draws each cell, and the actors
+//!   over it.
 //! - [`shade`], [`looks`] and [`fields`]: colour, light and memory the way
 //!   Brogue draws them, tile looks read from a file, and fire and gas
 //!   blended in over a moment.
@@ -47,7 +48,7 @@ pub mod tileset;
 
 pub use capture::CapturePlugin;
 pub use fullscreen::FullscreenPlugin;
-pub use map_view::{DrawnActors, Glyph, LightOverlay, MapView, MapViewPlugin, TileAppearance};
+pub use map_view::{CellBrightness, DrawnActors, Glyph, LightOverlay, MapView, MapViewPlugin, TileAppearance};
 pub use particles::{ParticleStyle, Particles, ParticlesPlugin};
 pub use shade::{Memory, Shading, Vary};
 pub use terminal::{Cell, Terminal, TerminalPlugin};
@@ -57,7 +58,7 @@ pub use tileset::Tileset;
 pub mod prelude {
     pub use crate::capture::CapturePlugin;
     pub use crate::fullscreen::FullscreenPlugin;
-    pub use crate::map_view::{DrawnActors, Glyph, LightOverlay, MapView, MapViewPlugin, TileAppearance};
+    pub use crate::map_view::{CellBrightness, DrawnActors, Glyph, LightOverlay, MapView, MapViewPlugin, TileAppearance};
 
     pub use crate::particles::{ParticleStyle, Particles, ParticlesPlugin};
 

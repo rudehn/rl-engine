@@ -118,6 +118,12 @@ fn scale(c: Color, r: f32, g: f32, b: f32) -> Color {
     Color::linear_rgba(l.red * r, l.green * g, l.blue * b, l.alpha)
 }
 
+/// `c` with its linear channels scaled by `by`: a cell drawn brighter or
+/// darker than its tile, as a game's [`CellBrightness`](crate::map_view::CellBrightness) says.
+pub(crate) fn brighten(c: Color, by: f32) -> Color {
+    if by == 1.0 { c } else { scale(c, by, by, by) }
+}
+
 /// Smooth value noise in `[0, 1]` over the plane and time: cells a tile
 /// or two apart move together, so a flame ripples rather than strobes.
 pub(crate) fn wave(seed: u64, p: Point, t: f32) -> f32 {

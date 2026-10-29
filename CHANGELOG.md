@@ -6,6 +6,10 @@ atglyph is not on crates.io yet, so a game depends on a release by its git tag, 
 
 ## [Unreleased]
 
+### Added
+
+- `CellBrightness`: a game draws each cell of a map brighter or darker than its tile, as high ground brighter than low, in sight and in memory alike.
+
 ## [0.5.0] - 2026-10-29
 
 ### Added
