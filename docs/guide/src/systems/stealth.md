@@ -14,7 +14,7 @@
             crates/atglyph-bevy/src/lighting.rs
             crates/atglyph-grid/src/light.rs
             crates/atglyph-ui/src/view/nearby.rs
-     fingerprint: c09e5c36 -->
+     fingerprint: 47dd05d7 -->
 
 # Stealth
 

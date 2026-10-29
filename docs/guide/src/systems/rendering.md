@@ -14,7 +14,7 @@
             crates/atglyph-bevy/src/cue.rs
             crates/atglyph-ui/src/tone.rs
             crates/atglyph/src/lib.rs
-     fingerprint: a7de871d -->
+     fingerprint: 6b4bb6cf -->
 
 # Rendering
 
@@ -47,7 +47,7 @@ It reads cues in `PresentSet::Narrate` and watches the turns' `CueWait` on enter
 `MapViewPlugin::new(rect).across(2)` draws each tile two cells across, for square tiles on narrow cells: `MapView::to_screen` answers a tile's first cell, `to_world` takes any of its cells back, `tiles` walks the view, and `set`, `wash` and `put` write a whole tile, `set` as one wide cell of the terminal, whose glyph or picture is drawn centred across its run until something else is written into it, so a screen drawn over the map is drawn a letter to a cell.
 The camera never scales; the glyphs take a font size scaled with the cell and are drawn at the size they are shown, and a window of exactly the size the game opened in gets exactly the declared cell, wherever that cell is a whole number of physical pixels; at a display scaling of 125% a ten-pixel cell is not, and is floored.
 `Glyph` is how an entity is drawn, a `ch`, an `fg` and a `layer`, and on a tile with two things on it the higher layer wins.
-`TileAppearance` is what each tile looks like in full light, indexed by `TileId`: `set` and `set_varied` fill it, `lit` reads it back, and an id the game never described draws as a magenta question mark so the gap is visible rather than blank.
+`TileAppearance` is what each tile looks like in full light, indexed by `TileId`: `set` and `set_varied` fill it, `lit` reads it back, a tile with several glyphs draws in each cell the one its world position picks, in sight and in memory alike, and an id the game never described draws as a magenta question mark so the gap is visible rather than blank.
 `seen` is that look jittered for the cell and the moment, `remembered` is it jittered as it was seen and then faded, and `under` colours both of a cell's colours by the light landing there.
 The map fills `Knowledge` once a frame with the topmost glyph on every tile in sight of anything that is not an `Actor` and not `Hidden`, or nothing, and `recalled` draws it over the tile once it is out of sight, in its own colour faded by the same `Memory`, so the stairs behind the player read as remembered and stay legible.
 `TileAppearance::from_tiles` builds the table from the `TileLook` each tile in a `TileRegistry` carries, written in code or read with the tile from a file by `atglyph_rules::tiles::load`, and names at once every tile without one, so a gap is reported at startup rather than found on the map.

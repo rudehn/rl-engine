@@ -15,7 +15,7 @@
             crates/atglyph-bevy/src/minds.rs
             crates/atglyph-bevy/src/title.rs
             crates/atglyph-save/src/lib.rs
-     fingerprint: c2311bdf -->
+     fingerprint: d01944f6 -->
 
 # Saving and the ending screen
 
@@ -54,7 +54,7 @@ Remains are saved as whatever they were, and a prop kind a game laid on a body a
 `PropKind`, the engine's `Stair`, `Quests` and `Counters` are the four the engine implements for itself, since it read those definitions out of a file or built them from facts and loot it owns; `SavePlugin` registers the first two, and a game with a quest tracker or a fact ledger adds `save_state::<Quests>()` or `save_state::<Counters>()`.
 `RunSave` is the result: a `format`, the `EngineSave`, a `KindSave` per kind holding each entry's own RON, the `EntityState` of each, and the game's resources by name.
 Capturing walks the kinds in registration order and each kind's living entities still in play in spawn order, leaving out the dead and the spent the frame keeps only so the log can name them, so one run writes the same bytes whatever order the archetypes are in; `restore` spawns each kind, binds the ids, puts the engine's state back on them, restores the game's resources and then the engine's own, into a world whose content resources the game's `PrepareRun` has already inserted; `RunSave::turn` is the whole turn it was saved on.
-`EngineSave` is the engine's half: the run's `seed`, the clock, the queue as ids and readings, the map's edits, its built places and which is current, what the player has explored and the still things it last saw there, each saved entity's pools and cooldowns, its charges, the progress towards a worn thing's next `WornTimer` tick, and how many more times each of its triggers may fire, and every burning or gassed cell on every map.
+`EngineSave` is the engine's half: the run's `seed`, the clock, the queue as ids and readings, its built places, the tiles of each built whole and what was changed on each streamed, and which is current, what the player has explored and the still things it last saw there, each saved entity's pools and cooldowns, its charges, the progress towards a worn thing's next `WornTimer` tick, and how many more times each of its triggers may fire, and every burning or gassed cell on every map.
 `EngineSave::restore` puts every one of those back except the `seed`, which it only carries: continuing sets the `Seed` from it before `PrepareRun` runs, so the places a game prepares are built on the run's own seed.
 Whoever held the turn is out of the queue when a save is taken, so it is put back at the front of the present and dealt first on the run that continues.
 What is in the air when a save is taken, a shot, an ability or a thing's aimed use waiting to be seen to land, is not saved: what it cost is spent in the save and what it would have landed is lost, since every `Airborne` is emptied when its run ends.

@@ -19,7 +19,7 @@
             crates/atglyph-rules/src/events/quest.rs
             crates/atglyph-ui/src/facet.rs
             crates/atglyph-ui/src/narrate.rs
-     fingerprint: b68250b3 -->
+     fingerprint: e8718fe8 -->
 
 # Statuses
 

@@ -122,7 +122,7 @@ fn populate(
             commands.spawn((Position(far), WayOut, Name::new("crack of daylight"), Glyph::new('<', Color::srgb(1.0, 0.95, 0.70)).on_layer(1)));
         }
         let Some(place) = map.place(ev.map) else { continue };
-        let bounds = place.terrain.bounds();
+        let bounds = place.bounds();
         let mut rng = seed.place(ev.map).rng(RATS, 0);
         let mut placed = 0;
         while placed < 16 {

@@ -11,7 +11,7 @@
             crates/atglyph-mapgen/src/secrets.rs
             crates/atglyph-core/src/seed.rs
             crates/atglyph-mapgen/src/place.rs
-     fingerprint: a675f310 -->
+     fingerprint: edeb8056 -->
 
 # Map generation
 
@@ -24,7 +24,7 @@ What a pass has to tell the rest of generation, a room it carved, a start it cho
 
 There is no plugin and no system: `atglyph-mapgen` is tier 1, has no Bevy in it, and nothing in it runs unless a game calls `Chain::run`.
 A game builds a `BaseContext` over a blank terrain, assembles a `Chain` with `then`, and runs it with a `PlaceSeed` or a `RunSeed`.
-Where that happens is the game's business, and in practice it is inside the `PlaceRules::build` the engine calls the first time a place is entered, handing it that place's own `PlaceSeed`.
+Where that happens is the game's business, and in practice it is inside the `PlaceRules::build` the engine calls the first time a place is entered, handing it that place's own `PlaceSeed`, or the `build_chunk` it calls for each chunk of a streamed place as the chunk comes into reach.
 `Chain::run` stops at the first failure and hands back the `BuildError` naming the pass, so a caller that asked for six rooms on a map with space for four retries rather than shipping a map its game does not expect.
 `Chain::run_retrying` is that retry: it takes a function that makes a fresh `BaseContext`, since a pass that fails may already have written part of its work, as `Rooms` does, and runs the chain again from the next attempt until one succeeds or the attempts are spent.
 

@@ -12,7 +12,7 @@
             crates/atglyph-grid/src/dijkstra.rs
             crates/atglyph-grid/src/region.rs
             crates/atglyph-grid/src/targeting.rs
-     fingerprint: 154e157c -->
+     fingerprint: c2c3bf82 -->
 
 # Grids and tiles
 
@@ -37,7 +37,7 @@ Names are resolved there rather than at registration, which is what lets a door 
 `Grid2D` is the addressing contract every map-shaped type implements: `width` and `height` are all an implementor writes, and `bounds`, `xy_idx`, `idx_point`, `in_bounds`, `checked_idx` and `neighbours` come with it, so an algorithm is written once against the trait and runs on a terrain, a scratch grid or the current place alike.
 `Steps` picks four neighbours or eight, and `Grid<T>` is the dense row-major container every layer uses; a layer per grid rather than one grid of fat structs, so a sweep over one layer stays in cache.
 `geometry` is the pure shape arithmetic over plain points: `chebyshev`, `euclidean_sq`, `octile_milli` as an integer heuristic scaled by a thousand, `line` by Bresenham, and `square`, `disc` and `cone` as iterators so a caller that only tests membership allocates nothing.
-`TileId` is a `u16` index; `TileProps` is the record behind it, carrying `walkable`, `passable`, `opaque`, `blocks_projectiles`, `move_cost`, `opens_to`, `closes_to`, an optional `Burn`, an optional `Glow`, the light it sheds, and an optional `TileLook`, the glyph and colours it is drawn in, which no rule reads.
+`TileId` is a `u16` index; `TileProps` is the record behind it, carrying `walkable`, `passable`, `opaque`, `blocks_projectiles`, `move_cost`, `opens_to`, `closes_to`, an optional `Burn`, an optional `Glow`, the light it sheds, and an optional `TileLook`, the glyph and colours it is drawn in, which no rule reads; its `glyph` is a `TileGlyphs`, one glyph or several, each cell drawing the one `at` picks by its position, so a field of grass is `"` and `,` rather than one character repeated.
 `walkable` against `passable` is the load-bearing pair: a closed door is not walkable this turn but a corridor through it still connects two rooms, and a connectivity pass that confused the two would wall off half a map.
 `TileTables` is what the hot loops actually read, a `Vec` per flag indexed by id, with `opens` and `closes` resolved to ids, `burns` resolved to a `Kindling`, and `lights`.
 `Terrain` is a `Grid<TileId>` and nothing else, and `Terrain::view(&registry)` makes a `TerrainView` that answers the two questions from the tables.

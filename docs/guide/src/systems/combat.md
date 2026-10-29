@@ -17,7 +17,7 @@
             crates/atglyph-bevy/src/ammo.rs
             crates/atglyph-bevy/src/effects/mod.rs
             crates/atglyph-bevy/src/effects/engine.rs
-     fingerprint: a325ec09 -->
+     fingerprint: 7946ac5e -->
 
 # Combat and loadout
 

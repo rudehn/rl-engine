@@ -13,7 +13,7 @@
             crates/atglyph-bevy/src/replay.rs
             crates/atglyph-bevy/src/seed.rs
             crates/atglyph-bevy/src/testing.rs
-     fingerprint: 54832241 -->
+     fingerprint: 00c71c95 -->
 
 # Controls, modals and cursors
 

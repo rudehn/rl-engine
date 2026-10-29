@@ -19,7 +19,7 @@
             crates/atglyph-save/src/engine.rs
             crates/atglyph-bevy/src/lighting.rs
             crates/atglyph-bevy/src/app.rs
-     fingerprint: ff79c7dc -->
+     fingerprint: 8452d7b5 -->
 
 # Props
 
@@ -31,7 +31,7 @@ What any of it means is the game's, and the whole of how a game says so is one m
 ## Turning it on
 
 `PropsPlugin` declares `needs::<Registries>` with `props` loaded from a `props.ron`, since a prop is a definition in a registry the way a monster is, and `depends_on::<CorePlugin>`.
-It works out the offers in `DecideSet::Offer`, beside the ability gate; reports what was stepped on at the end of `ResolveSet::Travel`, after every step, swap and warp; resolves interactions and takes in `ResolveSet::Act`; rolls to spot what is hidden in `DecideSet::Notice`, beside the stealth roll it resembles; puts props into a mind's snapshot in `PerceiveSet::Annotate`; arms new props in `TurnSet::Schedule`; closes emptied containers in `ReactSet::Settle`; and reports what was broken in `TurnSet::React`.
+It works out the offers in `DecideSet::Offer`, beside the ability gate; reports what was stepped on at the end of `ResolveSet::Travel`, after every step, swap and warp and after a streamed place's window has followed them; resolves interactions and takes in `ResolveSet::Act`; rolls to spot what is hidden in `DecideSet::Notice`, beside the stealth roll it resembles; puts props into a mind's snapshot in `PerceiveSet::Annotate`; arms new props in `TurnSet::Schedule`; closes emptied containers in `ReactSet::Settle`; and reports what was broken in `TurnSet::React`.
 Outside the turn loop it configures `PropSet::Stock` then `PropSet::Fill` inside `EngineSet::Stream`, because a prop is put down while a place is built: the engine builds every prop's effects, arms each new prop and asks for what each container holds in the first, and a game answers in the second, so what goes into a crate lands in the frame the crate was put down rather than in that frame or the next depending on which way the executor ran two systems.
 The report of a prop with no name runs in `PostUpdate` and in no set at all, since `Added` matches for one frame and a report gated on play having begun is a report that never happens.
 It takes `PropRng` for what a container holds and what is spotted, and adds `EffectsPlugin` unless something already has, which lands a trigger's effects from `EffectRng`, because a trap lands the same effects an ability does and wants the same dice.

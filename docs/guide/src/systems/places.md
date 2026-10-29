@@ -11,17 +11,17 @@
             crates/atglyph-bevy/src/plugin.rs
             crates/atglyph-bevy/src/knowledge.rs
             crates/atglyph-bevy/src/minds.rs
-     fingerprint: 88150a25 -->
+     fingerprint: 3e2d4bcd -->
 
 # Places
 
 A game's maps are places, and everything that reads tiles reads them through one resource.
-A place is bounded, built once by the game's rules the first time something enters it, and kept whole from then on, actors and items included.
+A place is bounded, built once by the game's rules the first time something enters it, and kept whole from then on, actors and items included; or, too large for that, streamed: built a chunk at a time round the player.
 Every entity with a position is on exactly one map, and the turn loop freezes whatever is not on the one being played.
 
 ## Turning it on
 
-Places need no plugin: `CorePlugin` puts `resolve_warps` in `ResolveSet::Travel` and `tag_new_positions` in `TurnSet::Schedule` before anyone is dealt a turn, and declares `needs::<WorldMap>`, so a game that sets play going with no map is told so by name; one whose run's start builds no map and names no places stays idle, unreported.
+Places need no plugin: `CorePlugin` puts `resolve_warps` and `stream_places` in `ResolveSet::Travel`, `stream_places` again in `EngineSet::Stream`, and `tag_new_positions` in `TurnSet::Schedule` before anyone is dealt a turn, and declares `needs::<WorldMap>`, so a game that sets play going with no map is told so by name; one whose run's start builds no map and names no places stays idle, unreported.
 What a game adds is its `PlaceRules`, handed over once with `app.places(rules)` where the game is put together, which also says the game needs a `Seed`; the engine calls them the first time a map id is entered.
 A run whose start makes no `WorldMap` gets one built over `PlaceRules::tiles`, a start that makes its own keeps it, and `commands.spawn_player(map, bundle)` spawns the player as a blocking actor warped to that place's entry.
 
@@ -47,7 +47,12 @@ An arrival on a taken cell lands on the nearest free one that can be walked to f
 A warp that lands on a map nobody has built calls the rules and installs the result with `install_place`, whoever arrived; `PlaceEntered` is written for the player alone, with `first` true on the player's first arrival, which is the one arrival on which a game populates a floor.
 `MapChanged` is written when the player changes map and `Travelled` when anyone does, naming the cell it left and whom it went after.
 The player's warp also switches the per-map indexes with the map: `Occupancy` swaps its `SpatialGrid` for the arriving map's and stashes the one it had, `Knowledge` does the same with explored tiles and the still things last seen on them, and `FlowFields` is invalidated so the next mind rebuilds.
-`export` and `import` are the save shape: every built place whole, and which one is current.
+A place too large to build whole is streamed: `PlaceRules::streamed` returns a `Streamed` layout for its map, chunks `chunk` tiles a side, `chunks` across and down, the `reach` of chunks kept loaded each way round the player's, and the `entry`, `ambient` and `peaceful` a whole build would carry, and `PlaceRules::build_chunk` builds one chunk from the place's seed, a pure function of the two since a chunk is built again whenever it comes back.
+The warp installs such a place with `install_streamed` and loads the chunks round the player's landing with `WorldMap::stream`; `stream_places` keeps them round the player once a frame in `EngineSet::Stream` and again in each turn pass after the warps.
+A chunk leaving the window keeps only what was changed on it, laid back when it is built again, and `ChunkLoaded` is written for every chunk that loads, its `first` true the once it is first built, which is when a game puts on it what its tiles do not say.
+The window of a streamed place is the loaded chunks, so `window_tiles`, `is_loaded` and every reader cover those alone, and an actor on a chunk not loaded is frozen as one on another map is.
+`PlaceMap::bounds` is a place's whole extent, `tile` one of its tiles, and `terrain` every tile of a place built whole, `None` for a streamed one.
+`export` and `import` are the save shape: every place built whole with its tiles, every streamed place with what was changed on it and which chunks were ever built, and which one is current.
 
 ## Using it
 
@@ -68,12 +73,12 @@ A game reaches a place by spawning a `Transition` on a cell, and where those cel
 ## The line
 
 The engine decides when a place is built, which is the first time anything enters it, and that it is never built twice.
-It decides that a place is kept whole once built, so leaving one freezes what is in it and returning finds it as it was.
+It decides that a place is kept whole once built, so leaving one freezes what is in it and returning finds it as it was; and for a streamed place, which chunks are loaded, when one is let go, and that what was changed on it comes back with it.
 It decides that the map being read follows the player and nobody else, that an actor on another map is frozen and requeued a full step without acting, and that such an actor can neither act nor be seen.
 It decides who follows whom through a way and where each lands; the game decides which kinds travel at all, by writing `follows_through`, `flees_through` or `travels`, both, in their wits.
-The game decides what a map id means, what is built there, where the transitions stand and what they lead to, what an arrival costs, and everything that goes in a place on the arrival `PlaceEntered` marks as its first.
+The game decides what a map id means, what is built there, whether it is built whole or streamed and how, where the transitions stand and what they lead to, what an arrival costs, and everything that goes in a place on the arrival `PlaceEntered` marks as its first, or on a chunk the first time `ChunkLoaded` says it loaded.
 
 ## Where it lives
 
-The place model is tier 1, in `atglyph-mapgen`: `MapId`, `PlaceRules`, `PlaceBuild`, `Spot`, `Lock` and `Ladder` need nothing but a terrain and a chain, so a terminal game or a tool builds the same places as the framework with no Bevy, and the generator is tested without a frame.
+The place model is tier 1, in `atglyph-mapgen`: `MapId`, `PlaceRules`, `PlaceBuild`, `Streamed`, `Spot`, `Lock` and `Ladder` need nothing but a terrain and a chain, so a terminal game or a tool builds the same places as the framework with no Bevy, and the generator is tested without a frame.
 `atglyph-bevy` is tier 2 and owns only what the running game is reading right now: which map is current, the warps, and which indexes have to be swapped when that changes, which is not a question a lower tier can answer.

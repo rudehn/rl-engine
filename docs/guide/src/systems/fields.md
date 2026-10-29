@@ -11,7 +11,7 @@
             crates/atglyph-bevy/src/effects/engine.rs
             crates/atglyph-bevy/src/world.rs
             crates/atglyph-bevy/src/plugin.rs
-     fingerprint: efda0b5b -->
+     fingerprint: 56d52ac5 -->
 
 # Fire and gas
 

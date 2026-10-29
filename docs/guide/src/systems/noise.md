@@ -16,7 +16,7 @@
             crates/atglyph-bevy/src/status.rs
             crates/atglyph-ui/src/view/nearby.rs
             crates/atglyph-ui/src/panel/nearby.rs
-     fingerprint: 3c7142f4 -->
+     fingerprint: 2227d2e2 -->
 
 # Noise
 

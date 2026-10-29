@@ -6,7 +6,7 @@
             crates/atglyph-save/src/run.rs
             crates/atglyph-save/src/unload.rs
             crates/atglyph-ui/src/game_menu.rs
-     fingerprint: 0f277b6a -->
+     fingerprint: 0cda325e -->
 
 # The title screen
 

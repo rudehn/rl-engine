@@ -5,7 +5,7 @@
             crates/atglyph-bevy/src/loot.rs
             crates/atglyph-bevy/src/props.rs
             crates/atglyph-bevy/src/parts.rs
-     fingerprint: e8b8581e -->
+     fingerprint: cbcf0c0c -->
 
 # Loot
 
@@ -33,7 +33,7 @@ As play begins it refuses, by name, a container holding an item the game has no 
 `LevelTable`, loaded with `loot::load_levels`, rolls an enchant level by band for a game's `make` to put on the things it knows are enchantable.
 A place is scattered from a stream derived from its own `PlaceSeed`, and a container from one derived from its place's seed and its cell, so what lies anywhere never depends on what happened elsewhere first.
 `Drops<D>` is a `DropTable` the game puts on an actor when it spawns it, each `DropRow` rolled on its own with its chance and count, from `LootRng`, which carries on from kill to kill and never touches combat's stream.
-A place is scattered on the arrival that built it, so nothing records which have been scattered.
+A place is scattered on the arrival that built it, so nothing records which have been scattered; a streamed place is never all there to scatter over, so it is not, and a game puts what lies on each chunk there the first time `ChunkLoaded` says it loaded.
 A container's `ContentRoll` is `Stock::Item`, a named item in a count, or `Stock::Tag`, that many separate draws of the tag at the container's band plus the row's `band` offset; draws of one thing are made together, so six slugs are one stack.
 
 ## Using it

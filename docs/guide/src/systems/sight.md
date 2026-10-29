@@ -9,7 +9,7 @@
             crates/atglyph-grid/src/light.rs
             crates/atglyph-bevy/src/items.rs
             crates/atglyph-mapgen/src/place.rs
-     fingerprint: e719213f -->
+     fingerprint: 467e39c3 -->
 
 # Sight and lighting
 
@@ -32,7 +32,7 @@ A game that adds neither has no sight: nothing ever casts a `Viewshed`, `can_see
 
 `LightSource(pub Glow)` is the one component for everything that glows, the `Glow` being the one light type, which a tile's definition, a prop's and a game's content all write.
 `intensity` is the brightness at the source's own tile, `radius` how far it reaches, falling to exactly zero at the rim, and `color` its hue; `LightSource::darkness(intensity, radius)` takes light away instead, pitch black at its heart at 255.
-Every cell of a place whose tile's definition carries a `Glow` gets a fixture when the place is built, and again when a continued run restores it, read off the terrain rather than saved; a prop whose definition carries a `light` gets its `LightSource` when its kind is put on it.
+Every cell of a place whose tile's definition carries a `Glow` gets a fixture when the place is built, and again when a continued run restores it, read off the terrain rather than saved, and a streamed place's each time one of its chunks loads; a prop whose definition carries a `light` gets its `LightSource` when its kind is put on it.
 An entity that takes no turns is a fixture in the static layer and an actor or a carried item is in the dynamic layer; either is recast when its sorted list of emitters differs from the last cast, and both are recast whole when the window moves, when play crosses to another map, or when the map's opacity changes.
 An item on the floor lights the tile it lies on, and once picked up it sheds from its carrier's tile instead.
 `DarkSight(pub i32)` is how far an actor sees with no light at all; absent, it sees only what it is touching.
