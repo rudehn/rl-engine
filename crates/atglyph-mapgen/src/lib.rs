@@ -57,6 +57,10 @@
 //! a place to grow round, and published as a [`Landmark`] whose
 //! [`Sides`] the way in and the way down may keep to, as
 //! [`Stairs`](dungeon::Stairs) says.
+//! A place may instead be carved out of solid rock a cell at a time:
+//! [`DrunkardsWalk`] opens a broad hall with rock standing in it, and
+//! [`Aggregate`] grows branching tunnels, both in one piece by their
+//! making and both to the open share asked for.
 //! [`Survey`] measures what was built, as a
 //! [`Surveyed`] with an [`AreaFacts`] per area, and [`Require`] fails a
 //! place that falls short, for [`Chain::run_retrying`] to build again.
@@ -94,6 +98,7 @@
 #![forbid(unsafe_code)]
 
 pub mod accrete;
+pub mod carve;
 pub mod cave;
 pub mod chain;
 pub mod context;
@@ -111,6 +116,7 @@ pub mod testing;
 mod walk;
 
 pub use accrete::{Accrete, Area, Barrier, District, FirstPiece, Join, LaidBarrier, Landmark, Opening, Piece, Shape, Side, Sides};
+pub use carve::{Aggregate, DrunkardsWalk, Origin};
 pub use cave::Cave;
 pub use chain::{BuildError, Chain, Pass, Phase};
 pub use context::{BaseContext, Outputs};

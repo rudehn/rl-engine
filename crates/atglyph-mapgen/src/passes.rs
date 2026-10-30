@@ -65,6 +65,9 @@ pub struct Scatter {
     pub on: TileId,
     /// Chance per candidate cell, in percent.
     pub chance_pct: u32,
+    /// The phase it runs in: [`Phase::Growth`] to cover the ground before
+    /// anything is built on it, [`Phase::Finish`] to strew over what was.
+    pub phase: Phase,
 }
 
 impl Pass for Scatter {
@@ -72,7 +75,7 @@ impl Pass for Scatter {
         self.name
     }
     fn phase(&self) -> Phase {
-        Phase::Growth
+        self.phase
     }
     fn apply(&self, ctx: &mut BaseContext) -> Result<(), BuildError> {
         let cells = ctx.terrain().len();
@@ -97,6 +100,8 @@ pub struct ScatterBy {
     pub on: TileId,
     /// The chance for a cell, in percent, from the context and the cell.
     pub chance_pct: ChanceFn,
+    /// The phase it runs in, as [`Scatter::phase`].
+    pub phase: Phase,
 }
 
 /// A per-cell chance in percent, computed from the context.
@@ -107,7 +112,7 @@ impl Pass for ScatterBy {
         self.name
     }
     fn phase(&self) -> Phase {
-        Phase::Growth
+        self.phase
     }
     fn apply(&self, ctx: &mut BaseContext) -> Result<(), BuildError> {
         let cells = ctx.terrain().len();
@@ -277,7 +282,7 @@ mod tests {
         Chain::new()
             .then(Fill { tile: floor })
             .then(Border { tile: wall })
-            .then(Scatter { name: "trees", tile: TileId(9), on: floor, chance_pct: 25 })
+            .then(Scatter { name: "trees", tile: TileId(9), on: floor, chance_pct: 25, phase: Phase::Growth })
             .run(&mut c, RunSeed(3))
             .unwrap();
         let n = c.terrain().count(TileId(9));
