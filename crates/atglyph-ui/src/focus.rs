@@ -17,7 +17,7 @@
 
 use atglyph_bevy::prelude::*;
 use atglyph_core::{Point, geometry};
-use atglyph_render::Glyph;
+use atglyph_render::{Glyph, MapView};
 use bevy::prelude::*;
 
 use crate::app::UiApp;
@@ -71,7 +71,9 @@ type Sightable = (Without<Dead>, With<Glyph>, Without<Hidden>, Without<Scenery>)
 ///
 /// Something needs a [`Name`] and a [`Glyph`] to be on it, the same rule
 /// every row in a view follows, so the list never stops on a thing no
-/// panel could name. A hidden prop is left out until it is spotted, which
+/// panel could name; and to stand where the [`MapView`] draws, when there
+/// is one, so it never stops on a thing the map does not show, as a
+/// viewer that sees the whole place sees things far off the screen. A hidden prop is left out until it is spotted, which
 /// is the whole of what hidden means. What the player sees at all is
 /// [`PlayerSight::shows`], the question the map asks too, so a thing
 /// [`Concealed`] in the dark is neither drawn nor listed.
@@ -79,6 +81,7 @@ type Sightable = (Without<Dead>, With<Glyph>, Without<Hidden>, Without<Scenery>)
 pub(crate) struct InSight<'w, 's> {
     sight: PlayerSight<'w, 's>,
     seen: Query<'w, 's, Seen, Sightable>,
+    view: Option<Res<'w, MapView>>,
 }
 
 impl InSight<'_, '_> {
@@ -99,6 +102,7 @@ impl InSight<'_, '_> {
             .seen
             .iter()
             .filter(|(entity, pos, _, on, _, concealed)| *entity != me && self.sight.shows(pos.0, *on, *concealed))
+            .filter(|(_, pos, ..)| self.view.as_deref().is_none_or(|v| v.to_screen(pos.0).is_some()))
             .map(|(entity, pos, name, _, actor, _)| (Sighting { entity, at: pos.0, actor, distance: geometry::chebyshev(origin, pos.0) }, name.as_str()))
             .collect();
         found.sort_by(|(a, a_name), (b, b_name)| (!a.actor, a.distance, *a_name, a.entity).cmp(&(!b.actor, b.distance, *b_name, b.entity)));

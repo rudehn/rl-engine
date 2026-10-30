@@ -361,6 +361,25 @@ mod tests {
         assert_eq!(view.threats(), 2);
     }
 
+    /// What sight reaches but the map does not draw is not listed: a viewer
+    /// that sees the whole place, as a cheat's does, sees things far off
+    /// the screen, and a row for one names nothing the player can find.
+    #[test]
+    fn a_thing_off_the_screen_is_not_listed_however_far_the_player_sees() {
+        let mut stage = Stage::new(NearbyViewPlugin);
+        let me = stage.player;
+        stage.app.world_mut().entity_mut(me).insert(atglyph_bevy::prelude::Viewshed::everywhere());
+        stage.thing("a coin", '$', 2, 0);
+        stage.thing("a far coin", '$', 20, 0);
+        // Twenty tiles across, the player in the middle of them.
+        let mut view = atglyph_render::MapView::new(atglyph_core::GridRect::new(0, 0, 20, 10));
+        view.origin = stage.at.offset(-10, -5);
+        stage.app.insert_resource(view);
+        stage.tick();
+        let things: Vec<String> = stage.app.world().resource::<NearbyView>().things.iter().map(|r| r.label.clone()).collect();
+        assert_eq!(things, vec!["a coin".to_string()], "the far coin is off the screen");
+    }
+
     /// Scenery is drawn but not listed: a lathe beside a crate leaves the
     /// crate the one thing in the rail, so a room of machinery does not
     /// bury what can be acted on.
