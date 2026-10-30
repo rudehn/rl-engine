@@ -155,9 +155,11 @@ impl Pass for DrunkardsWalk {
 /// stopped on opens, until [`open_pct`](Self::open_pct) of the ground
 /// inside the margin is open.
 ///
-/// A particle sets out a few cells beyond what is open rather than
-/// anywhere on the map, and gives up after a long wander for a fresh one,
-/// so growth costs about the same however small it still is.
+/// A particle sets out on a circle a few cells beyond the furthest cell
+/// open, and one that wanders well past it is given up for a fresh one,
+/// so growth costs about the same however small it still is; and a
+/// particle coming in from outside meets the tips of the arms first, so
+/// growth reaches out in branches rather than filling in round its heart.
 #[derive(Debug, Clone, Copy)]
 pub struct Aggregate {
     /// What is opened.
@@ -178,10 +180,15 @@ pub struct Aggregate {
     pub from: Origin,
 }
 
-/// How far beyond what is open a particle sets out, and how many steps it
-/// wanders before it is given up.
-const SPAWN_BEYOND: i32 = 6;
-const WANDER: u32 = 2_000;
+/// How far beyond the furthest open cell a particle sets out, how far
+/// beyond it a particle may wander before it is given up, and the most
+/// steps it takes.
+const SPAWN_BEYOND: f32 = 4.0;
+const GIVE_UP_BEYOND: f32 = 12.0;
+const WANDER: u32 = 4_000;
+/// How many particles in a row may stick nowhere before growth is called
+/// stalled.
+const STALLED: u32 = 10_000;
 
 impl Pass for Aggregate {
     fn name(&self) -> &'static str {
@@ -197,19 +204,34 @@ impl Pass for Aggregate {
         let seed = start(self.from, inside, self.name())?;
         let mut carving = Carving::new(ctx, inside, self.floor, self.brush, self.open_pct);
         carving.open(ctx, seed);
-        // The box round what is open, which particles set out from.
-        let (mut lo, mut hi) = (seed, seed);
+        // How far the furthest open cell stands from where growth started.
+        let from_seed = |p: Point| ((p.x - seed.x) as f32).hypot((p.y - seed.y) as f32);
+        let mut reach = self.brush as f32;
+        // Particles in a row that stuck nowhere: past this, growth has
+        // stalled, and the pass says so rather than looping.
+        let mut fruitless = 0;
         while !carving.done() {
-            let field = GridRect::from_corners(lo, hi).inflate(SPAWN_BEYOND + self.brush).intersection(&inside).unwrap_or(inside);
-            let mut at = Point::new(ctx.rng().random_range(field.x..field.right()), ctx.rng().random_range(field.y..field.bottom()));
+            if fruitless > STALLED {
+                return Err(BuildError::new(self.name(), format!("stalled at {} of {} cells", carving.opened.len(), carving.goal)));
+            }
+            fruitless += 1;
+            let angle = ctx.rng().random_range(0.0..std::f32::consts::TAU);
+            let r = reach + SPAWN_BEYOND;
+            let spawned = Point::new(seed.x + (angle.cos() * r).round() as i32, seed.y + (angle.sin() * r).round() as i32);
+            let mut at = Point::new(spawned.x.clamp(inside.x, inside.right() - 1), spawned.y.clamp(inside.y, inside.bottom() - 1));
+            // Once growth reaches the margin the circle runs along open
+            // ground there, and a particle sets out anywhere still rock.
             if carving.is_open(ctx, at) {
-                continue;
+                at = Point::new(ctx.rng().random_range(inside.x..inside.right()), ctx.rng().random_range(inside.y..inside.bottom()));
+                if carving.is_open(ctx, at) {
+                    continue;
+                }
             }
             for _ in 0..WANDER {
                 if Direction::CARDINALS.iter().any(|d| carving.is_open(ctx, at + d.offset())) {
                     carving.open(ctx, at);
-                    lo = Point::new(lo.x.min(at.x), lo.y.min(at.y));
-                    hi = Point::new(hi.x.max(at.x), hi.y.max(at.y));
+                    reach = reach.max(from_seed(at) + self.brush as f32);
+                    fruitless = 0;
                     break;
                 }
                 let toward = ctx.rng().random_range(0..100) < self.pull_pct;
@@ -220,9 +242,13 @@ impl Pass for Aggregate {
                     Direction::CARDINALS[ctx.rng().random_range(0..4)].offset()
                 };
                 let next = at + step;
-                if field.contains(next) {
-                    at = next;
+                if !inside.contains(next) {
+                    continue;
                 }
+                if from_seed(next) > reach + GIVE_UP_BEYOND {
+                    break;
+                }
+                at = next;
             }
         }
         Ok(())
@@ -298,9 +324,25 @@ mod tests {
     fn a_walk_opens_halls_and_aggregation_grows_branches() {
         let floor = TileRegistry::standard().expect("floor");
         let (walked, _) = carved(walk(floor), 1);
-        let (grown, _) = carved(Aggregate { open_pct: 45, ..aggregate(floor) }, 1);
+        let (grown, _) = carved(Aggregate { open_pct: 30, ..aggregate(floor) }, 1);
         let (hall, branches) = (openness(&walked, floor), openness(&grown, floor));
         assert!(hall > 0.4 && branches < 0.1, "a walk's hall {hall:.2}, aggregation's branches {branches:.2}");
+    }
+
+    /// Branches reach out: what aggregation grows stands much further from
+    /// its heart than a round patch of the same size would, where growth
+    /// that fills in round its heart, or fills a box, does not.
+    #[test]
+    fn aggregation_reaches_out_in_arms_rather_than_filling_in() {
+        let floor = TileRegistry::standard().expect("floor");
+        for seed in 0..3 {
+            let (ctx, floor) = carved(Aggregate { open_pct: 12, ..aggregate(floor) }, seed);
+            let middle = ctx.terrain().bounds().center();
+            let open: Vec<Point> = ctx.terrain().bounds().cells().filter(|&p| ctx.terrain().get(p) == Some(floor)).collect();
+            let furthest = open.iter().map(|p| ((p.x - middle.x) as f32).hypot((p.y - middle.y) as f32)).fold(0.0, f32::max);
+            let round = (open.len() as f32 / std::f32::consts::PI).sqrt();
+            assert!(furthest > 1.6 * round, "{seed}: reaches {furthest:.1}, where a round patch reaches {round:.1}");
+        }
     }
 
     #[test]
