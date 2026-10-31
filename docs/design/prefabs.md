@@ -12,7 +12,7 @@ Each game wrote that loop again, and a guard at a mark was a fixed monster, stro
 Containers had already solved this for items: a contents row says `(tag: "weapon", band: 2)`, and the item is drawn against the band of wherever the container landed.
 A prefab slot gives a cell the same power for props, items and monsters, so a guarded room keeps its shape and its tension on every floor while what guards it changes.
 
-The engine now owns when a slot is filled, from which stream, what is skipped, how a role is drawn and falls back, and how a guard keeps its post.
+The engine now owns when a slot is filled, from which stream, what is skipped, how a role is drawn and falls back, and how a guard keeps its post, as a `Hold`.
 What a monster and an item are stays the game's: it implements `ActorMaker` on the resource holding its monsters, beside the `ItemMaker` it already has, and the engine asks both to make what it decided.
 
 ## 1. The legend: one thing per cell
@@ -82,15 +82,15 @@ No shipped game can see this yet, since every one stamps with `Placement::AnyRoo
 
 ## 6. A post, and only one kind
 
-A monster placed at a slot is given `Post(cell)`, and `KeepPost` in its brain walks it back there when it has nothing better to do.
-It fights, flees and searches as it otherwise would, since `KeepPost` sits after `SearchLastKnown` and before the idle tactic: a guard that loses the player searches where it last saw them, then goes home.
-A guard that has noticed no one has no enemy in its snapshot and nowhere to search, so `KeepPost` is the first tactic that answers, and it stands its post rather than wandering off before it has seen anyone.
-`KeepPost` passes for an actor with no post, so a kind shares one brain whether or not this one was posted, and waits beside its post when something else stands on it rather than wandering.
+A monster placed at a slot is given `Moves(Movement::Hold(cell))`, and `Idle` in its brain walks it back there when it has nothing better to do.
+It fights, flees and searches as it otherwise would, since `Idle` sits after `SearchLastKnown`: a guard that loses the player searches where it last saw them, then goes home.
+A guard that has noticed no one has no enemy in its snapshot and nowhere to search, so `Idle` is the first tactic that answers, and it stands its post rather than wandering off before it has seen anyone.
+`Idle` passes for an actor with no `Moves`, so a kind shares one brain whether or not this one was told how to move, and waits beside its cell when something else stands on it rather than wandering.
 
-The post is saved: `atglyph-save` writes it with the actor, and it comes off the dead with `WasLiving`, since a body walks back to nothing.
+The movement is saved: `atglyph-save` writes it with the actor, and it comes off the dead with `WasLiving`, since a body walks back to nothing.
 Fantasy-rogue's guards lost their posts on a revisit because the patrol route was a component its save never wrote down.
 
-Only holding a post is built.
+Holding a post and roaming an area, `Movement::Roam`, are built, though the placer here only holds.
 Fantasy-rogue also offered roaming within the room, walking a loop of waypoints, and wandering the floor; each needs the stamp's bounds and orientation carried into the place, and no prefab here needs one yet.
 
 [Foundry](https://github.com/rudehn/foundry) found the one shape rule a post needs.

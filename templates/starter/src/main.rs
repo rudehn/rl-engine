@@ -26,7 +26,7 @@ use std::sync::Arc;
 use atglyph::prelude::*;
 use atglyph::prelude::{items::*, minds::*, ui::*};
 use atglyph::rand::Rng;
-use atglyph::rules::ai::tactics::{Hunt, MeleeAdjacent, SearchLastKnown, Wander};
+use atglyph::rules::ai::tactics::{Hunt, Idle, MeleeAdjacent, SearchLastKnown};
 use atglyph::rules::damage::DamageKindId;
 use atglyph::rules::faction::FactionDef;
 use bevy::prelude::*;
@@ -209,6 +209,7 @@ impl Goblins {
                 MeleeAttack::new(self.stab, DiceRoll::new(1, 4)),
                 Perception(10),
                 Mind(self.mind.clone()),
+                Moves(Movement::Wander),
                 // Sapient: it searches where it lost you, and opens doors.
                 // `Wits::ANIMAL` would stop at a door, and `Wits::MINDLESS`
                 // would forget you the moment it lost sight of you.
@@ -317,7 +318,7 @@ fn start(mut commands: Commands, seed: Res<Seed>, mut log: Log) {
                 .then(MeleeAdjacent)
                 .then(Hunt)
                 .then(SearchLastKnown)
-                .then(Wander { chance_pct: 30 }),
+                .then(Idle { chance_pct: 30 }),
         ),
         stab: kinds.expect("stab"),
         side: goblins,

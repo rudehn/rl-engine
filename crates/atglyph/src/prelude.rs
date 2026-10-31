@@ -118,9 +118,10 @@ pub mod items {
 /// What the monsters think with: minds and their tactics, factions,
 /// stealth and noticing, and noise and hearing.
 pub mod minds {
-    pub use atglyph_bevy::minds::{Intelligence, JoinStamp, LastTactic, Leader, MindChose, Post, Profile, Thinking};
+    pub use atglyph_bevy::minds::{Ground, GroundRule, Herd, Intelligence, JoinStamp, LastTactic, Leader, MindChose, Moves, Profile, Thinking};
     pub use atglyph_bevy::noise::{Footfall, Heard, Hearing, MakeNoise, NoiseHeard, NoisePlugin, NoiseRules, SoundId, SoundNames, Sounds};
     pub use atglyph_bevy::stealth::{Aware, Notice, Noticed, Stealth, StealthPlugin, Unseen, Watchers};
+    pub use atglyph_rules::ai::tactics::{Herded, Idle, Movement, Moving, OnGround};
     pub use atglyph_rules::ai::{
         ActorView, Awareness, Carried, Choice, Decision, Fields, HearingStats, ItemView, Missile, MovementProfile, NoFields, NoticeStats, Repertoire, Sense,
         Snapshot, Standard, StandardBrain, StealthStats, Tactic, TacticCtx, Vitals, Wits, notices, tactics,

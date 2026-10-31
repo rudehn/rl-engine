@@ -14,8 +14,8 @@
 //! registers it with [`SaveApp::save_kind`]. Everything the engine
 //! owns on that entity, where it stands, its health, what it carries and
 //! wears, its statuses and which worn thing holds each held one, the side
-//! a status turned it from, its stack, the transition it is, the post it
-//! holds, how long it has left alight, is the engine's to
+//! a status turned it from, its stack, the transition it is, how it
+//! moves, the ground and herd it keeps to, how long it has left alight, is the engine's to
 //! capture and put back, in [`EntityState`]. A
 //! resource a game keeps of the run goes through [`SaveableState`] and
 //! [`save_state`](SaveApp::save_state). A kind a game makes through
@@ -48,11 +48,12 @@
 use atglyph_bevy::EngineApp;
 use atglyph_bevy::{
     AbandonRun, ActiveStatuses, ActorMaker, ApplyStatus, Burning, ContinueRun, ContinueSaved, Counters, Dead, Emptied, EndOfFrame, EndRun, Ending, EngineState,
-    Equipped, Faction, Health, Hidden, Inventory, ItemLevel, ItemMaker, JoinStamp, Leader, LeaveRun, MapId, OnMap, PlaceEntered, Player, Position, Post,
-    PrepareRun, PropKind, Quests, Registries, Remains, RunResumed, SavedRun, Seed, SideWas, Stack, Stair, Stocked, Transition, Turns, Wearable, WorkKinds,
-    Working,
+    Equipped, Faction, Ground, Health, Herd, Hidden, Inventory, ItemLevel, ItemMaker, JoinStamp, Leader, LeaveRun, MapId, Moves, OnMap, PlaceEntered, Player,
+    Position, PrepareRun, PropKind, Quests, Registries, Remains, RunResumed, SavedRun, Seed, SideWas, Stack, Stair, Stocked, Transition, Turns, Wearable,
+    WorkKinds, Working,
 };
 use atglyph_core::{Id, Point};
+use atglyph_rules::ai::tactics::Movement;
 use atglyph_rules::{Equipment, Work};
 use bevy::ecs::world::CommandQueue;
 use bevy::prelude::*;
@@ -333,7 +334,7 @@ fn restore_item<K: SaveableItem>(world: &mut World, saved: &RawValue) -> Result<
 /// Implemented on the component that marks the definition an actor was
 /// made from, and registered with [`SaveApp::save_actors`] in place of
 /// [`SaveApp::save_kind`]. Where it stands, its health, what it
-/// carries and wears, its statuses and the post it holds are the engine's
+/// carries and wears, its statuses and how it moves are the engine's
 /// state, as on any saved kind.
 ///
 /// On restore it is made first, nowhere, through [`ActorMaker::make_at`],
@@ -596,10 +597,16 @@ pub struct EntityState {
     /// the thing was knows nothing of.
     #[serde(default)]
     pub remains_as: Option<String>,
-    /// Where it was posted, for an actor that holds a post, so a guard still
+    /// How it moves when idle, for an actor given a `Moves`, so a guard still
     /// walks back to its cell after a load.
     #[serde(default)]
-    pub post: Option<Point>,
+    pub movement: Option<Movement>,
+    /// The ground it keeps to, for an actor given a `Ground`.
+    #[serde(default)]
+    pub ground: Option<u16>,
+    /// The herd it keeps with, for an actor given a `Herd`.
+    #[serde(default)]
+    pub herd: Option<u64>,
     /// What it was in the middle of, for an actor at work.
     #[serde(default)]
     pub working: Option<SavedWork>,
@@ -703,7 +710,9 @@ impl EntityState {
             transition: e.get::<Transition>().copied(),
             remains,
             remains_as,
-            post: e.get::<Post>().map(|p| p.0),
+            movement: e.get::<Moves>().map(|m| m.0),
+            ground: e.get::<Ground>().map(|g| g.0),
+            herd: e.get::<Herd>().map(|h| h.0),
             // By id only when the leader has one already: one that was not
             // saved, a body gone at the end of its frame, is not given an id
             // that would come back bound to nothing.
@@ -781,8 +790,14 @@ impl EntityState {
         if let Some(transition) = self.transition {
             target.insert(transition);
         }
-        if let Some(at) = self.post {
-            target.insert(Post(at));
+        if let Some(movement) = self.movement {
+            target.insert(Moves(movement));
+        }
+        if let Some(id) = self.ground {
+            target.insert(Ground(id));
+        }
+        if let Some(id) = self.herd {
+            target.insert(Herd(id));
         }
         if let Some(side) = side_was {
             target.insert(Faction(side));
@@ -862,7 +877,7 @@ pub struct RunSave {
 impl RunSave {
     /// The shape of this struct. Bump it when an old save would parse
     /// wrongly into the new one.
-    pub(crate) const FORMAT: u32 = 1;
+    pub(crate) const FORMAT: u32 = 2;
 
     /// Writes the run down: every registered kind and resource, the
     /// engine's state on each entity, then the engine's own.
@@ -1919,17 +1934,21 @@ mod tests {
         );
     }
 
-    /// An actor posted somewhere is posted there again after a load, by
-    /// the engine: the game's own record of it says nothing of a post, and
-    /// a guard that forgot its cell would wander off the first time it
-    /// had nothing better to do.
+    /// An actor moves the same way, on the same ground and in the same herd
+    /// after a load, by the engine: the game's own record of it says nothing
+    /// of them, and a guard that forgot its cell would wander off the first
+    /// time it had nothing better to do.
     #[test]
-    fn a_posted_actor_keeps_its_post_when_the_run_is_continued() {
+    fn an_actor_keeps_its_movement_ground_and_herd_when_the_run_is_continued() {
         let backend = std::sync::Arc::new(MemoryBackend::default());
         let (mut app, start) = game(Saves(backend.clone()));
         app.world_mut().spawn((Actor, Player, Blocks, You, Position(start), Viewshed::new(6), RevealsMap, Health::full(30)));
         let post = start.offset(2, 3);
-        app.world_mut().spawn((Actor, Blocks, Person("Ada".into()), Position(start.offset(0, 3)), Health::full(20), Post(post)));
+        app.world_mut().spawn((Actor, Blocks, Person("Ada".into()), Position(start.offset(0, 3)), Health::full(20), Moves(Movement::Hold(post))));
+        app.world_mut().spawn((
+            (Actor, Blocks, Person("Bo".into()), Position(start.offset(0, 4)), Health::full(20)),
+            (Moves(Movement::Roam { at: post, reach: 5 }), atglyph_bevy::Ground(3), Herd(9)),
+        ));
         play(&mut app);
         save_run(app.world_mut()).unwrap();
 
@@ -1937,8 +1956,19 @@ mod tests {
         load_run(back.world()).unwrap().expect("a save").restore(back.world_mut()).unwrap();
         play(&mut back);
         let w = back.world_mut();
-        let posted = w.query_filtered::<&Post, With<Person>>().single(w).copied().expect("Ada came back");
-        assert_eq!(posted, Post(post), "posted on the same cell");
+        let mut found: Vec<_> = w
+            .query_filtered::<(&Person, Option<&Moves>, Option<&atglyph_bevy::Ground>, Option<&Herd>), With<Person>>()
+            .iter(w)
+            .map(|(p, m, g, h)| (p.0.clone(), m.copied(), g.copied(), h.copied()))
+            .collect();
+        found.sort_by(|a, b| a.0.cmp(&b.0));
+        assert_eq!(
+            found,
+            vec![
+                ("Ada".into(), Some(Moves(Movement::Hold(post))), None, None),
+                ("Bo".into(), Some(Moves(Movement::Roam { at: post, reach: 5 })), Some(atglyph_bevy::Ground(3)), Some(Herd(9))),
+            ]
+        );
     }
 
     /// A follower follows the same leader after a load, by the engine: its
@@ -2232,8 +2262,8 @@ mod tests {
         let text = backend.load("run").unwrap().unwrap();
         backend.persist("run", &text.replacen("version: 3", "version: 2", 1)).unwrap();
         assert!(matches!(load_run(app.world()), Err(SaveError::Version { found: 2, expected: 3 })));
-        backend.persist("run", &text.replacen("format: 1", "format: 9", 1)).unwrap();
-        assert!(matches!(load_run(app.world()), Err(SaveError::Version { found: 9, expected: 1 })));
+        backend.persist("run", &text.replacen("format: 2", "format: 9", 1)).unwrap();
+        assert!(matches!(load_run(app.world()), Err(SaveError::Version { found: 9, expected: 2 })));
     }
 
     /// An arrival somewhere while playing, as a warp into a place reports it.

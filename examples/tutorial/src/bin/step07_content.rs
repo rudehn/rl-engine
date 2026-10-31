@@ -366,11 +366,11 @@ impl Named for RatDef {
 
 // ANCHOR: bestiary
 /// The brain every kind is built from: bite, run once hurt enough, chase
-/// what it sees, else wander.
-const WARREN: Standard = Standard { melee: true, flee: true, flee_after_attacks: true, hunt: true, wander_chance: Some(40), ..Standard::NONE };
+/// what it sees, else idle about as its `Moves` say.
+const WARREN: Standard = Standard { melee: true, flee: true, flee_after_attacks: true, hunt: true, idle_chance: Some(40), ..Standard::NONE };
 
 /// A clever kind's brain adds its knacks, throwing and fetching rocks.
-const CLEVER: Standard = Standard { ability_chance: Some(80), throw_chance: Some(60), scavenge_reach: Some(9), wander_chance: Some(30), ..WARREN };
+const CLEVER: Standard = Standard { ability_chance: Some(80), throw_chance: Some(60), scavenge_reach: Some(9), idle_chance: Some(30), ..WARREN };
 
 /// What every creature shares that is not in the file.
 struct Kin {
@@ -417,7 +417,7 @@ impl Bestiary {
         let supper = def.clever.then(|| commands.spawn((Item, Crust(6), Tagged(vec![self.kin.bread]), Name::new("crust of bread"))).id());
         let mut e = commands.spawn((
             (Actor, Blocks, Position(at), Speed(def.speed), Faction(self.kin.faction)),
-            (Health::full(def.hp), Armor(def.armor), Perception(def.perception), DarkSight(9), Mind(self.minds[id.index()].clone())),
+            (Health::full(def.hp), Armor(def.armor), Perception(def.perception), DarkSight(9), Mind(self.minds[id.index()].clone()), Moves(Movement::Wander)),
             (MeleeAttack::new(def.kind.id(), def.attack), Glyph::new(def.glyph, Color::srgb(def.color.0, def.color.1, def.color.2)).on_layer(5)),
             (Name::new(def.name.clone()),),
         ));

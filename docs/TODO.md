@@ -116,7 +116,7 @@ The five items that opened this section were built in the six stages of `docs/de
   `UseAbility` scores a footprint at two for a hit and three against for harm, hardcoded in `crates/atglyph-rules/src/ai/tactics.rs`; make the weights fields.
 - **A searcher dithers where it lost the trail.**
   `SearchLastKnown` walks to the remembered cell and, standing on it, gives the turn to the next tactic, but the memory stays until `NoticeStats::memory` turns have passed.
-  So whatever comes next steps off the cell and the search walks straight back: a posted guard shuffles between the cell and one step toward its `Post`, and a wanderer between the cell and a random neighbour, until the memory runs out.
+  So whatever comes next steps off the cell and the search walks straight back: a posted guard shuffles between the cell and one step toward its held cell, and a wanderer between the cell and a random neighbour, until the memory runs out.
   Seen on 2026-09-25 at a game's guard posts, where it reads as a guard that cannot decide to go home.
   The fix is to forget the remembered cell once the searcher has reached it and seen nothing there, in stealth's awareness update or in the tactic's own contract, so the search ends where it arrives and the next tactic takes over for good.
   It changes how every game's monsters search, so every fingerprint moves with it.

@@ -480,7 +480,7 @@ mod tests {
     use crate::testing::headless_app;
     use crate::turn::{Intent, Wait};
     use atglyph_rules::Brain;
-    use atglyph_rules::ai::tactics::{SearchLastKnown, Wander};
+    use atglyph_rules::ai::tactics::{Idle, SearchLastKnown};
 
     const RULES: NoiseRules = NoiseRules { step: 0, strike: 0, door: 0, landing: 0, door_muffle: 2 };
 
@@ -517,7 +517,7 @@ mod tests {
 
         /// A listener `dx, dy` from the start that sees `reach` tiles.
         fn listener(&mut self, dx: i32, dy: i32, threshold: i32, reach: i32) -> Entity {
-            let brain = Brain::new().then(SearchLastKnown).then(Wander { chance_pct: 0 });
+            let brain = Brain::new().then(SearchLastKnown).then(Idle { chance_pct: 0 });
             let at = self.start.offset(dx, dy);
             let hearing = Hearing(HearingStats { threshold, memory: 3 });
             let e = self.app.world_mut().spawn((Actor, Blocks, Position(at), hearing, Perception(reach), Mind(Arc::new(brain)))).id();

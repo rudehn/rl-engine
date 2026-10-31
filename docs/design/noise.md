@@ -166,7 +166,7 @@ This is also what ends a search that arrived.
 **The trail it follows is the freshest one.**
 `Thinking` gains `offer_trail(at, stale_turns)`, and stealth and noise each offer theirs.
 `Thinking` puts the freshest in `Snapshot::last_known` when the snapshot is closed, ties to the lower cell, so the order the contributors ran in cannot reach a tactic.
-`SearchLastKnown` is unchanged: it walks to `last_known`, and a brain of `MeleeAdjacent`, `Hunt`, `SearchLastKnown`, `Wander` now goes to what it heard as well as what it lost.
+`SearchLastKnown` is unchanged: it walks to `last_known`, and a brain of `MeleeAdjacent`, `Hunt`, `SearchLastKnown`, `Idle` now goes to what it heard as well as what it lost.
 A mind whose wits do not search does not follow sounds either.
 
 **It forgets.**

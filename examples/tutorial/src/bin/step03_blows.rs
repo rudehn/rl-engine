@@ -7,10 +7,11 @@
 //! Keys: arrows, `hjklyubn` or the numpad to walk or strike, `t` lantern,
 //! `.` wait, `q` quit, Escape for the menu.
 
+use atglyph::prelude::minds::{Movement, Moves};
 use atglyph::prelude::ui::*;
 use atglyph::prelude::*;
 use atglyph::rand::Rng;
-use atglyph::rules::ai::tactics::{FleeWhenHurt, Hunt, MeleeAdjacent, Wander};
+use atglyph::rules::ai::tactics::{FleeWhenHurt, Hunt, Idle, MeleeAdjacent};
 use atglyph::rules::faction::FactionDef;
 use bevy::prelude::*;
 use std::sync::Arc;
@@ -138,8 +139,8 @@ fn start(mut commands: Commands, seed: Res<Seed>, mut log: Log) {
     // ANCHOR_END: combat
     commands.insert_resource(Rats {
         // Asked in order, and the first that answers wins: bite what is
-        // beside you, run when badly hurt, chase what you see, else wander.
-        mind: Arc::new(Brain::new().then(MeleeAdjacent).then(FleeWhenHurt { at_pct: 30 }).then(Hunt).then(Wander { chance_pct: 40 })),
+        // beside you, run when badly hurt, chase what you see, else idle about as its `Moves` say.
+        mind: Arc::new(Brain::new().then(MeleeAdjacent).then(FleeWhenHurt { at_pct: 30 }).then(Hunt).then(Idle { chance_pct: 40 })),
         bite: kinds.expect("bite"),
         faction: vermin,
     });
@@ -250,7 +251,7 @@ fn populate(mut commands: Commands, mut entered: MessageReader<PlaceEntered>, ra
                 (Health::full(6), Armor(0), Perception(7), DarkSight(9)),
                 (MeleeAttack::new(rats.bite, DiceRoll::new(1, 3)),),
             ));
-            rat.insert((Mind(rats.mind.clone()), Glyph::new('r', Color::srgb(0.72, 0.55, 0.45)).on_layer(5), Name::new("rat")));
+            rat.insert((Mind(rats.mind.clone()), Moves(Movement::Wander), Glyph::new('r', Color::srgb(0.72, 0.55, 0.45)).on_layer(5), Name::new("rat")));
             placed += 1;
         }
     }

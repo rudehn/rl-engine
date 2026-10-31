@@ -51,10 +51,10 @@ The loader resolves every tile, prop, tag, monster and role name and reports eve
 The fill reads each first `PlaceEntered`, walks the place's keyed spots in the order they were recorded, and draws each slot from the place's own `PlaceSeed` in the `atglyph.prefabs.content` domain, indexed by its cell, so what one slot holds never depends on another.
 It draws before it decides: on the arrival cell, on a cell no longer walkable, or on one already filled that arrival, a slot spawns nothing, and nothing anywhere else moves because of it.
 An item slot whose count rolls nought lays nothing, so a maker is never asked to make none.
-A prop is spawned as any prop is, items are made through `ItemMaker` as `Provenance { found: Found::Placed, band }` at the slot's own band and laid on the cell, and a monster is made through `ActorMaker::make` and given `Post` on its cell.
+A prop is spawned as any prop is, items are made through `ItemMaker` as `Provenance { found: Found::Placed, band }` at the slot's own band and laid on the cell, and a monster is made through `ActorMaker::make` and given `Moves(Movement::Hold(cell))` on its cell.
 A `Mark`, and every spot of an unkeyed piece, is the game's, found among the place's spots by its glyph.
-`Post(Point)` is read by `KeepPost`, which walks a guard home when it has nothing better to do, waits when it stands beside its post and cannot step onto it, and passes for an actor with no post.
-`atglyph-save` saves the post with the actor, and it comes off the dead with the rest of what made the actor living.
+`Moves(Movement::Hold(cell))` is read by `Idle`, which walks a guard home when it has nothing better to do, waits when it stands beside its cell and cannot step onto it, and passes for an actor with no `Moves`.
+`atglyph-save` saves the movement with the actor, and it comes off the dead with the rest of what made the actor living.
 
 ## Using it
 
@@ -75,4 +75,4 @@ Whether a role's members fight side by side is the game's too, since who fights 
 
 `atglyph-rules` holds the file formats, the role draw, the coverage report and the `PrefabLibrary` a chain takes its pieces from, so a tool or a terminal game grows the same places without Bevy, all tested with no `App` and no map: that every mistake in a file is reported together, that a role draw only ever returns a member of the role, and that a report names every slot that can draw nothing.
 `atglyph-mapgen` carries a piece's key through the stamp and knows nothing of slots, so a keyless piece stamps as it always has and it never learns what a monster is; `atglyph-rules` knows a monster only as the game's generic id, the `M` in `RoleDef<M>`.
-`atglyph-bevy` holds when, from which stream and what is skipped, the `Post` a placed monster keeps, and the check as play begins of what only the game's tables can answer, all over two traits a game implements on resources it already had; `atglyph-save` saves the post, the engine's record of where a guard belongs, and makes a monster again through the same `ActorMaker`.
+`atglyph-bevy` holds when, from which stream and what is skipped, the `Moves` a placed monster keeps, and the check as play begins of what only the game's tables can answer, all over two traits a game implements on resources it already had; `atglyph-save` saves the movement, the engine's record of where a guard belongs, and makes a monster again through the same `ActorMaker`.

@@ -199,7 +199,7 @@ fn smoke(c: &mut Criterion) {
                 app.world_mut().spawn((Position(start.offset(dx, dy)), atglyph_bevy::gas::Vents { gas: smoke, amount: 200 }));
             }
         }
-        let brain = std::sync::Arc::new(atglyph_rules::Brain::new().then(atglyph_rules::ai::tactics::Wander { chance_pct: 0 }));
+        let brain = std::sync::Arc::new(atglyph_rules::Brain::new().then(atglyph_rules::ai::tactics::Idle { chance_pct: 0 }));
         let mut placed = 0;
         let mut radius: i32 = 6;
         while placed < crowd {

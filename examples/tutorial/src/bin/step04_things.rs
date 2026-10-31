@@ -12,7 +12,7 @@ use atglyph::prelude::*;
 use atglyph::prelude::{combat::*, items::*, minds::*, ui::*, world::*};
 use atglyph::rand::Rng;
 use atglyph::rules::Wits;
-use atglyph::rules::ai::tactics::{FleeWhenHurt, Hunt, MeleeAdjacent, Wander};
+use atglyph::rules::ai::tactics::{FleeWhenHurt, Hunt, Idle, MeleeAdjacent};
 use atglyph::rules::ai::tactics::{Scavenge, ThrowAtRange};
 use atglyph::rules::faction::FactionDef;
 use bevy::prelude::*;
@@ -151,8 +151,8 @@ fn start(mut commands: Commands, seed: Res<Seed>, mut log: Log) {
     // ANCHOR_END: combat
     commands.insert_resource(Rats {
         // Asked in order, and the first that answers wins: bite what is
-        // beside you, run when badly hurt, chase what you see, else wander.
-        mind: Arc::new(Brain::new().then(MeleeAdjacent).then(FleeWhenHurt { at_pct: 30 }).then(Hunt).then(Wander { chance_pct: 40 })),
+        // beside you, run when badly hurt, chase what you see, else idle about as its `Moves` say.
+        mind: Arc::new(Brain::new().then(MeleeAdjacent).then(FleeWhenHurt { at_pct: 30 }).then(Hunt).then(Idle { chance_pct: 40 })),
         // A ratling has hands: it fetches rocks and throws them.
         ratling: Arc::new(
             Brain::new()
@@ -161,7 +161,7 @@ fn start(mut commands: Commands, seed: Res<Seed>, mut log: Log) {
                 .then(ThrowAtRange { chance_pct: 60 })
                 .then(Scavenge { reach: 9 })
                 .then(Hunt)
-                .then(Wander { chance_pct: 30 }),
+                .then(Idle { chance_pct: 30 }),
         ),
         bite: kinds.expect("bite"),
         faction: vermin,
@@ -321,6 +321,7 @@ fn populate(mut commands: Commands, mut entered: MessageReader<PlaceEntered>, ra
             if clever {
                 rat.insert((
                     Mind(rats.ratling.clone()),
+                    Moves(Movement::Wander),
                     // Wits say what a mind may consider: a ratling opens
                     // doors, picks things up and throws them.
                     Intelligence(Wits::SAPIENT),
@@ -329,7 +330,13 @@ fn populate(mut commands: Commands, mut entered: MessageReader<PlaceEntered>, ra
                     Name::new("ratling"),
                 ));
             } else {
-                rat.insert((Mind(rats.mind.clone()), Intelligence(Wits::ANIMAL), Glyph::new('r', Color::srgb(0.72, 0.55, 0.45)).on_layer(5), Name::new("rat")));
+                rat.insert((
+                    Mind(rats.mind.clone()),
+                    Moves(Movement::Wander),
+                    Intelligence(Wits::ANIMAL),
+                    Glyph::new('r', Color::srgb(0.72, 0.55, 0.45)).on_layer(5),
+                    Name::new("rat"),
+                ));
             }
             placed += 1;
         }

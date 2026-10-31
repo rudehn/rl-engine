@@ -580,7 +580,7 @@ mod tests {
     use crate::testing::headless_app;
     use crate::turn::{Intent, Wait};
     use atglyph_core::DiceRoll;
-    use atglyph_rules::ai::tactics::{Hunt, MeleeAdjacent, SearchLastKnown, Wander};
+    use atglyph_rules::ai::tactics::{Hunt, Idle, MeleeAdjacent, SearchLastKnown};
     use atglyph_rules::{Brain, Hit};
 
     /// An open field, a quiet player, and a watcher `gap` tiles east of it
@@ -619,7 +619,7 @@ mod tests {
                     (Health::full(100), Armor(0), Faction(you), Stealth(StealthStats::default())),
                 ))
                 .id();
-            let brain = Brain::new().then(MeleeAdjacent).then(Hunt).then(SearchLastKnown).then(Wander { chance_pct: 0 });
+            let brain = Brain::new().then(MeleeAdjacent).then(Hunt).then(SearchLastKnown).then(Idle { chance_pct: 0 });
             let watcher = app
                 .world_mut()
                 .spawn((
@@ -894,7 +894,7 @@ mod tests {
     #[test]
     fn a_watcher_that_lost_the_unseen_walks_toward_where_it_last_knew_of_them() {
         let mut field = Field::new(keen(), 5, 10, true, None);
-        let brain = Brain::new().then(SearchLastKnown).then(Wander { chance_pct: 0 });
+        let brain = Brain::new().then(SearchLastKnown).then(Idle { chance_pct: 0 });
         field.app.world_mut().entity_mut(field.watcher).insert(Mind(Arc::new(brain)));
         field.wait();
         assert!(field.aware().knows(field.player), "noticed first");

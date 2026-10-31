@@ -47,12 +47,13 @@ use atglyph_core::{GridRect, PlaceSeed, Point};
 pub(crate) use atglyph_mapgen::BuildError;
 pub use atglyph_mapgen::place::{Climb, Ladder, LadderEnd, LadderStair, Lock, MapId, PlaceBuild, PlaceRules, Spot, StairLook, Streamed};
 use atglyph_rules::Wits;
+use atglyph_rules::ai::tactics::Movement;
 use bevy::prelude::*;
 
 use crate::combat::Dead;
 use crate::components::{Actor, Blocks, Player, Position, Viewshed};
 use crate::knowledge::Knowledge;
-use crate::minds::{FlowFields, Intelligence, Post, Trails};
+use crate::minds::{FlowFields, Intelligence, Moves, Trails};
 use crate::turn::{Action, Intent, Occupancy, Resolution};
 use crate::world::WorldMap;
 
@@ -287,6 +288,7 @@ type TravellerData = (
     Option<&'static Intelligence>,
     Option<&'static Trails>,
     Has<Dead>,
+    Option<&'static Moves>,
 );
 
 /// Everyone with a position but the ways through themselves, which keeps
@@ -357,7 +359,7 @@ pub(crate) fn resolve_warps(
         // Who is beside the traveller, travels and was after it; the rule
         // orders them, so who gets the cell beside the landing never
         // depends on the order a query happened to run in.
-        let candidates = travellers.iter().map(|(e, (pos, _, on, _, _, wits, trails, dead))| {
+        let candidates = travellers.iter().map(|(e, (pos, _, on, _, _, wits, trails, dead, _))| {
             let follows = e != intent.actor
                 && !dead
                 && on.map(|m| m.0).unwrap_or(MapId::ZERO) == here
@@ -423,9 +425,10 @@ fn warp(
             install_whole(commands, maps, target_map)?;
         }
     }
-    let Ok((_, (mut pos, viewshed, on, blocks, player, ..))) = travellers.get_mut(actor) else {
+    let Ok((_, (mut pos, viewshed, on, blocks, player, _, _, _, moves))) = travellers.get_mut(actor) else {
         return Err(BuildError::new("warp", "the traveller has no position"));
     };
+    let moves = moves.copied();
     let from = on.map(|m| m.0).unwrap_or(MapId::ZERO);
     let want = match (arrive, maps.map.place(target_map)) {
         (Arrive::At(p), _) => p,
@@ -481,9 +484,13 @@ fn warp(
             report.entered.write(PlaceEntered { map: target_map, first, entry: place.entry, exit: place.exit });
         }
     } else {
-        // A post is a cell of the map it was given on, and means nothing
-        // on another: an actor that left its map has left its post.
-        commands.entity(actor).remove::<Post>();
+        // A held cell or a roamed area is cells of the map it left, and means
+        // nothing on another, so an actor that travels loses its `Moves`,
+        // unless it wanders, which is anywhere. Its `Ground` and `Herd` it
+        // keeps: the ground is the game's to read on any map.
+        if moves.is_some_and(|m| m.0 != Movement::Wander) {
+            commands.entity(actor).remove::<Moves>();
+        }
     }
     Ok(())
 }
@@ -897,7 +904,7 @@ mod tests {
         let from = r.start.offset(3, 0);
         let runner = mind(&mut r, from, sides.theirs, sides.kind, Wits::ANIMAL.with(Wits::TRAVELS), brain);
         r.app.world_mut().get_mut::<crate::combat::Health>(runner).unwrap().current = 2;
-        r.app.world_mut().entity_mut(runner).insert(Post(way));
+        r.app.world_mut().entity_mut(runner).insert(Moves(Movement::Hold(way)));
         intend(&mut r, Wait);
         assert_eq!((on(&r, runner), at(&r, runner)), (MapId::ZERO, way), "onto the way first");
         intend(&mut r, Wait);
@@ -911,9 +918,18 @@ mod tests {
             assert_eq!(at(&r, runner), place.entry);
             assert!(!w.resource::<Occupancy>().is_occupied(way), "no longer standing on the way");
             assert!(w.resource::<Occupancy>().is_occupied_on(cave, place.entry), "and indexed on the map it went to");
-            assert!(w.get::<Post>(runner).is_none(), "a post is a cell of the map it left");
+            assert!(w.get::<Moves>(runner).is_none(), "a held cell is a cell of the map it left");
             assert!(w.resource::<Entered>().0.is_empty(), "nobody has entered it as far as the game is told");
         }
+
+        // Wandering is anywhere, so a wanderer that travels keeps its `Moves`.
+        let beside = r.start.offset(3, 1);
+        let drifter = mind(&mut r, beside, sides.theirs, sides.kind, Wits::ANIMAL.with(Wits::TRAVELS), atglyph_rules::Brain::new());
+        r.app.world_mut().entity_mut(drifter).insert(Moves(Movement::Wander));
+        r.app.world_mut().write_message(WarpRequest::into_place(drifter, cave));
+        r.app.update();
+        assert_eq!(on(&r, drifter), cave, "the wanderer went too");
+        assert_eq!(r.app.world().get::<Moves>(drifter), Some(&Moves(Movement::Wander)), "and keeps wandering");
 
         r.app.world_mut().write_message(WarpRequest::into_place(r.player, cave));
         r.app.update();

@@ -24,10 +24,10 @@
 
 use std::sync::Arc;
 
-use atglyph_core::{Grid2D, Point, geometry};
+use atglyph_core::{Direction, Grid2D, Point, geometry};
 use atglyph_grid::{BitGrid, DijkstraMap, PathRules};
 use atglyph_rules::ai::recent::Recent;
-use atglyph_rules::ai::tactics::{Station, Ways};
+use atglyph_rules::ai::tactics::{Herded, Movement, Moving, OnGround, Station, Ways};
 use atglyph_rules::ai::{StepAs, Trail, sort_roster, step_as};
 use atglyph_rules::{ActorView, Brain, Choice, Decision, MovementProfile, Snapshot, TacticCtx, Wits};
 use bevy::ecs::lifecycle::HookContext;
@@ -119,14 +119,34 @@ pub struct Intelligence(pub Wits);
 #[derive(Component, Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct CameFrom(pub Option<Point>);
 
-/// Where an actor was set to stand and walks back to when it has nothing
-/// better to do: a monster placed at a prefab's slot. Read by the
-/// [`KeepPost`](atglyph_rules::ai::tactics::KeepPost) tactic through the
-/// [`Posted`](atglyph_rules::ai::tactics::Posted) sense `sense_posts` pushes,
-/// so a kind's shared brain posts only the ones given a post. Saved by
+/// How an actor moves when it has nothing better to do: wander anywhere,
+/// hold a cell, or roam an area. Read by the
+/// [`Idle`](atglyph_rules::ai::tactics::Idle) tactic through the
+/// [`Moving`](atglyph_rules::ai::tactics::Moving) sense `sense_moves` pushes,
+/// so a kind's shared brain moves only the ones given a way to. An actor with
+/// none has no idle move. Saved by `atglyph-save` with the actor.
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Moves(pub Movement);
+
+/// The id of the ground an actor keeps to, which a game gives meaning to
+/// through its [`GroundRule`]. With both, the actor's idle steps stay on the
+/// cells the game names, and one off its ground walks back. Saved by
 /// `atglyph-save` with the actor.
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Post(pub Point);
+pub struct Ground(pub u16);
+
+/// The game's answer to whether a cell of a map is a given ground, by the id
+/// an actor's [`Ground`] carries. Without one, no actor is kept to ground.
+#[derive(Resource, Clone)]
+pub struct GroundRule(pub Arc<dyn Fn(u16, MapId, Point) -> bool + Send + Sync>);
+
+/// The herd an actor belongs to. Actors sharing an id keep together with no
+/// leader, by [`Keep::herd`](atglyph_rules::ai::tactics::Keep::herd) on the
+/// middle of their living mates, through the
+/// [`Herded`](atglyph_rules::ai::tactics::Herded) sense `sense_herds` pushes.
+/// Saved by `atglyph-save` with the actor.
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Herd(pub u64);
 
 /// The one actor a mind follows: a band's chief, a hireling's employer.
 /// Read by [`Keep::leader`](atglyph_rules::ai::tactics::Keep::leader) through
@@ -708,11 +728,39 @@ pub(crate) fn perceive_roster(
     }
 }
 
-/// Tells the mind holding the turn where its post is, if it has one.
-pub(crate) fn sense_posts(mut thinking: ResMut<Thinking>, posts: Query<&Post>) {
-    let Some(post) = thinking.actor().and_then(|actor| posts.get(actor).ok()).copied() else { return };
+/// Tells the mind holding the turn how it moves, if it has a [`Moves`], and
+/// which of the nine cells round it are its [`Ground`], if it has one and the
+/// game gave a [`GroundRule`].
+pub(crate) fn sense_moves(mut thinking: ResMut<Thinking>, sight: Sight, rule: Option<Res<GroundRule>>, moves: Query<(&Moves, &Position, Option<&Ground>)>) {
+    let Some((Moves(movement), at, ground)) = thinking.actor().and_then(|actor| moves.get(actor).ok()) else { return };
+    let (movement, me) = (*movement, at.0);
+    let ground = ground.zip(rule).map(|(Ground(id), rule)| {
+        let map = sight.current_map();
+        let on = |at: Point| (rule.0)(id.to_owned(), map, at);
+        OnGround { here: on(me), beside: std::array::from_fn(|i| on(me + Direction::from_index(i).offset())) }
+    });
     if let Some(snapshot) = thinking.snapshot_mut() {
-        snapshot.add_sense(atglyph_rules::ai::tactics::Posted(post.0));
+        snapshot.add_sense(Moving { movement, ground });
+    }
+}
+
+/// Another of a herd: who it is, which herd, where it stands and on which map.
+type Mate = (Entity, &'static Herd, &'static Position, Option<&'static OnMap>);
+
+/// Tells the mind holding the turn where the rest of its [`Herd`] stand: every
+/// other living actor with its herd id on its map, seen or not. A herd is a
+/// handful, so the pass over it per mind's turn is cheap.
+pub(crate) fn sense_herds(mut thinking: ResMut<Thinking>, sight: Sight, herds: Query<&Herd>, actors: Query<Mate, (With<Actor>, Without<Dead>)>) {
+    let Some(thinker) = thinking.actor() else { return };
+    let Ok(Herd(mine)) = herds.get(thinker).copied() else { return };
+    let map = sight.current_map();
+    let mates: Vec<Point> = actors
+        .iter()
+        .filter(|(e, Herd(id), _, on)| *e != thinker && *id == mine && on.map(|m| m.0).unwrap_or(MapId::ZERO) == map)
+        .map(|(_, _, at, _)| at.0)
+        .collect();
+    if let Some(snapshot) = thinking.snapshot_mut() {
+        snapshot.add_sense(Herded { mates });
     }
 }
 
@@ -1055,7 +1103,7 @@ impl Plugin for MindsPlugin {
             .add_systems(Turn, sense.in_set(DecideSet::Sense))
             .add_systems(Turn, begin_thinking.in_set(PerceiveSet::Begin))
             .add_systems(Turn, perceive_roster.in_set(PerceiveSet::Roster))
-            .add_systems(Turn, (sense_posts, sense_leaders, sense_ways).chain().in_set(PerceiveSet::Annotate))
+            .add_systems(Turn, (sense_moves, sense_herds, sense_leaders, sense_ways).chain().in_set(PerceiveSet::Annotate))
             .add_systems(Turn, decide_minds.in_set(DecideSet::Minds));
     }
 
@@ -1096,7 +1144,7 @@ mod tests {
     use crate::turn::Resolution;
     use crate::turn::Turns;
     use atglyph_core::{DiceRoll, Direction};
-    use atglyph_rules::ai::tactics::{Hunt, MeleeAdjacent, UseCarried};
+    use atglyph_rules::ai::tactics::{Hunt, Idle, MeleeAdjacent, UseCarried};
     use atglyph_rules::damage::DamageKindId;
 
     fn arena() -> (App, Point, DamageKindId) {
@@ -2227,19 +2275,27 @@ mod tests {
         assert!(app.world().get::<CameFrom>(sniffer).unwrap().0.is_some(), "and remembers where it stepped from");
     }
 
-    /// A mind given a post walks back to it with nothing better to do,
-    /// told where it is by the sense the engine pushes from its [`Post`],
-    /// and then stays on it turn after turn.
+    /// A mind told to hold a cell walks back to it with nothing better to
+    /// do, told where it is by the sense the engine pushes from its
+    /// [`Moves`], and then stays on it turn after turn.
     #[test]
-    fn a_posted_mind_walks_home_and_stays_there() {
-        use atglyph_rules::ai::tactics::KeepPost;
+    fn a_holding_mind_walks_home_and_stays_there() {
+        use atglyph_rules::ai::tactics::Idle;
         let (mut app, start, _) = arena();
         let us = atglyph_rules::FactionId::from_raw(0);
         let player = app.world_mut().spawn((Actor, Player, Blocks, Position(start), Viewshed::new(8), Health::full(30), Faction(us))).id();
         let post = start.offset(3, 3);
         let guard = app
             .world_mut()
-            .spawn((Actor, Blocks, Position(start.offset(9, 3)), Health::full(10), Faction(us), Mind(Arc::new(Brain::new().then(KeepPost))), Post(post)))
+            .spawn((
+                Actor,
+                Blocks,
+                Position(start.offset(9, 3)),
+                Health::full(10),
+                Faction(us),
+                Mind(Arc::new(Brain::new().then(Idle { chance_pct: 0 }))),
+                Moves(Movement::Hold(post)),
+            ))
             .id();
         app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
         // Into play first, so each pass below is one turn of the guard's.
@@ -2261,9 +2317,9 @@ mod tests {
     /// and once the memory runs out it walks back to its post and stands
     /// there turn after turn.
     #[test]
-    fn a_posted_mind_that_lost_the_player_searches_then_returns_to_its_post_and_stands_there() {
+    fn a_holding_mind_that_lost_the_player_searches_then_returns_to_its_cell_and_stands_there() {
         use crate::plugin::{PerceiveSet, Turn};
-        use atglyph_rules::ai::tactics::{KeepPost, SearchLastKnown};
+        use atglyph_rules::ai::tactics::{Idle, SearchLastKnown};
 
         /// Where the guard last knew of someone, for how many more of its
         /// turns it remembers.
@@ -2290,8 +2346,9 @@ mod tests {
         let trail_at = post.offset(5, 0);
         app.insert_resource(Memory { at: trail_at, turns: 8 }).add_systems(Turn, remember.in_set(PerceiveSet::Annotate));
         let player = app.world_mut().spawn((Actor, Player, Blocks, Position(start), Viewshed::new(8), Health::full(30), Faction(us))).id();
-        let brain = Brain::new().then(SearchLastKnown).then(KeepPost);
-        let guard = app.world_mut().spawn((Actor, Blocks, Position(post), Health::full(10), Faction(us), Mind(Arc::new(brain)), Post(post))).id();
+        let brain = Brain::new().then(SearchLastKnown).then(Idle { chance_pct: 0 });
+        let guard =
+            app.world_mut().spawn((Actor, Blocks, Position(post), Health::full(10), Faction(us), Mind(Arc::new(brain)), Moves(Movement::Hold(post)))).id();
         app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
         // Into play first, so each pass below is one turn of the guard's.
         app.update();
@@ -2306,6 +2363,158 @@ mod tests {
         let searched = trail.iter().position(|at| *at == trail_at).unwrap_or_else(|| panic!("it never reached the trail: {trail:?}"));
         assert!(trail[..searched].iter().all(|at| *at != post), "it searched before it went home: {trail:?}");
         assert!(trail[16..].iter().all(|at| *at == post), "home once the memory ran out, and on its post since: {trail:?}");
+    }
+
+    /// Plays `turns` of the world, the player waiting whenever it is theirs.
+    fn play(app: &mut App, player: Entity, turns: usize) {
+        for _ in 0..turns {
+            if app.world().get::<MyTurn>(player).is_some() {
+                app.world_mut().write_message(Intent::new(player, Wait));
+            }
+            app.update();
+        }
+    }
+
+    /// A roamer fights, hunts and searches as any mind does, and that takes
+    /// it out of its area; once it has lost the player it walks back.
+    #[test]
+    fn a_roamer_hunts_a_foe_out_of_its_area_loses_it_and_walks_back() {
+        use atglyph_rules::ai::tactics::SearchLastKnown;
+        let (mut app, start, kind) = arena();
+        let (us, them) = (atglyph_rules::FactionId::from_raw(0), atglyph_rules::FactionId::from_raw(1));
+        let player = app.world_mut().spawn((Actor, Player, Blocks, Position(start.offset(2, 0)), Viewshed::new(8), Health::full(400), Faction(us))).id();
+        // A wall between where the player ends up and where the roamer stands.
+        let wall: Vec<Point> = (-8..=8).map(|dy| start.offset(12, dy)).collect();
+        crate::testing::wall_off(&mut app, &wall);
+        let brain = Brain::new().then(MeleeAdjacent).then(Hunt).then(SearchLastKnown).then(Idle { chance_pct: 30 });
+        let roamer = app
+            .world_mut()
+            .spawn((
+                (Actor, Blocks, Position(start), Health::full(20), Faction(them), Perception(8), MeleeAttack::new(kind, DiceRoll::flat(1))),
+                (Mind(Arc::new(brain)), Moves(Movement::Roam { at: start, reach: 3 })),
+            ))
+            .id();
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        app.update();
+        play(&mut app, player, 4);
+        app.world_mut().get_mut::<Position>(player).unwrap().0 = start.offset(8, 0);
+        let mut furthest = 0;
+        for _ in 0..60 {
+            play(&mut app, player, 1);
+            furthest = furthest.max(geometry::chebyshev(app.world().get::<Position>(roamer).unwrap().0, start));
+        }
+        assert!(furthest > 3, "it hunted the player out of its area: {furthest} off at most");
+        app.world_mut().get_mut::<Position>(player).unwrap().0 = start.offset(16, 0);
+        play(&mut app, player, 120);
+        let at = app.world().get::<Position>(roamer).unwrap().0;
+        assert!(geometry::chebyshev(at, start) <= 3, "it lost the player behind the wall and walked back: {at:?}");
+    }
+
+    /// A roamer's steps stay on the cells its game's rule names for its
+    /// ground, even where its area reaches past them.
+    #[test]
+    fn a_roamer_keeps_to_the_ground_its_games_rule_names() {
+        let (mut app, start, _) = arena();
+        let us = atglyph_rules::FactionId::from_raw(0);
+        app.insert_resource(GroundRule(Arc::new(|id, _, at| id == 1 && at.x <= 12)));
+        let player = app.world_mut().spawn((Actor, Player, Blocks, Position(start), Viewshed::new(8), Health::full(30), Faction(us))).id();
+        let home = Point::new(10, 10);
+        let roamer = app
+            .world_mut()
+            .spawn((
+                (Actor, Blocks, Position(home), Health::full(10), Faction(us)),
+                (Mind(Arc::new(Brain::new().then(Idle { chance_pct: 100 }))), Moves(Movement::Roam { at: home, reach: 6 }), Ground(1)),
+            ))
+            .id();
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        app.update();
+        let mut seen = std::collections::BTreeSet::new();
+        for _ in 0..300 {
+            play(&mut app, player, 1);
+            let at = app.world().get::<Position>(roamer).unwrap().0;
+            assert!(at.x <= 12, "it stood off its ground at {at:?}");
+            seen.insert(at);
+        }
+        assert!(seen.len() > 10, "it roamed rather than stood: {} cells", seen.len());
+    }
+
+    /// Three of a herd, far apart with no leader, draw together on the
+    /// middle of their mates.
+    #[test]
+    fn a_herd_spread_apart_draws_together() {
+        use atglyph_rules::ai::tactics::Keep;
+        let (mut app, start, _) = arena();
+        let us = atglyph_rules::FactionId::from_raw(0);
+        let player = app.world_mut().spawn((Actor, Player, Blocks, Position(start.offset(0, 18)), Viewshed::new(8), Health::full(30), Faction(us))).id();
+        let brain = Arc::new(Brain::new().then(Keep::herd(3, 1)).then(Idle { chance_pct: 30 }));
+        let cows: Vec<Entity> = [-15, 0, 15]
+            .into_iter()
+            .map(|dx| {
+                app.world_mut()
+                    .spawn((
+                        (Actor, Blocks, Position(start.offset(dx, 0)), Health::full(10), Faction(us), Perception(8)),
+                        (Mind(brain.clone()), Moves(Movement::Wander), Herd(7)),
+                    ))
+                    .id()
+            })
+            .collect();
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        app.update();
+        play(&mut app, player, 60);
+        let at: Vec<Point> = cows.iter().map(|e| app.world().get::<Position>(*e).unwrap().0).collect();
+        for (i, here) in at.iter().enumerate() {
+            let others: Vec<&Point> = at.iter().enumerate().filter(|(j, _)| *j != i).map(|(_, p)| p).collect();
+            let middle = Point::new((others[0].x + others[1].x) / 2, (others[0].y + others[1].y) / 2);
+            assert!(geometry::chebyshev(*here, middle) <= 4, "{here:?} is far from its mates' middle {middle:?}: {at:?}");
+        }
+    }
+
+    /// The ground an actor keeps to is the sense's to carry only when the
+    /// actor has a `Ground` and the game gave a rule to read it by.
+    #[test]
+    fn an_actor_with_no_ground_keeps_to_none() {
+        use atglyph_rules::ai::{Tactic, TacticCtx};
+        use std::sync::Mutex;
+
+        /// Remembers the last `Moving` sense any mind was dealt.
+        struct Spy(Arc<Mutex<Vec<Option<Moving>>>>);
+        impl Tactic<Entity> for Spy {
+            fn name(&self) -> &'static str {
+                "spy"
+            }
+            fn evaluate(&self, ctx: &mut TacticCtx<'_, Entity>) -> Option<Decision<Entity>> {
+                self.0.lock().unwrap().push(ctx.snapshot.sense::<Moving>().copied());
+                None
+            }
+        }
+
+        let (mut app, start, _) = arena();
+        let us = atglyph_rules::FactionId::from_raw(0);
+        let player = app.world_mut().spawn((Actor, Player, Blocks, Position(start), Viewshed::new(8), Health::full(30), Faction(us))).id();
+        let roam = Movement::Roam { at: start.offset(5, 5), reach: 4 };
+        let heard = Arc::new(Mutex::new(Vec::new()));
+        app.world_mut().spawn((
+            (Actor, Blocks, Position(start.offset(5, 5)), Health::full(10), Faction(us), Perception(8)),
+            (Mind(Arc::new(Brain::new().then(Spy(heard.clone())))), Moves(roam)),
+        ));
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        app.update();
+        play(&mut app, player, 2);
+        let seen = heard.lock().unwrap().clone();
+        assert!(!seen.is_empty(), "the mind took its turn");
+        assert!(seen.iter().all(|m| *m == Some(Moving { movement: roam, ground: None })), "moving, and on no ground in particular: {seen:?}");
+
+        // With a ground and a rule, the nine cells are filled in from it.
+        heard.lock().unwrap().clear();
+        app.insert_resource(GroundRule(Arc::new(|_, _, at| at.x >= 5)));
+        app.world_mut().spawn((
+            (Actor, Blocks, Position(Point::new(5, 20)), Health::full(10), Faction(us), Perception(8)),
+            (Mind(Arc::new(Brain::new().then(Spy(heard.clone())))), Moves(roam), Ground(2)),
+        ));
+        play(&mut app, player, 2);
+        let seen = heard.lock().unwrap().clone();
+        let on = seen.iter().rev().find_map(|m| m.and_then(|m| m.ground)).expect("the grounded mind was told its ground");
+        assert!(on.here && on.at(Point::new(1, 0)) && !on.at(Point::new(-1, 0)), "ground from x = 5: {on:?}");
     }
 
     /// Sixty hunters after one player are one flood: every mind that
@@ -2539,7 +2748,7 @@ mod tests {
     /// off the bystander rather than through or at it.
     #[test]
     fn a_mind_in_a_game_without_combat_drifts_and_gives_way_to_a_bystander() {
-        use atglyph_rules::ai::tactics::{GiveWay, Wander};
+        use atglyph_rules::ai::tactics::{GiveWay, Idle};
         let mut app = headless_app();
         app.add_plugins((crate::fov::FovPlugin, MindsPlugin));
         let start = crate::testing::ground(&mut app);
@@ -2554,7 +2763,7 @@ mod tests {
                 Blocks,
                 Position(start.offset(4, 0)),
                 Perception(6),
-                Mind(Arc::new(Brain::new().then(GiveWay { space: 1 }).then(Wander { chance_pct: 0 }))),
+                Mind(Arc::new(Brain::new().then(GiveWay { space: 1 }).then(Idle { chance_pct: 0 }))),
             ))
             .id();
         app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);

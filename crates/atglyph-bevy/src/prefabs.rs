@@ -27,7 +27,7 @@
 //! the engine asks them to make what it decided. A [`Slot::Mark`] is the
 //! game's too, found among the spots by its glyph, and so is every spot of
 //! a piece that was not keyed. A monster placed at a slot holds that cell
-//! as its [`Post`]. `docs/design/prefabs.md` has the reasoning.
+//! as its [`Moves`]. `docs/design/prefabs.md` has the reasoning.
 
 use crate::app::EngineApp;
 use std::collections::BTreeSet;
@@ -36,6 +36,7 @@ use std::sync::Arc;
 
 use atglyph_core::seed::position_hash;
 use atglyph_core::{Id, Point};
+use atglyph_rules::ai::tactics::Movement;
 use atglyph_rules::content::{BandedTable, Registry};
 use atglyph_rules::dressing::DressingDef;
 use atglyph_rules::prefab::{Legended, PrefabDef, PrefabLibrary, Slot, SlotPick};
@@ -46,7 +47,7 @@ use rand::Rng;
 use rand::rngs::StdRng;
 
 use crate::loot::{Found, ItemMaker, LootArea, Provenance, draw_stock, lay};
-use crate::minds::Post;
+use crate::minds::Moves;
 use crate::places::{MapId, PlaceEntered};
 use crate::props::spawn_prop;
 use crate::registries::Registries;
@@ -227,7 +228,7 @@ where
                 }
                 Drawn::Monster(def) => {
                     let monster = actors.make(&mut commands, registries, def, spot.at, ev.map, &mut rng);
-                    commands.entity(monster).insert(Post(spot.at));
+                    commands.entity(monster).insert(Moves(Movement::Hold(spot.at)));
                 }
                 Drawn::Items(..) | Drawn::Nothing => continue,
             }
@@ -632,14 +633,15 @@ pub(crate) mod tests {
         assert!(shallow.iter().any(|b| b == "beast heavy"), "a heavy, which band two alone never draws, stands at band two plus two: {shallow:?}");
     }
 
-    /// Both monsters placed at slots hold their own cells as their posts.
+    /// Both monsters placed at slots hold their own cells.
     #[test]
-    fn a_monster_placed_at_a_slot_holds_that_cell_as_its_post() {
+    fn a_monster_placed_at_a_slot_holds_that_cell() {
         let mut app = guarded(MapId(1), crate::testing::TEST_SEED, ENTRY);
         let world = app.world_mut();
-        let mut posts: Vec<(Point, Point)> = world.query_filtered::<(&Position, &Post), With<ToyKind>>().iter(world).map(|(at, post)| (at.0, post.0)).collect();
-        posts.sort();
-        assert_eq!(posts, vec![(HEAVY, HEAVY), (PAIR, PAIR)]);
+        let mut posts: Vec<(Point, Movement)> =
+            world.query_filtered::<(&Position, &Moves), With<ToyKind>>().iter(world).map(|(at, moves)| (at.0, moves.0)).collect();
+        posts.sort_by_key(|(at, _)| *at);
+        assert_eq!(posts, vec![(HEAVY, Movement::Hold(HEAVY)), (PAIR, Movement::Hold(PAIR))]);
     }
 
     /// Arriving on the weapon's cell, a slot that draws, spawns nothing

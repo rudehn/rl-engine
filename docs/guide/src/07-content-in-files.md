@@ -85,11 +85,11 @@ impl Named for RatDef {
 <!-- include: ../../../examples/tutorial/src/bin/step07_content.rs:bestiary -->
 ```rust,no_run
 /// The brain every kind is built from: bite, run once hurt enough, chase
-/// what it sees, else wander.
-const WARREN: Standard = Standard { melee: true, flee: true, flee_after_attacks: true, hunt: true, wander_chance: Some(40), ..Standard::NONE };
+/// what it sees, else idle about as its `Moves` say.
+const WARREN: Standard = Standard { melee: true, flee: true, flee_after_attacks: true, hunt: true, idle_chance: Some(40), ..Standard::NONE };
 
 /// A clever kind's brain adds its knacks, throwing and fetching rocks.
-const CLEVER: Standard = Standard { ability_chance: Some(80), throw_chance: Some(60), scavenge_reach: Some(9), wander_chance: Some(30), ..WARREN };
+const CLEVER: Standard = Standard { ability_chance: Some(80), throw_chance: Some(60), scavenge_reach: Some(9), idle_chance: Some(30), ..WARREN };
 
 /// What every creature shares that is not in the file.
 struct Kin {

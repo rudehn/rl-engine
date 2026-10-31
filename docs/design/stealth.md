@@ -40,7 +40,7 @@ Roughly in the order it becomes cheap.
   Crossing a room unnoticed to reach the stair, or to reach the one thing in it worth reaching, is a plan.
   Phase E turns it into damage; it is worth playing before it is worth multiplying.
 - **Monsters that are asleep until you are careless.**
-  An unaware monster spends its turns on whatever its lowest-priority tactic is, which is already `Wander`.
+  An unaware monster spends its turns on whatever its lowest-priority tactic is, which is already `Idle`.
   A floor that is quiet until you are seen is a floor with pacing, and it costs one component.
 - **A reason for gear to have a downside.**
   Armor that widens the radius that notices you is the first piece of equipment in the engine with a real trade, and the modifier stack already carries it.
@@ -150,10 +150,10 @@ pub struct SearchLastKnown;
 ```
 
 It fires when `enemies` is empty and `last_known` is `Some`, descends toward the remembered tile, and stops mattering when the awareness goes stale and the field clears.
-In the brain it sits between `Hunt` and `Wander`: look for what you lost before you drift.
+In the brain it sits between `Hunt` and `Idle`: look for what you lost before you drift.
 
 That ordering is the whole behaviour.
-A monster with `MeleeAdjacent`, `Hunt`, `SearchLastKnown`, `Wander` hunts what it sees, searches what it lost, and drifts when it has nothing, and a game reorders it by writing a different list.
+A monster with `MeleeAdjacent`, `Hunt`, `SearchLastKnown`, `Idle` hunts what it sees, searches what it lost, and drifts when it has nothing, and a game reorders it by writing a different list.
 
 ## 6. Waking up
 
