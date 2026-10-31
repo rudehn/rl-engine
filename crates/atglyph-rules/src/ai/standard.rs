@@ -4,10 +4,10 @@
 //!
 //! Every game with monsters wrote the same chain by hand: run when hurt,
 //! strike what is beside it, shoot what is not, hunt what it sees, search
-//! where it lost it, walk back to its post and drift, each guarded by
+//! where it lost it, go back to what it does when left alone, each guarded by
 //! whether the kind can. [`Standard`] is that chain as a game's choices:
 //! which steps its chain holds, and every number a step needs, the chance
-//! of reaching for an ability, of throwing, of a wanderer's step, and how
+//! of reaching for an ability, of throwing, of an idler's step, and how
 //! far a scavenger goes. [`Repertoire`] is what one kind can do, read from
 //! its parts. [`Standard::brain`] puts the two together in this order:
 //!
@@ -28,9 +28,8 @@
 //! 12. [`Hunt`], or whatever a game puts
 //!     [`instead_of_hunt`](StandardBrain::instead_of_hunt);
 //! 13. [`SearchLastKnown`];
-//! 14. [`KeepPost`];
-//! 15. whatever a game puts [`before_wander`](StandardBrain::before_wander);
-//! 16. [`Wander`].
+//! 14. whatever a game puts [`before_idle`](StandardBrain::before_idle);
+//! 15. [`Idle`].
 //!
 //! A step is in the brain only when the chain holds it and the kind can
 //! take it, so a kind that never runs has no `FleeWhenHurt` in its brain
@@ -46,7 +45,7 @@
 //! [`Brain`] by hand, as it always could.
 
 use crate::ai::brain::{Brain, Tactic};
-use crate::ai::tactics::{FleeWhenHurt, Hunt, Keep, KeepPost, MeleeAdjacent, Scavenge, SearchLastKnown, ShootAtRange, ThrowAtRange, UseAbility, Wander};
+use crate::ai::tactics::{FleeWhenHurt, Hunt, Idle, Keep, MeleeAdjacent, Scavenge, SearchLastKnown, ShootAtRange, ThrowAtRange, UseAbility};
 use crate::ai::wits::Wits;
 use crate::parts::KeepAway;
 
@@ -113,11 +112,11 @@ pub struct Standard {
     pub hunt: bool,
     /// [`SearchLastKnown`].
     pub search: bool,
-    /// [`KeepPost`].
-    pub keep_post: bool,
-    /// [`Wander`], a step at this chance in percent on a turn it has
-    /// nothing better to do.
-    pub wander_chance: Option<u32>,
+    /// [`Idle`]: `Some(chance)` puts it in the brain, and is how often a
+    /// drifting mode steps on a turn it has nothing better to do. `Hold`
+    /// never reads it. Which mode a mind moves by is the mind's own
+    /// [`Moving`](crate::ai::tactics::Moving) sense, not the brain's.
+    pub idle_chance: Option<u32>,
 }
 
 impl Standard {
@@ -134,8 +133,7 @@ impl Standard {
         scavenge_reach: None,
         hunt: false,
         search: false,
-        keep_post: false,
-        wander_chance: None,
+        idle_chance: None,
     };
 
     /// The brain this chain makes for a kind that can do what `can` says,
@@ -149,7 +147,7 @@ impl Standard {
             before_attacks: Vec::new(),
             before_hunt: Vec::new(),
             instead_of_hunt: Vec::new(),
-            before_wander: Vec::new(),
+            before_idle: Vec::new(),
         }
     }
 }
@@ -171,7 +169,7 @@ pub struct StandardBrain<A: Copy> {
     before_attacks: Vec<Box<dyn Tactic<A>>>,
     before_hunt: Vec<Box<dyn Tactic<A>>>,
     instead_of_hunt: Vec<Box<dyn Tactic<A>>>,
-    before_wander: Vec<Box<dyn Tactic<A>>>,
+    before_idle: Vec<Box<dyn Tactic<A>>>,
 }
 
 impl<A: Copy + 'static> StandardBrain<A> {
@@ -208,16 +206,16 @@ impl<A: Copy + 'static> StandardBrain<A> {
         self
     }
 
-    /// `tactic` after the post is kept and before the drift: a route of
-    /// the kind's own to walk when it has nothing else to do.
-    pub fn before_wander(mut self, tactic: impl Tactic<A> + 'static) -> Self {
-        self.before_wander.push(Box::new(tactic));
+    /// `tactic` after the search and before the idling: a route of the
+    /// kind's own to walk when it has nothing else to do.
+    pub fn before_idle(mut self, tactic: impl Tactic<A> + 'static) -> Self {
+        self.before_idle.push(Box::new(tactic));
         self
     }
 
     /// The brain, in the order the [module docs](self) give.
     pub fn build(self) -> Brain<A> {
-        let StandardBrain { chain, can, first, before_attacks, before_hunt, instead_of_hunt, before_wander } = self;
+        let StandardBrain { chain, can, first, before_attacks, before_hunt, instead_of_hunt, before_idle } = self;
         let mut brain = Brain::new().with_all(first);
         let flee = (chain.flee && can.flee_at > 0).then_some(FleeWhenHurt { at_pct: can.flee_at });
         if let Some(flee) = flee.filter(|_| !chain.flee_after_attacks) {
@@ -254,12 +252,9 @@ impl<A: Copy + 'static> StandardBrain<A> {
         if chain.search {
             brain = brain.then(SearchLastKnown);
         }
-        if chain.keep_post {
-            brain = brain.then(KeepPost);
-        }
-        brain = brain.with_all(before_wander);
-        if let Some(chance_pct) = chain.wander_chance {
-            brain = brain.then(Wander { chance_pct });
+        brain = brain.with_all(before_idle);
+        if let Some(chance_pct) = chain.idle_chance {
+            brain = brain.then(Idle { chance_pct });
         }
         brain
     }
@@ -268,7 +263,20 @@ impl<A: Copy + 'static> StandardBrain<A> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ai::brain::{Decision, TacticCtx};
     use crate::ai::tactics::Hover;
+
+    /// A tactic of a game's own, for the point before the idling.
+    struct StandIn;
+
+    impl<A: Copy> Tactic<A> for StandIn {
+        fn name(&self) -> &'static str {
+            "stand_in"
+        }
+        fn evaluate(&self, _: &mut TacticCtx<'_, A>) -> Option<Decision<A>> {
+            None
+        }
+    }
 
     /// A chain holding every step, at numbers of a test's own.
     const EVERY: Standard = Standard {
@@ -282,8 +290,7 @@ mod tests {
         scavenge_reach: Some(4),
         hunt: true,
         search: true,
-        keep_post: true,
-        wander_chance: Some(30),
+        idle_chance: Some(30),
     };
 
     /// A kind that can do everything a step asks of one.
@@ -300,19 +307,7 @@ mod tests {
         let brain: Brain<u32> = EVERY.brain(capable()).build();
         assert_eq!(
             names(&brain),
-            [
-                "flee_when_hurt",
-                "shadow",
-                "use_ability",
-                "melee_adjacent",
-                "shoot_at_range",
-                "throw_at_range",
-                "scavenge",
-                "hunt",
-                "search_last_known",
-                "keep_post",
-                "wander"
-            ]
+            ["flee_when_hurt", "shadow", "use_ability", "melee_adjacent", "shoot_at_range", "throw_at_range", "scavenge", "hunt", "search_last_known", "idle"]
         );
     }
 
@@ -321,14 +316,20 @@ mod tests {
         let empty: Brain<u32> = Standard::NONE.brain(capable()).build();
         assert!(names(&empty).is_empty(), "nothing the game did not ask for: {:?}", names(&empty));
         let plain: Brain<u32> = EVERY.brain(Repertoire { melee: true, ..Repertoire::default() }).build();
-        assert_eq!(names(&plain), ["melee_adjacent", "hunt", "search_last_known", "keep_post", "wander"], "a mindless biter that never runs");
+        assert_eq!(names(&plain), ["melee_adjacent", "hunt", "search_last_known", "idle"], "a mindless biter that never runs");
+    }
+
+    #[test]
+    fn a_chain_with_no_idle_chance_has_no_idle_step() {
+        let chain = Standard { melee: true, hunt: true, ..Standard::NONE };
+        assert_eq!(names(&chain.brain(capable()).build()), ["melee_adjacent", "hunt"]);
     }
 
     #[test]
     fn a_chain_that_flees_after_its_attacks_trades_its_blows_first() {
         let chain = Standard { flee_after_attacks: true, ..EVERY };
         let brain: Brain<u32> = chain.brain(Repertoire { flee_at: 30, melee: true, ranged: true, ..Repertoire::default() }).build();
-        assert_eq!(names(&brain), ["melee_adjacent", "shoot_at_range", "flee_when_hurt", "hunt", "search_last_known", "keep_post", "wander"]);
+        assert_eq!(names(&brain), ["melee_adjacent", "shoot_at_range", "flee_when_hurt", "hunt", "search_last_known", "idle"]);
     }
 
     #[test]
@@ -351,13 +352,13 @@ mod tests {
     fn a_games_own_tactics_land_at_the_points_it_names_and_one_in_place_of_the_hunt_leaves_the_hunt_out() {
         let brain: Brain<u32> = EVERY
             .brain(Repertoire { melee: true, ..Repertoire::default() })
-            .first(Wander { chance_pct: 1 })
+            .first(Idle { chance_pct: 1 })
             .before_attacks(Hover)
             .before_hunt(Keep::allies(3, 1))
             .instead_of_hunt(Keep::enemies(6, 4))
             .instead_of_hunt(Hover)
-            .before_wander(KeepPost)
+            .before_idle(StandIn)
             .build();
-        assert_eq!(names(&brain), ["wander", "hover", "melee_adjacent", "follow", "shadow", "hover", "search_last_known", "keep_post", "keep_post", "wander"]);
+        assert_eq!(names(&brain), ["idle", "hover", "melee_adjacent", "follow", "shadow", "hover", "search_last_known", "stand_in", "idle"]);
     }
 }

@@ -5,6 +5,7 @@ use std::collections::VecDeque;
 use atglyph_core::{Direction, Point, geometry};
 use atglyph_grid::{TargetMode, clear_shot, footprint};
 use rand::Rng;
+use serde::{Deserialize, Serialize};
 
 use crate::ability::{Aim, Usable};
 use crate::ai::brain::{Decision, Fields, Tactic, TacticCtx};
@@ -138,7 +139,7 @@ impl<A: Copy> Tactic<A> for Hunt {
 /// Walk to where an enemy was last seen, and stop mattering on arrival.
 ///
 /// Fires only when nothing is in sight, so it belongs below [`Hunt`] and
-/// above [`Wander`]: hunt what you see, search what you lost, drift when you
+/// above [`Idle`]: hunt what you see, search what you lost, drift when you
 /// have nothing. Walks down a field toward the remembered cell, which is
 /// where the enemy was and not where it is, so the search does not cheat.
 /// On the remembered tile it returns `None`, so the next tactic mills about
@@ -194,6 +195,22 @@ pub enum Station {
     /// is one particular actor, so it is the actor's own to carry and the
     /// sense's to report; one brain then serves the kind led or not.
     Leader,
+    /// The middle of a herd it belongs to, wherever the [`Herded`] sense
+    /// says its living mates stand: a flock that grazes together, with no
+    /// leader to follow.
+    Herd,
+}
+
+/// Where the living mates of a herd member stand, as a
+/// [`Sense`](crate::ai::Sense): what [`Station::Herd`] keeps station on.
+///
+/// The engine never pushes it: which creatures herd together is for the
+/// game to say. With no mates left, or never pushed, a herd member has no
+/// station to keep.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Herded {
+    /// Where each mate stands.
+    pub mates: Vec<Point>,
 }
 
 /// Where the one an actor follows stands, as a [`Sense`](crate::ai::Sense):
@@ -225,7 +242,7 @@ pub struct Led {
 /// the roster it read, so that is the only thing it takes.
 ///
 /// Where it goes in a brain depends on which station it keeps. Toward
-/// allies: above [`Wander`] and usually below [`MeleeAdjacent`], so a
+/// allies: above [`Idle`] and usually below [`MeleeAdjacent`], so a
 /// companion fights what reaches it and otherwise stays with you. Toward
 /// enemies: above anything that closes in, such as [`Hunt`], which would
 /// spend the turn undoing the distance this keeps, with a shot or a
@@ -317,6 +334,13 @@ impl Keep {
         Self { on: Station::Leader, keep_within, no_closer_than, gap: Gap::OnFoot }
     }
 
+    /// Station on the middle of its [`Herded`] mates, as the crow flies,
+    /// since the middle is a cell and not somebody the walk can be
+    /// measured to: what a herd's member is.
+    pub fn herd(keep_within: i32, no_closer_than: i32) -> Self {
+        Self { on: Station::Herd, keep_within, no_closer_than, gap: Gap::Crow }
+    }
+
     /// The same station with its gap measured by `gap`.
     pub fn measured(mut self, gap: Gap) -> Self {
         self.gap = gap;
@@ -358,6 +382,14 @@ impl Keep {
                 Some(led) => Some((led.at, vec![led.at], led.in_sight)),
                 None => allies(),
             },
+            Station::Herd => {
+                let mates = &ctx.snapshot.sense::<Herded>()?.mates;
+                let count = i32::try_from(mates.len()).ok().filter(|n| *n > 0)?;
+                // Their mean, rounded to the nearest cell.
+                let mean = |axis: fn(&Point) -> i32| (mates.iter().map(axis).sum::<i32>() * 2 + count).div_euclid(2 * count);
+                let middle = Point::new(mean(|p| p.x), mean(|p| p.y));
+                Some((middle, vec![middle], false))
+            }
             Station::Enemies => match ctx.snapshot.nearest_enemy() {
                 Some(enemy) => Some((enemy.pos, ctx.snapshot.enemies.iter().map(|e| e.pos).collect(), true)),
                 None if ctx.snapshot.wits.has(Wits::SEARCHES) => {
@@ -377,6 +409,7 @@ impl<A: Copy> Tactic<A> for Keep {
         match self.on {
             Station::Allies | Station::Leader => "follow",
             Station::Enemies => "shadow",
+            Station::Herd => "herd",
         }
     }
     fn keeps_with(&self) -> Option<Station> {
@@ -568,47 +601,6 @@ impl<A: Copy> Tactic<A> for Hover {
     }
 }
 
-/// Where an actor was set to stand, as a [`Sense`](crate::ai::Sense).
-///
-/// The engine's `sense_posts` pushes it from an actor's `Post` component,
-/// which a monster placed at a prefab's slot is given on its cell; a game
-/// running minds without `atglyph-bevy` pushes it itself.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Posted(pub Point);
-
-/// Hold a post: with nothing better to do, walk back to the cell the
-/// actor was set to stand on, and wait there.
-///
-/// Last before a brain's idle tactic, so a guard fights, flees and
-/// searches as it otherwise would and only then goes home, and a guard
-/// that loses the player searches where it last saw them before it does.
-/// Waits beside a post something else is standing on rather than
-/// wandering off, since the post will be free again. Leaves the turn to
-/// the next tactic for an actor with no [`Posted`] sense, so one brain
-/// serves a monster kind whether or not this one was posted.
-#[derive(Debug, Clone, Copy, Default)]
-pub struct KeepPost;
-
-impl<A: Copy> Tactic<A> for KeepPost {
-    fn name(&self) -> &'static str {
-        "keep_post"
-    }
-    fn evaluate(&self, ctx: &mut TacticCtx<'_, A>) -> Option<Decision<A>> {
-        let post = ctx.snapshot.sense::<Posted>()?.0;
-        let me = ctx.snapshot.me.pos;
-        if me == post {
-            return Some(Decision::Wait);
-        }
-        // Beside a taken post every other downhill cell is only a sidestep:
-        // a field offers each lower neighbour, and from a diagonal the two
-        // orthogonal ones are lower and still beside it.
-        if geometry::chebyshev(me, post) <= 1 && !(ctx.can_step)(post) {
-            return Some(Decision::Wait);
-        }
-        Some(ctx.step_toward(&[post]).map_or(Decision::Wait, Decision::Step))
-    }
-}
-
 /// The ground a mind's chart does not hold yet and could walk onto: every
 /// unseen cell that can be stood on beside a seen one that can, as a
 /// [`Sense`](crate::ai::Sense).
@@ -648,31 +640,152 @@ impl<A: Copy> Tactic<A> for Explore {
     }
 }
 
-/// Drift: some chance of a random step, otherwise wait.
+/// How a mind moves when it has nothing better to do, as a
+/// [`Moving`] sense carries it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Movement {
+    /// Drifts anywhere: a beast with no home.
+    Wander,
+    /// Stands on one cell: a guard at its post.
+    Hold(Point),
+    /// Drifts, but never further than `reach` cells from `at`, as the
+    /// crow flies: a creature that keeps to its den.
+    Roam {
+        /// The middle of the area it keeps to.
+        at: Point,
+        /// How far from `at` it may go.
+        reach: i32,
+    },
+}
+
+impl Movement {
+    /// Whether `p` is somewhere this movement lets a mind be.
+    pub fn holds(&self, p: Point) -> bool {
+        match *self {
+            Movement::Wander => true,
+            Movement::Hold(at) => p == at,
+            Movement::Roam { at, reach } => geometry::chebyshev(p, at) <= reach,
+        }
+    }
+
+    /// Whether a mind moving this way steps about of its own accord: every
+    /// movement but holding.
+    pub fn drifts(&self) -> bool {
+        !matches!(self, Movement::Hold(_))
+    }
+
+    /// The name the trace gives [`Idle`] while it moves a mind this way.
+    pub fn name(&self) -> &'static str {
+        match self {
+            Movement::Wander => "wander",
+            Movement::Hold(_) => "hold",
+            Movement::Roam { .. } => "roam",
+        }
+    }
+}
+
+/// Which of a mind's own cell and the eight beside it are its ground, the
+/// only places [`Idle`] lets it stand.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct OnGround {
+    /// Whether the cell it stands on is.
+    pub here: bool,
+    /// Whether each neighbour is, indexed by [`Direction::index`].
+    pub beside: [bool; 8],
+}
+
+impl OnGround {
+    /// Whether the cell `offset` from the mind is its ground. `Point::ZERO`
+    /// is its own cell, and anything beyond the nine is not.
+    pub fn at(&self, offset: Point) -> bool {
+        if offset == Point::ZERO {
+            return self.here;
+        }
+        Direction::ALL.into_iter().find(|d| d.offset() == offset).is_some_and(|d| self.beside[d.index()])
+    }
+}
+
+/// How a mind moves when it idles, and the ground it keeps to, as a
+/// [`Sense`](crate::ai::Sense).
 ///
-/// Never straight back where it came from while any other cell is open,
-/// so a wanderer wanders rather than dithers between two cells.
+/// The engine never pushes it: how a creature moves is for the game to say,
+/// from where it was placed and what it is, in the perceive phase. A game
+/// running minds without `atglyph-bevy` pushes it itself.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Moving {
+    /// How it moves.
+    pub movement: Movement,
+    /// Where it may stand, round the cell it is on; `None` keeps it to no
+    /// ground in particular.
+    pub ground: Option<OnGround>,
+}
+
+/// Idle: with nothing better to do, move by the mind's [`Moving`] sense.
+///
+/// Last in a brain, so a mind fights, flees and searches as it otherwise
+/// would and only then goes back to what it does when left alone, and a
+/// guard that loses the player searches where it last saw them before it
+/// goes home. A mind that holds walks back to its cell and waits there,
+/// beside it when something else is standing on it, since the cell will be
+/// free again. One that roams, out of its area, walks back toward the
+/// middle of it. Within it, and for a wanderer anywhere, it drifts: some
+/// chance per turn of a random step, otherwise a wait. A drift never goes
+/// straight back where it came from while any other cell is open, so a
+/// wanderer wanders rather than dithers between two cells, and never to a
+/// cell its movement does not hold or its ground does not allow.
+///
+/// A mind off its ground steps back onto it, toward its cell if it has
+/// one and onto whichever neighbour is ground if it has not. Leaves the
+/// turn to the next tactic for a mind with no [`Moving`] sense, so one
+/// brain serves a kind whether or not this one has been told how to move.
 #[derive(Debug, Clone, Copy)]
-pub struct Wander {
-    /// Chance per turn of moving, in percent.
+pub struct Idle {
+    /// Chance per turn of a drift moving, in percent. A mind that holds
+    /// never reads it.
     pub chance_pct: u32,
 }
 
-impl<A: Copy> Tactic<A> for Wander {
+impl<A: Copy> Tactic<A> for Idle {
     fn name(&self) -> &'static str {
-        "wander"
+        "idle"
+    }
+    fn named(&self, snapshot: &Snapshot<A>) -> &'static str {
+        snapshot.sense::<Moving>().map_or("idle", |moving| moving.movement.name())
     }
     fn evaluate(&self, ctx: &mut TacticCtx<'_, A>) -> Option<Decision<A>> {
+        let Moving { movement, ground } = *ctx.snapshot.sense::<Moving>()?;
+        let me = ctx.snapshot.me.pos;
+        let on_ground = |p: Point| ground.is_none_or(|g| g.at(p - me));
+        if !movement.holds(me) || !on_ground(me) {
+            let cell = match movement {
+                Movement::Wander => None,
+                Movement::Hold(at) | Movement::Roam { at, .. } => Some(at),
+            };
+            let Some(cell) = cell else {
+                let start = ctx.rng.random_range(0..8);
+                let onto = (0..8).map(|i| me + Direction::from_index((start + i) % 8).offset()).find(|step| steps_to(ctx, me, *step) && on_ground(*step));
+                return Some(onto.map_or(Decision::Wait, Decision::Step));
+            };
+            // Beside a taken cell every other downhill cell is only a
+            // sidestep: a field offers each lower neighbour, and from a
+            // diagonal the two orthogonal ones are lower and still beside it.
+            if matches!(movement, Movement::Hold(_)) && geometry::chebyshev(me, cell) <= 1 && !(ctx.can_step)(cell) {
+                return Some(Decision::Wait);
+            }
+            return Some(ctx.step_toward(&[cell]).map_or(Decision::Wait, Decision::Step));
+        }
+        if !movement.drifts() {
+            return Some(Decision::Wait);
+        }
         if ctx.rng.random_range(0..100) >= self.chance_pct {
             return Some(Decision::Wait);
         }
-        let me = ctx.snapshot.me.pos;
         let back = ctx.snapshot.came_from;
         let start = ctx.rng.random_range(0..8);
         let mut only_back = None;
         for i in 0..8 {
             let step: Point = me + Direction::from_index((start + i) % 8).offset();
-            if !steps_to(ctx, me, step) {
+            if !steps_to(ctx, me, step) || !movement.holds(step) || !on_ground(step) {
                 continue;
             }
             if Some(step) == back {
@@ -1171,7 +1284,7 @@ mod tests {
     }
 
     fn brain() -> Brain<u32> {
-        Brain::new().then(MeleeAdjacent).then(FleeWhenHurt { at_pct: 30 }).then(Hunt).then(Wander { chance_pct: 100 })
+        Brain::new().then(MeleeAdjacent).then(FleeWhenHurt { at_pct: 30 }).then(Hunt).then(Idle { chance_pct: 100 })
     }
 
     fn open() -> (Terrain, TileRegistry) {
@@ -1325,8 +1438,8 @@ mod tests {
         assert_eq!(with(&Keep::leader(3, 1)), Some(Station::Leader));
         assert!(Brain::<u32>::new().then(Keep::leader(3, 1)).keeps_with_allies(), "a follower keeps beside its allies too");
         assert_eq!(with(&FleeWhenHurt { at_pct: 50 }), None);
-        assert_eq!(with(&Wander { chance_pct: 50 }), None);
-        assert!(Brain::<u32>::new().then(Keep::allies(3, 1)).then(Wander { chance_pct: 50 }).keeps_with_allies());
+        assert_eq!(with(&Idle { chance_pct: 50 }), None);
+        assert!(Brain::<u32>::new().then(Keep::allies(3, 1)).then(Idle { chance_pct: 50 }).keeps_with_allies());
         assert!(!brain().keeps_with_allies());
     }
 
@@ -1447,43 +1560,13 @@ mod tests {
         assert_eq!(first_step(me, Point::new(9, 9), 6, &can_step, &NoFields), Some(corner), "which with no doors takes the diagonal");
     }
 
-    /// A drift with nowhere to drift but through a corner waits.
-    ///
-    /// Its own terrain, because it is the one tactic that tries all eight
-    /// ways: everything round it is walled but the one diagonal it may not
-    /// take.
-    #[test]
-    fn a_wander_with_only_a_squeeze_open_waits_instead() {
-        let r = TileRegistry::standard();
-        let mut t = Terrain::filled(12, 12, r.expect("wall"));
-        let (me, corner) = (Point::new(5, 5), Point::new(6, 6));
-        t.set(me, r.expect("floor"));
-        t.set(corner, r.expect("floor"));
-        let view_t = t.view(&r);
-        let can_step = |p: Point| view_t.is_walkable(p);
-        let mut rng = StdRng::seed_from_u64(7);
-
-        let b: Brain<u32> = Brain::new().then(Wander { chance_pct: 100 });
-        let snapshot = Snapshot::alone(view(1, me.x, me.y, 10));
-        let (decision, _) = b.decide(&mut TacticCtx {
-            snapshot: &snapshot,
-            fields: &mut NoFields,
-            can_step: &can_step,
-            blocks_shot: &nothing_blocks,
-            blocks_burst: &|_| false,
-            bounds: arena(),
-            rng: &mut rng,
-        });
-        assert_eq!(decision, Decision::Wait, "the only open cell is through a corner, so there is nowhere to drift");
-    }
-
     #[test]
     fn a_lost_enemy_is_searched_for_where_it_was_seen_and_hunting_outranks_it() {
         let (t, r) = open();
         let view_t = t.view(&r);
         let can_step = |p: Point| view_t.is_walkable(p);
         let mut rng = StdRng::seed_from_u64(1);
-        let b: Brain<u32> = Brain::new().then(MeleeAdjacent).then(Hunt).then(SearchLastKnown).then(Wander { chance_pct: 0 });
+        let b: Brain<u32> = Brain::new().then(MeleeAdjacent).then(Hunt).then(SearchLastKnown).then(Idle { chance_pct: 0 });
         let mut decide = |snapshot: &Snapshot<u32>| {
             b.decide(&mut TacticCtx {
                 snapshot,
@@ -1506,10 +1589,13 @@ mod tests {
         assert_eq!(decide(&seen).1, Some("hunt"), "something in sight is hunted, not searched for");
 
         let mut arrived = Snapshot::alone(view(1, 9, 5, 10));
+        arrived.add_sense(wandering());
         arrived.last_known = Some(Point::new(9, 5));
         assert_eq!(decide(&arrived), (Decision::Wait, Some("wander")), "on the tile the search has nothing left to do");
 
-        assert_eq!(decide(&Snapshot::alone(view(1, 5, 5, 10))).1, Some("wander"), "tracking nothing, it drifts");
+        let mut idle = Snapshot::alone(view(1, 5, 5, 10));
+        idle.add_sense(wandering());
+        assert_eq!(decide(&idle).1, Some("wander"), "tracking nothing, it drifts");
     }
 
     /// The brain is what a mind would like; its wits are what it manages. A
@@ -1549,15 +1635,32 @@ mod tests {
         assert_eq!(decide(&lost), None, "a mindless thing has nothing to follow");
     }
 
-    /// What [`KeepPost`] decides for `snapshot` on the open floor, with
-    /// fields built over it and every open cell free but those `taken`.
-    fn keep_post(snapshot: &Snapshot<u32>, taken: &[Point]) -> Option<Decision<u32>> {
-        let (t, r) = open();
+    /// A wanderer's sense, for a test that expects the drift.
+    fn wandering() -> Moving {
+        Moving { movement: Movement::Wander, ground: None }
+    }
+
+    /// What a mind standing at `me` has for ground when `ground` says which
+    /// cells are.
+    fn ground_where(me: Point, ground: impl Fn(Point) -> bool) -> Option<OnGround> {
+        let mut beside = [false; 8];
+        for d in Direction::ALL {
+            beside[d.index()] = ground(me + d.offset());
+        }
+        Some(OnGround { here: ground(me), beside })
+    }
+
+    /// What [`Idle`] decides for `snapshot` on open floor, with fields built
+    /// over it, every open cell free but those `taken`, and the rng seeded
+    /// with `seed`.
+    fn idle_seeded(snapshot: &Snapshot<u32>, taken: &[Point], chance_pct: u32, seed: u64) -> Option<Decision<u32>> {
+        let r = TileRegistry::standard();
+        let t = Terrain::filled(40, 40, r.expect("floor"));
         let view_t = t.view(&r);
         let can_step = |p: Point| view_t.is_walkable(p) && !taken.contains(&p);
         let mut fields = Given::over(&view_t);
-        let mut rng = StdRng::seed_from_u64(1);
-        KeepPost.evaluate(&mut TacticCtx {
+        let mut rng = StdRng::seed_from_u64(seed);
+        Idle { chance_pct }.evaluate(&mut TacticCtx {
             snapshot,
             fields: &mut fields,
             can_step: &can_step,
@@ -1568,31 +1671,218 @@ mod tests {
         })
     }
 
-    #[test]
-    fn a_posted_actor_with_nothing_to_do_walks_back_to_its_post() {
-        let mut snapshot = Snapshot::alone(view(0, 6, 6, 10));
-        snapshot.add_sense(Posted(Point::new(2, 2)));
-        assert_eq!(keep_post(&snapshot, &[]), Some(Decision::Step(Point::new(5, 5))), "one step down the field toward the post");
+    fn idle(snapshot: &Snapshot<u32>, taken: &[Point], chance_pct: u32) -> Option<Decision<u32>> {
+        idle_seeded(snapshot, taken, chance_pct, 1)
+    }
+
+    /// What [`Keep`] decides for `snapshot` on open floor, with fields built
+    /// over it.
+    fn keep(keep: Keep, snapshot: &Snapshot<u32>) -> Option<Decision<u32>> {
+        let r = TileRegistry::standard();
+        let t = Terrain::filled(40, 40, r.expect("floor"));
+        let view_t = t.view(&r);
+        let can_step = |p: Point| view_t.is_walkable(p);
+        let mut fields = Given::over(&view_t);
+        let mut rng = StdRng::seed_from_u64(1);
+        keep.evaluate(&mut TacticCtx {
+            snapshot,
+            fields: &mut fields,
+            can_step: &can_step,
+            blocks_shot: &nothing_blocks,
+            blocks_burst: &|_| false,
+            bounds: arena(),
+            rng: &mut rng,
+        })
+    }
+
+    fn holding(at: Point, from: Point) -> Snapshot<u32> {
+        let mut snapshot = Snapshot::alone(view(0, from.x, from.y, 10));
+        snapshot.add_sense(Moving { movement: Movement::Hold(at), ground: None });
+        snapshot
     }
 
     #[test]
-    fn a_posted_actor_at_its_post_waits_there() {
-        let mut snapshot = Snapshot::alone(view(0, 2, 2, 10));
-        snapshot.add_sense(Posted(Point::new(2, 2)));
-        assert_eq!(keep_post(&snapshot, &[]), Some(Decision::Wait));
+    fn a_holder_with_nothing_to_do_walks_back_to_its_cell() {
+        let snapshot = holding(Point::new(5, 5), Point::new(2, 5));
+        assert_eq!(idle(&snapshot, &[], 100), Some(Decision::Step(Point::new(3, 5))), "one step down the field toward the cell");
     }
 
     #[test]
-    fn a_guard_whose_post_is_taken_waits_rather_than_wandering() {
-        let mut snapshot = Snapshot::alone(view(0, 3, 3, 10));
-        snapshot.add_sense(Posted(Point::new(2, 2)));
-        assert_eq!(keep_post(&snapshot, &[Point::new(2, 2)]), Some(Decision::Wait), "beside a post something else stands on, it waits for it");
+    fn a_holder_at_its_cell_waits_there() {
+        let snapshot = holding(Point::new(5, 5), Point::new(5, 5));
+        assert_eq!(idle(&snapshot, &[], 100), Some(Decision::Wait));
+        assert_eq!(Tactic::<u32>::named(&Idle { chance_pct: 100 }, &snapshot), "hold");
     }
 
     #[test]
-    fn an_actor_with_no_post_is_left_to_the_next_tactic() {
+    fn a_holder_whose_cell_is_taken_waits_beside_it_rather_than_drifting() {
+        let snapshot = holding(Point::new(5, 5), Point::new(4, 5));
+        assert_eq!(idle(&snapshot, &[Point::new(5, 5)], 100), Some(Decision::Wait), "beside a cell something else stands on, it waits for it");
+    }
+
+    #[test]
+    fn a_wanderer_drifts_and_never_straight_back_while_another_cell_is_open() {
+        let mut snapshot = Snapshot::alone(view(0, 20, 20, 10));
+        snapshot.came_from = Some(Point::new(21, 20));
+        snapshot.add_sense(wandering());
+        for seed in 0..50 {
+            let decision = idle_seeded(&snapshot, &[], 100, seed);
+            assert!(matches!(decision, Some(Decision::Step(_))), "chance 100 always moves: {decision:?}");
+            assert_ne!(decision, Some(Decision::Step(Point::new(21, 20))), "seed {seed} stepped straight back");
+        }
+        assert_eq!(Tactic::<u32>::named(&Idle { chance_pct: 100 }, &snapshot), "wander");
+    }
+
+    /// A drift with nowhere to drift but through a corner waits.
+    ///
+    /// Its own terrain, because it is the one tactic that tries all eight
+    /// ways: everything round it is walled but the one diagonal it may not
+    /// take.
+    #[test]
+    fn a_wanderer_with_only_a_squeeze_open_waits_instead() {
+        let r = TileRegistry::standard();
+        let mut t = Terrain::filled(12, 12, r.expect("wall"));
+        let (me, corner) = (Point::new(5, 5), Point::new(6, 6));
+        t.set(me, r.expect("floor"));
+        t.set(corner, r.expect("floor"));
+        let view_t = t.view(&r);
+        let can_step = |p: Point| view_t.is_walkable(p);
+        let mut rng = StdRng::seed_from_u64(7);
+
+        let b: Brain<u32> = Brain::new().then(Idle { chance_pct: 100 });
+        let mut snapshot = Snapshot::alone(view(1, me.x, me.y, 10));
+        snapshot.add_sense(wandering());
+        let (decision, _) = b.decide(&mut TacticCtx {
+            snapshot: &snapshot,
+            fields: &mut NoFields,
+            can_step: &can_step,
+            blocks_shot: &nothing_blocks,
+            blocks_burst: &|_| false,
+            bounds: arena(),
+            rng: &mut rng,
+        });
+        assert_eq!(decision, Decision::Wait, "the only open cell is through a corner, so there is nowhere to drift");
+    }
+
+    #[test]
+    fn a_roamer_drifts_only_within_its_reach() {
+        let at = Point::new(10, 10);
+        let mut snapshot = Snapshot::alone(view(0, 12, 10, 10));
+        snapshot.add_sense(Moving { movement: Movement::Roam { at, reach: 2 }, ground: None });
+        let mut stepped = 0;
+        for seed in 0..200 {
+            if let Some(Decision::Step(to)) = idle_seeded(&snapshot, &[], 100, seed) {
+                assert!(geometry::chebyshev(to, at) <= 2, "seed {seed} stepped out to {to:?}");
+                stepped += 1;
+            }
+        }
+        assert_eq!(stepped, 200, "and at chance 100 it always has somewhere to go");
+        assert_eq!(Tactic::<u32>::named(&Idle { chance_pct: 100 }, &snapshot), "roam");
+    }
+
+    #[test]
+    fn a_roamer_outside_its_area_walks_back_toward_it() {
+        let mut snapshot = Snapshot::alone(view(0, 16, 10, 10));
+        snapshot.add_sense(Moving { movement: Movement::Roam { at: Point::new(10, 10), reach: 2 }, ground: None });
+        assert_eq!(idle(&snapshot, &[], 100), Some(Decision::Step(Point::new(15, 10))));
+    }
+
+    #[test]
+    fn a_mind_with_no_movement_is_left_to_the_next_tactic() {
         let snapshot = Snapshot::alone(view(0, 6, 6, 10));
-        assert_eq!(keep_post(&snapshot, &[]), None);
+        assert_eq!(idle(&snapshot, &[], 100), None);
+        assert_eq!(Tactic::<u32>::named(&Idle { chance_pct: 100 }, &snapshot), "idle");
+    }
+
+    #[test]
+    fn a_drifter_that_does_not_roll_its_chance_waits() {
+        let mut snapshot = Snapshot::alone(view(0, 6, 6, 10));
+        snapshot.add_sense(wandering());
+        assert_eq!(idle(&snapshot, &[], 0), Some(Decision::Wait));
+    }
+
+    #[test]
+    fn a_roamer_drifts_only_onto_its_ground() {
+        let me = Point::new(10, 10);
+        let mut snapshot = Snapshot::alone(view(0, me.x, me.y, 10));
+        let ground = ground_where(me, |p| p.x <= 10);
+        snapshot.add_sense(Moving { movement: Movement::Roam { at: me, reach: 5 }, ground });
+        for seed in 0..200 {
+            let decision = idle_seeded(&snapshot, &[], 100, seed);
+            let Some(Decision::Step(to)) = decision else { panic!("seed {seed} did not step: {decision:?}") };
+            assert!(to.x <= 10, "seed {seed} stepped off its ground to {to:?}");
+        }
+    }
+
+    #[test]
+    fn a_roamer_off_its_ground_walks_back_toward_its_cell() {
+        let me = Point::new(12, 10);
+        let mut snapshot = Snapshot::alone(view(0, me.x, me.y, 10));
+        let ground = ground_where(me, |p| p.x <= 11);
+        snapshot.add_sense(Moving { movement: Movement::Roam { at: Point::new(10, 10), reach: 5 }, ground });
+        assert_eq!(idle(&snapshot, &[], 100), Some(Decision::Step(Point::new(11, 10))));
+    }
+
+    #[test]
+    fn a_wanderer_off_its_ground_steps_onto_ground_beside_it() {
+        let me = Point::new(12, 10);
+        let mut snapshot = Snapshot::alone(view(0, me.x, me.y, 10));
+        let ground = ground_where(me, |p| p == Point::new(11, 10));
+        snapshot.add_sense(Moving { movement: Movement::Wander, ground });
+        for seed in 0..20 {
+            assert_eq!(idle_seeded(&snapshot, &[], 100, seed), Some(Decision::Step(Point::new(11, 10))), "seed {seed}");
+        }
+    }
+
+    #[test]
+    fn movements_hold_where_they_say() {
+        let at = Point::new(5, 5);
+        assert!(Movement::Wander.holds(Point::new(-9, 99)));
+        assert!(Movement::Hold(at).holds(at) && !Movement::Hold(at).holds(Point::new(5, 6)));
+        let roam = Movement::Roam { at, reach: 2 };
+        assert!(roam.holds(Point::new(7, 3)) && !roam.holds(Point::new(8, 5)));
+        assert!(Movement::Wander.drifts() && roam.drifts() && !Movement::Hold(at).drifts());
+    }
+
+    #[test]
+    fn ground_answers_for_the_nine_cells_and_nothing_beyond() {
+        let ground = OnGround { here: true, beside: [false; 8] };
+        assert!(ground.at(Point::ZERO));
+        assert!(!ground.at(Point::new(1, 0)));
+        let mut beside = [false; 8];
+        beside[Direction::ALL[3].index()] = true;
+        let ground = OnGround { here: false, beside };
+        assert!(ground.at(Direction::ALL[3].offset()) && !ground.at(Point::ZERO));
+        assert!(!ground.at(Point::new(2, 0)));
+    }
+
+    fn herding(from: Point) -> Snapshot<u32> {
+        let mut snapshot = Snapshot::alone(view(0, from.x, from.y, 10));
+        snapshot.add_sense(Herded { mates: vec![Point::new(20, 10), Point::new(20, 12)] });
+        snapshot
+    }
+
+    #[test]
+    fn a_herd_member_far_from_its_mates_closes_on_their_middle() {
+        let snapshot = herding(Point::new(10, 11));
+        assert_eq!(keep(Keep::herd(3, 1), &snapshot), Some(Decision::Step(Point::new(11, 11))));
+        assert_eq!(Tactic::<u32>::name(&Keep::herd(3, 1)), "herd");
+        assert_eq!(Tactic::<u32>::keeps_with(&Keep::herd(3, 1)), Some(Station::Herd));
+        assert!(!Brain::<u32>::new().then(Keep::herd(3, 1)).keeps_with_allies());
+    }
+
+    #[test]
+    fn a_herd_member_among_its_mates_leaves_the_turn_to_its_drift() {
+        assert_eq!(keep(Keep::herd(3, 1), &herding(Point::new(19, 11))), None);
+    }
+
+    #[test]
+    fn a_herd_member_with_no_mates_is_left_to_the_next_tactic() {
+        let snapshot = Snapshot::alone(view(0, 10, 11, 10));
+        assert_eq!(keep(Keep::herd(3, 1), &snapshot), None);
+        let mut alone = Snapshot::alone(view(0, 10, 11, 10));
+        alone.add_sense(Herded { mates: vec![] });
+        assert_eq!(keep(Keep::herd(3, 1), &alone), None);
     }
 
     #[test]
@@ -1643,7 +1933,8 @@ mod tests {
         });
         assert_eq!((d, who), (Decision::Step(Point::new(6, 5)), Some("hunt")));
 
-        let alone = Snapshot::alone(view(1, 5, 5, 10));
+        let mut alone = Snapshot::alone(view(1, 5, 5, 10));
+        alone.add_sense(wandering());
         let (d, who) = b.decide(&mut TacticCtx {
             snapshot: &alone,
             fields: &mut NoFields,

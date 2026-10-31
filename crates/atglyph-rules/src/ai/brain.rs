@@ -222,6 +222,13 @@ pub trait Tactic<A: Copy>: Send + Sync {
     /// A stable name, for the trace of why an actor did something.
     fn name(&self) -> &'static str;
 
+    /// The name for the trace of why an actor did something, given what it
+    /// senses, for a tactic that acts under more than one: its
+    /// [`name`](Self::name) unless it says otherwise.
+    fn named(&self, _snapshot: &Snapshot<A>) -> &'static str {
+        self.name()
+    }
+
     /// A decision, or `None` to let the next tactic try.
     fn evaluate(&self, ctx: &mut TacticCtx<'_, A>) -> Option<Decision<A>>;
 
@@ -276,7 +283,7 @@ impl<A: Copy> Brain<A> {
     /// nothing fired and the actor waits.
     pub fn decide(&self, ctx: &mut TacticCtx<'_, A>) -> (Decision<A>, Option<&'static str>) {
         match self.deciding(ctx) {
-            Some((decision, tactic)) => (decision, Some(tactic.name())),
+            Some((decision, tactic)) => (decision, Some(tactic.named(ctx.snapshot))),
             None => (Decision::Wait, None),
         }
     }
