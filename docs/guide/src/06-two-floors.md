@@ -143,6 +143,7 @@ fn populate(
             if clever {
                 rat.insert((
                     Mind(rats.ratling.clone()),
+                    Moves(Movement::Wander),
                     // Wits say what a mind may consider: a ratling opens
                     // doors, picks things up and throws them.
                     Intelligence(Wits::SAPIENT),
@@ -152,7 +153,13 @@ fn populate(
                     Name::new("ratling"),
                 ));
             } else {
-                rat.insert((Mind(rats.mind.clone()), Intelligence(Wits::ANIMAL), Glyph::new('r', Color::srgb(0.72, 0.55, 0.45)).on_layer(5), Name::new("rat")));
+                rat.insert((
+                    Mind(rats.mind.clone()),
+                    Moves(Movement::Wander),
+                    Intelligence(Wits::ANIMAL),
+                    Glyph::new('r', Color::srgb(0.72, 0.55, 0.45)).on_layer(5),
+                    Name::new("rat"),
+                ));
             }
             placed += 1;
         }

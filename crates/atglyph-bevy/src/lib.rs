@@ -209,8 +209,9 @@ pub mod prelude {
     };
 
     pub use crate::loot::{Drops, Found, ItemMaker, LootArea, LootPlugin, LootSet, Provenance};
-    pub use crate::minds::{Ground, GroundRule, Herd};
-    pub use crate::minds::{Intelligence, JoinStamp, LastTactic, Leader, Mind, MindChose, MindsPlugin, Moves, Perception, Profile, Thinking};
+    pub use crate::minds::{
+        Ground, GroundRule, Herd, Intelligence, JoinStamp, LastTactic, Leader, Mind, MindChose, MindsPlugin, Moves, Perception, Profile, Thinking,
+    };
 
     pub use crate::noise::{Footfall, Heard, Hearing, MakeNoise, NoiseHeard, NoisePlugin, NoiseRules, SoundId, SoundNames, Sounds};
     pub use crate::parts::{ActorParts, Attacks, ItemLevel, ItemParts, LightWhen, innate_statuses, insert_parts};

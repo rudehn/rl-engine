@@ -89,6 +89,7 @@ impl Goblins {
                 MeleeAttack::new(self.stab, DiceRoll::new(1, 4)),
                 Perception(10),
                 Mind(self.mind.clone()),
+                Moves(Movement::Wander),
                 // Sapient: it searches where it lost you, and opens doors.
                 // `Wits::ANIMAL` would stop at a door, and `Wits::MINDLESS`
                 // would forget you the moment it lost sight of you.

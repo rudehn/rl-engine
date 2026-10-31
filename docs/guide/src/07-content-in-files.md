@@ -134,7 +134,7 @@ impl Bestiary {
         let supper = def.clever.then(|| commands.spawn((Item, Crust(6), Tagged(vec![self.kin.bread]), Name::new("crust of bread"))).id());
         let mut e = commands.spawn((
             (Actor, Blocks, Position(at), Speed(def.speed), Faction(self.kin.faction)),
-            (Health::full(def.hp), Armor(def.armor), Perception(def.perception), DarkSight(9), Mind(self.minds[id.index()].clone())),
+            (Health::full(def.hp), Armor(def.armor), Perception(def.perception), DarkSight(9), Mind(self.minds[id.index()].clone()), Moves(Movement::Wander)),
             (MeleeAttack::new(def.kind.id(), def.attack), Glyph::new(def.glyph, Color::srgb(def.color.0, def.color.1, def.color.2)).on_layer(5)),
             (Name::new(def.name.clone()),),
         ));

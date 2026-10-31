@@ -736,7 +736,7 @@ pub(crate) fn sense_moves(mut thinking: ResMut<Thinking>, sight: Sight, rule: Op
     let (movement, me) = (*movement, at.0);
     let ground = ground.zip(rule).map(|(Ground(id), rule)| {
         let map = sight.current_map();
-        let on = |at: Point| (rule.0)(id.to_owned(), map, at);
+        let on = |at: Point| (rule.0)(*id, map, at);
         OnGround { here: on(me), beside: std::array::from_fn(|i| on(me + Direction::from_index(i).offset())) }
     });
     if let Some(snapshot) = thinking.snapshot_mut() {
@@ -2376,12 +2376,16 @@ mod tests {
     }
 
     /// A roamer fights, hunts and searches as any mind does, and that takes
-    /// it out of its area; once it has lost the player it walks back.
+    /// it out of its area and off its ground; once it has lost the player it
+    /// walks back to both.
     #[test]
     fn a_roamer_hunts_a_foe_out_of_its_area_loses_it_and_walks_back() {
         use atglyph_rules::ai::tactics::SearchLastKnown;
         let (mut app, start, kind) = arena();
         let (us, them) = (atglyph_rules::FactionId::from_raw(0), atglyph_rules::FactionId::from_raw(1));
+        // Its ground ends a cell past its area's edge, so a chase leaves both.
+        let edge = start.x + 4;
+        app.insert_resource(GroundRule(Arc::new(move |id, _, at| id == 1 && at.x <= edge)));
         let player = app.world_mut().spawn((Actor, Player, Blocks, Position(start.offset(2, 0)), Viewshed::new(8), Health::full(400), Faction(us))).id();
         // A wall between where the player ends up and where the roamer stands.
         let wall: Vec<Point> = (-8..=8).map(|dy| start.offset(12, dy)).collect();
@@ -2391,23 +2395,26 @@ mod tests {
             .world_mut()
             .spawn((
                 (Actor, Blocks, Position(start), Health::full(20), Faction(them), Perception(8), MeleeAttack::new(kind, DiceRoll::flat(1))),
-                (Mind(Arc::new(brain)), Moves(Movement::Roam { at: start, reach: 3 })),
+                (Mind(Arc::new(brain)), Moves(Movement::Roam { at: start, reach: 3 }), Ground(1)),
             ))
             .id();
         app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
         app.update();
         play(&mut app, player, 4);
         app.world_mut().get_mut::<Position>(player).unwrap().0 = start.offset(8, 0);
-        let mut furthest = 0;
+        let (mut furthest, mut off_ground) = (0, false);
         for _ in 0..60 {
             play(&mut app, player, 1);
-            furthest = furthest.max(geometry::chebyshev(app.world().get::<Position>(roamer).unwrap().0, start));
+            let at = app.world().get::<Position>(roamer).unwrap().0;
+            furthest = furthest.max(geometry::chebyshev(at, start));
+            off_ground |= at.x > edge;
         }
         assert!(furthest > 3, "it hunted the player out of its area: {furthest} off at most");
+        assert!(off_ground, "and off its ground");
         app.world_mut().get_mut::<Position>(player).unwrap().0 = start.offset(16, 0);
         play(&mut app, player, 120);
         let at = app.world().get::<Position>(roamer).unwrap().0;
-        assert!(geometry::chebyshev(at, start) <= 3, "it lost the player behind the wall and walked back: {at:?}");
+        assert!(geometry::chebyshev(at, start) <= 3 && at.x <= edge, "it lost the player behind the wall and walked back, onto its ground: {at:?}");
     }
 
     /// A roamer's steps stay on the cells its game's rule names for its

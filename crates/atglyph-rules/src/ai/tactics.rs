@@ -204,9 +204,10 @@ pub enum Station {
 /// Where the living mates of a herd member stand, as a
 /// [`Sense`](crate::ai::Sense): what [`Station::Herd`] keeps station on.
 ///
-/// The engine never pushes it: which creatures herd together is for the
-/// game to say. With no mates left, or never pushed, a herd member has no
-/// station to keep.
+/// The engine's `sense_herds` pushes it from an actor's `Herd` component:
+/// every other living actor with the same id on the same map, seen or not.
+/// With no mates left, or never pushed, a herd member has no station to
+/// keep. A game running minds without `atglyph-bevy` pushes it itself.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Herded {
     /// Where each mate stands.
@@ -708,9 +709,10 @@ impl OnGround {
 /// How a mind moves when it idles, and the ground it keeps to, as a
 /// [`Sense`](crate::ai::Sense).
 ///
-/// The engine never pushes it: how a creature moves is for the game to say,
-/// from where it was placed and what it is, in the perceive phase. A game
-/// running minds without `atglyph-bevy` pushes it itself.
+/// The engine's `sense_moves` pushes it from an actor's `Moves` component,
+/// with the ground read from its `Ground` through the game's `GroundRule`;
+/// an actor with no `Moves` is not pushed one. A game running minds without
+/// `atglyph-bevy` pushes it itself.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Moving {
     /// How it moves.

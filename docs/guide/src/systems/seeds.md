@@ -68,7 +68,7 @@ fn populate(mut commands: Commands, mut entered: MessageReader<PlaceEntered>, ra
                 (Health::full(6), Armor(0), Perception(7), DarkSight(9)),
                 (MeleeAttack::new(rats.bite, DiceRoll::new(1, 3)),),
             ));
-            rat.insert((Mind(rats.mind.clone()), Glyph::new('r', Color::srgb(0.72, 0.55, 0.45)).on_layer(5), Name::new("rat")));
+            rat.insert((Mind(rats.mind.clone()), Moves(Movement::Wander), Glyph::new('r', Color::srgb(0.72, 0.55, 0.45)).on_layer(5), Name::new("rat")));
             placed += 1;
         }
     }

@@ -424,9 +424,10 @@ pub(crate) fn name_as_remains(world: &mut World, entity: Entity) {
 /// tidiness: a watcher is anything that carries `Notice` and is not
 /// `Dead`, and remains are not `Dead` by design, so a body left with its
 /// `Notice` went on watching the player, who stayed marked as seen with
-/// every enemy on the deck dead. Its [`Moves`](crate::minds::Moves), [`Ground`](crate::minds::Ground)
-/// and [`Herd`](crate::minds::Herd) come off as well, since a body keeps no
-/// cell, ground or herd and walks back to none.
+/// every enemy on the deck dead. Its [`Moves`](crate::minds::Moves),
+/// [`Ground`](crate::minds::Ground) and [`Herd`](crate::minds::Herd) come
+/// off as well, since a body keeps no cell, ground or herd and walks back
+/// to none.
 ///
 /// So do what it offered and what it answered, [`Offers`](crate::props::Offers)
 /// and [`Triggers`](crate::effects::Triggers): both are read on anything
