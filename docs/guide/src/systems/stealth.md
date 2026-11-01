@@ -1,6 +1,7 @@
 <!-- documents:
      plugins: StealthPlugin
      files: crates/atglyph-rules/src/ai/awareness.rs
+            crates/atglyph-rules/src/ai/awareness/per_observer.rs
             crates/atglyph-rules/src/ai/tactics.rs
             crates/atglyph-bevy/src/stealth.rs
             crates/atglyph-bevy/src/minds.rs
@@ -134,7 +135,7 @@ Something that had you and lost you to the unseen reads `Alert::Searching`, sinc
 
 ## Where it lives
 
-`atglyph-rules` is tier 1 and has no Bevy in it: `ai/awareness.rs` is the two stat blocks, the three functions over them and the state machine, with the caller doing the rolling and the caller deciding what lit means.
+`atglyph-rules` is tier 1 and has no Bevy in it: `ai/awareness.rs` is the state machine and the glimpse a rule judges, and `ai/awareness/per_observer.rs` is the two stat blocks, the three functions over them and the two questions a rule answers (`spots` and `holds`), with the caller doing the rolling and the caller deciding what lit means.
 That is what lets the properties be proved rather than watched: that light widens the certain radius by exactly its bonus and by nothing else, that `quiet` narrows it and the floor of one holds against any stack of gear, and that `lost` returns to `Unaware` on exactly the turn the memory passes while a sighting in between resets the count.
 Both stat blocks are serde-ready, so an observer's attention and a subject's quiet are written in a bestiary file rather than in Rust.
 `atglyph-bevy` is tier 2 and owns the rolling: `stealth.rs` is the components, `Aware`, `Unseen`, the stream, the six systems and the `Watchers` parameter that answers whether stealth is running and who is watching.

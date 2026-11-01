@@ -38,7 +38,8 @@ pub mod step;
 pub mod tactics;
 pub mod wits;
 
-pub use awareness::{Awareness, NoticeStats, StealthStats, notices};
+pub use awareness::Awareness;
+pub use awareness::per_observer::{NoticeStats, StealthStats, notices};
 pub use brain::{Brain, Choice, Decision, Fields, NoFields, Tactic, TacticCtx};
 pub use hearing::HearingStats;
 pub use profile::MovementProfile;

@@ -15,7 +15,7 @@ use atglyph_bevy::prelude::*;
 use atglyph_bevy::testing::{TwoSides, ground, two_sides};
 use atglyph_core::{DiceRoll, RunSeed, geometry};
 use atglyph_rules::Brain;
-use atglyph_rules::ai::awareness::{NoticeStats, StealthStats};
+use atglyph_rules::ai::awareness::per_observer::{NoticeStats, StealthStats};
 use atglyph_rules::ai::tactics::{FleeWhenHurt, Hunt, Idle, MeleeAdjacent, Movement, SearchLastKnown};
 use bevy::prelude::*;
 

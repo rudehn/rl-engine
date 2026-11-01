@@ -25,7 +25,8 @@ use crate::app::EngineApp;
 use std::collections::BTreeMap;
 
 use atglyph_core::Point;
-use atglyph_rules::ai::awareness::{self, Awareness, NoticeStats, StealthStats};
+use atglyph_rules::ai::awareness::per_observer::{self, NoticeStats, StealthStats};
+use atglyph_rules::ai::awareness::{self, Awareness, Glimpse};
 use atglyph_rules::faction;
 use bevy::prelude::*;
 use rand::Rng;
@@ -490,12 +491,10 @@ pub(crate) fn update_awareness(mut watch: Watch, mut noticed: MessageWriter<Noti
         // dim ring is seen, and is harder to pick out there.
         let lit = crate::lighting::band_at(lighting, at.0) == atglyph_grid::LightBand::Lit;
         let distance = atglyph_core::geometry::chebyshev(pos.0, at.0);
+        let glimpse = Glimpse { distance, in_view, lit, asleep };
         let rng = &mut watch.rng.0;
-        let spots = || {
-            let roll = rng.random_range(0..100);
-            if asleep { roll < awareness::notice_chance(&notice.0, &stealth.0) } else { awareness::notices(distance, &notice.0, &stealth.0, lit, roll) }
-        };
-        let (state, news) = awareness::observe(aware.of(subject), in_view, spots, at.0, notice.memory);
+        let spots = || per_observer::spots(&notice.0, &stealth.0, glimpse, rng.random_range(0..100));
+        let (state, news) = awareness::observe(aware.of(subject), glimpse, per_observer::holds(glimpse), spots, at.0, notice.memory);
         if news {
             noticed.write(Noticed { observer, subject, at: at.0 });
         }

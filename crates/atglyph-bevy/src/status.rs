@@ -640,7 +640,7 @@ mod tests {
     use atglyph_core::DiceRoll;
     use atglyph_core::turn::BASE_ACTION_COST;
     use atglyph_core::{Direction, Point, RunSeed};
-    use atglyph_rules::ai::awareness::NoticeStats;
+    use atglyph_rules::ai::awareness::per_observer::NoticeStats;
     use atglyph_rules::ai::hearing::HearingStats;
     use atglyph_rules::ai::{Brain, Decision, Tactic, TacticCtx};
     use atglyph_rules::damage::{DamageKind, SubtractArmor};
