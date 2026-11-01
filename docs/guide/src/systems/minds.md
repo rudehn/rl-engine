@@ -18,7 +18,7 @@
             crates/atglyph-bevy/src/fire.rs
             crates/atglyph-bevy/src/noise.rs
             crates/atglyph-bevy/src/effects/mod.rs
-     fingerprint: b435447d -->
+     fingerprint: 748d721c -->
 
 # Minds
 
@@ -74,6 +74,7 @@ Actors sharing a `Herd` id are told where their living mates on the map stand as
 `Station::Others` keeps station on the actors in `Snapshot::others`, the ones neither allied nor hostile, nearest first and always in sight, and `Keep::away(station, distance)` keeps away from a station and nothing else: it backs off inside `distance`, holds outside it and never closes in, as the crow flies.
 Any keep whose `keep_within` is `i32::MAX` reports itself as `keep_away`, so a game can name what a wary animal or an archer standing off is doing.
 `Keep::watching` makes a keep wait in the band it would otherwise leave to the next tactic, while the nearest of its station is in sight, so a wary animal that has backed off far enough stands and watches rather than wandering back in; a keep that does not watch leaves that band alone, as an archer standing off needs to shoot from it.
+A mind standing on its ground backs off only across it, as its idle steps keep to it, and watches only while on it, so one off its ground is left to `Idle`, which walks it back.
 A follower keeps on the one actor its `Leader(Entity)` component names, seen or not, through the `Led { at, in_sight }` sense `sense_leaders` pushes, and keeps with its allies instead, as `Keep::allies` would, while that leader is dead, on another map or gone; the leader lives on the follower rather than in the shared brain, so one brain serves a kind led or not, and a save keeps who leads whom.
 `app.add_choice::<A>()` registers an action that is also a `Choice` and routes every `MindChose` carrying an `A` into its `Intent` in `DecideSet::Game`, and `Snapshot::add_sense` with `sense::<T>()` carries a game's own knowledge in by type, one per type.
 

@@ -31,6 +31,7 @@ atglyph is not on crates.io yet, so a game depends on a release by its git tag, 
 - Flow fields read the loaded window's costs once each time the map's costs or its window change, rather than asking the map at every step of every flood, which made each flood several times slower.
 - Noticing looks only at the subjects an observer could see this turn, on its map and within its reach, and at those it already knows of, and works out whether one stands in the light only for the per-observer rule, which reads it: a turn costs a look per subject nearby, not per subject loaded, and plays as before.
 - By range, a pass works out only the stealth ranges that could have changed, of an actor that moved or finished an action and of every actor when the light or the map changed, and a pass that relights nothing no longer marks `Lighting` changed.
+- A `Keep` backing off a mind that stands on its ground keeps to that ground, as `Idle` does, and a watching keep waits only on it, leaving one off its ground to `Idle` to walk back.
 - `Keep::herd` and `GiveWay` step by near fields, and `GiveWay` gives way only to those within its `space` and 8 cells past it: a herd closing up or a crowd of bystanders no longer floods every loaded cell for each member's step.
 
 ### Fixed

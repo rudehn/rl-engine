@@ -291,8 +291,13 @@ pub struct Led {
 /// a leader, as the crow flies for one on enemies, and either for any
 /// station by [`measured`](Self::measured).
 ///
+/// A mind given ground of its own, by the [`Moving`] sense, backs off only
+/// across that ground while it stands on it, as its idle steps keep to it,
+/// so an animal kept to a yard and backing off a passer-by stays in it.
+///
 /// A keep that is [`watching`](Self::watching) waits in the band it would
-/// otherwise leave alone, while the nearest of its station is in sight:
+/// otherwise leave alone, while the nearest of its station is in sight and
+/// it stands on its ground:
 /// a wary animal that has backed off far enough stands and watches rather
 /// than letting an idle tactic below it wander back in. Opt-in, because
 /// most keeps leave that band to the tactic below on purpose: an archer
@@ -506,10 +511,17 @@ impl<A: Copy> Tactic<A> for Keep {
             }
             return None;
         }
+        // Its ground, when the game gave it one: a mind standing on it
+        // backs off only across it, as its idle steps keep to it, and one
+        // off it is free to step anywhere, back onto it included.
+        let ground = ctx.snapshot.sense::<Moving>().and_then(|m| m.ground);
+        let on_ground = ground.is_none_or(|g| g.here);
+        let keeps_to = |p: Point| !on_ground || ground.is_none_or(|g| g.at(p - me));
         if gap >= self.no_closer_than {
-            // In the band: watched from where it stands while in sight, or
-            // left to the next tactic.
-            return (self.watch && in_sight).then_some(Decision::Wait);
+            // In the band: watched from where it stands while in sight and
+            // on its ground, or left to the next tactic, which walks one
+            // off its ground back onto it.
+            return (self.watch && in_sight && on_ground).then_some(Decision::Wait);
         }
         // Backing off. Steps that widen the gap before steps that only hold
         // it, the field's way first within each, then every direction
@@ -525,7 +537,7 @@ impl<A: Copy> Tactic<A> for Keep {
             None => Direction::ALL.to_vec(),
         };
         let direct = turns.iter().map(|d| me + d.offset()).filter(|p| steps_to(ctx, me, *p));
-        let open: Vec<Point> = field.into_iter().chain(direct).filter(|p| (ctx.can_step)(*p)).collect();
+        let open: Vec<Point> = field.into_iter().chain(direct).filter(|p| (ctx.can_step)(*p) && keeps_to(*p)).collect();
         let gaps: Vec<i32> = open.iter().map(|p| self.gap_from(ctx, &marks, nearest, *p)).collect();
         let widening = open.iter().zip(&gaps).filter(|(_, g)| **g > gap).map(|(p, _)| *p);
         let holding = open.iter().zip(&gaps).filter(|(_, g)| **g == gap).map(|(p, _)| *p);
@@ -2599,6 +2611,30 @@ mod tests {
         assert_eq!(shadow_of(Keep::away(Station::Enemies, 6), me, spot, &[], true), None, "and a keep that does not watch leaves the turn on");
         let alone = Snapshot::<u32>::alone(view(1, 0, 5, 10));
         assert_eq!(keep(Keep::away(Station::Others, 10).watching(), &alone), None, "with nobody to keep away from, nothing to watch");
+    }
+
+    /// A keeper on ground of its own backs off only across that ground,
+    /// as its idle steps keep to it, and watches only while it stands on
+    /// it: off its ground it leaves the turn to `Idle`, which walks it back.
+    #[test]
+    fn keeping_away_never_backs_a_mind_off_its_ground_and_watches_only_on_it() {
+        let (me, other) = (Point::new(10, 10), Point::new(13, 10));
+        let mut wary = Snapshot::alone(view(1, me.x, me.y, 10));
+        wary.others.push(view(2, other.x, other.y, 10));
+        wary.add_sense(Moving { movement: Movement::Wander, ground: ground_where(me, |p| p.x >= 10) });
+        match asking(&Keep::away(Station::Others, 10).watching(), &wary).0 {
+            Some(Decision::Step(p)) => assert!(p.x >= 10 && geometry::chebyshev(p, other) >= 3, "stepped to {p:?}, off its ground or nearer"),
+            got => panic!("expected a step along its ground, got {got:?}"),
+        }
+        let (far, beyond) = (Point::new(0, 10), Point::new(20, 10));
+        let mut off = Snapshot::alone(view(1, far.x, far.y, 10));
+        off.others.push(view(2, beyond.x, beyond.y, 10));
+        off.add_sense(Moving { movement: Movement::Wander, ground: ground_where(far, |p| p.x >= 1) });
+        assert_eq!(asking(&Keep::away(Station::Others, 10).watching(), &off).0, None, "off its ground it does not stand and watch");
+        let mut on = Snapshot::alone(view(1, far.x, far.y, 10));
+        on.others.push(view(2, beyond.x, beyond.y, 10));
+        on.add_sense(Moving { movement: Movement::Wander, ground: ground_where(far, |_| true) });
+        assert_eq!(asking(&Keep::away(Station::Others, 10).watching(), &on).0, Some(Decision::Wait), "on it, it does");
     }
 
     #[test]
