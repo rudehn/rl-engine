@@ -288,6 +288,14 @@ impl NoticeRule {
         }
     }
 
+    /// Whether a glimpse's [`lit`](Glimpse::lit) is read at all: per
+    /// observer, by the certain radius's light bonus; by range never, since
+    /// the dark is in the subject's range already. Unread, it is not worked
+    /// out, which saves a light lookup per subject in view.
+    fn reads_light(&self) -> bool {
+        matches!(self, NoticeRule::PerObserver)
+    }
+
     /// Whether an unnoticed hider is taken out of a mind's others as well
     /// as its enemies, which only the by-range rule judges.
     fn filters_others(&self) -> bool {
@@ -572,22 +580,27 @@ pub(crate) fn record_deeds(
     }
 }
 
+/// An actor whose range is kept, with whether it moved or acted since the
+/// range was last worked out.
+type Ranged = (Ref<'static, Position>, Option<&'static OnMap>, Ref<'static, LastDeed>, &'static mut StealthRange);
+
 /// Works out each actor's [`StealthRange`] from what it did last and where
 /// it stands, at the game's numbers.
 ///
 /// In [`DecideSet::Notice`](crate::plugin::DecideSet::Notice) before the
-/// roll, for every actor on the current map. Dark is the dark band alone,
-/// so a lit tile or a lamp's dim ring is not; with no lighting nothing is.
-pub(crate) fn refresh_ranges(
-    rule: Res<NoticeRule>,
-    map: Res<WorldMap>,
-    lighting: Option<Res<crate::lighting::Lighting>>,
-    mut actors: Query<(&Position, Option<&OnMap>, &LastDeed, &mut StealthRange)>,
-) {
+/// roll, for every actor on the current map whose range may have changed
+/// since the last pass: one that moved or finished an action, and every
+/// one when the light or the map changed under them, which is once a frame
+/// and on a pass a light moved. The rest stand as they stood, so a pass
+/// costs a look per actor that did something, not per actor loaded. Dark
+/// is the dark band alone, so a lit tile or a lamp's dim ring is not; with
+/// no lighting nothing is.
+pub(crate) fn refresh_ranges(rule: Res<NoticeRule>, map: Res<WorldMap>, lighting: Option<Res<crate::lighting::Lighting>>, mut actors: Query<Ranged>) {
     let NoticeRule::ByRange(rules) = *rule else { return };
     let here = map.current();
+    let everyone = map.is_changed() || lighting.as_ref().is_some_and(|l| l.is_changed());
     for (at, on, last, mut range) in &mut actors {
-        if on.map(|m| m.0).unwrap_or(MapId::ZERO) != here {
+        if !(everyone || at.is_changed() || last.is_changed()) || on.map(|m| m.0).unwrap_or(MapId::ZERO) != here {
             continue;
         }
         let standing = by_range::Standing {
@@ -797,13 +810,18 @@ pub(crate) fn update_awareness(mut watch: Watch, mut noticed: MessageWriter<Noti
         _ => reach,
     };
     let mut seen = Vec::new();
-    // In the order of where they stand, by map, row and column, rather
-    // than the order the query walks the archetypes in or the entities'
-    // numbers, which Bevy reuses as it likes: each subject in view costs a
-    // roll, and which subject gets which roll must not depend on how the
-    // world happens to be laid out or numbered. The number settles only
-    // two that stand on one cell, which two that block never do.
-    let mut subjects: Vec<Hiding<'_>> = watch.subjects.iter().collect();
+    // Only those it could see this turn, on this map and within its reach,
+    // and those it already knows of wherever they are, which age out of
+    // its memory: the rest would neither roll nor change what it knows, so
+    // a turn costs a look per subject nearby, not per subject loaded.
+    // Then in the order of where they stand, by map, row and column,
+    // rather than the order the query walks the archetypes in or the
+    // entities' numbers, which Bevy reuses as it likes: each subject in
+    // view costs a roll, and which subject gets which roll must not depend
+    // on how the world happens to be laid out or numbered. The number
+    // settles only two that stand on one cell, which two that block never do.
+    let near = |at: Point, on: Option<&OnMap>| on.map(|m| m.0).unwrap_or(MapId::ZERO) == here && awareness::within_reach(pos.0, at, reach);
+    let mut subjects: Vec<Hiding<'_>> = watch.subjects.iter().filter(|(e, at, _, _, _, on, _)| aware.0.contains_key(e) || near(at.0, *on)).collect();
     subjects.sort_by_key(|(e, at, _, _, _, on, _)| (on.map(|m| m.0), at.0.y, at.0.x, *e));
     for (subject, at, stealth, range, theirs, on, hidden) in subjects {
         if subject == observer {
@@ -815,11 +833,12 @@ pub(crate) fn update_awareness(mut watch: Watch, mut noticed: MessageWriter<Noti
         if !rule.judges(faction::stance(factions, faction.map(|f| f.0), theirs.map(|f| f.0))) {
             continue;
         }
-        let on_this_map = on.map(|m| m.0).unwrap_or(MapId::ZERO) == here;
-        let in_view = !hidden && on_this_map && awareness::within_reach(pos.0, at.0, reach) && sight.is_some_and(|s| s.can_see(at.0));
+        let in_view = !hidden && near(at.0, on) && sight.is_some_and(|s| s.can_see(at.0));
         // Lit means the lit band, not merely seen: a subject in a lamp's
-        // dim ring is seen, and is harder to pick out there.
-        let lit = crate::lighting::band_at(lighting, at.0) == atglyph_grid::LightBand::Lit;
+        // dim ring is seen, and is harder to pick out there. Asked only of
+        // one in view, the only one a rule judges, and only by a rule that
+        // reads it.
+        let lit = rule.reads_light() && in_view && crate::lighting::band_at(lighting, at.0) == atglyph_grid::LightBand::Lit;
         let distance = atglyph_core::geometry::chebyshev(pos.0, at.0);
         let glimpse = Glimpse { distance, in_view, lit, asleep };
         let rng = &mut watch.rng.0;
@@ -1161,6 +1180,24 @@ mod tests {
         assert!(!field.knows(), "and forgotten once {} turns have passed", GREYWOLDS.memory);
     }
 
+    /// The roll is asked only of subjects within the observer's reach,
+    /// but one it already knows of is aged wherever it went, so walking
+    /// out of sight's reach loses a hunter by its memory, not at once.
+    #[test]
+    fn by_range_one_known_that_goes_beyond_reach_is_kept_in_mind_until_memory_runs_out() {
+        let mut field = Field::by_range(|_| {});
+        field.think(Brain::new().then(Idle { chance_pct: 0 }));
+        field.wait();
+        field.alert();
+        field.stand_off(SIGHT + 1);
+        for turn in 1..=GREYWOLDS.memory {
+            field.wait();
+            assert!(field.knows(), "beyond its reach, still in mind after {turn} turns");
+        }
+        field.wait();
+        assert!(!field.knows(), "and forgotten once {} turns have passed", GREYWOLDS.memory);
+    }
+
     #[test]
     fn by_range_a_neutral_is_hidden_from_the_others_until_noticed() {
         let mut field = Field::by_range(with_rosters);
@@ -1361,6 +1398,19 @@ mod tests {
         let mut field = Field::by_range_over(atglyph_grid::TileRegistry::standard(), Some(100));
         field.app.update();
         assert_eq!(field.range(), GREYWOLDS.base, "in the lit band");
+    }
+
+    /// A range is worked out afresh for an actor that did nothing when the
+    /// light changes under it, not only for one that moved or acted.
+    #[test]
+    fn an_actor_standing_still_takes_the_dark_when_the_light_goes_out() {
+        let mut field = Field::by_range_over(atglyph_grid::TileRegistry::standard(), Some(100));
+        field.app.update();
+        assert_eq!(field.range(), GREYWOLDS.base, "in the lit band");
+        field.app.world_mut().resource_mut::<crate::lighting::Lighting>().ambient = atglyph_grid::Light::white(0);
+        field.app.update();
+        field.app.update();
+        assert_eq!(field.range(), 3, "in the dark band, without a step or a turn of its own");
     }
 
     #[test]

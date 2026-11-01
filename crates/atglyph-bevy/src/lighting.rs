@@ -250,6 +250,9 @@ impl Lighting {
     /// ambient a game writes in the middle of a place stands until the
     /// player leaves it.
     fn follow_place(&mut self, map: &WorldMap) {
+        if self.follows(map) {
+            return;
+        }
         let here = map.current();
         let Some(place) = map.place(here) else {
             self.followed = None;
@@ -261,6 +264,17 @@ impl Lighting {
         }
         self.followed = Some(key);
         self.ambient = place.ambient;
+    }
+
+    /// Whether [`follow_place`](Self::follow_place) has nothing to take:
+    /// the place and generation are the ones last taken, or there is no
+    /// place and nothing was. Asked first through a shared borrow, so a
+    /// pass that changes nothing does not mark the lighting changed.
+    fn follows(&self, map: &WorldMap) -> bool {
+        match map.place(map.current()) {
+            Some(_) => self.followed == Some((map.current(), map.generation())),
+            None => self.followed.is_none(),
+        }
     }
 
     /// Whether something only this resource and the map know of has changed
@@ -416,9 +430,15 @@ impl LightMoves<'_, '_> {
 /// `sense` recasts the one about to decide. A place
 /// arrived on in the pass before is lit by its own ambient here, so the
 /// first mind to decide on it sees by that light, not the last map's.
+///
+/// A pass that finds nothing to do leaves the lighting unmarked, so a
+/// system that asks whether the light changed, as the stealth ranges do,
+/// is told only when it did.
 pub(crate) fn relight(map: Res<WorldMap>, lighting: Option<ResMut<Lighting>>, mut moves: LightMoves, sources: Sources, mut viewsheds: Query<Lit>) {
     let Some(mut lighting) = lighting else { return };
-    lighting.follow_place(&map);
+    if !lighting.follows(&map) {
+        lighting.follow_place(&map);
+    }
     if moves.any() || lighting.is_behind(&map) {
         recast(&map, &mut lighting, &sources, &mut viewsheds);
     }

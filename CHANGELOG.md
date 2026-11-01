@@ -8,7 +8,7 @@ atglyph is not on crates.io yet, so a game depends on a release by its git tag, 
 
 ### Added
 
-- `Keep` can keep away from the others: `Station::Others` is the actors neither allied nor hostile, and `Keep::away(station, distance)` backs off inside `distance` and never closes in, named `keep_away`.
+- `Keep` can keep away from the others: `Station::Others` is the actors neither allied nor hostile, and `Keep::away(station, distance)` backs off inside `distance` and never closes in, named `keep_away`; a keep on the others steps by near fields, as `GiveWay` does.
 - `Keep::watching`: a keep that waits in its band while the nearest of its station is in sight, so a wary animal that has backed off far enough stands and watches rather than wandering back in.
 - A mind keeps to its ground: an actor's `Ground` id, read through the game's `GroundRule`, holds its idle steps to the cells the game names, and one off its ground walks back. Herds: actors sharing a `Herd` id keep together with no leader, by `Keep::herd` on the middle of their living mates.
 - Carving a place out of solid rock a cell at a time: `DrunkardsWalk` opens a broad hall with rock standing in it, and `Aggregate`, diffusion-limited aggregation, grows branching tunnels; both open the share of the map asked for in one piece, from an `Origin`, with a brush width, a margin and, for aggregation, a pull toward the middle.
@@ -27,6 +27,8 @@ atglyph is not on crates.io yet, so a game depends on a release by its git tag, 
 - **Breaking:** `Scatter` and `ScatterBy` have a `phase`, `Phase::Growth` to cover the ground before anything is built and `Phase::Finish` to strew over what was; a literal adds `phase: Phase::Growth` to scatter as before.
 - What is in sight, the nearby list and the look and target cursors, is only what the `MapView` draws: a player who sees the whole place no longer lists things far off the screen.
 - Flow fields read the loaded window's costs once each time the map's costs or its window change, rather than asking the map at every step of every flood, which made each flood several times slower.
+- Noticing looks only at the subjects an observer could see this turn, on its map and within its reach, and at those it already knows of, and works out whether one stands in the light only for the per-observer rule, which reads it: a turn costs a look per subject nearby, not per subject loaded, and plays as before.
+- By range, a pass works out only the stealth ranges that could have changed, of an actor that moved or finished an action and of every actor when the light or the map changed, and a pass that relights nothing no longer marks `Lighting` changed.
 - `Keep::herd` and `GiveWay` step by near fields, and `GiveWay` gives way only to those within its `space` and 8 cells past it: a herd closing up or a crowd of bystanders no longer floods every loaded cell for each member's step.
 
 ### Fixed

@@ -243,7 +243,12 @@ The two rules part on purpose in three places.
   Per observer, a game authors a `Notice` and a `Stealth` per kind, and either absent means nothing changes.
   By range, the plugin gives every actor a `StealthRange` at the base and every mind an `Aware` as each appears, by an observer on `Add`, so a prefab, a save and a revival are covered with no game code.
 - **Keeping the range current.**
-  By range, `record_deeds` notes in `LastDeed` whether an actor's last action was a wait, an attack (a blow, a miss, or a throw at an actor) or anything else, and `refresh_ranges` works its `StealthRange` out from that and its tile at the start of every turn, so a range is never stale and a range authored at spawn lasts only until the first turn.
+  By range, `record_deeds` notes in `LastDeed` whether an actor's last action was a wait, an attack (a blow, a miss, or a throw at an actor) or anything else, and `refresh_ranges` works its `StealthRange` out from that and its tile at the head of a pass, so a range is never stale and a range authored at spawn lasts only until the first turn.
+  It works out only the ranges that could have changed: of an actor that moved or finished an action since the last pass, and of every actor when the light or the map changed.
+  Working out every actor's every pass cost a light and a tile lookup per actor loaded per actor's turn, which a Greywold turn among the herds measured; working out only on a deed was rejected, since a lantern lit at no cost of a turn would leave the player's range dark until their next action.
+  For that to save anything the lighting had to stop reading as changed on every pass: its relight took the resource mutably to follow the place, and now asks first.
+  `RangeRules::check` holds the rule's preconditions, a divisor of at least one and a multiplier of at least nought, and `by_range` refuses rules that fail it where they come in, rather than dividing by nothing at the first range worked out.
+  `update_awareness` asks the rule of the subjects on its map within its reach and of those it already knows of, filtered before they are sorted, which is the design's "a check per actor nearby, not per actor loaded"; the known ones are kept wherever they went because the turn without a sighting is what ages them out of memory.
 - **The sleeper.**
   Per observer a sleeper notices within `SLEEPER_REACH`, by its chance alone, and wakes to a foe.
   By range the subject's range is the limit already, so a sleeper notices by it as when awake, and anything it notices wakes it.

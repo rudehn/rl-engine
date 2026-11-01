@@ -406,14 +406,16 @@ impl Keep {
         }
     }
 
-    /// The field's way toward or away from `marks`. Near, for a herd: its
-    /// middle is a cell no other mind walks toward, so a field over all
-    /// that is loaded would be flooded for one member's one step; anyone
-    /// else's marks are somebody others close on too, whose field is shared.
+    /// The field's way toward or away from `marks`. Near, for a herd and
+    /// for the others: a herd's middle is a cell no other mind walks
+    /// toward, and the others are passers-by nobody hunts, so a field over
+    /// all that is loaded would be flooded for one mind's one step, as
+    /// [`GiveWay`] found; anyone else's marks are somebody others close on
+    /// too, whose field is shared.
     fn descents<A: Copy>(&self, ctx: &mut TacticCtx<'_, A>, marks: &[Point], me: Point, away: bool) -> Vec<Point> {
         match (self.on, away) {
-            (Station::Herd, false) => ctx.fields.descents_toward_near(marks, me, NEAR),
-            (Station::Herd, true) => ctx.fields.descents_away_near(marks, me, NEAR),
+            (Station::Herd | Station::Others, false) => ctx.fields.descents_toward_near(marks, me, NEAR),
+            (Station::Herd | Station::Others, true) => ctx.fields.descents_away_near(marks, me, NEAR),
             (_, false) => ctx.fields.descents_toward(marks, me),
             (_, true) => ctx.fields.descents_away(marks, me),
         }
@@ -2012,6 +2014,20 @@ mod tests {
         following.allies.push(view(3, 20, 10, 10));
         let (step, whole, near) = asking(&Keep::allies(3, 1), &following);
         assert_eq!((step, whole, near), (Some(Decision::Step(Point::new(11, 10))), 1, Vec::new()), "following");
+    }
+
+    /// A wary mind keeps away from the others by a near field, as a mind
+    /// giving way does: the field away from a passer-by is one nobody else
+    /// walks down, and a whole one flooded for each step backing off cost
+    /// a turn among the herds several times what the herds cost without.
+    #[test]
+    fn keeping_away_from_the_others_backs_off_by_a_near_field() {
+        let other = Point::new(13, 10);
+        let mut wary = Snapshot::alone(view(1, 10, 10, 10));
+        wary.others.push(view(2, other.x, other.y, 10));
+        let (backing, whole, near) = asking(&Keep::away(Station::Others, 10).watching(), &wary);
+        assert!(matches!(backing, Some(Decision::Step(p)) if geometry::chebyshev(p, other) > 3), "backing off: {backing:?}");
+        assert_eq!((whole, near), (0, vec![vec![other]]));
     }
 
     /// A mind giving way steps by a near field away from those in its
