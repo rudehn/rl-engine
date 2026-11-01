@@ -19,7 +19,7 @@
             crates/atglyph-rules/src/events/quest.rs
             crates/atglyph-ui/src/facet.rs
             crates/atglyph-ui/src/narrate.rs
-     fingerprint: e8718fe8 -->
+     fingerprint: 5674d2e6 -->
 
 # Statuses
 
@@ -49,7 +49,7 @@ It ends when the status does, by its time or by a cure, so a status a blow break
 A status that sleeps takes its holder's turns the same way, written `sleeps: true`, and ends itself the moment it is woken rather than waiting for the game's own `RemoveStatus`: `Sleepers::asleep` answers who is asleep by reading `Statuses::sleeping` off its current statuses, and `Statuses::wake` cures every one that sleeps and reports each with `StatusEvent::Cured`.
 A sleeper senses less than a held actor still does: its sight is recast and its noticing rolled, and under stealth's per-observer rule only within `SLEEPER_REACH`, two cells, and only by its chance there, never by its certain radius, so a hider can stand over one without waking it; under the by-range rule it notices by the subject's range as it would awake.
 Harm wakes whoever it landed on this pass, armor stopped at nothing included, since it was felt; the blow that woke it was rolled on it as on the unaware.
-On the sleeper's own turn, after noticing runs, sight wakes it to a foe it notices, within that reach under the per-observer rule and within the foe's range by range, by the same roll stealth's own noticing uses; a sleeper that notices by no rule, as the player, wakes on sight alone to a foe within the reach, whichever rule runs.
+On the sleeper's own turn, after noticing runs, sight wakes it to what it notices, by the same roll stealth's own noticing uses: a foe within that reach under the per-observer rule, and by range anything it noticed, a neutral as surely as a foe, since it noticed it within that one's own range; a sleeper that notices by no rule, as the player, wakes on sight alone to a foe within the reach, whichever rule runs.
 `NoisePlugin` adds a third, in `TurnSet::Listen`, which wakes whoever heard a noise this pass with its `Hearing` threshold left on it, so a sleeper with no hearing sleeps through any noise and a game with statuses and no noise has nothing to wake one from it.
 An unseen status hides whoever holds it from every mind while it lasts and ends when its holder attacks, which `StealthPlugin` decides and the statuses know nothing of; without stealth the flag is carried and read by nobody.
 A status naming a `side` turns its holder to that side when it comes on and puts it back the pass the last such status ends, keeping the side to go back to as `SideWas`, which is saved; one that `resists` is kept as the holder's `StatusResists`, added to its own and its gear's where a blow is weighed; and one that `stumbles` turns that percent of its holder's steps and bumps a random open way, drawn from a stream of its own.

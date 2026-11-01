@@ -19,7 +19,7 @@
             crates/atglyph-grid/src/light.rs
             crates/atglyph-ui/src/view/nearby.rs
             crates/atglyph-ui/src/view/vitals.rs
-     fingerprint: 28fcad74 -->
+     fingerprint: a2a9ec43 -->
 
 # Stealth
 
@@ -55,7 +55,7 @@ Combat is optional under either rule: with no `CombatRules` nobody has a side, s
 `saw(at)` resets the staleness as well as the position, which is what stops a monster giving up on the turn it catches you; `lost(memory)` returns to `Unaware` once the count passes `memory`; `alerted_to(at)` is anything that tells it without its looking, and is the same call.
 
 The rules differ in two questions and in nothing else: whether an unaware observer spots a subject it has a line to this turn (`spots`), and whether an alert one keeps hold of a subject it has a line to (`holds`).
-Each rule answers both as pure functions in `atglyph-rules`, over a `Glimpse { distance, in_view, lit, asleep }` the pipeline fills in, and `observe` is the one function that turns an answer into what the observer knows afterward.
+Each rule answers both as pure functions in `atglyph-rules`, over a `Glimpse { distance, in_view, lit, asleep }` the pipeline fills in, `lit` only for the per-observer rule, the one that reads it, and `observe` is the one function that turns an answer into what the observer knows afterward.
 
 Per observer, `NoticeStats` is the observer's half: `certain`, the tiles inside which it spots you whatever the roll; `chance_pct`, its chance a turn beyond that; `lit_bonus`, added to `certain` while you stand in the lit band; and `memory`, the turns it keeps looking after losing you, six when a content file leaves it out.
 `StealthStats` is the subject's: `quiet` off the certain radius and `subtlety` off the chance, both defaulting to nothing.
@@ -66,14 +66,16 @@ It judges only what it is at odds with, so a neutral costs it no roll.
 
 By range, `StealthRange(i32)` is the subject's: the distance within which an observer may notice it, the same for every observer.
 `RangeRules` is the game's, one set for the whole game: `base`, the range in the open; `dark_divisor` and `cover_divisor`, dividing it down in the dark and in cover; `still_divisor`, dividing it, rounding up, while the subject stands still; `attack_multiplier`, on the turn it attacks; `floor`, below which it never falls; `chance_pct`, the chance a turn of being spotted within it; `hold`, the times the range within which an alert observer keeps hold of it in view; and `memory`, the turns an observer keeps looking after losing hold.
+Each divisor is at least one and each multiplier, `attack_multiplier` and `hold`, at least nought: `RangeRules::check` names any that are not, `StealthPlugin::by_range` refuses rules that fail it, naming every one, and a multiplier too large for a range saturates rather than overflowing.
 `range_of` works a range out from them and a `Standing`, in that order of steps.
 The engine keeps each actor's range current itself: `LastDeed`, brought by `StealthRange`, is what the actor did last, `Deed::Waited` when its action was a wait, `Deed::Attacked` when it struck, missed or threw at someone, and `Deed::Acted` for any other action.
-At the start of every turn, before the roll, the range of each actor on the current map is worked out afresh from its `LastDeed` and where it stands: the dark band alone is dark, so a lit tile or a lamp's dim ring is not, and a tile is cover when the tile tables say so.
+At the head of every pass, before the roll, the range of each actor on the current map that moved or finished an action since the last pass is worked out afresh from its `LastDeed` and where it stands, and of every actor when the light or the map changed under them: the dark band alone is dark, so a lit tile or a lamp's dim ring is not, and a tile is cover when the tile tables say so.
 So a range a game gives an actor at spawn lasts only until the first turn, and a game changes ranges by changing its `RangeRules`, its tiles and its light.
 An unaware observer spots a subject within its range by the chance alone, never beyond it however long it looks, and never for certain however near.
 It judges everything it is not allied with, a neutral included, so a deer must notice the player before it steps away; a subject with no `StealthRange`, such as a body left where an actor fell, is never spotted.
 
 The roll is made for the actor holding the turn and no other, and never for the player, so noticing costs at most one roll per subject in view per monster-turn and nothing per frame: per observer, the actor must carry a `Notice`; by range, it must be a mind.
+It looks only at the subjects on its map within its reach, and at those it already knows of wherever they went, which age out of its memory as ever, so a turn costs a look per subject nearby, not per subject loaded.
 It walks its subjects in the order of where they stand, by map, row and column, rather than the order of the archetypes or the entities' numbers, since which subject gets which roll must not depend on how the world happens to be laid out or numbered.
 A roll decides only whether an unaware observer becomes aware: one already alert keeps its subject while its rule says it holds, so a monster in plain view does not lose you to a bad number, and losing takes `memory` turns without holding while noticing takes one.
 What "could be seen" means is the observer's own `Viewshed` and `within_reach` of its `Perception`, `DEFAULT_PERCEPTION` without one, so the minds, the roll and the panels can never disagree about who could be seen.
@@ -170,7 +172,7 @@ Something that had you and lost you to the unseen reads `Alert::Searching`, sinc
 
 ## Where it lives
 
-`atglyph-rules` is tier 1 and has no Bevy in it: `ai/awareness.rs` is the state machine, the glimpse a rule judges and `observe`; `ai/awareness/per_observer.rs` is the two stat blocks, the three functions over them and that rule's `spots` and `holds`; and `ai/awareness/by_range.rs` is `RangeRules`, `range_of` and that rule's `spots` and `holds`, with the caller doing the rolling and deciding what lit, dark and cover mean.
+`atglyph-rules` is tier 1 and has no Bevy in it: `ai/awareness.rs` is the state machine, the glimpse a rule judges and `observe`; `ai/awareness/per_observer.rs` is the two stat blocks, the three functions over them and that rule's `spots` and `holds`; and `ai/awareness/by_range.rs` is `RangeRules` and its `check`, `range_of` and that rule's `spots` and `holds`, with the caller doing the rolling and deciding what lit, dark and cover mean.
 That is what lets the properties be proved rather than watched: that light widens the certain radius by exactly its bonus, that the floor of one holds against any stack of gear, that a range takes each step in its order and never falls below its floor, that no roll spots beyond the range, and that `lost` returns to `Unaware` on exactly the turn the memory passes.
 The stat blocks and the range rules are serde-ready, so an observer's attention, a subject's quiet and a game's ranges are written in a content file rather than in Rust.
 `atglyph-bevy` is tier 2 and owns the rolling: `stealth.rs` is the components, `Aware`, `Unseen`, the stream, the six systems, the one place the two rules differ, `LastDeed` and the two systems that keep a range current, `record_deeds` and `refresh_ranges`, and the `Watchers` parameter that answers whether stealth is running and who is watching.
