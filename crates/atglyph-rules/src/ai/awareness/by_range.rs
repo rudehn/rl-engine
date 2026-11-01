@@ -151,6 +151,7 @@ mod tests {
         assert_eq!(range_of(&r, standing(true, true, false, false)), 2, "dark and cover make 1, floored");
         assert_eq!(range_of(&r, standing(false, false, false, true)), 14, "attacking doubles");
         assert_eq!(range_of(&r, standing(false, true, false, true)), 6, "cover, then attacked");
+        assert_eq!(range_of(&r, standing(false, false, true, true)), 8, "still, then attacked: seven halved up to four, then doubled");
     }
 
     #[test]
