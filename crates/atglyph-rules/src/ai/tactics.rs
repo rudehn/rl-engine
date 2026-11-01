@@ -290,6 +290,13 @@ pub struct Led {
 /// The gap is measured by its [`Gap`]: on foot for a station on allies or
 /// a leader, as the crow flies for one on enemies, and either for any
 /// station by [`measured`](Self::measured).
+///
+/// A keep that is [`watching`](Self::watching) waits in the band it would
+/// otherwise leave alone, while the nearest of its station is in sight:
+/// a wary animal that has backed off far enough stands and watches rather
+/// than letting an idle tactic below it wander back in. Opt-in, because
+/// most keeps leave that band to the tactic below on purpose: an archer
+/// standing off shoots from it.
 #[derive(Debug, Clone, Copy)]
 pub struct Keep {
     /// Whose company it keeps.
@@ -300,6 +307,10 @@ pub struct Keep {
     pub no_closer_than: i32,
     /// How the gap is measured.
     pub gap: Gap,
+    /// Whether it waits in its band, watching, while the one it keeps
+    /// station on is in sight, rather than leaving the turn to the next
+    /// tactic.
+    pub watch: bool,
 }
 
 /// How [`Keep`] measures the gap it keeps.
@@ -331,38 +342,46 @@ pub enum Gap {
 impl Keep {
     /// Station on the allies, measured on foot: what a companion is.
     pub fn allies(keep_within: i32, no_closer_than: i32) -> Self {
-        Self { on: Station::Allies, keep_within, no_closer_than, gap: Gap::OnFoot }
+        Self { on: Station::Allies, keep_within, no_closer_than, gap: Gap::OnFoot, watch: false }
     }
 
     /// Station on the enemies, measured as the crow flies: what a spotter
     /// or a skirmisher is.
     pub fn enemies(keep_within: i32, no_closer_than: i32) -> Self {
-        Self { on: Station::Enemies, keep_within, no_closer_than, gap: Gap::Crow }
+        Self { on: Station::Enemies, keep_within, no_closer_than, gap: Gap::Crow, watch: false }
     }
 
     /// Station on one leader, and on the allies while it is gone, measured
     /// on foot: what a band's follower is.
     pub fn leader(keep_within: i32, no_closer_than: i32) -> Self {
-        Self { on: Station::Leader, keep_within, no_closer_than, gap: Gap::OnFoot }
+        Self { on: Station::Leader, keep_within, no_closer_than, gap: Gap::OnFoot, watch: false }
     }
 
     /// Station on the middle of its [`Herded`] mates, as the crow flies,
     /// since the middle is a cell and not somebody the walk can be
     /// measured to: what a herd's member is.
     pub fn herd(keep_within: i32, no_closer_than: i32) -> Self {
-        Self { on: Station::Herd, keep_within, no_closer_than, gap: Gap::Crow }
+        Self { on: Station::Herd, keep_within, no_closer_than, gap: Gap::Crow, watch: false }
     }
 
     /// Keep away from `on` and nothing else: back off inside `distance`,
     /// hold outside it, and never close in, as the crow flies. What a wary
     /// animal is, and an archer that stands off but does not chase.
     pub fn away(on: Station, distance: i32) -> Self {
-        Self { on, keep_within: i32::MAX, no_closer_than: distance, gap: Gap::Crow }
+        Self { on, keep_within: i32::MAX, no_closer_than: distance, gap: Gap::Crow, watch: false }
     }
 
     /// The same station with its gap measured by `gap`.
     pub fn measured(mut self, gap: Gap) -> Self {
         self.gap = gap;
+        self
+    }
+
+    /// The same station, waiting in its band while it can see the one it
+    /// keeps station on: what a wary animal does once it has backed off far
+    /// enough, standing where it is and watching.
+    pub fn watching(mut self) -> Self {
+        self.watch = true;
         self
     }
 
@@ -403,7 +422,7 @@ impl Keep {
     /// Who it is keeping station on: the nearest of them, every one of them
     /// for the field to flood from, and whether the nearest is somebody it
     /// can see rather than somewhere it remembers.
-    fn watching<A: Copy>(&self, ctx: &TacticCtx<'_, A>) -> Option<(Point, Vec<Point>, bool)> {
+    fn kept_on<A: Copy>(&self, ctx: &TacticCtx<'_, A>) -> Option<(Point, Vec<Point>, bool)> {
         let allies = || {
             let nearest = ctx.snapshot.allies.first()?;
             Some((nearest.pos, ctx.snapshot.allies.iter().map(|a| a.pos).collect(), true))
@@ -460,7 +479,7 @@ impl<A: Copy> Tactic<A> for Keep {
 
     fn evaluate(&self, ctx: &mut TacticCtx<'_, A>) -> Option<Decision<A>> {
         let me = ctx.snapshot.me.pos;
-        let (nearest, marks, in_sight) = self.watching(ctx)?;
+        let (nearest, marks, in_sight) = self.kept_on(ctx)?;
         let gap = self.gap_from(ctx, &marks, nearest, me);
         if gap > self.keep_within {
             // Closing: the field's way first, and as the crow flies never a
@@ -486,7 +505,9 @@ impl<A: Copy> Tactic<A> for Keep {
             return None;
         }
         if gap >= self.no_closer_than {
-            return None;
+            // In the band: watched from where it stands while in sight, or
+            // left to the next tactic.
+            return (self.watch && in_sight).then_some(Decision::Wait);
         }
         // Backing off. Steps that widen the gap before steps that only hold
         // it, the field's way first within each, then every direction
@@ -2540,6 +2561,28 @@ mod tests {
     #[test]
     fn keeping_away_never_closes_in() {
         assert_eq!(keeping_from_other(Keep::away(Station::Others, 10), Point::new(0, 5), Point::new(40, 5)), None);
+    }
+
+    #[test]
+    fn a_watching_keep_away_waits_at_or_beyond_its_distance_and_still_backs_off_inside_it() {
+        let watching = Keep::away(Station::Others, 10).watching();
+        assert_eq!(keeping_from_other(watching, Point::new(0, 5), Point::new(10, 5)), Some(Decision::Wait), "at its distance");
+        assert_eq!(keeping_from_other(watching, Point::new(0, 5), Point::new(25, 5)), Some(Decision::Wait), "beyond it, still in sight");
+        match keeping_from_other(watching, Point::new(5, 5), Point::new(8, 5)) {
+            Some(Decision::Step(p)) => assert!(geometry::chebyshev(p, Point::new(8, 5)) > 3, "stepped to {p:?}, which does not widen the gap"),
+            got => panic!("inside its distance it backs off, got {got:?}"),
+        }
+        assert_eq!(Tactic::<u32>::name(&watching), "keep_away", "watching is still keeping away");
+    }
+
+    #[test]
+    fn a_watching_keep_waits_only_on_a_station_in_sight() {
+        let (me, spot) = (Point::new(0, 5), Point::new(10, 5));
+        assert_eq!(shadow_of(Keep::away(Station::Enemies, 6).watching(), me, spot, &[], true), Some(Decision::Wait), "an enemy in sight is watched");
+        assert_eq!(shadow_of(Keep::away(Station::Enemies, 6).watching(), me, spot, &[], false), None, "a spot only remembered is not");
+        assert_eq!(shadow_of(Keep::away(Station::Enemies, 6), me, spot, &[], true), None, "and a keep that does not watch leaves the turn on");
+        let alone = Snapshot::<u32>::alone(view(1, 0, 5, 10));
+        assert_eq!(keep(Keep::away(Station::Others, 10).watching(), &alone), None, "with nobody to keep away from, nothing to watch");
     }
 
     #[test]
