@@ -11,12 +11,19 @@ atglyph is not on crates.io yet, so a game depends on a release by its git tag, 
 - A mind keeps to its ground: an actor's `Ground` id, read through the game's `GroundRule`, holds its idle steps to the cells the game names, and one off its ground walks back. Herds: actors sharing a `Herd` id keep together with no leader, by `Keep::herd` on the middle of their living mates.
 - Carving a place out of solid rock a cell at a time: `DrunkardsWalk` opens a broad hall with rock standing in it, and `Aggregate`, diffusion-limited aggregation, grows branching tunnels; both open the share of the map asked for in one piece, from an `Origin`, with a brush width, a margin and, for aggregation, a pull toward the middle.
 - `CellBrightness`: a game draws each cell of a map brighter or darker than its tile, as high ground brighter than low, in sight and in memory alike.
+- Near fields: `Fields::descents_toward_near` and `Fields::descents_away_near` flood only the box round a mind and its goals, a margin wider, for a step among those a few cells off; the engine floods them afresh and keeps them out of the shared fields, and a `Fields` of a game's own answers them from its whole fields unless it says otherwise.
 
 ### Changed
 
 - **Breaking:** A mind's idle moves are one tactic, `Idle`, moving by the `Movement` its actor carries in `Moves`: `Wander`, `Hold(cell)` or `Roam { at, reach }`. It replaces `KeepPost`, `Wander`, `Posted` and the `Post` component, and the standard chain's `keep_post` and `wander_chance` become one `idle_chance`, with `before_wander` renamed `before_idle`. A mind with no `Moves` has no idle move. A game moving over gives `Hold` where it gave `Post` and `Wander` to every actor that drifted. Saves are format 2.
 - **Breaking:** `Scatter` and `ScatterBy` have a `phase`, `Phase::Growth` to cover the ground before anything is built and `Phase::Finish` to strew over what was; a literal adds `phase: Phase::Growth` to scatter as before.
 - What is in sight, the nearby list and the look and target cursors, is only what the `MapView` draws: a player who sees the whole place no longer lists things far off the screen.
+- Flow fields read the loaded window's costs once each time the map's costs or its window change, rather than asking the map at every step of every flood, which made each flood several times slower.
+- `Keep::herd` and `GiveWay` step by near fields, and `GiveWay` gives way only to those within its `space` and 8 cells past it: a herd closing up or a crowd of bystanders no longer floods every loaded cell for each member's step.
+
+### Fixed
+
+- A herd member standing on its herd's middle steps off it, as its `no_closer_than` says, rather than asking for a field and then doing nothing.
 
 ## [0.5.0] - 2026-10-29
 

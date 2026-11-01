@@ -13,6 +13,13 @@ use crate::ai::snapshot::{ActorView, ItemView, Snapshot};
 use crate::ai::wits::Wits;
 use crate::faction::Relation;
 
+/// How far past a mind and the cells it moves by a near field is flooded,
+/// for a step it takes among those a few cells off: a herd member closing
+/// on its herd's middle, or a bystander giving way. Room enough to go round
+/// a tree, a boulder or a cottage, and a few hundred cells to flood rather
+/// than every one loaded.
+const NEAR: i32 = 8;
+
 /// Attack an adjacent enemy, the nearest by position on a tie.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct MeleeAdjacent;
@@ -369,6 +376,19 @@ impl Keep {
         }
     }
 
+    /// The field's way toward or away from `marks`. Near, for a herd: its
+    /// middle is a cell no other mind walks toward, so a field over all
+    /// that is loaded would be flooded for one member's one step; anyone
+    /// else's marks are somebody others close on too, whose field is shared.
+    fn descents<A: Copy>(&self, ctx: &mut TacticCtx<'_, A>, marks: &[Point], me: Point, away: bool) -> Vec<Point> {
+        match (self.on, away) {
+            (Station::Herd, false) => ctx.fields.descents_toward_near(marks, me, NEAR),
+            (Station::Herd, true) => ctx.fields.descents_away_near(marks, me, NEAR),
+            (_, false) => ctx.fields.descents_toward(marks, me),
+            (_, true) => ctx.fields.descents_away(marks, me),
+        }
+    }
+
     /// Who it is keeping station on: the nearest of them, every one of them
     /// for the field to flood from, and whether the nearest is somebody it
     /// can see rather than somewhere it remembers.
@@ -429,7 +449,7 @@ impl<A: Copy> Tactic<A> for Keep {
             // which the field prices and the walk does not, may lengthen
             // the walk for a step or two.
             let on_foot = self.gap == Gap::OnFoot;
-            let descents = ctx.fields.descents_toward(&marks, me);
+            let descents = self.descents(ctx, &marks, me, false);
             for step in descents {
                 if (ctx.can_step)(step) && (on_foot || self.gap_from(ctx, &marks, nearest, step) <= gap) {
                     return Some(Decision::Step(step));
@@ -450,11 +470,16 @@ impl<A: Copy> Tactic<A> for Keep {
         // Backing off. Steps that widen the gap before steps that only hold
         // it, the field's way first within each, then every direction
         // straightest first; and within each, one that keeps a clear line to
-        // the other before one that does not.
-        let field = ctx.fields.descents_away(&marks, me);
-        let straight = Direction::between(nearest, me)?;
-        let (cw, ccw) = (straight.rotate_cw(), straight.rotate_ccw());
-        let turns = [straight, cw, ccw, cw.rotate_cw(), ccw.rotate_ccw(), cw.rotate_cw().rotate_cw(), ccw.rotate_ccw().rotate_ccw()];
+        // the other before one that does not. Standing on the mark, which
+        // only a herd's middle can be, every way is straight away from it.
+        let field = self.descents(ctx, &marks, me, true);
+        let turns = match Direction::between(nearest, me) {
+            Some(straight) => {
+                let (cw, ccw) = (straight.rotate_cw(), straight.rotate_ccw());
+                vec![straight, cw, ccw, cw.rotate_cw(), ccw.rotate_ccw(), cw.rotate_cw().rotate_cw(), ccw.rotate_ccw().rotate_ccw()]
+            }
+            None => Direction::ALL.to_vec(),
+        };
         let direct = turns.iter().map(|d| me + d.offset()).filter(|p| steps_to(ctx, me, *p));
         let open: Vec<Point> = field.into_iter().chain(direct).filter(|p| (ctx.can_step)(*p)).collect();
         let gaps: Vec<i32> = open.iter().map(|p| self.gap_from(ctx, &marks, nearest, *p)).collect();
@@ -826,11 +851,13 @@ impl<A: Copy> Tactic<A> for GiveWay {
     }
     fn evaluate(&self, ctx: &mut TacticCtx<'_, A>) -> Option<Decision<A>> {
         let me = ctx.snapshot.me.pos;
-        let crowd: Vec<Point> = ctx.snapshot.others.iter().map(|o| o.pos).collect();
+        // Those far enough off to lie past the field make no difference
+        // to a step, and would only widen it.
+        let crowd: Vec<Point> = ctx.snapshot.others.iter().map(|o| o.pos).filter(|p| geometry::chebyshev(me, *p) <= self.space + NEAR).collect();
         if !crowd.iter().any(|p| geometry::chebyshev(me, *p) <= self.space) {
             return None;
         }
-        if let Some(step) = ctx.step_away_from(&crowd) {
+        if let Some(step) = ctx.fields.descents_away_near(&crowd, me, NEAR).into_iter().find(|p| (ctx.can_step)(*p)) {
             return Some(Decision::Step(step));
         }
         let nearest = ctx.snapshot.others.first()?.pos;
@@ -1871,6 +1898,93 @@ mod tests {
         assert_eq!(Tactic::<u32>::name(&Keep::herd(3, 1)), "herd");
         assert_eq!(Tactic::<u32>::keeps_with(&Keep::herd(3, 1)), Some(Station::Herd));
         assert!(!Brain::<u32>::new().then(Keep::herd(3, 1)).keeps_with_allies());
+    }
+
+    /// [`Given`], noting which fields a tactic asks for: the whole one, or
+    /// a near one and toward or away from whom.
+    struct Asked<'a> {
+        given: Given<'a>,
+        whole: u32,
+        near: Vec<Vec<Point>>,
+    }
+
+    impl Fields for Asked<'_> {
+        fn descents_toward(&mut self, goals: &[Point], from: Point) -> Vec<Point> {
+            self.whole += 1;
+            self.given.descents_toward(goals, from)
+        }
+
+        fn descents_away(&mut self, goals: &[Point], from: Point) -> Vec<Point> {
+            self.whole += 1;
+            self.given.descents_away(goals, from)
+        }
+
+        fn descents_toward_near(&mut self, goals: &[Point], from: Point, margin: i32) -> Vec<Point> {
+            assert_eq!(margin, NEAR);
+            self.near.push(goals.to_vec());
+            self.given.descents_toward(goals, from)
+        }
+
+        fn descents_away_near(&mut self, goals: &[Point], from: Point, margin: i32) -> Vec<Point> {
+            assert_eq!(margin, NEAR);
+            self.near.push(goals.to_vec());
+            self.given.descents_away(goals, from)
+        }
+    }
+
+    /// What `tactic` decides for `snapshot` on open ground, with the fields
+    /// it asked for: how many whole ones, and the goals of each near one.
+    fn asking(tactic: &dyn Tactic<u32>, snapshot: &Snapshot<u32>) -> (Option<Decision<u32>>, u32, Vec<Vec<Point>>) {
+        let r = TileRegistry::standard();
+        let t = Terrain::filled(40, 40, r.expect("floor"));
+        let view_t = t.view(&r);
+        let can_step = |p: Point| view_t.is_walkable(p);
+        let mut fields = Asked { given: Given::over(&view_t), whole: 0, near: Vec::new() };
+        let mut rng = StdRng::seed_from_u64(1);
+        let decision = tactic.evaluate(&mut TacticCtx {
+            snapshot,
+            fields: &mut fields,
+            can_step: &can_step,
+            blocks_shot: &nothing_blocks,
+            blocks_burst: &|_| false,
+            bounds: arena(),
+            rng: &mut rng,
+        });
+        (decision, fields.whole, fields.near)
+    }
+
+    /// A herd's middle is a cell nobody else walks toward, so a member
+    /// closes on it and backs off it by a field flooded round it alone; a
+    /// follower's leader is somebody others walk toward too, whose field
+    /// is the whole one they share.
+    #[test]
+    fn a_herd_member_keeps_its_herd_by_near_fields_and_a_follower_by_the_whole_one() {
+        let middle = Point::new(20, 11);
+        let (closing, whole, near) = asking(&Keep::herd(3, 1), &herding(Point::new(10, 11)));
+        assert_eq!((closing, whole, near), (Some(Decision::Step(Point::new(11, 11))), 0, vec![vec![middle]]), "closing");
+        let (backing, whole, near) = asking(&Keep::herd(3, 1), &herding(middle));
+        assert!(matches!(backing, Some(Decision::Step(_))), "backing off the middle it stands on: {backing:?}");
+        assert_eq!((whole, near), (0, vec![vec![middle]]), "backing off");
+
+        let mut following = Snapshot::alone(view(1, 10, 10, 10));
+        following.allies.push(view(3, 20, 10, 10));
+        let (step, whole, near) = asking(&Keep::allies(3, 1), &following);
+        assert_eq!((step, whole, near), (Some(Decision::Step(Point::new(11, 10))), 1, Vec::new()), "following");
+    }
+
+    /// A mind giving way steps by a near field away from those in its
+    /// space and those near enough to lie in the field with them, and
+    /// leaves out anyone further off, who would only widen it.
+    #[test]
+    fn giving_way_floods_near_and_from_only_those_close_enough_to_lie_in_the_field() {
+        let mut crowded = Snapshot::alone(view(1, 20, 20, 10));
+        for (id, x) in [(2, 21), (3, 21 + NEAR), (4, 22 + NEAR)] {
+            crowded.others.push(view(id, x, 20, 10));
+        }
+        let (step, whole, near) = asking(&GiveWay { space: 1 }, &crowded);
+        assert_eq!((whole, near), (0, vec![vec![Point::new(21, 20), Point::new(21 + NEAR, 20)]]));
+        let Some(Decision::Step(step)) = step else { panic!("it gives way: {step:?}") };
+        assert!(geometry::chebyshev(step, Point::new(21, 20)) > 1, "out of the space of the one beside it, to {step:?}");
     }
 
     #[test]

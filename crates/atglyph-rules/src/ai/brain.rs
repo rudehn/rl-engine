@@ -128,6 +128,26 @@ pub trait Fields {
     /// leads away from them and round corners rather than into them.
     fn descents_away(&mut self, goals: &[Point], from: Point) -> Vec<Point>;
 
+    /// [`descents_toward`](Self::descents_toward) on a field flooded only
+    /// over the box round `from` and `goals`, `margin` cells wider on every
+    /// side: for a step's worth of closing on a cell a few cells off, which
+    /// nobody else walks toward, so its field is never shared and a flood
+    /// over all that is loaded would be thrown away for one step. A way
+    /// round that leaves the box is not found. The whole field by default.
+    fn descents_toward_near(&mut self, goals: &[Point], from: Point, margin: i32) -> Vec<Point> {
+        let _ = margin;
+        self.descents_toward(goals, from)
+    }
+
+    /// [`descents_away`](Self::descents_away) on a field flooded only over
+    /// the box round `from` and `goals`, `margin` cells wider on every side,
+    /// as [`descents_toward_near`](Self::descents_toward_near) is: for a
+    /// step out of somebody's way, not a flight. The whole field by default.
+    fn descents_away_near(&mut self, goals: &[Point], from: Point, margin: i32) -> Vec<Point> {
+        let _ = margin;
+        self.descents_away(goals, from)
+    }
+
     /// How far `from` is from the nearest of `goals` on foot, in hundredths
     /// of a step, the unit every cost is in: the value the field toward
     /// `goals` holds at `from`, so asking is free once a mind has walked

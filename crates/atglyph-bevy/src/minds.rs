@@ -24,8 +24,8 @@
 
 use std::sync::Arc;
 
-use atglyph_core::{Direction, Grid2D, Point, geometry};
-use atglyph_grid::{BitGrid, DijkstraMap, PathRules};
+use atglyph_core::{Direction, Grid2D, GridRect, Point, geometry};
+use atglyph_grid::{BitGrid, CostSource, DijkstraMap, PathRules};
 use atglyph_rules::ai::recent::Recent;
 use atglyph_rules::ai::tactics::{Herded, Movement, Moving, OnGround, Station, Ways};
 use atglyph_rules::ai::{StepAs, Trail, sort_roster, step_as};
@@ -290,8 +290,12 @@ pub struct FlowFields {
     traps: Vec<Point>,
     /// The same cells, window-local.
     snares: BitGrid,
+    /// The window's ground, read off the map for the epoch.
+    footing: Footing,
     fields: Recent<FieldKey, DijkstraMap>,
     floods: Recent<FloodKey, DijkstraMap>,
+    /// The last near field, flooded afresh for each mind that asks one.
+    near: DijkstraMap,
 }
 
 impl Default for FlowFields {
@@ -302,15 +306,18 @@ impl Default for FlowFields {
             walls: BitGrid::new(0, 0),
             traps: Vec::new(),
             snares: BitGrid::new(0, 0),
+            footing: Footing::default(),
             fields: Recent::default(),
             floods: Recent::default(),
+            near: DijkstraMap::new(GridRect::new(0, 0, 0, 0)),
         }
     }
 }
 
 impl FlowFields {
-    /// The field for `key`, built if it is not there.
-    fn ensure(&mut self, key: FieldKey, map: &WorldMap) -> Option<&DijkstraMap> {
+    /// Throws every field away and reads the ground again if the map's cost
+    /// epoch or its window has moved since they were built.
+    fn refresh(&mut self, map: &WorldMap) {
         let epoch = (map.cost_epoch(), map.generation());
         if self.epoch != Some(epoch) {
             self.fields.clear();
@@ -325,15 +332,56 @@ impl FlowFields {
             for p in self.traps.iter().filter_map(|p| map.to_local(*p)) {
                 self.snares.insert(p);
             }
+            self.footing = Footing::read(map);
         }
+    }
+
+    /// The field toward or away from `goals` over `bound` alone, both
+    /// window-local, flooded afresh and kept only until the next is asked.
+    ///
+    /// Not cached with the rest: it is asked for a step's worth of closing
+    /// on a cell or giving way to somebody a few cells off, a question
+    /// hardly ever asked twice from the same place of the same goals, and
+    /// a flood over a few hundred cells costs less than finding it again.
+    /// Kept apart, it never pushes out the field fifty hunters share.
+    fn near(&mut self, goals: &[Point], bound: GridRect, opens_doors: bool, wary: bool, away: bool, map: &WorldMap) -> &DijkstraMap {
+        self.refresh(map);
+        if opens_doors {
+            self.footing.read_opening(map);
+        }
+        let view = AroundStanding {
+            footing: &self.footing,
+            costs: self.footing.costs(opens_doors),
+            walls: &self.walls,
+            snares: wary.then_some(&self.snares),
+            goals: goals.to_vec(),
+        };
+        self.near.reset(bound);
+        self.near.build(&view, goals.iter().copied(), PathRules::default());
+        if away {
+            let view = AroundStanding { goals: Vec::new(), ..view };
+            self.near.scale(-12, 10);
+            self.near.rescan(&view, PathRules::default());
+        }
+        &self.near
+    }
+
+    /// The field for `key`, built if it is not there.
+    fn ensure(&mut self, key: FieldKey, map: &WorldMap) -> Option<&DijkstraMap> {
+        self.refresh(map);
         if !self.fields.touch(&key) {
             let (goals, profile, opens_doors, wary, away) = &key;
             let goals: Vec<(Point, Point)> = goals.iter().filter_map(|g| Some((*g, map.to_local(*g)?))).collect();
             if goals.is_empty() {
                 return None;
             }
+            if *opens_doors {
+                self.footing.read_opening(map);
+            }
+            let footing = &self.footing;
             let ground = |goals: &[Point]| AroundStanding {
-                view: if *opens_doors { map.opening_view() } else { map.view() },
+                footing,
+                costs: footing.costs(*opens_doors),
                 walls: &self.walls,
                 snares: wary.then_some(&self.snares),
                 goals: goals.to_vec(),
@@ -404,6 +452,61 @@ impl FlowFields {
     }
 }
 
+/// The window's ground as a flood reads it, read off the map once for its
+/// epoch: what each cell costs to enter, for a mover that opens nothing and
+/// for one that opens doors, and which cells let a diagonal past.
+///
+/// A flood asks a cell's cost for each of the eight steps into it, and
+/// asked of the map every answer found the place and then the chunk the
+/// cell is on; over a loaded window of thirty thousand cells that lookup
+/// was most of what a flood cost, and a herd closing up asked for several
+/// floods a turn. Read once, it is an index into a list. What opens is
+/// read only once a mind that opens doors asks, since a map no such mind
+/// walks never needs it.
+struct Footing {
+    width: i32,
+    height: i32,
+    plain: Vec<Option<u32>>,
+    opening: Option<Vec<Option<u32>>>,
+    corners: BitGrid,
+}
+
+impl Default for Footing {
+    fn default() -> Self {
+        Self { width: 0, height: 0, plain: Vec::new(), opening: None, corners: BitGrid::new(0, 0) }
+    }
+}
+
+impl Footing {
+    fn read(map: &WorldMap) -> Self {
+        let view = map.view();
+        let (width, height) = (view.width(), view.height());
+        let cells = view.len();
+        let mut corners = BitGrid::new(width, height);
+        for idx in 0..cells {
+            corners.set_idx(idx, view.lets_diagonal_past(view.idx_point(idx)));
+        }
+        Self { width, height, plain: (0..cells).map(|idx| view.cost_idx(idx)).collect(), opening: None, corners }
+    }
+
+    fn read_opening(&mut self, map: &WorldMap) {
+        if self.opening.is_none() {
+            let view = map.opening_view();
+            self.opening = Some((0..self.plain.len()).map(|idx| view.cost_idx(idx)).collect());
+        }
+    }
+
+    /// Each cell's cost for a mover that opens doors or one that does not;
+    /// the first only once [`read_opening`](Self::read_opening) has run.
+    fn costs(&self, opens_doors: bool) -> &[Option<u32>] {
+        match &self.opening {
+            Some(opening) if opens_doors => opening,
+            None if opens_doors => panic!("the costs of opening are read before a flood that opens doors"),
+            _ => &self.plain,
+        }
+    }
+}
+
 /// The window as a field floods it: the map's own costs, a wall wherever
 /// something stands, and for a wary mind a trap's price on a shown trap's
 /// cell; except under a goal, which is where the field leads and so is
@@ -413,7 +516,8 @@ impl FlowFields {
 /// A diagonal past what stands is the map's to allow, as the move
 /// resolver allows it: a prop fills its cell, not the corners beside it.
 struct AroundStanding<'a> {
-    view: crate::world::WindowView<'a>,
+    footing: &'a Footing,
+    costs: &'a [Option<u32>],
     walls: &'a BitGrid,
     snares: Option<&'a BitGrid>,
     goals: Vec<Point>,
@@ -421,28 +525,28 @@ struct AroundStanding<'a> {
 
 impl Grid2D for AroundStanding<'_> {
     fn width(&self) -> i32 {
-        self.view.width()
+        self.footing.width
     }
 
     fn height(&self) -> i32 {
-        self.view.height()
+        self.footing.height
     }
 }
 
-impl atglyph_grid::CostSource for AroundStanding<'_> {
+impl CostSource for AroundStanding<'_> {
     fn cost_idx(&self, idx: usize) -> Option<u32> {
         let snared = self.snares.is_some_and(|s| s.get_idx(idx));
         if !(self.walls.get_idx(idx) || snared) || self.goals.contains(&self.idx_point(idx)) {
-            return self.view.cost_idx(idx);
+            return self.costs[idx];
         }
         if self.walls.get_idx(idx) {
             return None;
         }
-        self.view.cost_idx(idx).map(|cost| cost + WARY_OF_A_TRAP)
+        self.costs[idx].map(|cost| cost + WARY_OF_A_TRAP)
     }
 
     fn lets_diagonal_past(&self, p: Point) -> bool {
-        self.view.lets_diagonal_past(p)
+        self.checked_idx(p).is_some_and(|idx| self.footing.corners.get_idx(idx))
     }
 }
 
@@ -475,6 +579,25 @@ impl Walking<'_> {
             None => Vec::new(),
         }
     }
+
+    /// The descents from `from` of a field over the box round it and
+    /// `goals`, `margin` cells wider on every side and no wider than the
+    /// window.
+    fn descents_near(&mut self, goals: &[Point], from: Point, margin: i32, away: bool) -> Vec<Point> {
+        let window = self.map.window_tiles();
+        let Some(local) = self.map.to_local(from) else { return Vec::new() };
+        let mut goals: Vec<Point> = goals.iter().filter_map(|g| self.map.to_local(*g)).collect();
+        if goals.is_empty() {
+            return Vec::new();
+        }
+        goals.sort();
+        goals.dedup();
+        let spanned = goals.iter().fold(GridRect::from_corners(local, local), |rect, g| rect.union(&GridRect::from_corners(*g, *g)));
+        let Some(bound) = spanned.inflate(margin).intersection(&GridRect::new(0, 0, window.width, window.height)) else { return Vec::new() };
+        let priced = self.wary && !self.fields.traps.is_empty();
+        let field = self.fields.near(&goals, bound, self.opens_doors, priced, away, self.map);
+        field.descents(local).into_iter().map(|p| p + window.origin()).collect()
+    }
 }
 
 impl atglyph_rules::Fields for Walking<'_> {
@@ -484,6 +607,14 @@ impl atglyph_rules::Fields for Walking<'_> {
 
     fn descents_away(&mut self, goals: &[Point], from: Point) -> Vec<Point> {
         self.descents(goals, from, true)
+    }
+
+    fn descents_toward_near(&mut self, goals: &[Point], from: Point, margin: i32) -> Vec<Point> {
+        self.descents_near(goals, from, margin, false)
+    }
+
+    fn descents_away_near(&mut self, goals: &[Point], from: Point, margin: i32) -> Vec<Point> {
+        self.descents_near(goals, from, margin, true)
     }
 
     /// The field toward `goals` at `from`, unpriced: the walk itself, so a
@@ -2660,6 +2791,38 @@ mod tests {
         assert!(fields.fields.get(&key(1)).is_none(), "the one asked for once, longest ago, went first");
         assert!(fields.fields.get(&key(40)).is_some(), "and the newest is held");
         assert!(fields.fields.get(&key(0)).is_some(), "the one asked for every time is still held");
+    }
+
+    /// A near field is flooded over the box round the mind and its goals,
+    /// the margin wider, and nowhere else; it leads the way the whole field
+    /// does over open ground, and it is never kept among the fields minds
+    /// share, so it pushes none of them out.
+    #[test]
+    fn a_near_field_floods_only_round_the_mind_and_its_goals_and_is_never_kept() {
+        use atglyph_rules::Fields;
+        let (mut app, start, _) = arena();
+        app.world_mut().spawn((Actor, Player, Blocks, Position(start), Viewshed::new(8), Health::full(30)));
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        app.update();
+        app.update();
+        let map = app.world().resource::<WorldMap>();
+        let goal = start.offset(4, 1);
+        let mut fields = FlowFields::default();
+        let mut walking = Walking { fields: &mut fields, map, profile: MovementProfile::default(), opens_doors: false, wary: false };
+        let near = walking.descents_toward_near(&[goal], start, 3);
+        let whole = walking.descents_toward(&[goal], start);
+        assert_eq!(near, whole, "over open ground a near field leads as the whole one does");
+        let away = walking.descents_away_near(&[goal], start, 3);
+        let gap = |p: &Point| geometry::chebyshev(*p, goal);
+        assert!(away.first().is_some_and(|p| gap(p) > gap(&start)) && away.iter().all(|p| gap(p) >= gap(&start)), "and away, away: {away:?}");
+
+        let local = |p: Point| map.to_local(p).unwrap();
+        for (p, reached) in [(start.offset(-3, -3), true), (goal.offset(3, 3), true), (start.offset(-4, 0), false), (goal.offset(0, 4), false)] {
+            assert_eq!(fields.near.value(local(p)).is_some(), reached, "{p:?} is {}in the box", if reached { "" } else { "not " });
+        }
+        let walker = MovementProfile::default();
+        assert!(fields.fields.get(&(vec![goal], walker, false, false, true)).is_none(), "no field away was kept");
+        assert!(fields.fields.get(&(vec![goal], walker, false, false, false)).is_some(), "only the whole one asked for");
     }
 
     /// A companion keeps up with the player and gives way when it is
