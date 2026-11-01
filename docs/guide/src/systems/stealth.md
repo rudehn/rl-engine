@@ -19,7 +19,7 @@
             crates/atglyph-grid/src/light.rs
             crates/atglyph-ui/src/view/nearby.rs
             crates/atglyph-ui/src/view/vitals.rs
-     fingerprint: 1026e86a -->
+     fingerprint: c4245bc6 -->
 
 # Stealth
 
@@ -94,6 +94,7 @@ It runs before the statuses resolve in the same pass, so the marker is gone befo
 Nobody is woken to an attacker still unseen, which is harm from something revealing does not read: a thing used whose `use` trigger hurt those around it, a worn thing's timer, or a trap its holder set off; a status ticking carries no attacker and wakes nobody at all.
 A status that sleeps (`docs/guide/src/systems/statuses.md`) leans on the same answers this page gives: `Watchers::unaware` says yes for a sleeper to whoever strikes it, stealth running or not, so the blow that wakes one lands as on the unaware first; and a sleeper's own noticing is the ordinary roll, run only on its turn, so stealth's roll and sleep's wake are one mechanism asked twice rather than two.
 Per observer, a sleeper notices only within `SLEEPER_REACH`, by its chance alone, and wakes to a foe it notices there; by range it notices by the subject's range as it would awake, and wakes to anything it notices.
+A sleeper that notices by neither rule, the player or one with no mind, wakes on sight to a foe within `SLEEPER_REACH`, whichever rule runs.
 
 ## Using it
 

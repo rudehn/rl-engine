@@ -244,6 +244,7 @@ The two rules part on purpose in three places.
 - **The sleeper.**
   Per observer a sleeper notices within `SLEEPER_REACH`, by its chance alone, and wakes to a foe.
   By range the subject's range is the limit already, so a sleeper notices by it as when awake, and anything it notices wakes it.
+  A sleeper that notices by no rule, the player above all, keeps the rule it had without stealth under both: it wakes on sight to a foe within the reach, so a sleeping player is not woken by a deer across the field.
 
 ## 9. What is not in this slice
 

@@ -1081,6 +1081,42 @@ mod tests {
         assert!(!walked(true), "a neutral one is offered no trail and stays where it is");
     }
 
+    /// A sleeper that notices by no rule, as the player, which is no mind
+    /// and keeps no `Aware`, wakes by sight alone under the by-range rule as
+    /// under the other: to a foe within the reach, and not to a neutral
+    /// further off, however plainly it stands in view.
+    #[test]
+    fn by_range_a_sleeper_that_does_not_notice_wakes_only_to_a_foe_within_the_reach() {
+        let mut field = Field::by_range(|_| {});
+        let statuses = atglyph_rules::Registry::from_defs(vec![atglyph_rules::StatusDef::new("asleep").sleeps()]).unwrap();
+        let asleep = statuses.expect("asleep");
+        field.app.world_mut().resource_mut::<crate::registries::Registries>().statuses = statuses;
+        let foes = *field.app.world().get::<Faction>(field.watcher).unwrap();
+        field.make_neutral();
+        field.stand_off(atglyph_rules::SLEEPER_REACH + 3);
+        let player = field.player;
+        assert!(field.app.world().get::<Aware>(player).is_none(), "the player notices by no rule");
+        field.app.world_mut().write_message(crate::status::ApplyStatus {
+            target: player,
+            status: asleep,
+            turns: atglyph_rules::UNTIL_CURED,
+            by: None,
+            held_by: None,
+        });
+        let sleeping = |field: &Field| field.app.world().get::<crate::status::ActiveStatuses>(player).unwrap().has(asleep);
+        for _ in 0..10 {
+            field.app.update();
+        }
+        assert!(sleeping(&field), "a neutral in plain view past the reach does not wake it");
+
+        let near = field.at(player).offset(0, atglyph_rules::SLEEPER_REACH);
+        field.app.world_mut().spawn((Actor, Blocks, Position(near), Health::full(10), foes));
+        for _ in 0..4 {
+            field.app.update();
+        }
+        assert!(!sleeping(&field), "a foe within the reach does");
+    }
+
     #[test]
     fn by_range_every_actor_and_mind_is_given_its_parts() {
         let mut field = Field::by_range(|_| {});

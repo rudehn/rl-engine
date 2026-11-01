@@ -33,7 +33,7 @@ use atglyph_core::Direction;
 use atglyph_core::turn::BASE_ACTION_COST;
 use atglyph_rules::faction::stance;
 use atglyph_rules::stats::{Modifier, ModifierSource, Op};
-use atglyph_rules::{Hit, Resistances, StatId, Stats, StatusId, Statuses};
+use atglyph_rules::{Hit, Relation, Resistances, StatId, Stats, StatusId, Statuses};
 use bevy::prelude::*;
 
 use crate::combat::{CombatRules, DamageDealt, DamageEvent, Dead, Faction, Heal};
@@ -370,10 +370,13 @@ type Stirring = (Entity, &'static Position, &'static Faction, Option<&'static On
 /// on sight, as it would see them awake. A sleeper with no sight wakes only
 /// to harm and noise.
 ///
-/// By range there is no reach and no foe: the sleeper notices by the
+/// By range, a sleeper that notices by the rule, one keeping an `Aware`
+/// with a subject that hides, has no reach and no foe: it noticed by the
 /// subject's own range, which is limit enough, and whatever it judges and
-/// notices wakes it, a neutral as surely as a foe. Which is which is asked
-/// of stealth's rule, so the two rules share this one function.
+/// noticed wakes it, a neutral as surely as a foe. Which is which is asked
+/// of stealth's rule, so the two rules share this one function. One that
+/// notices by no rule, the player or a sleeper with no mind, wakes on
+/// sight under either rule as without stealth: to a foe within the reach.
 ///
 /// In [`DecideSet::Notice`](crate::plugin::DecideSet::Notice), after the
 /// noticing, on the sleeper's own turn, which
@@ -396,17 +399,19 @@ pub(crate) fn wake_on_sight(
         }
         let map = on.map(|m| m.0).unwrap_or(MapId::ZERO);
         let stirs = others.iter().any(|(other, at, theirs, other_on, hides, unseen)| {
-            let close = other != sleeper
-                && !unseen
-                && other_on.map(|m| m.0).unwrap_or(MapId::ZERO) == map
-                && rule.sleeper_reach().is_none_or(|reach| atglyph_core::geometry::chebyshev(pos.0, at.0) <= reach)
-                && rule.judges(stance(Some(&rules.factions), Some(mine.0), Some(theirs.0)))
-                && sight.can_see(at.0);
-            let noticed = match aware {
-                Some(aware) if hides && stealth.get() => aware.knows(other),
-                _ => true,
-            };
-            close && noticed
+            let in_sight = other != sleeper && !unseen && other_on.map(|m| m.0).unwrap_or(MapId::ZERO) == map && sight.can_see(at.0);
+            let distance = atglyph_core::geometry::chebyshev(pos.0, at.0);
+            let relation = stance(Some(&rules.factions), Some(mine.0), Some(theirs.0));
+            in_sight
+                && match aware {
+                    // It notices by stealth's rule: what it noticed wakes it,
+                    // within the reach and of the relations the rule says.
+                    Some(aware) if hides && stealth.get() => {
+                        aware.knows(other) && rule.sleeper_reach().is_none_or(|reach| distance <= reach) && rule.judges(relation)
+                    }
+                    // It sees on sight: a foe within the reach, whichever rule runs.
+                    _ => distance <= atglyph_rules::SLEEPER_REACH && relation == Some(Relation::Hostile),
+                }
         });
         if stirs {
             wake(sleeper, &mut statuses.0, &mut stats.0, registries, &mut events);

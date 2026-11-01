@@ -107,24 +107,29 @@ impl Plugin for Starter {
         // Every subsystem is a plugin you name. Combat resolves blows, minds
         // decide the monsters' turns, lighting decides what can be seen, and
         // stealth decides what has been noticed, here by each observer.
-        app.add_plugins((CombatPlugin, MindsPlugin, LightingPlugin, StealthPlugin::per_observer()))
-            // Items lie on the floor, in a bag, or worn, and the engine moves
-            // them between the three and charges a turn for each move.
-            .add_plugins(ItemsPlugin)
-            // How the floor looks, and how it is built: the engine builds it
-            // the first time something enters it, from its own seed.
-            .insert_resource(dungeon.appearance())
-            .places(dungeon)
-            .add_systems(NewRun, start)
-            // Keys become intents once a frame, and only while no screen,
-            // such as the look cursor, has them.
-            .add_systems(
-                Update,
-                player_input.in_set(EngineSet::Input).run_if(no_modal),
-            )
-            // Inside the turn: the floor fills the moment it is first entered,
-            // and a potion mends the moment it is drunk.
-            .add_systems(Turn, (populate, drink).in_set(TurnSet::React));
+        app.add_plugins((
+            CombatPlugin,
+            MindsPlugin,
+            LightingPlugin,
+            StealthPlugin::per_observer(),
+        ))
+        // Items lie on the floor, in a bag, or worn, and the engine moves
+        // them between the three and charges a turn for each move.
+        .add_plugins(ItemsPlugin)
+        // How the floor looks, and how it is built: the engine builds it
+        // the first time something enters it, from its own seed.
+        .insert_resource(dungeon.appearance())
+        .places(dungeon)
+        .add_systems(NewRun, start)
+        // Keys become intents once a frame, and only while no screen,
+        // such as the look cursor, has them.
+        .add_systems(
+            Update,
+            player_input.in_set(EngineSet::Input).run_if(no_modal),
+        )
+        // Inside the turn: the floor fills the moment it is first entered,
+        // and a potion mends the moment it is drunk.
+        .add_systems(Turn, (populate, drink).in_set(TurnSet::React));
         // The keys, once, for the input system and the `?` screen alike.
         declare_controls(app);
     }
