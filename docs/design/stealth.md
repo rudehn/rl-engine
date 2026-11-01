@@ -158,7 +158,8 @@ A monster with `MeleeAdjacent`, `Hunt`, `SearchLastKnown`, `Idle` hunts what it 
 ## 6. Waking up
 
 Being hit alerts you regardless of how quiet the attacker was.
-`wake_on_damage` reads `DamageDealt` in `TurnSet::React`, which is where a turn's consequences land, and calls `alerted_to` with the attacker's position.
+`wake_on_damage` reads `DamageDealt` in `ReactSet::Settle`, inside `TurnSet::React`, which is where a turn's consequences land, and calls `alerted_to` with the attacker's position.
+It sits in the engine's named set so a game's reaction to a `Noticed`, such as a herd alerted as one, orders itself after it; unordered, the two wrote `Aware` in whichever order the scheduler picked, and one seed could play two ways.
 
 When awareness flips `Unaware` to `Alert`, the engine writes one message:
 

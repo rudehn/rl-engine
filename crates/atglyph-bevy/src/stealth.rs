@@ -170,6 +170,14 @@ impl Aware {
 /// reads it to shout, log a line, change the music, or wake a squad; how
 /// far a shout carries and who it reaches are content, so the engine
 /// propagates nothing.
+///
+/// Written in two places in a pass: by the roll, in
+/// [`DecideSet::Notice`](crate::plugin::DecideSet::Notice), and by a blow,
+/// in [`ReactSet::Settle`](crate::plugin::ReactSet::Settle). A game that
+/// reads it in [`TurnSet::React`](crate::plugin::TurnSet::React), or writes
+/// an [`Aware`] there, orders itself after `ReactSet::Settle`, so it reads
+/// a blow's notice in the pass the blow lands and never writes an `Aware`
+/// in an order the scheduler picks.
 #[derive(Message, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Noticed {
     /// Who noticed.
@@ -477,7 +485,7 @@ impl StealthPlugin {
 impl Plugin for StealthPlugin {
     fn build(&self, app: &mut App) {
         use crate::app::EngineApp;
-        use crate::plugin::{DecideSet, PerceiveSet, ResolveSet, Turn, TurnSet};
+        use crate::plugin::{DecideSet, PerceiveSet, ReactSet, ResolveSet, Turn, TurnSet};
         if let NoticeRule::ByRange(_) = self.rule {
             app.add_observer(give_range).add_observer(give_memory);
             // Only while the by-range rule runs, since no other has a range
@@ -500,7 +508,10 @@ impl Plugin for StealthPlugin {
             .add_stream::<StealthRng>("StealthPlugin")
             .add_systems(Turn, update_awareness.in_set(DecideSet::Notice))
             .add_systems(Turn, (filter_unseen, filter_unnoticed).chain().in_set(PerceiveSet::Filter))
-            .add_systems(Turn, wake_on_damage.in_set(TurnSet::React))
+            // In the engine's settling of the pass, so a game's reaction to
+            // a notice orders itself after `ReactSet::Settle` and reads the
+            // blows noticed this pass as surely as the sightings.
+            .add_systems(Turn, wake_on_damage.in_set(ReactSet::Settle))
             .add_systems(Turn, reveal_attackers.in_set(ResolveSet::Effects).before(crate::status::resolve_afflictions))
             .add_systems(Turn, mark_unseen.in_set(ResolveSet::Effects).after(crate::status::tick_statuses));
     }
@@ -825,9 +836,12 @@ pub(crate) fn update_awareness(mut watch: Watch, mut noticed: MessageWriter<Noti
 /// points them at it.
 ///
 /// Being hit is noticing, however quiet the attacker was. In
-/// [`TurnSet::React`](crate::plugin::TurnSet::React) because that is where
+/// [`ReactSet::Settle`](crate::plugin::ReactSet::Settle), inside
+/// [`TurnSet::React`](crate::plugin::TurnSet::React), because that is where
 /// a turn's consequences land, and inside the pass, so the monster that was
-/// struck already knows where from when it next decides.
+/// struck already knows where from when it next decides; in the engine's
+/// named set, so a game that reads [`Noticed`] or writes an [`Aware`] in
+/// its reactions orders itself after it.
 ///
 /// Not by an attacker still [`Unseen`]: every attack `reveal_attackers`
 /// reads has ended that before the damage lands, so harm credited to one

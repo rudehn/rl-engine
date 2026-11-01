@@ -19,6 +19,7 @@ atglyph is not on crates.io yet, so a game depends on a release by its git tag, 
 
 ### Changed
 
+- Waking the struck to whoever struck them runs in `ReactSet::Settle`: a game that reads `Noticed` or writes an `Aware` in `TurnSet::React` orders itself after that set, so a blow's notice is read in the pass it lands and the two never write in an order the scheduler picks.
 - **Breaking:** `Keep` has a `watch` field, false for every constructor; a game that writes a `Keep` literal adds `watch: false` to keep it as it was.
 - **Breaking:** `StealthPlugin` is built with the rule it notices by: a game that added `StealthPlugin` adds `StealthPlugin::per_observer()`, and plays as before.
 - **Breaking:** A mind's idle moves are one tactic, `Idle`, moving by the `Movement` its actor carries in `Moves`: `Wander`, `Hold(cell)` or `Roam { at, reach }`. It replaces `KeepPost`, `Wander`, `Posted` and the `Post` component, and the standard chain's `keep_post` and `wander_chance` become one `idle_chance`, with `before_wander` renamed `before_idle`. A mind with no `Moves` has no idle move. A game moving over gives `Hold` where it gave `Post` and `Wander` to every actor that drifted. Saves are format 2.

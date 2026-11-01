@@ -16,8 +16,9 @@ use bevy::prelude::*;
 use crate::testing::ambiguity::{self, Allowed, system_type as id};
 
 /// Every engine plugin, over the test makers the engine's own prefab and
-/// loot tests use, never a list taken from a game.
-fn engine() -> App {
+/// loot tests use, never a list taken from a game, with stealth by
+/// `stealth`: each rule adds systems the other does not.
+fn engine(stealth: crate::stealth::StealthPlugin) -> App {
     use crate::app::EngineApp;
     use crate::loot::tests::Toys;
     use crate::noise::NoiseRules;
@@ -30,7 +31,7 @@ fn engine() -> App {
         crate::items::ItemsPlugin,
         crate::throwing::ThrowingPlugin,
         crate::lighting::LightingPlugin,
-        crate::stealth::StealthPlugin::per_observer(),
+        stealth,
     ))
     .add_plugins((
         crate::events::FactsPlugin,
@@ -195,12 +196,26 @@ fn allowed(world: &World) -> Vec<Allowed> {
     ]
 }
 
-#[test]
-fn every_conflicting_pair_of_the_engines_systems_is_ordered_or_allowed_for_a_stated_reason() {
-    let mut app = engine();
+/// The check over the engine with stealth by `stealth`.
+fn check(stealth: crate::stealth::StealthPlugin) {
+    let mut app = engine(stealth);
     // The engine's own: whatever its plugins add to the bare headless app,
     // whose `CorePlugin` systems each of them meets.
     let ours = ambiguity::added(&mut app, &mut crate::testing::headless_app());
     let world = app.world();
     ambiguity::assert_ordered(world, "the engine", &ours, &allowed(world), &names(), &ids(world));
+}
+
+#[test]
+fn every_conflicting_pair_of_the_engines_systems_is_ordered_or_allowed_for_a_stated_reason() {
+    check(crate::stealth::StealthPlugin::per_observer());
+}
+
+/// The by-range rule adds systems and hooks of its own, keeping each
+/// actor's deed and range, which the per-observer build never meets.
+#[test]
+fn every_conflicting_pair_is_ordered_or_allowed_with_stealth_by_range_too() {
+    use atglyph_rules::ai::awareness::by_range::RangeRules;
+    let rules = RangeRules { base: 7, dark_divisor: 2, cover_divisor: 2, still_divisor: 2, attack_multiplier: 2, floor: 2, chance_pct: 25, hold: 3, memory: 6 };
+    check(crate::stealth::StealthPlugin::by_range(rules));
 }

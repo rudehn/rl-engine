@@ -641,8 +641,9 @@ pub enum PerceiveSet {
 
 /// The engine's own answers to a pass inside [`TurnSet::React`] that a
 /// game's reactions read the result of: worn gear folded onto its
-/// wearer's stats, sleep broken by harm, charges refilled and an attuned
-/// thing emptied, an emptied container shut, and work broken off.
+/// wearer's stats, sleep broken by harm, a blow noticed by the one it
+/// struck, charges refilled and an attuned thing emptied, an emptied
+/// container shut, and work broken off.
 ///
 /// A named set for the reason [`AmmoSet`](crate::ammo::AmmoSet) is one: a
 /// game that derives something from the stats as they stand, or answers a
