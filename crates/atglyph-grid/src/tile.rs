@@ -64,6 +64,8 @@ pub struct TileProps {
     pub opaque: bool,
     /// Whether it stops projectiles and thrown things.
     pub blocks_projectiles: bool,
+    /// Whether an actor standing on it is harder to notice: cover.
+    pub cover: bool,
     /// Cost to enter, in hundredths of a normal step. `0` is treated as normal.
     pub move_cost: u16,
     /// The tile this becomes when it is opened, by name: a closed door names
@@ -260,8 +262,8 @@ impl<'de> Deserialize<'de> for TileGlyphs {
 /// One line of a tiles file: a tile with its look's fields written beside
 /// the rest, which is how [`TileProps`] reads and writes itself.
 ///
-/// The full option space: `tile` always; `walkable`, `opaque` and
-/// `blocks_projectiles`, false when left out; `passable`, as `walkable`;
+/// The full option space: `tile` always; `walkable`, `opaque`,
+/// `blocks_projectiles` and `cover`, false when left out; `passable`, as `walkable`;
 /// `move_cost`, normal; `opens_to`, `closes_to`, `burn` and `light`, none;
 /// and the look, `glyph` and `fg` together or neither, with `bg`, `vary`
 /// and `shimmer` only beside them. `glyph` is one character, `'.'`, or a
@@ -278,6 +280,8 @@ struct TileLine {
     opaque: bool,
     #[serde(default)]
     blocks_projectiles: bool,
+    #[serde(default)]
+    cover: bool,
     #[serde(default = "normal_move_cost")]
     move_cost: u16,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -315,6 +319,7 @@ impl TryFrom<TileLine> for TileProps {
             passable: line.passable,
             opaque: line.opaque,
             blocks_projectiles: line.blocks_projectiles,
+            cover: line.cover,
             move_cost: line.move_cost,
             opens_to: line.opens_to,
             closes_to: line.closes_to,
@@ -337,6 +342,7 @@ impl From<TileProps> for TileLine {
             passable: t.passable,
             opaque: t.opaque,
             blocks_projectiles: t.blocks_projectiles,
+            cover: t.cover,
             move_cost: t.move_cost,
             opens_to: t.opens_to,
             closes_to: t.closes_to,
@@ -392,6 +398,7 @@ impl TileProps {
             passable: None,
             opaque: false,
             blocks_projectiles: false,
+            cover: false,
             move_cost: NORMAL_MOVE_COST,
             opens_to: None,
             closes_to: None,
@@ -432,6 +439,12 @@ impl TileProps {
     /// Builder: sets `blocks_projectiles`.
     pub fn blocks_projectiles(mut self, v: bool) -> Self {
         self.blocks_projectiles = v;
+        self
+    }
+
+    /// Builder: sets `cover`.
+    pub fn cover(mut self, v: bool) -> Self {
+        self.cover = v;
         self
     }
 
@@ -630,6 +643,7 @@ impl TileRegistry {
             passable: self.props.iter().map(|p| p.is_passable()).collect(),
             opaque: self.props.iter().map(|p| p.opaque).collect(),
             blocks_projectiles: self.props.iter().map(|p| p.blocks_projectiles).collect(),
+            cover: self.props.iter().map(|p| p.cover).collect(),
             move_cost: self.props.iter().map(|p| p.effective_move_cost()).collect(),
             opens: self.props.iter().map(|p| resolve(p, &p.opens_to, "opens to")).collect(),
             closes: self.props.iter().map(|p| resolve(p, &p.closes_to, "closes to")).collect(),
@@ -652,6 +666,8 @@ pub struct TileTables {
     pub opaque: Vec<bool>,
     /// Blocks projectiles.
     pub blocks_projectiles: Vec<bool>,
+    /// Cover: an actor standing on it is harder to notice.
+    pub cover: Vec<bool>,
     /// Entry cost in hundredths of a step.
     pub move_cost: Vec<u32>,
     /// What each tile becomes when opened, if it opens.
@@ -751,6 +767,16 @@ mod tests {
         let mut r = TileRegistry::new();
         r.register_all(list).unwrap();
         assert_eq!(r.get(r.expect("b")).effective_move_cost(), 250);
+    }
+
+    /// A tile may be cover, and says so in the file that says what it is; the
+    /// tables carry it beside the flags, and a tile that says nothing is none.
+    #[test]
+    fn cover_is_read_from_the_tile_and_defaults_to_none() {
+        let list: Vec<TileProps> = ron::from_str(r#"[(name: "bush", walkable: true, cover: true), (name: "grass", walkable: true)]"#).unwrap();
+        let mut r = TileRegistry::new();
+        r.register_all(list).unwrap();
+        assert_eq!(r.tables().cover, [true, false]);
     }
 
     /// A tile says what light it sheds in the same file that says what it

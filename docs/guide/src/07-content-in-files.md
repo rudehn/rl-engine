@@ -279,6 +279,7 @@ The rat king is placed by name, on the crack of daylight.
 //   walkable:           optional; whether you can stand on it; false
 //   opaque:             optional; whether it blocks sight; false
 //   blocks_projectiles: optional; whether a thrown thing stops at it; false
+//   cover:              optional; whether one standing on it is harder to notice; false
 //   passable:           optional; whether a route may go through it later, as a
 //                       shut door is; as walkable when left out
 //   move_cost:          optional; hundredths of a step to enter; 100

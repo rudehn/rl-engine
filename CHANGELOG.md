@@ -12,6 +12,7 @@ atglyph is not on crates.io yet, so a game depends on a release by its git tag, 
 - Carving a place out of solid rock a cell at a time: `DrunkardsWalk` opens a broad hall with rock standing in it, and `Aggregate`, diffusion-limited aggregation, grows branching tunnels; both open the share of the map asked for in one piece, from an `Origin`, with a brush width, a margin and, for aggregation, a pull toward the middle.
 - `CellBrightness`: a game draws each cell of a map brighter or darker than its tile, as high ground brighter than low, in sight and in memory alike.
 - Near fields: `Fields::descents_toward_near` and `Fields::descents_away_near` flood only the box round a mind and its goals, a margin wider, for a step among those a few cells off; the engine floods them afresh and keeps them out of the shared fields, and a `Fields` of a game's own answers them from its whole fields unless it says otherwise.
+- Cover: a tile may be `cover: true` in a tiles file, `TileProps::cover` and `TileTables::cover`, for a rule that makes an actor standing in it harder to notice.
 
 ### Changed
 

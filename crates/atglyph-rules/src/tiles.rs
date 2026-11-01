@@ -32,8 +32,8 @@ use crate::content::ContentError;
 /// order, with every property and the look the line writes.
 ///
 /// The full option space of a line: `tile`, its name, always; `walkable`,
-/// `opaque` and `blocks_projectiles`, false when left out; `passable`, as
-/// `walkable` when left out; `move_cost`, hundredths of a step, normal when
+/// `opaque`, `blocks_projectiles` and `cover`, false when left out;
+/// `passable`, as `walkable` when left out; `move_cost`, hundredths of a step, normal when
 /// left out; `opens_to` and `closes_to`, a door's other self by name;
 /// `burn`, `(catch_pct:, turns:, leaves:)`; `light`, a
 /// [`Glow`](atglyph_grid::Glow); and its look, `glyph` and `fg`, `(r, g,
