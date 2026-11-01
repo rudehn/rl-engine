@@ -139,7 +139,7 @@ pub fn unaware(asleep: bool, running: bool, hides: bool, at_odds: bool, knows: b
 }
 
 /// Whether `from` is within `reach` of `to`. The perception cap every
-/// caller applies before asking [`notices`], here so the two agree on the
+/// caller applies before asking [`per_observer::notices`], here so the two agree on the
 /// metric.
 pub fn within_reach(from: Point, to: Point, reach: i32) -> bool {
     geometry::chebyshev(from, to) <= reach
