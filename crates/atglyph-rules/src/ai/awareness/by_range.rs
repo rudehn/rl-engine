@@ -7,6 +7,12 @@ use serde::{Deserialize, Serialize};
 ///
 /// Authored by the game and serde-ready; the engine has no defaults for
 /// them, because what is a quiet distance is the game's to say.
+///
+/// Each divisor is at least one, since a range is never divided by nothing
+/// nor turned negative, and each multiplier, `attack_multiplier` and
+/// `hold`, at least nought; [`check`](Self::check) says which are not, and
+/// the engine refuses rules that fail it where they come in. A multiplier
+/// too large for the range saturates rather than overflowing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RangeRules {
     /// The range of a subject in the open, in tiles.
@@ -27,6 +33,25 @@ pub struct RangeRules {
     pub hold: i32,
     /// Turns an observer keeps looking after losing sight, before it forgets.
     pub memory: u32,
+}
+
+impl RangeRules {
+    /// Every number here the rule cannot use, each a sentence naming its
+    /// field: a divisor under one or a multiplier under nought.
+    pub fn check(&self) -> Vec<String> {
+        let mut wrong = Vec::new();
+        for (field, divisor) in [("dark_divisor", self.dark_divisor), ("cover_divisor", self.cover_divisor), ("still_divisor", self.still_divisor)] {
+            if divisor < 1 {
+                wrong.push(format!("{field} is {divisor}, and a range is divided by at least 1"));
+            }
+        }
+        for (field, multiplier) in [("attack_multiplier", self.attack_multiplier), ("hold", self.hold)] {
+            if multiplier < 0 {
+                wrong.push(format!("{field} is {multiplier}, and a range is multiplied by at least 0"));
+            }
+        }
+        wrong
+    }
 }
 
 /// What a subject is doing and standing in, as far as its range goes.
@@ -59,7 +84,7 @@ pub fn range_of(rules: &RangeRules, standing: Standing) -> i32 {
         range = (range + rules.still_divisor - 1) / rules.still_divisor;
     }
     if standing.attacked {
-        range *= rules.attack_multiplier;
+        range = range.saturating_mul(rules.attack_multiplier);
     }
     range.max(rules.floor)
 }
@@ -75,7 +100,7 @@ pub fn spots(rules: &RangeRules, range: i32, glimpse: Glimpse, roll: u32) -> boo
 /// Whether an alert observer keeps hold of a subject it has a line to: in
 /// view and within `hold` times the range.
 pub fn holds(rules: &RangeRules, range: i32, glimpse: Glimpse) -> bool {
-    glimpse.in_view && glimpse.distance <= range * rules.hold
+    glimpse.in_view && glimpse.distance <= range.saturating_mul(rules.hold)
 }
 
 #[cfg(test)]
@@ -92,6 +117,24 @@ mod tests {
 
     fn glimpse(distance: i32, in_view: bool, asleep: bool) -> Glimpse {
         Glimpse { distance, in_view, lit: false, asleep }
+    }
+
+    #[test]
+    fn the_rules_refuse_a_divisor_under_one_and_a_negative_multiplier_naming_each() {
+        assert_eq!(rules().check(), Vec::<String>::new());
+        assert_eq!(RangeRules { attack_multiplier: 0, hold: 0, ..rules() }.check(), Vec::<String>::new(), "nought multiplies to nought, which is allowed");
+        let wrong = RangeRules { dark_divisor: 0, cover_divisor: -1, still_divisor: 0, attack_multiplier: -2, hold: -1, ..rules() }.check();
+        assert_eq!(wrong.len(), 5, "{wrong:?}");
+        for field in ["dark_divisor", "cover_divisor", "still_divisor", "attack_multiplier", "hold"] {
+            assert!(wrong.iter().any(|w| w.starts_with(field)), "{field} is not named in {wrong:?}");
+        }
+    }
+
+    #[test]
+    fn a_huge_multiplier_saturates_rather_than_overflowing() {
+        let r = RangeRules { attack_multiplier: i32::MAX, hold: i32::MAX, ..rules() };
+        assert_eq!(range_of(&r, standing(false, false, false, true)), i32::MAX);
+        assert!(holds(&r, 7, glimpse(1_000_000, true, false)));
     }
 
     #[test]

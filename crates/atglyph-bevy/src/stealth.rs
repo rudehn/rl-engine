@@ -477,7 +477,15 @@ impl StealthPlugin {
     /// Noticing by the subject: within its [`StealthRange`], by anything
     /// not allied with it, at the game's `rules`. Every actor is given a
     /// range at `rules.base` and every mind an [`Aware`] as they appear.
+    ///
+    /// # Panics
+    /// Panics on rules [`RangeRules::check`] finds wrong, a divisor under
+    /// one or a multiplier under nought, naming each: here, where the
+    /// game's numbers come in, rather than at the first range worked out
+    /// mid-run.
     pub fn by_range(rules: RangeRules) -> Self {
+        let wrong = rules.check();
+        assert!(wrong.is_empty(), "StealthPlugin::by_range: {}", wrong.join("; "));
         StealthPlugin { rule: NoticeRule::ByRange(rules) }
     }
 }
@@ -1241,6 +1249,12 @@ mod tests {
             field.app.update();
         }
         assert!(!sleeping(&field), "a foe within the reach does");
+    }
+
+    #[test]
+    #[should_panic(expected = "StealthPlugin::by_range: still_divisor is 0, and a range is divided by at least 1")]
+    fn by_range_refuses_rules_it_cannot_use_naming_what_is_wrong() {
+        let _ = StealthPlugin::by_range(RangeRules { still_divisor: 0, ..GREYWOLDS });
     }
 
     #[test]
