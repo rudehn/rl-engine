@@ -241,6 +241,8 @@ The two rules part on purpose in three places.
 - **Who has the parts.**
   Per observer, a game authors a `Notice` and a `Stealth` per kind, and either absent means nothing changes.
   By range, the plugin gives every actor a `StealthRange` at the base and every mind an `Aware` as each appears, by an observer on `Add`, so a prefab, a save and a revival are covered with no game code.
+- **Keeping the range current.**
+  By range, `record_deeds` notes in `LastDeed` whether an actor's last action was a wait, an attack (a blow, a miss, or a throw at an actor) or anything else, and `refresh_ranges` works its `StealthRange` out from that and its tile at the start of every turn, so a range is never stale and a range authored at spawn lasts only until the first turn.
 - **The sleeper.**
   Per observer a sleeper notices within `SLEEPER_REACH`, by its chance alone, and wakes to a foe.
   By range the subject's range is the limit already, so a sleeper notices by it as when awake, and anything it notices wakes it.

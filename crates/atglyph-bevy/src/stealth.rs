@@ -45,12 +45,14 @@ use atglyph_rules::faction::{self, Relation};
 use bevy::prelude::*;
 use rand::Rng;
 
-use crate::combat::{CombatRules, DamageDealt, Dead, Faction};
+use crate::combat::{CombatRules, DamageDealt, Dead, Faction, Struck};
 use crate::components::{Actor, MyTurn, Player, Position, Viewshed};
+use crate::items::ItemEvent;
 use crate::minds::{DEFAULT_PERCEPTION, Mind, Perception, Thinking};
 use crate::places::{MapId, OnMap};
 use crate::registries::Registries;
 use crate::status::{ActiveStatuses, RemoveStatus};
+use crate::turn::{ActionDone, Intent, Wait};
 use crate::world::WorldMap;
 
 /// How this actor notices what is trying not to be seen, under the
@@ -73,12 +75,35 @@ pub struct Stealth(pub StealthStats);
 ///
 /// Given at the rules' base to every [`Actor`] that appears without one
 /// while [`StealthPlugin::by_range`] runs, so a game authors none and a
-/// continued run gets them back; kept by the engine from then on. One
-/// spawned with a range of its own keeps it.
+/// continued run gets them back; worked out afresh each turn by the engine
+/// from then on, from what the actor did and where it stands, so a range
+/// authored at spawn lasts only until the first turn.
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
-#[require(Hides)]
+#[require(Hides, LastDeed)]
 #[component(on_remove = stop_hiding)]
 pub struct StealthRange(pub i32);
+
+/// What an actor did with its last action, as far as its [`StealthRange`]
+/// goes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Deed {
+    /// Anything but the other two: a step, a door, a thing used.
+    #[default]
+    Acted,
+    /// It waited, and stood still.
+    Waited,
+    /// It struck at someone, or shot or threw at them, hit or miss.
+    Attacked,
+}
+
+/// The last [`Deed`] of an actor that has a [`StealthRange`], which brings
+/// it, so the two always travel together.
+///
+/// Kept by `record_deeds` from what the actor's action turned out to be,
+/// and read by `refresh_ranges` to work its range out for the turns that
+/// follow.
+#[derive(Component, Debug, Clone, Copy, Default)]
+pub struct LastDeed(pub Deed);
 
 /// This actor can hide: the one marker every subject of either rule
 /// carries, brought by a [`Stealth`] or a [`StealthRange`] and taken away
@@ -455,6 +480,9 @@ impl Plugin for StealthPlugin {
         use crate::plugin::{DecideSet, PerceiveSet, ResolveSet, Turn, TurnSet};
         if let NoticeRule::ByRange(_) = self.rule {
             app.add_observer(give_range).add_observer(give_memory);
+            // Only while the by-range rule runs, since no other has a range
+            // to keep. Before the roll, so it rolls against this turn's.
+            app.add_systems(Turn, refresh_ranges.in_set(DecideSet::Notice).before(update_awareness)).add_systems(Turn, record_deeds.in_set(TurnSet::React));
         }
         // The blows it wakes on, registered here as well so a game with
         // stealth and no combat has nothing to wake on rather than a panic.
@@ -489,6 +517,71 @@ impl Plugin for StealthPlugin {
 pub(crate) fn give_range(add: On<Add, Actor>, rule: Res<NoticeRule>, mut commands: Commands) {
     let NoticeRule::ByRange(rules) = *rule else { return };
     commands.entity(add.entity).try_insert_if_new(StealthRange(rules.base));
+}
+
+/// Notes what each actor did with the action it just took, for its range.
+///
+/// In [`TurnSet::React`](crate::plugin::TurnSet::React), once the action's
+/// blows have landed. An actor that waited has stood still; one that struck
+/// or missed someone, or threw something at an actor, has attacked,
+/// whatever else its action was; any other that finished an action has
+/// acted.
+pub(crate) fn record_deeds(
+    mut done: MessageReader<ActionDone>,
+    mut waits: MessageReader<Intent<Wait>>,
+    mut struck: MessageReader<Struck>,
+    mut missed: MessageReader<crate::accuracy::Missed>,
+    mut items: MessageReader<ItemEvent>,
+    mut deeds: Query<&mut LastDeed>,
+) {
+    let waited: Vec<Entity> = waits.read().map(|w| w.actor).collect();
+    let mut note = |actor: Entity, deed: Deed| {
+        if let Ok(mut last) = deeds.get_mut(actor) {
+            last.0 = deed;
+        }
+    };
+    for ActionDone { actor, .. } in done.read() {
+        note(*actor, if waited.contains(actor) { Deed::Waited } else { Deed::Acted });
+    }
+    let attackers = struck.read().map(|s| s.attacker).chain(missed.read().map(|m| m.attacker));
+    let throwers = items.read().filter_map(|e| match e {
+        ItemEvent::Thrown { actor, struck: Some(_), .. } => Some(*actor),
+        _ => None,
+    });
+    for attacker in attackers.chain(throwers) {
+        note(attacker, Deed::Attacked);
+    }
+}
+
+/// Works out each actor's [`StealthRange`] from what it did last and where
+/// it stands, at the game's numbers.
+///
+/// In [`DecideSet::Notice`](crate::plugin::DecideSet::Notice) before the
+/// roll, for every actor on the current map. Dark is the dark band alone,
+/// so a lit tile or a lamp's dim ring is not; with no lighting nothing is.
+pub(crate) fn refresh_ranges(
+    rule: Res<NoticeRule>,
+    map: Res<WorldMap>,
+    lighting: Option<Res<crate::lighting::Lighting>>,
+    mut actors: Query<(&Position, Option<&OnMap>, &LastDeed, &mut StealthRange)>,
+) {
+    let NoticeRule::ByRange(rules) = *rule else { return };
+    let here = map.current();
+    for (at, on, last, mut range) in &mut actors {
+        if on.map(|m| m.0).unwrap_or(MapId::ZERO) != here {
+            continue;
+        }
+        let standing = by_range::Standing {
+            dark: crate::lighting::band_at(lighting.as_deref(), at.0) == atglyph_grid::LightBand::Dark,
+            cover: map.tile(at.0).is_some_and(|t| map.tables().cover[t.index()]),
+            still: last.0 == Deed::Waited,
+            attacked: last.0 == Deed::Attacked,
+        };
+        let now = by_range::range_of(&rules, standing);
+        if range.0 != now {
+            range.0 = now;
+        }
+    }
 }
 
 /// Gives a mind that appears without an [`Aware`] one, since by range every
@@ -818,7 +911,7 @@ mod tests {
         /// The field, with `extra` run on the app after the field's own
         /// plugins are added and before anything is spawned or updated.
         fn build(notice: NoticeStats, gap: i32, reach: i32, plugin: bool, light: Option<u8>, extra: impl FnOnce(&mut App)) -> Field {
-            Field::make(plugin.then(StealthPlugin::per_observer), Some(notice), gap, reach, light, extra)
+            Field::make(plugin.then(StealthPlugin::per_observer), Some(notice), gap, reach, light, atglyph_grid::TileRegistry::standard(), extra)
         }
 
         /// The field under the by-range rule at [`GREYWOLDS`], with nothing
@@ -826,13 +919,27 @@ mod tests {
         /// gives every actor its range and every mind its memory: the
         /// watcher [`FAR`] tiles east, seeing [`SIGHT`] tiles.
         fn by_range(extra: impl FnOnce(&mut App)) -> Field {
-            Field::make(Some(StealthPlugin::by_range(GREYWOLDS)), None, FAR, SIGHT, None, extra)
+            Field::make(Some(StealthPlugin::by_range(GREYWOLDS)), None, FAR, SIGHT, None, atglyph_grid::TileRegistry::standard(), extra)
+        }
+
+        /// [`by_range`](Field::by_range) over `tiles`, and with lighting on
+        /// under an ambient of `light`, if any.
+        fn by_range_over(tiles: atglyph_grid::TileRegistry, light: Option<u8>) -> Field {
+            Field::make(Some(StealthPlugin::by_range(GREYWOLDS)), None, FAR, SIGHT, light, tiles, |_| {})
         }
 
         /// The field under `plugin`, if any; with `notice`, the per-observer
         /// parts are authored, a `Notice` on the watcher and a `Stealth` on
         /// the player.
-        fn make(plugin: Option<StealthPlugin>, notice: Option<NoticeStats>, gap: i32, reach: i32, light: Option<u8>, extra: impl FnOnce(&mut App)) -> Field {
+        fn make(
+            plugin: Option<StealthPlugin>,
+            notice: Option<NoticeStats>,
+            gap: i32,
+            reach: i32,
+            light: Option<u8>,
+            tiles: atglyph_grid::TileRegistry,
+            extra: impl FnOnce(&mut App),
+        ) -> Field {
             let mut app = headless_app();
             app.add_plugins((FovPlugin, CombatPlugin, MindsPlugin));
             if let Some(plugin) = plugin {
@@ -842,7 +949,7 @@ mod tests {
                 app.add_plugins(crate::lighting::LightingPlugin);
             }
             extra(&mut app);
-            let start = crate::testing::ground(&mut app);
+            let start = crate::testing::ground_with(&mut app, tiles);
             let crate::testing::TwoSides { ours: you, theirs: them, kind } = crate::testing::two_sides(&mut app);
             let player = app
                 .world_mut()
@@ -997,6 +1104,7 @@ mod tests {
     #[test]
     fn by_range_a_watcher_beyond_the_range_never_notices() {
         let mut field = Field::by_range(|_| {});
+        field.wait();
         let beyond = field.range() + 1;
         field.stand_off(beyond);
         assert!(!field.wait_for_notice(200), "a line to the player one tile past its range, and never a notice");
@@ -1005,6 +1113,7 @@ mod tests {
     #[test]
     fn by_range_a_watcher_within_the_range_notices() {
         let mut field = Field::by_range(|_| {});
+        field.wait();
         let within = field.range() - 2;
         field.stand_off(within);
         assert!(field.wait_for_notice(60), "inside the range, a chance a turn comes up");
@@ -1014,6 +1123,7 @@ mod tests {
     fn by_range_a_hunter_holds_to_three_times_and_then_forgets() {
         let mut field = Field::by_range(|_| {});
         field.think(Brain::new().then(Idle { chance_pct: 0 }));
+        field.wait();
         let held = field.range() * GREYWOLDS.hold;
         field.stand_off(held);
         field.alert();
@@ -1033,6 +1143,7 @@ mod tests {
     fn by_range_a_neutral_is_hidden_from_the_others_until_noticed() {
         let mut field = Field::by_range(with_rosters);
         field.make_neutral();
+        field.wait();
         let beyond = field.range() + 1;
         field.stand_off(beyond);
         field.wait();
@@ -1051,6 +1162,7 @@ mod tests {
     fn by_range_an_ally_is_never_judged() {
         let mut field = Field::by_range(with_rosters);
         field.make_ally();
+        field.wait();
         let within = field.range() - 2;
         field.stand_off(within);
         for _ in 0..20 {
@@ -1129,9 +1241,23 @@ mod tests {
         let near = field.at(player).offset(0, 3);
         let authored = field.app.world_mut().spawn((Actor, Position(near), StealthRange(GREYWOLDS.floor))).id();
         let late = field.app.world_mut().spawn((Actor, Position(near.offset(1, 0)), Mind(Arc::new(Brain::new())))).id();
+        field.app.world_mut().flush();
+        assert_eq!(
+            field.app.world().get::<StealthRange>(authored),
+            Some(&StealthRange(GREYWOLDS.floor)),
+            "one spawned with a range is not given the base over it"
+        );
+        assert_eq!(
+            field.app.world().get::<StealthRange>(late),
+            Some(&StealthRange(GREYWOLDS.base)),
+            "one spawned mid-run is given the base the moment it appears"
+        );
         field.wait();
-        assert_eq!(field.app.world().get::<StealthRange>(authored), Some(&StealthRange(GREYWOLDS.floor)), "one spawned with a range keeps it");
-        assert_eq!(field.app.world().get::<StealthRange>(late), Some(&StealthRange(GREYWOLDS.base)), "one spawned mid-run is given the base");
+        assert_eq!(
+            field.app.world().get::<StealthRange>(authored),
+            Some(&StealthRange(GREYWOLDS.base)),
+            "and the refresh then works its range out like anyone's"
+        );
         assert!(field.app.world().get::<Aware>(late).is_some(), "and its memory");
     }
 
@@ -1141,7 +1267,10 @@ mod tests {
         let statuses = atglyph_rules::Registry::from_defs(vec![atglyph_rules::StatusDef::new("asleep").sleeps()]).unwrap();
         let asleep = statuses.expect("asleep");
         field.app.world_mut().resource_mut::<crate::registries::Registries>().statuses = statuses;
-        let within = field.range() - 2;
+        let within = atglyph_rules::SLEEPER_REACH + 1;
+        assert!(within > atglyph_rules::SLEEPER_REACH, "beyond the reach a sleeper notices within by the other rule: the test can fail");
+        let waiting = by_range::range_of(&GREYWOLDS, by_range::Standing { still: true, ..Default::default() });
+        assert!(within <= waiting, "and within the range of a player that waits each turn, {waiting}");
         field.stand_off(within);
         let watcher = field.watcher;
         field.app.world_mut().write_message(crate::status::ApplyStatus {
@@ -1154,9 +1283,72 @@ mod tests {
         field.wait();
         let sleeping = |field: &Field| field.app.world().get::<crate::status::ActiveStatuses>(watcher).unwrap().has(asleep);
         assert!(sleeping(&field) || field.knows(), "asleep, unless it noticed on its first turn");
-        assert!(within > atglyph_rules::SLEEPER_REACH, "beyond the reach a sleeper notices within by the other rule: the test can fail");
         assert!(field.knows() || field.wait_for_notice(60), "a sleeper notices inside the range by its chance");
         assert!(!sleeping(&field), "and what it noticed woke it");
+    }
+
+    /// The player's range after `turns` of the same deed, which the
+    /// refresh works out at the start of the turn after.
+    fn settled(field: &mut Field) -> i32 {
+        field.app.update();
+        field.range()
+    }
+
+    #[test]
+    fn a_waiting_actor_has_a_halved_range_on_its_next_turn() {
+        let mut field = Field::by_range(|_| {});
+        assert_eq!(field.range(), GREYWOLDS.base, "it starts at the base");
+        field.wait();
+        assert_eq!(settled(&mut field), 4, "seven, divided by two and rounded up");
+    }
+
+    #[test]
+    fn an_attacker_has_a_doubled_range() {
+        let mut field = Field::by_range(|_| {});
+        let (player, watcher) = (field.player, field.watcher);
+        let kind = field.app.world().get::<MeleeAttack>(watcher).unwrap().kind;
+        field.app.world_mut().entity_mut(player).insert(MeleeAttack::new(kind, DiceRoll::flat(0)));
+        field.stand_off(1);
+        field.app.world_mut().write_message(Intent::new(player, crate::bump::Bump(atglyph_core::Direction::East)));
+        field.app.update();
+        assert_eq!(settled(&mut field), 14, "seven, doubled");
+    }
+
+    #[test]
+    fn cover_halves_the_range() {
+        let mut tiles = atglyph_grid::TileRegistry::standard();
+        let bush = tiles.register(atglyph_grid::TileProps::floor("bush").cover(true)).unwrap();
+        let mut field = Field::by_range_over(tiles, None);
+        let at = field.at(field.player);
+        assert!(field.app.world_mut().resource_mut::<WorldMap>().set_tile(at, bush));
+        field.app.update();
+        assert_eq!(field.range(), 3, "seven, divided by two and rounded down");
+    }
+
+    #[test]
+    fn the_dark_halves_the_range_and_a_lit_tile_does_not() {
+        let mut field = Field::by_range_over(atglyph_grid::TileRegistry::standard(), Some(0));
+        field.app.update();
+        assert_eq!(field.range(), 3, "in the dark band");
+        let mut field = Field::by_range_over(atglyph_grid::TileRegistry::standard(), Some(100));
+        field.app.update();
+        assert_eq!(field.range(), GREYWOLDS.base, "in the lit band");
+    }
+
+    #[test]
+    fn a_throw_at_an_actor_counts_as_an_attack_and_one_at_the_ground_does_not() {
+        let mut field = Field::by_range(|_| {});
+        let (player, watcher) = (field.player, field.watcher);
+        let item = field.app.world_mut().spawn_empty().id();
+        let at = Position(field.at(watcher));
+        let throw = |field: &mut Field, struck| {
+            field.app.world_mut().write_message(ItemEvent::Thrown { actor: player, item, at, struck });
+            field.app.world_mut().write_message(ActionDone { actor: player, cost: 100 });
+            field.app.update();
+            field.app.world().get::<LastDeed>(player).unwrap().0
+        };
+        assert_eq!(throw(&mut field, Some(watcher)), Deed::Attacked);
+        assert_eq!(throw(&mut field, None), Deed::Acted);
     }
 
     fn blind() -> NoticeStats {

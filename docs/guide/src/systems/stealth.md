@@ -19,7 +19,7 @@
             crates/atglyph-grid/src/light.rs
             crates/atglyph-ui/src/view/nearby.rs
             crates/atglyph-ui/src/view/vitals.rs
-     fingerprint: c4245bc6 -->
+     fingerprint: 28fcad74 -->
 
 # Stealth
 
@@ -32,7 +32,7 @@ A status can go further and make its holder unseen, hidden from every mind at an
 ## Turning it on
 
 A game adds the plugin with the rule it wants: `StealthPlugin::per_observer()` or `StealthPlugin::by_range(rules)`, where `rules` is a `RangeRules` of the game's own numbers, since the engine has none.
-Either way the plugin adds the same six systems, and the messages and the stream they need: the noticing roll in `DecideSet::Notice`, before a mind decides; taking out the unseen, then the unnoticed, in `PerceiveSet::Filter`, after the roster stage put everyone in sight into a snapshot; revealing attackers and marking the unseen in `ResolveSet::Effects`, either side of the statuses being applied and ticked; and waking the struck in `TurnSet::React`, where a turn's consequences land.
+Either way the plugin adds the same six systems (by range, two more keep each range current), and the messages and the stream they need: the noticing roll in `DecideSet::Notice`, before a mind decides; taking out the unseen, then the unnoticed, in `PerceiveSet::Filter`, after the roster stage put everyone in sight into a snapshot; revealing attackers and marking the unseen in `ResolveSet::Effects`, either side of the statuses being applied and ticked; and waking the struck in `TurnSet::React`, where a turn's consequences land.
 It registers `RemoveStatus` and declares that it reads `Struck`, `ItemEvent` and `LandedOn`, so a game with stealth and no items or abilities has nothing to reveal on rather than a panic; with no status registered as unseen nothing is ever unseen.
 It declares `depends_on::<MindsPlugin>`, since noticing is a thing minds act on, and the stream is `StealthRng`, so a tactic added to a brain or a blow struck elsewhere cannot shift which turn a guard spots you on.
 
@@ -65,8 +65,11 @@ An alert observer holds whatever it can see, and forgets after its own `memory`.
 It judges only what it is at odds with, so a neutral costs it no roll.
 
 By range, `StealthRange(i32)` is the subject's: the distance within which an observer may notice it, the same for every observer.
-`RangeRules` is the game's, one set for the whole game: `base`, the range in the open; `dark_divisor` and `cover_divisor`, dividing it down in the dark and in cover; `still_divisor`, dividing it up while the subject stands still; `attack_multiplier`, on the turn it attacks; `floor`, below which it never falls; `chance_pct`, the chance a turn of being spotted within it; `hold`, the times the range within which an alert observer keeps hold of it in view; and `memory`, the turns an observer keeps looking after losing hold.
+`RangeRules` is the game's, one set for the whole game: `base`, the range in the open; `dark_divisor` and `cover_divisor`, dividing it down in the dark and in cover; `still_divisor`, dividing it, rounding up, while the subject stands still; `attack_multiplier`, on the turn it attacks; `floor`, below which it never falls; `chance_pct`, the chance a turn of being spotted within it; `hold`, the times the range within which an alert observer keeps hold of it in view; and `memory`, the turns an observer keeps looking after losing hold.
 `range_of` works a range out from them and a `Standing`, in that order of steps.
+The engine keeps each actor's range current itself: `LastDeed`, brought by `StealthRange`, is what the actor did last, `Deed::Waited` when its action was a wait, `Deed::Attacked` when it struck, missed or threw at someone, and `Deed::Acted` for any other action.
+At the start of every turn, before the roll, the range of each actor on the current map is worked out afresh from its `LastDeed` and where it stands: the dark band alone is dark, so a lit tile or a lamp's dim ring is not, and a tile is cover when the tile tables say so.
+So a range a game gives an actor at spawn lasts only until the first turn, and a game changes ranges by changing its `RangeRules`, its tiles and its light.
 An unaware observer spots a subject within its range by the chance alone, never beyond it however long it looks, and never for certain however near.
 It judges everything it is not allied with, a neutral included, so a deer must notice the player before it steps away; a subject with no `StealthRange`, such as a body left where an actor fell, is never spotted.
 
@@ -170,6 +173,6 @@ Something that had you and lost you to the unseen reads `Alert::Searching`, sinc
 `atglyph-rules` is tier 1 and has no Bevy in it: `ai/awareness.rs` is the state machine, the glimpse a rule judges and `observe`; `ai/awareness/per_observer.rs` is the two stat blocks, the three functions over them and that rule's `spots` and `holds`; and `ai/awareness/by_range.rs` is `RangeRules`, `range_of` and that rule's `spots` and `holds`, with the caller doing the rolling and deciding what lit, dark and cover mean.
 That is what lets the properties be proved rather than watched: that light widens the certain radius by exactly its bonus, that the floor of one holds against any stack of gear, that a range takes each step in its order and never falls below its floor, that no roll spots beyond the range, and that `lost` returns to `Unaware` on exactly the turn the memory passes.
 The stat blocks and the range rules are serde-ready, so an observer's attention, a subject's quiet and a game's ranges are written in a content file rather than in Rust.
-`atglyph-bevy` is tier 2 and owns the rolling: `stealth.rs` is the components, `Aware`, `Unseen`, the stream, the six systems, the one place the two rules differ, and the `Watchers` parameter that answers whether stealth is running and who is watching.
+`atglyph-bevy` is tier 2 and owns the rolling: `stealth.rs` is the components, `Aware`, `Unseen`, the stream, the six systems, the one place the two rules differ, `LastDeed` and the two systems that keep a range current, `record_deeds` and `refresh_ranges`, and the `Watchers` parameter that answers whether stealth is running and who is watching.
 `StatusDef::unseen` is a flag on a tier 1 definition, so which status hides its holder is a line in a status file that loads and is checked without an `App`, and what hiding does is left to `stealth.rs`.
 `Watchers` lives there rather than in a panel because the vitals strip and the nearby rail must read the same answer the minds act on, and the bug that put it there was a strip reading hidden while a cutthroat cut the player down.
