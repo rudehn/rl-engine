@@ -436,7 +436,8 @@ mod tests {
     #[test]
     fn a_player_that_can_hide_is_told_whether_it_has_been_seen() {
         // Stealth is decided in the minds' pass, so it needs the minds.
-        let mut stage = Stage::new((VitalsPanel::new(GridRect::new(0, 0, 24, 8)), atglyph_bevy::MindsPlugin, atglyph_bevy::StealthPlugin)).screen(24, 8);
+        let mut stage =
+            Stage::new((VitalsPanel::new(GridRect::new(0, 0, 24, 8)), atglyph_bevy::MindsPlugin, atglyph_bevy::StealthPlugin::per_observer())).screen(24, 8);
         let player = stage.player;
         stage.app.world_mut().entity_mut(player).insert(atglyph_bevy::Stealth::default());
         stage.tick();
@@ -452,9 +453,13 @@ mod tests {
 
     #[test]
     fn the_band_the_player_stands_in_is_named_beside_whether_it_has_been_seen() {
-        let mut stage =
-            Stage::new((VitalsPanel::new(GridRect::new(0, 0, 24, 8)), atglyph_bevy::MindsPlugin, atglyph_bevy::StealthPlugin, atglyph_bevy::LightingPlugin))
-                .screen(24, 8);
+        let mut stage = Stage::new((
+            VitalsPanel::new(GridRect::new(0, 0, 24, 8)),
+            atglyph_bevy::MindsPlugin,
+            atglyph_bevy::StealthPlugin::per_observer(),
+            atglyph_bevy::LightingPlugin,
+        ))
+        .screen(24, 8);
         let player = stage.player;
         stage.app.world_mut().entity_mut(player).insert(atglyph_bevy::Stealth::default());
         stage.app.world_mut().resource_mut::<atglyph_bevy::Lighting>().ambient = atglyph_grid::Light::white(40);

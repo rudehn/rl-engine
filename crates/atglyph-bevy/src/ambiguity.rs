@@ -30,7 +30,7 @@ fn engine() -> App {
         crate::items::ItemsPlugin,
         crate::throwing::ThrowingPlugin,
         crate::lighting::LightingPlugin,
-        crate::stealth::StealthPlugin,
+        crate::stealth::StealthPlugin::per_observer(),
     ))
     .add_plugins((
         crate::events::FactsPlugin,

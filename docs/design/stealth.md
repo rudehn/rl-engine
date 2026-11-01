@@ -212,6 +212,39 @@ Sleep borrows the one reader that already existed rather than building a second,
 Harm and noticing both wake directly, by curing the sleep in place, rather than through a `RemoveStatus` a game would have to write: a `RemoveStatus` is not read until the next pass's statuses resolve, and a sleeper struck mid-pass needs to answer for the rest of it awake.
 Noise wakes it too, through `wake_on_noise`, which `docs/design/noise.md` §16 has, since hearing is a second plugin's to add and a game with statuses and no noise should not be asked to wake a sleeper from a sound that cannot reach it.
 
+## 8d. Two rules, one pipeline
+
+Built 2026-11-01 for [Greywold](https://github.com/rudehn/greywold), whose design is `docs/superpowers/specs/2026-10-31-stealth-design.md` in that repository.
+Greywold wanted Brogue's stealth: a range carried by the subject, worked out from what it is doing and standing in, within which anything may notice it by a flat chance a turn, and beyond which nothing ever does.
+That is a different answer to "who notices whom" from section 0's, which judges by the observer's two knobs against the subject's two.
+Undermere plays on the per-observer rule and must play the same, so the second rule is added beside the first rather than in place of it, and a game picks one with the plugin's constructor: `StealthPlugin::per_observer()` or `StealthPlugin::by_range(RangeRules)`.
+
+Almost all of stealth is not the rule.
+Who may be noticed by whom (awake, on the map, in the viewshed, judged at all), the roll on stealth's stream, each observer's `Aware`, the trail, searching and forgetting, `Noticed`, waking on a blow, the unseen and `Watchers` are the same whichever rule decides.
+The rule is two questions, whether an unaware observer spots a subject this turn and whether an alert one keeps hold of it, and each rule answers both as pure functions in `atglyph-rules` (`per_observer` and `by_range`), over the one `Glimpse` the pipeline fills in.
+Section 12b's hysteresis became `observe`, which takes the two answers and is the only place a state changes, so neither rule can get it wrong.
+
+In `atglyph-bevy` the rules differ in one place, `NoticeRule`, a resource the plugin inserts whose methods delegate to the pure functions: who observes, who is judged, `spots`, `holds`, `memory`, whether others are filtered, and how far a sleeper reaches.
+`update_awareness`, `filter_unnoticed`, `wake_on_damage` and `wake_on_sight` are each one function asking it.
+Two copies of the pipeline were the alternative and the thing to avoid: the bugs this subsystem has had, a strip reading hidden while a cutthroat struck, a kill read as a notice, were bugs in the shared part, and two copies would have had to be fixed twice and would have drifted.
+A trait object for the rule was rejected too: there are two rules, both the engine's, and a closed enum over them is the honest shape for a choice the engine makes, not an extension point for content.
+
+What the subject carries had to become one question.
+`Hides` is a marker brought by either `Stealth` or `StealthRange`, and every query that asked `With<Stealth>` (the subjects, the unnoticed filter, waking on a blow, `Watchers`, a sleeper's waking, the vitals strip) asks it instead, so none of them knows which rule is on.
+
+The two rules part on purpose in three places.
+
+- **Who is judged.**
+  Per observer, only what the observer is at odds with, as before, so a neutral costs Undermere no roll on stealth's stream and its fingerprint does not move.
+  By range, anything not allied: a deer must notice the player before it steps away, which is the point of the rule; a neutral is taken out of a mind's others until noticed, as an enemy is out of its enemies.
+  A trail is offered only for a subject the mind is at odds with under either, so a deer that lost the player forgets it without walking back to look.
+- **Who has the parts.**
+  Per observer, a game authors a `Notice` and a `Stealth` per kind, and either absent means nothing changes.
+  By range, the plugin gives every actor a `StealthRange` at the base and every mind an `Aware` as each appears, by an observer on `Add`, so a prefab, a save and a revival are covered with no game code.
+- **The sleeper.**
+  Per observer a sleeper notices within `SLEEPER_REACH`, by its chance alone, and wakes to a foe.
+  By range the subject's range is the limit already, so a sleeper notices by it as when awake, and anything it notices wakes it.
+
 ## 9. What is not in this slice
 
 - **Two-way stealth: monsters hiding from the player.**

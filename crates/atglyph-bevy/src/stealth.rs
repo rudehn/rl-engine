@@ -2,16 +2,29 @@
 //!
 //! Opt-in. Without [`StealthPlugin`] no actor carries an [`Aware`], and a
 //! mind acts on everything its own sight reaches exactly as it always
-//! has. With it, a subject carrying
-//! [`Stealth`] enters an observer's list of enemies only once that observer
-//! has noticed it, and an observer that loses the trail searches where it
-//! last saw something before it forgets.
+//! has. With it, a subject that [`Hides`] enters an observer's list of
+//! enemies only once that observer has noticed it, and an observer that
+//! loses the trail searches where it last saw something before it forgets.
 //!
-//! Both sides have to be authored before anything changes. A [`Notice`]
+//! A game picks one of two rules for noticing when it adds the plugin, and
+//! authors only that rule's parts; everything else, the memory, the roll on
+//! stealth's stream, the trail, waking on a blow, the unseen and
+//! [`Watchers`], is one pipeline both rules run through.
+//!
+//! [`StealthPlugin::per_observer`] judges by the observer: a [`Notice`] on
+//! it and a [`Stealth`] on the subject, and only between actors at odds.
+//! Both sides have to be authored before anything changes. A `Notice`
 //! absent means the observer sees on sight, which is the old behaviour; a
-//! [`Stealth`] absent means the subject never hides. That is the right way
+//! `Stealth` absent means the subject never hides. That is the right way
 //! round, and the likely first report is "I added the plugin and nothing
 //! happened".
+//!
+//! [`StealthPlugin::by_range`] judges by the subject: its [`StealthRange`],
+//! the distance within which anything not allied with it may notice it,
+//! the same for every observer. The plugin gives every actor a range and
+//! every mind an [`Aware`] as they appear, so nothing is authored per spawn,
+//! and a neutral is hidden from a mind's others until noticed as an enemy
+//! is from its enemies.
 //!
 //! A status registered as `unseen` hides its holder from everything, adjacency
 //! included, until it runs out or its holder attacks: see [`Unseen`]. Noise
@@ -25,21 +38,23 @@ use crate::app::EngineApp;
 use std::collections::BTreeMap;
 
 use atglyph_core::Point;
+use atglyph_rules::ai::awareness::by_range::{self, RangeRules};
 use atglyph_rules::ai::awareness::per_observer::{self, NoticeStats, StealthStats};
 use atglyph_rules::ai::awareness::{self, Awareness, Glimpse};
-use atglyph_rules::faction;
+use atglyph_rules::faction::{self, Relation};
 use bevy::prelude::*;
 use rand::Rng;
 
 use crate::combat::{CombatRules, DamageDealt, Dead, Faction};
-use crate::components::{MyTurn, Player, Position, Viewshed};
+use crate::components::{Actor, MyTurn, Player, Position, Viewshed};
 use crate::minds::{DEFAULT_PERCEPTION, Mind, Perception, Thinking};
 use crate::places::{MapId, OnMap};
 use crate::registries::Registries;
 use crate::status::{ActiveStatuses, RemoveStatus};
 use crate::world::WorldMap;
 
-/// How this actor notices what is trying not to be seen.
+/// How this actor notices what is trying not to be seen, under the
+/// per-observer rule.
 ///
 /// Brings an [`Aware`] with it, so an observer is ready to remember the
 /// moment it is spawned.
@@ -47,9 +62,48 @@ use crate::world::WorldMap;
 #[require(Aware)]
 pub struct Notice(pub NoticeStats);
 
-/// How hard this actor is to notice.
+/// How hard this actor is to notice, under the per-observer rule.
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq, Default, Deref, DerefMut)]
+#[require(Hides)]
+#[component(on_remove = stop_hiding)]
 pub struct Stealth(pub StealthStats);
+
+/// This actor's stealth range, under the by-range rule: the distance, in
+/// tiles, within which anything not allied with it may notice it.
+///
+/// Given at the rules' base to every [`Actor`] that appears without one
+/// while [`StealthPlugin::by_range`] runs, so a game authors none and a
+/// continued run gets them back; kept by the engine from then on. One
+/// spawned with a range of its own keeps it.
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
+#[require(Hides)]
+#[component(on_remove = stop_hiding)]
+pub struct StealthRange(pub i32);
+
+/// This actor can hide: the one marker every subject of either rule
+/// carries, brought by a [`Stealth`] or a [`StealthRange`] and taken away
+/// with the last of them, so a game that takes a player's `Stealth` off to
+/// stop it hiding has stopped it.
+///
+/// Whatever asks whether something can hide asks this, so the answer does
+/// not depend on which rule a game picked.
+#[derive(Component, Debug, Clone, Copy, Default)]
+pub struct Hides;
+
+/// Takes [`Hides`] off an actor that has just lost what brought it, once
+/// the removal has landed, so one losing its `Stealth` and its range
+/// together is seen to have neither.
+fn stop_hiding(mut world: bevy::ecs::world::DeferredWorld, ctx: bevy::ecs::lifecycle::HookContext) {
+    let actor = ctx.entity;
+    world.commands().queue(move |world: &mut World| {
+        if let Ok(mut e) = world.get_entity_mut(actor)
+            && !e.contains::<Stealth>()
+            && !e.contains::<StealthRange>()
+        {
+            e.remove::<Hides>();
+        }
+    });
+}
 
 /// Nothing sees this actor: it holds a status registered as `unseen`.
 ///
@@ -65,10 +119,11 @@ pub struct Unseen;
 
 /// What this observer knows about each subject it has an opinion of.
 ///
-/// Keyed only by entities carrying [`Stealth`], which in most games is the
-/// player alone, so this is a map for correctness and one entry in
-/// practice. A `BTreeMap` because it is read on the decision path and
-/// iterated in a fixed order.
+/// Keyed only by entities that [`Hides`], which under the per-observer rule
+/// is the player alone in most games, so this is a map for correctness and
+/// one entry in practice; under the by-range rule every actor hides, and it
+/// holds what this observer has noticed nearby. A `BTreeMap` because it is
+/// read on the decision path and iterated in a fixed order.
 #[derive(Component, Debug, Clone, Default, PartialEq)]
 pub struct Aware(pub BTreeMap<Entity, Awareness>);
 
@@ -110,22 +165,112 @@ pub struct Noticed {
 /// [`Noticed`]: a view that reads it registers it too, so a game with the
 /// view and not the plugin would read as running, and its sleepers would
 /// wait on a notice nothing rolls.
+///
+/// The proof it reads is the [`NoticeRule`], which the plugin inserts and
+/// nothing else does.
 #[derive(bevy::ecs::system::SystemParam)]
 pub(crate) struct StealthRunning<'w> {
-    added: Option<Res<'w, StealthAdded>>,
+    rule: Option<Res<'w, NoticeRule>>,
 }
 
 impl StealthRunning<'_> {
     /// Whether stealth is running.
     pub fn get(&self) -> bool {
-        self.added.is_some()
+        self.rule.is_some()
+    }
+
+    /// The rule noticing runs by; the per-observer rule's answers when
+    /// stealth is not running, since those are the answers a game without
+    /// it has always had.
+    pub fn rule(&self) -> NoticeRule {
+        self.rule.as_deref().copied().unwrap_or(NoticeRule::PerObserver)
     }
 }
 
-/// Present once [`StealthPlugin`] was added, and inserted by nothing else:
-/// the proof [`StealthRunning`] reads.
-#[derive(Resource)]
-struct StealthAdded;
+/// Which rule decides noticing: the one place the two rules differ.
+///
+/// Inserted by [`StealthPlugin`] and by nothing else. Each question the
+/// pipeline asks of a rule is a method here, delegating to that rule's pure
+/// functions in `atglyph-rules`, so [`update_awareness`],
+/// [`filter_unnoticed`] and the waking of a sleeper are each one function
+/// for both rules rather than a copy per rule.
+#[derive(Resource, Debug, Clone, Copy)]
+pub(crate) enum NoticeRule {
+    /// By the observer's [`Notice`] against the subject's [`Stealth`].
+    PerObserver,
+    /// By the subject's own [`StealthRange`], at these numbers.
+    ByRange(RangeRules),
+}
+
+impl NoticeRule {
+    /// Whether the actor holding the turn notices anything: per observer,
+    /// one authored with a [`Notice`]; by range, every mind.
+    fn observes(&self, notice: Option<&Notice>, mind: bool) -> bool {
+        match self {
+            NoticeRule::PerObserver => notice.is_some(),
+            NoticeRule::ByRange(_) => mind,
+        }
+    }
+
+    /// Whether an observer judges a subject it stands in `stance` to at all.
+    ///
+    /// Per observer, only one it is at odds with, as [`faction::at_odds`]
+    /// answers, so a neutral rolls nothing on stealth's stream. By range,
+    /// anything it is not allied with, so a deer must notice the player
+    /// before it steps away. An ally is never judged by either.
+    pub(crate) fn judges(&self, stance: Option<Relation>) -> bool {
+        match self {
+            NoticeRule::PerObserver => stance.is_none_or(|r| r == Relation::Hostile),
+            NoticeRule::ByRange(_) => stance != Some(Relation::Allied),
+        }
+    }
+
+    /// Whether an unaware observer spots a subject it has a line to this
+    /// turn; `roll` is uniform in `0..100`.
+    ///
+    /// A subject with no [`Stealth`] is spotted per observer as one with
+    /// nothing to hide behind; one with no [`StealthRange`] is never
+    /// spotted by range, as a body left where an actor fell.
+    fn spots(&self, notice: Option<&Notice>, stealth: Option<&Stealth>, range: Option<&StealthRange>, glimpse: Glimpse, roll: u32) -> bool {
+        match self {
+            NoticeRule::PerObserver => notice.is_some_and(|n| per_observer::spots(&n.0, &stealth.map(|s| s.0).unwrap_or_default(), glimpse, roll)),
+            NoticeRule::ByRange(rules) => range.is_some_and(|r| by_range::spots(rules, r.0, glimpse, roll)),
+        }
+    }
+
+    /// Whether an alert observer keeps hold of a subject it has a line to.
+    fn holds(&self, range: Option<&StealthRange>, glimpse: Glimpse) -> bool {
+        match self {
+            NoticeRule::PerObserver => per_observer::holds(glimpse),
+            NoticeRule::ByRange(rules) => range.is_some_and(|r| by_range::holds(rules, r.0, glimpse)),
+        }
+    }
+
+    /// The turns an observer keeps looking after it loses hold, before it
+    /// forgets: its own per observer, the game's by range.
+    fn memory(&self, notice: Option<&Notice>) -> u32 {
+        match self {
+            NoticeRule::PerObserver => notice.map(|n| n.memory).unwrap_or_else(|| NoticeStats::default().memory),
+            NoticeRule::ByRange(rules) => rules.memory,
+        }
+    }
+
+    /// Whether an unnoticed hider is taken out of a mind's others as well
+    /// as its enemies, which only the by-range rule judges.
+    fn filters_others(&self) -> bool {
+        matches!(self, NoticeRule::ByRange(_))
+    }
+
+    /// How far a sleeper notices anything: per observer
+    /// [`SLEEPER_REACH`](atglyph_rules::SLEEPER_REACH), and by range no
+    /// nearer than awake, since the subject's range is the limit already.
+    pub(crate) fn sleeper_reach(&self) -> Option<i32> {
+        match self {
+            NoticeRule::PerObserver => Some(atglyph_rules::SLEEPER_REACH),
+            NoticeRule::ByRange(_) => None,
+        }
+    }
+}
 
 /// Anything that can notice a subject: a mind, or an authored observer.
 type WatcherData = (
@@ -166,7 +311,7 @@ pub struct Watchers<'w, 's> {
     map: Option<Res<'w, WorldMap>>,
     rules: Option<Res<'w, CombatRules>>,
     unseen: Query<'w, 's, (), With<Unseen>>,
-    hiders: Query<'w, 's, (), With<Stealth>>,
+    hiders: Query<'w, 's, (), With<Hides>>,
 }
 
 impl Watchers<'_, '_> {
@@ -209,7 +354,7 @@ impl Watchers<'_, '_> {
     ///
     /// True only where stealth could have hidden the one from the other:
     /// stealth is running, `watcher` keeps an [`Aware`] and is at odds with
-    /// `subject`, `subject` carries [`Stealth`], and nothing of it is
+    /// `subject`, `subject` [`Hides`], and nothing of it is
     /// remembered. Everywhere else the answer is no, since that is where
     /// stealth hides nothing: a watcher with no `Aware` sees on sight, a
     /// subject that does not hide is always seen, the player is no watcher
@@ -283,16 +428,37 @@ impl crate::seed::StreamDomain for StealthDomain {
     const DOMAIN: atglyph_core::SeedDomain = crate::seed::STEALTH;
 }
 
-/// Adds noticing, forgetting, being woken by a blow, and the unseen.
-pub struct StealthPlugin;
+/// Adds noticing, forgetting, being woken by a blow, and the unseen, by
+/// the one rule for noticing a game picks with its constructor.
+pub struct StealthPlugin {
+    rule: NoticeRule,
+}
+
+impl StealthPlugin {
+    /// Noticing by the observer: a [`Notice`] on whoever notices against a
+    /// [`Stealth`] on whoever hides, and only between actors at odds.
+    pub fn per_observer() -> Self {
+        StealthPlugin { rule: NoticeRule::PerObserver }
+    }
+
+    /// Noticing by the subject: within its [`StealthRange`], by anything
+    /// not allied with it, at the game's `rules`. Every actor is given a
+    /// range at `rules.base` and every mind an [`Aware`] as they appear.
+    pub fn by_range(rules: RangeRules) -> Self {
+        StealthPlugin { rule: NoticeRule::ByRange(rules) }
+    }
+}
 
 impl Plugin for StealthPlugin {
     fn build(&self, app: &mut App) {
         use crate::app::EngineApp;
         use crate::plugin::{DecideSet, PerceiveSet, ResolveSet, Turn, TurnSet};
+        if let NoticeRule::ByRange(_) = self.rule {
+            app.add_observer(give_range).add_observer(give_memory);
+        }
         // The blows it wakes on, registered here as well so a game with
         // stealth and no combat has nothing to wake on rather than a panic.
-        app.insert_resource(StealthAdded)
+        app.insert_resource(self.rule)
             .add_message::<Noticed>()
             .add_message::<DamageDealt>()
             .add_message::<crate::accuracy::Missed>()
@@ -314,6 +480,21 @@ impl Plugin for StealthPlugin {
     fn finish(&self, app: &mut App) {
         app.depends_on::<crate::minds::MindsPlugin>("StealthPlugin");
     }
+}
+
+/// Gives an actor that appears without a [`StealthRange`] one at the
+/// by-range rule's base, the moment it is an actor: spawned by a game, a
+/// prefab or a save, or stood up again from its remains. One rule at the
+/// one place every actor passes through, so no way of making one forgets it.
+pub(crate) fn give_range(add: On<Add, Actor>, rule: Res<NoticeRule>, mut commands: Commands) {
+    let NoticeRule::ByRange(rules) = *rule else { return };
+    commands.entity(add.entity).try_insert_if_new(StealthRange(rules.base));
+}
+
+/// Gives a mind that appears without an [`Aware`] one, since by range every
+/// mind notices and nothing authors a [`Notice`] to bring it.
+pub(crate) fn give_memory(add: On<Add, crate::minds::Mind>, mut commands: Commands) {
+    commands.entity(add.entity).try_insert_if_new(Aware::default());
 }
 
 /// Puts [`Unseen`] on whoever holds an unseen status and takes it off
@@ -402,21 +583,38 @@ pub(crate) fn filter_unseen(mut thinking: ResMut<Thinking>, unseen: Query<(), Wi
 }
 
 /// Takes the hiders the mind holding the turn has not noticed out of its
-/// enemies, and offers every trail it is on for its search to follow.
+/// enemies, and by range out of its others too, and offers every trail it
+/// is on, after a subject it is at odds with, for its search to follow.
 ///
 /// Stealth's contribution to a mind's knowledge, in
 /// [`PerceiveSet::Filter`](crate::plugin::PerceiveSet::Filter), after
 /// combat put everyone it could see in. A mind that keeps no [`Aware`] sees
-/// on sight and is left alone.
-pub(crate) fn filter_unnoticed(mut thinking: ResMut<Thinking>, aware: Query<&Aware>, hidden: Query<(), With<Stealth>>) {
+/// on sight and is left alone. Its allies are never judged, so never taken
+/// out. A subject it knows of and is not at odds with, as a deer the
+/// player, it keeps in mind and forgets the same way, but never walks back
+/// to look for.
+pub(crate) fn filter_unnoticed(
+    mut thinking: ResMut<Thinking>,
+    rule: Res<NoticeRule>,
+    aware: Query<&Aware>,
+    hidden: Query<(), With<Hides>>,
+    sides: Query<&Faction>,
+    rules: Option<Res<CombatRules>>,
+) {
     let Some(thinker) = thinking.actor() else { return };
     let Ok(aware) = aware.get(thinker) else { return };
+    let mine = sides.get(thinker).ok();
     let Some(snapshot) = thinking.snapshot_mut() else { return };
-    snapshot.enemies.retain(|e| !hidden.contains(e.id) || aware.knows(e.id));
+    let noticed = |id: Entity| !hidden.contains(id) || aware.knows(id);
+    snapshot.enemies.retain(|e| noticed(e.id));
+    if rule.filters_others() {
+        snapshot.others.retain(|e| noticed(e.id));
+    }
     let lost: Vec<(u32, Point)> = aware
         .0
         .iter()
         .filter(|(subject, _)| !snapshot.enemies.iter().any(|e| e.id == **subject))
+        .filter(|(subject, _)| at_odds(rules.as_deref(), mine, sides.get(**subject).ok()))
         .filter_map(|(_, state)| Some((state.stale_turns()?, state.last_known()?)))
         .collect();
     for (stale, at) in lost {
@@ -425,48 +623,67 @@ pub(crate) fn filter_unnoticed(mut thinking: ResMut<Thinking>, aware: Query<&Awa
 }
 
 /// The observer holding the turn.
-type Observer =
-    (Entity, &'static Position, &'static Notice, &'static mut Aware, Option<&'static Perception>, Option<&'static Viewshed>, Option<&'static Faction>);
+type Observer = (
+    Entity,
+    &'static Position,
+    Option<&'static Notice>,
+    &'static mut Aware,
+    Option<&'static Perception>,
+    Option<&'static Viewshed>,
+    Option<&'static Faction>,
+    Has<Mind>,
+);
 /// Anything that might be hiding from it.
-type Subject = (Entity, &'static Position, &'static Stealth, Option<&'static Faction>, Option<&'static OnMap>, Has<Unseen>);
+type Subject =
+    (Entity, &'static Position, Option<&'static Stealth>, Option<&'static StealthRange>, Option<&'static Faction>, Option<&'static OnMap>, Has<Unseen>);
 /// One subject, as the query hands it back.
-type Hiding<'a> = (Entity, &'a Position, &'a Stealth, Option<&'a Faction>, Option<&'a OnMap>, bool);
+type Hiding<'a> = (Entity, &'a Position, Option<&'a Stealth>, Option<&'a StealthRange>, Option<&'a Faction>, Option<&'a OnMap>, bool);
 
 /// Everything noticing reads.
 #[derive(bevy::ecs::system::SystemParam)]
 pub(crate) struct Watch<'w, 's> {
     observers: Query<'w, 's, Observer, (With<MyTurn>, Without<Player>)>,
-    subjects: Query<'w, 's, Subject>,
+    subjects: Query<'w, 's, Subject, With<Hides>>,
+    rule: Res<'w, NoticeRule>,
     lighting: Option<Res<'w, crate::lighting::Lighting>>,
     map: Res<'w, WorldMap>,
-    /// Who is at odds with whom; absent, everyone is.
+    /// Who stands how to whom; absent, nobody has a side.
     rules: Option<Res<'w, CombatRules>>,
     rng: ResMut<'w, StealthRng>,
     sleepers: crate::status::Sleepers<'w, 's>,
 }
 
 /// Rolls to notice, for the observer holding the turn, and ages what it
-/// failed to see.
+/// failed to see, by the [`NoticeRule`] the game picked.
 ///
 /// A roll only decides whether an unaware observer becomes aware. One that
-/// is already alert keeps its subject for as long as it can perceive it, so
-/// a monster in plain view of you does not lose you to a bad roll; losing
-/// takes `memory` turns out of sight and noticing takes one, and that
-/// asymmetry is the whole of the hysteresis.
+/// is already alert keeps its subject for as long as the rule says it
+/// holds, so a monster in plain view of you does not lose you to a bad
+/// roll; losing takes `memory` turns without holding and noticing takes
+/// one, and that asymmetry is the whole of the hysteresis.
 ///
-/// A sleeper notices only within
+/// Per observer, a sleeper notices only within
 /// [`SLEEPER_REACH`](atglyph_rules::SLEEPER_REACH), and there by its chance
 /// alone: its certain radius is what it picks out with its eyes open, and
-/// were it to apply, nobody could stand over a sleeper to strike it. What
-/// it notices wakes it, in [`wake_on_sight`](crate::status::wake_on_sight).
+/// were it to apply, nobody could stand over a sleeper to strike it. By
+/// range a sleeper notices by the same rule as when awake, within the
+/// subject's range by the chance alone. What it notices wakes it, in
+/// [`wake_on_sight`](crate::status::wake_on_sight).
 pub(crate) fn update_awareness(mut watch: Watch, mut noticed: MessageWriter<Noticed>) {
     let here = watch.map.current();
+    let rule = *watch.rule;
     let lighting = watch.lighting.as_deref();
-    let rules = watch.rules.as_deref();
-    let Ok((observer, pos, notice, mut aware, perception, sight, faction)) = watch.observers.single_mut() else { return };
+    let factions = watch.rules.as_deref().map(|r| &r.factions);
+    let Ok((observer, pos, notice, mut aware, perception, sight, faction, mind)) = watch.observers.single_mut() else { return };
+    if !rule.observes(notice, mind) {
+        return;
+    }
     let asleep = watch.sleepers.asleep(observer);
     let reach = perception.map(|p| p.0).unwrap_or(DEFAULT_PERCEPTION);
-    let reach = if asleep { reach.min(atglyph_rules::SLEEPER_REACH) } else { reach };
+    let reach = match rule.sleeper_reach() {
+        Some(sleeping) if asleep => reach.min(sleeping),
+        _ => reach,
+    };
     let mut seen = Vec::new();
     // In the order of where they stand, by map, row and column, rather
     // than the order the query walks the archetypes in or the entities'
@@ -475,14 +692,15 @@ pub(crate) fn update_awareness(mut watch: Watch, mut noticed: MessageWriter<Noti
     // world happens to be laid out or numbered. The number settles only
     // two that stand on one cell, which two that block never do.
     let mut subjects: Vec<Hiding<'_>> = watch.subjects.iter().collect();
-    subjects.sort_by_key(|(e, at, _, _, on, _)| (on.map(|m| m.0), at.0.y, at.0.x, *e));
-    for (subject, at, stealth, theirs, on, hidden) in subjects {
+    subjects.sort_by_key(|(e, at, _, _, _, on, _)| (on.map(|m| m.0), at.0.y, at.0.x, *e));
+    for (subject, at, stealth, range, theirs, on, hidden) in subjects {
         if subject == observer {
             continue;
         }
-        // Only what it is at odds with, so an ally slipping past it does
-        // not make the vitals strip say the player has been seen.
-        if !at_odds(rules, faction, theirs) {
+        // Only what the rule judges, and never an ally, so an ally
+        // slipping past it does not make the vitals strip say the player
+        // has been seen.
+        if !rule.judges(faction::stance(factions, faction.map(|f| f.0), theirs.map(|f| f.0))) {
             continue;
         }
         let on_this_map = on.map(|m| m.0).unwrap_or(MapId::ZERO) == here;
@@ -493,8 +711,8 @@ pub(crate) fn update_awareness(mut watch: Watch, mut noticed: MessageWriter<Noti
         let distance = atglyph_core::geometry::chebyshev(pos.0, at.0);
         let glimpse = Glimpse { distance, in_view, lit, asleep };
         let rng = &mut watch.rng.0;
-        let spots = || per_observer::spots(&notice.0, &stealth.0, glimpse, rng.random_range(0..100));
-        let (state, news) = awareness::observe(aware.of(subject), glimpse, per_observer::holds(glimpse), spots, at.0, notice.memory);
+        let spots = || rule.spots(notice, stealth, range, glimpse, rng.random_range(0..100));
+        let (state, news) = awareness::observe(aware.of(subject), glimpse, rule.holds(range, glimpse), spots, at.0, rule.memory(notice));
         if news {
             noticed.write(Noticed { observer, subject, at: at.0 });
         }
@@ -536,7 +754,7 @@ pub(crate) fn wake_on_damage(
     mut deaths: MessageReader<crate::combat::DeathEvent>,
     mut missed: MessageReader<crate::accuracy::Missed>,
     mut observers: Query<&mut Aware>,
-    attackers: Query<&Position, (With<Stealth>, Without<Unseen>)>,
+    attackers: Query<&Position, (With<Hides>, Without<Unseen>)>,
     mut noticed: MessageWriter<Noticed>,
 ) {
     let mut wake = |target: Entity, attacker: Entity| {
@@ -600,10 +818,25 @@ mod tests {
         /// The field, with `extra` run on the app after the field's own
         /// plugins are added and before anything is spawned or updated.
         fn build(notice: NoticeStats, gap: i32, reach: i32, plugin: bool, light: Option<u8>, extra: impl FnOnce(&mut App)) -> Field {
+            Field::make(plugin.then(StealthPlugin::per_observer), Some(notice), gap, reach, light, extra)
+        }
+
+        /// The field under the by-range rule at [`GREYWOLDS`], with nothing
+        /// of stealth authored on either side, since by range the plugin
+        /// gives every actor its range and every mind its memory: the
+        /// watcher [`FAR`] tiles east, seeing [`SIGHT`] tiles.
+        fn by_range(extra: impl FnOnce(&mut App)) -> Field {
+            Field::make(Some(StealthPlugin::by_range(GREYWOLDS)), None, FAR, SIGHT, None, extra)
+        }
+
+        /// The field under `plugin`, if any; with `notice`, the per-observer
+        /// parts are authored, a `Notice` on the watcher and a `Stealth` on
+        /// the player.
+        fn make(plugin: Option<StealthPlugin>, notice: Option<NoticeStats>, gap: i32, reach: i32, light: Option<u8>, extra: impl FnOnce(&mut App)) -> Field {
             let mut app = headless_app();
             app.add_plugins((FovPlugin, CombatPlugin, MindsPlugin));
-            if plugin {
-                app.add_plugins(StealthPlugin);
+            if let Some(plugin) = plugin {
+                app.add_plugins(plugin);
             }
             if light.is_some() {
                 app.add_plugins(crate::lighting::LightingPlugin);
@@ -613,19 +846,20 @@ mod tests {
             let crate::testing::TwoSides { ours: you, theirs: them, kind } = crate::testing::two_sides(&mut app);
             let player = app
                 .world_mut()
-                .spawn((
-                    (Actor, Player, Blocks, Position(start), Viewshed::new(16), RevealsMap),
-                    (Health::full(100), Armor(0), Faction(you), Stealth(StealthStats::default())),
-                ))
+                .spawn(((Actor, Player, Blocks, Position(start), Viewshed::new(16), RevealsMap), (Health::full(100), Armor(0), Faction(you))))
                 .id();
             let brain = Brain::new().then(MeleeAdjacent).then(Hunt).then(SearchLastKnown).then(Idle { chance_pct: 0 });
             let watcher = app
                 .world_mut()
                 .spawn((
                     (Actor, Blocks, Position(start.offset(gap, 0)), Health::full(100), Armor(0), Faction(them)),
-                    (MeleeAttack::new(kind, DiceRoll::flat(0)), Perception(reach), Mind(Arc::new(brain)), Notice(notice)),
+                    (MeleeAttack::new(kind, DiceRoll::flat(0)), Perception(reach), Mind(Arc::new(brain))),
                 ))
                 .id();
+            if let Some(notice) = notice {
+                app.world_mut().entity_mut(player).insert(Stealth(StealthStats::default()));
+                app.world_mut().entity_mut(watcher).insert(Notice(notice));
+            }
             app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
             app.update();
             // After play begins, since a new run resets lighting to dark.
@@ -653,6 +887,240 @@ mod tests {
         fn aware(&self) -> Aware {
             self.app.world().get::<Aware>(self.watcher).cloned().unwrap_or_default()
         }
+
+        /// Whether the watcher knows of the player.
+        fn knows(&self) -> bool {
+            self.aware().knows(self.player)
+        }
+
+        /// The player's stealth range, as the plugin keeps it.
+        fn range(&self) -> i32 {
+            self.app.world().get::<StealthRange>(self.player).expect("the plugin gave the player a range").0
+        }
+
+        /// Stands the player `gap` tiles west of the watcher, in its plain view.
+        fn stand_off(&mut self, gap: i32) {
+            let to = self.at(self.watcher).offset(-gap, 0);
+            crate::testing::stand_on(&mut self.app, self.player, to);
+            assert_eq!(self.distance(), gap, "the player stands where it was put");
+        }
+
+        /// Puts the watcher on a side of its own, neutral to everyone, as a
+        /// side no faction file names is.
+        fn make_neutral(&mut self) {
+            let watcher = self.watcher;
+            self.app.world_mut().entity_mut(watcher).insert(Faction(atglyph_rules::FactionId::from_raw(2)));
+        }
+
+        /// Puts the watcher on the player's side.
+        fn make_ally(&mut self) {
+            let (watcher, player) = (self.watcher, self.player);
+            let side = *self.app.world().get::<Faction>(player).unwrap();
+            self.app.world_mut().entity_mut(watcher).insert(side);
+        }
+
+        /// Gives the watcher `brain` in place of the field's.
+        fn think(&mut self, brain: Brain<Entity>) {
+            let watcher = self.watcher;
+            self.app.world_mut().entity_mut(watcher).insert(Mind(Arc::new(brain)));
+        }
+
+        /// Makes the watcher alert to the player where it stands.
+        fn alert(&mut self) {
+            let (watcher, player, at) = (self.watcher, self.player, self.at(self.player));
+            self.app.world_mut().get_mut::<Aware>(watcher).unwrap().0.insert(player, Awareness::Alert { at, stale_turns: 0 });
+        }
+
+        /// Waits up to `turns` turns for the watcher to know of the player,
+        /// stopping at the first, and says whether it came.
+        fn wait_for_notice(&mut self, turns: u32) -> bool {
+            for _ in 0..turns {
+                self.wait();
+                if self.knows() {
+                    return true;
+                }
+            }
+            false
+        }
+    }
+
+    /// Greywold's numbers for the by-range rule, which the engine has none of.
+    const GREYWOLDS: RangeRules =
+        RangeRules { base: 7, dark_divisor: 2, cover_divisor: 2, still_divisor: 2, attack_multiplier: 2, floor: 2, chance_pct: 25, hold: 3, memory: 6 };
+
+    /// How far apart the by-range field starts: beyond the range of a
+    /// subject in the open, and of one that attacked.
+    const FAR: i32 = GREYWOLDS.base * GREYWOLDS.attack_multiplier + 6;
+
+    /// How far a by-range watcher sees: past `hold` times the range, so
+    /// losing hold of the player is the rule's doing and not its sight's.
+    const SIGHT: i32 = 30;
+
+    /// What the mind holding the turn was told of each roster, after
+    /// stealth's filters ran.
+    #[derive(Resource, Default)]
+    struct Rosters {
+        enemies: Vec<Entity>,
+        allies: Vec<Entity>,
+        others: Vec<Entity>,
+    }
+
+    fn record_rosters(thinking: Res<Thinking>, mut told: ResMut<Rosters>) {
+        if let Some(snapshot) = thinking.snapshot() {
+            told.enemies = snapshot.enemies.iter().map(|e| e.id).collect();
+            told.allies = snapshot.allies.iter().map(|e| e.id).collect();
+            told.others = snapshot.others.iter().map(|e| e.id).collect();
+        }
+    }
+
+    /// Records [`Rosters`] each turn a mind decides.
+    fn with_rosters(app: &mut App) {
+        use crate::plugin::{PerceiveSet, Turn};
+        app.init_resource::<Rosters>().add_systems(Turn, record_rosters.in_set(PerceiveSet::Filter).after(filter_unnoticed));
+    }
+
+    /// `Hides` comes with either of what brings it and goes with the last.
+    #[test]
+    fn hiding_ends_with_the_last_of_what_brought_it() {
+        let mut world = World::new();
+        let hides = |world: &World, e: Entity| world.get::<Hides>(e).is_some();
+        let both = world.spawn((Stealth::default(), StealthRange(GREYWOLDS.base))).id();
+        world.entity_mut(both).remove::<Stealth>();
+        assert!(hides(&world, both), "its range still hides it");
+        world.entity_mut(both).remove::<StealthRange>();
+        assert!(!hides(&world, both), "and with neither it does not");
+        let together = world.spawn((Stealth::default(), StealthRange(GREYWOLDS.base))).id();
+        world.entity_mut(together).remove::<(Stealth, StealthRange)>();
+        assert!(!hides(&world, together), "nor with both taken off at once");
+    }
+
+    #[test]
+    fn by_range_a_watcher_beyond_the_range_never_notices() {
+        let mut field = Field::by_range(|_| {});
+        let beyond = field.range() + 1;
+        field.stand_off(beyond);
+        assert!(!field.wait_for_notice(200), "a line to the player one tile past its range, and never a notice");
+    }
+
+    #[test]
+    fn by_range_a_watcher_within_the_range_notices() {
+        let mut field = Field::by_range(|_| {});
+        let within = field.range() - 2;
+        field.stand_off(within);
+        assert!(field.wait_for_notice(60), "inside the range, a chance a turn comes up");
+    }
+
+    #[test]
+    fn by_range_a_hunter_holds_to_three_times_and_then_forgets() {
+        let mut field = Field::by_range(|_| {});
+        field.think(Brain::new().then(Idle { chance_pct: 0 }));
+        let held = field.range() * GREYWOLDS.hold;
+        field.stand_off(held);
+        field.alert();
+        field.wait();
+        assert!(field.knows(), "in view at {held}, hold times the range, and kept");
+
+        field.stand_off(held + 1);
+        for turn in 1..=GREYWOLDS.memory {
+            field.wait();
+            assert!(field.knows(), "one past the hold, still in mind after {turn} turns");
+        }
+        field.wait();
+        assert!(!field.knows(), "and forgotten once {} turns have passed", GREYWOLDS.memory);
+    }
+
+    #[test]
+    fn by_range_a_neutral_is_hidden_from_the_others_until_noticed() {
+        let mut field = Field::by_range(with_rosters);
+        field.make_neutral();
+        let beyond = field.range() + 1;
+        field.stand_off(beyond);
+        field.wait();
+        let player = field.player;
+        let told = field.app.world().resource::<Rosters>();
+        assert!(!told.others.contains(&player), "in plain view, unnoticed, and not told of: {:?}", told.others);
+
+        field.alert();
+        field.wait();
+        assert!(field.knows(), "noticed, and kept while in view within the hold");
+        let told = field.app.world().resource::<Rosters>();
+        assert!(told.others.contains(&player), "and told of among the others: {:?}", told.others);
+    }
+
+    #[test]
+    fn by_range_an_ally_is_never_judged() {
+        let mut field = Field::by_range(with_rosters);
+        field.make_ally();
+        let within = field.range() - 2;
+        field.stand_off(within);
+        for _ in 0..20 {
+            field.wait();
+        }
+        assert!(field.aware().0.is_empty(), "an ally holds no opinion of the player: {:?}", field.aware());
+        let player = field.player;
+        assert!(field.app.world().resource::<Rosters>().allies.contains(&player), "and is told of it among the allies");
+    }
+
+    #[test]
+    fn by_range_no_trail_for_a_neutral() {
+        let walked = |neutral: bool| {
+            let mut field = Field::by_range(|_| {});
+            if neutral {
+                field.make_neutral();
+            }
+            field.think(Brain::new().then(SearchLastKnown).then(Idle { chance_pct: 0 }));
+            let (watcher, player) = (field.watcher, field.player);
+            let start = field.at(watcher);
+            let rumour = start.offset(-3, 0);
+            make_unseen(&mut field.app, player);
+            field.app.world_mut().get_mut::<Aware>(watcher).unwrap().0.insert(player, Awareness::Alert { at: rumour, stale_turns: 0 });
+            field.wait();
+            field.at(watcher) != start
+        };
+        assert!(walked(false), "a hostile watcher that lost the player walks to where it last knew of it: the test can fail");
+        assert!(!walked(true), "a neutral one is offered no trail and stays where it is");
+    }
+
+    #[test]
+    fn by_range_every_actor_and_mind_is_given_its_parts() {
+        let mut field = Field::by_range(|_| {});
+        let (player, watcher) = (field.player, field.watcher);
+        assert_eq!(field.app.world().get::<StealthRange>(player), Some(&StealthRange(GREYWOLDS.base)), "the player, spawned with none, has the base range");
+        assert_eq!(field.app.world().get::<StealthRange>(watcher), Some(&StealthRange(GREYWOLDS.base)), "and so does the watcher");
+        assert!(field.app.world().get::<Aware>(watcher).is_some(), "a mind, spawned with no memory, keeps one");
+        assert!(field.app.world().get::<Aware>(player).is_none(), "and the player, no mind, does not");
+
+        let near = field.at(player).offset(0, 3);
+        let authored = field.app.world_mut().spawn((Actor, Position(near), StealthRange(GREYWOLDS.floor))).id();
+        let late = field.app.world_mut().spawn((Actor, Position(near.offset(1, 0)), Mind(Arc::new(Brain::new())))).id();
+        field.wait();
+        assert_eq!(field.app.world().get::<StealthRange>(authored), Some(&StealthRange(GREYWOLDS.floor)), "one spawned with a range keeps it");
+        assert_eq!(field.app.world().get::<StealthRange>(late), Some(&StealthRange(GREYWOLDS.base)), "one spawned mid-run is given the base");
+        assert!(field.app.world().get::<Aware>(late).is_some(), "and its memory");
+    }
+
+    #[test]
+    fn by_range_a_sleeper_notices_by_the_range_and_wakes() {
+        let mut field = Field::by_range(|_| {});
+        let statuses = atglyph_rules::Registry::from_defs(vec![atglyph_rules::StatusDef::new("asleep").sleeps()]).unwrap();
+        let asleep = statuses.expect("asleep");
+        field.app.world_mut().resource_mut::<crate::registries::Registries>().statuses = statuses;
+        let within = field.range() - 2;
+        field.stand_off(within);
+        let watcher = field.watcher;
+        field.app.world_mut().write_message(crate::status::ApplyStatus {
+            target: watcher,
+            status: asleep,
+            turns: atglyph_rules::UNTIL_CURED,
+            by: None,
+            held_by: None,
+        });
+        field.wait();
+        let sleeping = |field: &Field| field.app.world().get::<crate::status::ActiveStatuses>(watcher).unwrap().has(asleep);
+        assert!(sleeping(&field) || field.knows(), "asleep, unless it noticed on its first turn");
+        assert!(within > atglyph_rules::SLEEPER_REACH, "beyond the reach a sleeper notices within by the other rule: the test can fail");
+        assert!(field.knows() || field.wait_for_notice(60), "a sleeper notices inside the range by its chance");
+        assert!(!sleeping(&field), "and what it noticed woke it");
     }
 
     fn blind() -> NoticeStats {
@@ -1274,7 +1742,7 @@ mod tests {
         }
 
         let mut app = headless_app();
-        app.add_plugins((FovPlugin, CombatPlugin, MindsPlugin, StealthPlugin))
+        app.add_plugins((FovPlugin, CombatPlugin, MindsPlugin, StealthPlugin::per_observer()))
             .init_resource::<Told>()
             .add_systems(Turn, record.in_set(PerceiveSet::Filter).after(filter_unnoticed));
         let start = crate::testing::ground(&mut app);

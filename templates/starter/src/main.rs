@@ -106,8 +106,8 @@ impl Plugin for Starter {
         let dungeon = Dungeon::new();
         // Every subsystem is a plugin you name. Combat resolves blows, minds
         // decide the monsters' turns, lighting decides what can be seen, and
-        // stealth decides what has been noticed.
-        app.add_plugins((CombatPlugin, MindsPlugin, LightingPlugin, StealthPlugin))
+        // stealth decides what has been noticed, here by each observer.
+        app.add_plugins((CombatPlugin, MindsPlugin, LightingPlugin, StealthPlugin::per_observer()))
             // Items lie on the floor, in a bag, or worn, and the engine moves
             // them between the three and charges a turn for each move.
             .add_plugins(ItemsPlugin)

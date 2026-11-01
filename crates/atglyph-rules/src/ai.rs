@@ -7,7 +7,7 @@
 //! away from any cells, shared by movement class and goal, so fifty hunters
 //! after one player cost one flood, not fifty searches.
 //!
-//! - [`awareness`]: [`NoticeStats`], [`StealthStats`], [`notices`] and [`Awareness`]: who has noticed whom.
+//! - [`awareness`]: [`NoticeStats`], [`StealthStats`], [`notices`], [`RangeRules`] and [`Awareness`]: who has noticed whom.
 //! - [`hearing`]: [`HearingStats`], and how far a sound carries: [`carries`](hearing::carries), [`left_after`](hearing::left_after) and [`heard`](hearing::heard).
 //! - [`brain`]: [`Brain`], [`Tactic`], [`TacticCtx`], [`Decision`], [`Choice`], a decision of the game's own, and [`Fields`], the way toward or away from any cells.
 //! - [`profile`]: [`MovementProfile`], the movement class flow fields are shared by.
@@ -39,6 +39,7 @@ pub mod tactics;
 pub mod wits;
 
 pub use awareness::Awareness;
+pub use awareness::by_range::RangeRules;
 pub use awareness::per_observer::{NoticeStats, StealthStats, notices};
 pub use brain::{Brain, Choice, Decision, Fields, NoFields, Tactic, TacticCtx};
 pub use hearing::HearingStats;

@@ -13,9 +13,11 @@ atglyph is not on crates.io yet, so a game depends on a release by its git tag, 
 - `CellBrightness`: a game draws each cell of a map brighter or darker than its tile, as high ground brighter than low, in sight and in memory alike.
 - Near fields: `Fields::descents_toward_near` and `Fields::descents_away_near` flood only the box round a mind and its goals, a margin wider, for a step among those a few cells off; the engine floods them afresh and keeps them out of the shared fields, and a `Fields` of a game's own answers them from its whole fields unless it says otherwise.
 - Cover: a tile may be `cover: true` in a tiles file, `TileProps::cover` and `TileTables::cover`, for a rule that makes an actor standing in it harder to notice.
+- Stealth by range: `StealthPlugin::by_range(RangeRules)` judges noticing by the subject's own `StealthRange`, within which anything not allied may notice it by the game's chance a turn and beyond which nothing does, an alert observer holding it in view within `hold` times the range; the plugin gives every actor a range at the base and every mind an `Aware` as each appears, and a neutral is hidden from a mind's others until noticed. `Hides` marks whatever can hide under either rule.
 
 ### Changed
 
+- **Breaking:** `StealthPlugin` is built with the rule it notices by: a game that added `StealthPlugin` adds `StealthPlugin::per_observer()`, and plays as before.
 - **Breaking:** A mind's idle moves are one tactic, `Idle`, moving by the `Movement` its actor carries in `Moves`: `Wander`, `Hold(cell)` or `Roam { at, reach }`. It replaces `KeepPost`, `Wander`, `Posted` and the `Post` component, and the standard chain's `keep_post` and `wander_chance` become one `idle_chance`, with `before_wander` renamed `before_idle`. A mind with no `Moves` has no idle move. A game moving over gives `Hold` where it gave `Post` and `Wander` to every actor that drifted. Saves are format 2.
 - **Breaking:** `Scatter` and `ScatterBy` have a `phase`, `Phase::Growth` to cover the ground before anything is built and `Phase::Finish` to strew over what was; a literal adds `phase: Phase::Growth` to scatter as before.
 - What is in sight, the nearby list and the look and target cursors, is only what the `MapView` draws: a player who sees the whole place no longer lists things far off the screen.

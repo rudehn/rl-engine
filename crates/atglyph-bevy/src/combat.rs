@@ -415,8 +415,8 @@ impl CombatRules {
     /// [`Watchers::unaware`](crate::stealth::Watchers::unaware): while the
     /// [`StealthPlugin`](crate::stealth::StealthPlugin) runs, a target
     /// keeping an [`Aware`](crate::stealth::Aware) that holds nothing of an
-    /// attacker it is at odds with and that carries
-    /// [`Stealth`](crate::stealth::Stealth). Without the plugin nobody is,
+    /// attacker it is at odds with and that
+    /// [`Hides`](crate::stealth::Hides). Without the plugin nobody is,
     /// and this does nothing. What a `hit` trigger does is an effect, and
     /// lands as it would on anyone.
     ///
@@ -2741,7 +2741,7 @@ mod tests {
     #[test]
     fn an_unaware_target_takes_the_multiplied_blow_and_an_aware_one_does_not() {
         let (mut app, player, beside, across) = ambush(|app| {
-            app.add_plugins((crate::minds::MindsPlugin, crate::stealth::StealthPlugin));
+            app.add_plugins((crate::minds::MindsPlugin, crate::stealth::StealthPlugin::per_observer()));
         });
         assert_eq!(strike(&mut app, player, beside, false), 6, "the house's three times on a target that never noticed");
         assert_eq!(strike(&mut app, player, beside, true), 2, "and nothing more on one that had");

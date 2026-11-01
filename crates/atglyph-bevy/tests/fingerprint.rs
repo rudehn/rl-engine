@@ -56,7 +56,7 @@ fn fingerprint(app: &mut App) -> u64 {
 /// field of hunters that notice, flee, search and drift.
 fn run(seed: u64, turns: usize) -> u64 {
     let mut app = atglyph_bevy::testing::headless_app();
-    app.add_plugins((FovPlugin, CombatPlugin, MindsPlugin, StealthPlugin, ItemsPlugin));
+    app.add_plugins((FovPlugin, CombatPlugin, MindsPlugin, StealthPlugin::per_observer(), ItemsPlugin));
     let start = ground(&mut app);
     let TwoSides { ours, theirs, kind } = two_sides(&mut app);
     app.insert_resource(Seed(RunSeed(seed)));

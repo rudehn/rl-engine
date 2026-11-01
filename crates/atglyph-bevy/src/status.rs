@@ -33,7 +33,7 @@ use atglyph_core::Direction;
 use atglyph_core::turn::BASE_ACTION_COST;
 use atglyph_rules::faction::stance;
 use atglyph_rules::stats::{Modifier, ModifierSource, Op};
-use atglyph_rules::{Hit, Relation, Resistances, StatId, Stats, StatusId, Statuses};
+use atglyph_rules::{Hit, Resistances, StatId, Stats, StatusId, Statuses};
 use bevy::prelude::*;
 
 use crate::combat::{CombatRules, DamageDealt, DamageEvent, Dead, Faction, Heal};
@@ -355,10 +355,11 @@ type Sleeper = (
     &'static mut StatBlock,
 );
 /// Anyone it might wake to.
-type Stirring = (Entity, &'static Position, &'static Faction, Option<&'static OnMap>, Has<crate::stealth::Stealth>, Has<crate::stealth::Unseen>);
+type Stirring = (Entity, &'static Position, &'static Faction, Option<&'static OnMap>, Has<crate::stealth::Hides>, Has<crate::stealth::Unseen>);
 
 /// Wakes the sleeper holding the turn if it notices a foe within
-/// [`SLEEPER_REACH`](atglyph_rules::SLEEPER_REACH).
+/// [`SLEEPER_REACH`](atglyph_rules::SLEEPER_REACH), or, under stealth's
+/// by-range rule, anything it notices.
 ///
 /// A foe is whoever the faction matrix calls hostile, standing on its map
 /// within that reach, in its sight and not unseen. One that hides from a
@@ -368,6 +369,11 @@ type Stirring = (Entity, &'static Position, &'static Faction, Option<&'static On
 /// sleeper by chance alone and only within the reach; any other it wakes to
 /// on sight, as it would see them awake. A sleeper with no sight wakes only
 /// to harm and noise.
+///
+/// By range there is no reach and no foe: the sleeper notices by the
+/// subject's own range, which is limit enough, and whatever it judges and
+/// notices wakes it, a neutral as surely as a foe. Which is which is asked
+/// of stealth's rule, so the two rules share this one function.
 ///
 /// In [`DecideSet::Notice`](crate::plugin::DecideSet::Notice), after the
 /// noticing, on the sleeper's own turn, which
@@ -382,6 +388,7 @@ pub(crate) fn wake_on_sight(
     mut events: MessageWriter<StatusEvent>,
 ) {
     let (Some(rules), Some(registries)) = (rules.as_deref(), registries.as_deref()) else { return };
+    let rule = stealth.rule();
     for (sleeper, pos, faction, sight, aware, on, mut statuses, mut stats) in &mut sleepers {
         let (Some(mine), Some(sight)) = (faction, sight) else { continue };
         if statuses.sleeping(&registries.statuses).is_none() {
@@ -392,8 +399,8 @@ pub(crate) fn wake_on_sight(
             let close = other != sleeper
                 && !unseen
                 && other_on.map(|m| m.0).unwrap_or(MapId::ZERO) == map
-                && atglyph_core::geometry::chebyshev(pos.0, at.0) <= atglyph_rules::SLEEPER_REACH
-                && stance(Some(&rules.factions), Some(mine.0), Some(theirs.0)) == Some(Relation::Hostile)
+                && rule.sleeper_reach().is_none_or(|reach| atglyph_core::geometry::chebyshev(pos.0, at.0) <= reach)
+                && rule.judges(stance(Some(&rules.factions), Some(mine.0), Some(theirs.0)))
                 && sight.can_see(at.0);
             let noticed = match aware {
                 Some(aware) if hides && stealth.get() => aware.knows(other),
@@ -1067,7 +1074,7 @@ mod tests {
     #[test]
     fn a_blow_on_a_sleeper_lands_as_on_the_unaware_and_then_wakes_it() {
         let mut room = bedroom(|app| {
-            app.add_plugins(StealthPlugin);
+            app.add_plugins(StealthPlugin::per_observer());
         });
         room.app.world_mut().entity_mut(room.player).insert(Stealth::default());
         let (sleeper, asked) = room.sleeper(1);
@@ -1143,7 +1150,7 @@ mod tests {
     #[test]
     fn a_sleeper_notices_a_hider_within_two_cells_and_nothing_further() {
         let mut room = bedroom(|app| {
-            app.add_plugins(StealthPlugin);
+            app.add_plugins(StealthPlugin::per_observer());
         });
         room.app.world_mut().entity_mut(room.player).insert(Stealth::default());
         let keen = Notice(NoticeStats { certain: 10, chance_pct: 100, lit_bonus: 0, memory: 6 });

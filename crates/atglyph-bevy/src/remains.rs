@@ -424,7 +424,8 @@ pub(crate) fn name_as_remains(world: &mut World, entity: Entity) {
 /// tidiness: a watcher is anything that carries `Notice` and is not
 /// `Dead`, and remains are not `Dead` by design, so a body left with its
 /// `Notice` went on watching the player, who stayed marked as seen with
-/// every enemy on the deck dead. Its [`Moves`](crate::minds::Moves),
+/// every enemy on the deck dead. Its [`StealthRange`](crate::stealth::StealthRange)
+/// comes off with them, since a body is nobody to notice. Its [`Moves`](crate::minds::Moves),
 /// [`Ground`](crate::minds::Ground) and [`Herd`](crate::minds::Herd) come
 /// off as well, since a body keeps no cell, ground or herd and walks back
 /// to none.
@@ -446,8 +447,7 @@ pub(crate) type WasLiving = (
     Mind,
     Perception,
     crate::components::Viewshed,
-    crate::stealth::Notice,
-    crate::stealth::Aware,
+    (crate::stealth::Notice, crate::stealth::Aware, crate::stealth::StealthRange),
     crate::noise::Hearing,
     crate::noise::Heard,
     (crate::minds::Moves, crate::minds::Ground, crate::minds::Herd),
@@ -646,7 +646,7 @@ mod tests {
     #[test]
     fn remains_watch_nobody_and_hear_nothing() {
         let (mut app, start, sides) = arena();
-        app.add_plugins(crate::stealth::StealthPlugin);
+        app.add_plugins(crate::stealth::StealthPlugin::per_observer());
         let player = app
             .world_mut()
             .spawn((Actor, Player, Blocks, Position(start), Viewshed::new(8), Health::full(30), Faction(sides.ours), crate::stealth::Stealth::default()))

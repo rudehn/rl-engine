@@ -445,7 +445,7 @@ mod tests {
     #[test]
     fn a_row_says_whether_it_has_noticed_the_player_only_when_stealth_is_running() {
         // Stealth is decided in the minds' pass, so it needs the minds.
-        let mut stage = Stage::new((NearbyViewPlugin, atglyph_bevy::MindsPlugin, atglyph_bevy::StealthPlugin));
+        let mut stage = Stage::new((NearbyViewPlugin, atglyph_bevy::MindsPlugin, atglyph_bevy::StealthPlugin::per_observer()));
         let player = stage.player;
         stage.app.world_mut().entity_mut(player).insert(Stealth::default());
         let hunting = stage.actor("hunting", 'h', 2, 0);
@@ -475,7 +475,7 @@ mod tests {
     /// the unseen, and not idle, since it has not forgotten.
     #[test]
     fn a_row_that_lost_an_unseen_player_reads_searching_until_it_forgets() {
-        let mut stage = Stage::new((NearbyViewPlugin, atglyph_bevy::MindsPlugin, atglyph_bevy::StealthPlugin));
+        let mut stage = Stage::new((NearbyViewPlugin, atglyph_bevy::MindsPlugin, atglyph_bevy::StealthPlugin::per_observer()));
         let player = stage.player;
         stage.app.world_mut().entity_mut(player).insert((Stealth::default(), atglyph_bevy::Unseen));
         let lost = stage.actor("lost", 'l', 2, 0);

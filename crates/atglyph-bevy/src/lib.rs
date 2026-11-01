@@ -160,7 +160,7 @@ pub use seed::{ENGINE_DOMAINS, LaunchArgs, RunRng, Seed, Stream, StreamDomain};
 pub use settings::{Setting, SettingId, Settings};
 pub use state::{Ending, EngineState, Outcome, Restart, RunOver, world_is_shown};
 pub use status::{ActiveStatuses, ApplyStatus, RemoveStatus, SideWas, StatBlock, StatusEvent};
-pub use stealth::{Aware, Notice, Noticed, Stealth, StealthPlugin, Unseen, Watchers};
+pub use stealth::{Aware, Hides, Notice, Noticed, Stealth, StealthPlugin, StealthRange, Unseen, Watchers};
 pub use throwing::{Flight, Launched, Launcher, Throw, ThrowAs, ThrowRules, Throwable, ThrowingPlugin, Throws, flight};
 pub use title::{AbandonRun, ContinueRun, HoldStart, LeaveRun, SavedRun, begin_afresh, begin_run};
 pub use trade::{Buy, Currency, Deal, Parties, Sell, TRADE, TradePlugin, TradeRefusal, TradeRefused, Traded, Trader, Trading, Ware, Worth, pay};
@@ -239,7 +239,7 @@ pub mod prelude {
     pub use crate::state::{Ending, EngineState, Outcome, Restart, RunOver};
     pub use crate::status::{ActiveStatuses, ApplyStatus, RemoveStatus, SideWas, StatBlock, StatusEvent};
 
-    pub use crate::stealth::{Aware, Notice, Noticed, Stealth, StealthPlugin, Unseen, Watchers};
+    pub use crate::stealth::{Aware, Hides, Notice, Noticed, Stealth, StealthPlugin, StealthRange, Unseen, Watchers};
     pub use crate::throwing::{Launched, Launcher, Throw, ThrowAs, Throwable, ThrowingPlugin, Throws};
     pub use crate::title::{AbandonRun, ContinueRun, HoldStart, LeaveRun, SavedRun, begin_run};
     pub use crate::trade::{Buy, Currency, Deal, Parties, Sell, TRADE, TradePlugin, TradeRefusal, TradeRefused, Traded, Trader, Trading, Ware, Worth};

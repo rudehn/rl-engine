@@ -2058,7 +2058,7 @@ mod tests {
     /// narrator reads the kinds of event in.
     #[test]
     fn a_mind_that_notices_the_player_and_strikes_in_one_turn_is_heard_noticing_first() {
-        let mut stage = Stage::new((NarratorPlugin::default(), MindsPlugin, StealthPlugin));
+        let mut stage = Stage::new((NarratorPlugin::default(), MindsPlugin, StealthPlugin::per_observer()));
         let (player, kind, theirs) = (stage.player, stage.kind, stage.theirs);
         stage.app.world_mut().entity_mut(player).insert(Stealth(atglyph_rules::StealthStats::default()));
         let brain = std::sync::Arc::new(atglyph_rules::Brain::new().then(atglyph_rules::ai::tactics::MeleeAdjacent));

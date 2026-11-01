@@ -160,7 +160,7 @@ type Vitals = (
     Option<&'static Armor>,
     Option<&'static Equipped>,
     Option<&'static ActiveStatuses>,
-    Has<Stealth>,
+    Has<atglyph_bevy::Hides>,
     Option<&'static crate::view::Seems>,
 );
 
@@ -399,7 +399,7 @@ mod tests {
     #[test]
     fn seen_is_none_for_a_player_that_cannot_hide_and_tracks_every_watcher_otherwise() {
         // Stealth is decided in the minds' pass, so it needs the minds.
-        let mut stage = Stage::new((VitalsViewPlugin, atglyph_bevy::MindsPlugin, atglyph_bevy::StealthPlugin));
+        let mut stage = Stage::new((VitalsViewPlugin, atglyph_bevy::MindsPlugin, atglyph_bevy::StealthPlugin::per_observer()));
         stage.tick();
         assert_eq!(stage.app.world().resource::<VitalsView>().seen, None, "no Stealth on the player");
 
