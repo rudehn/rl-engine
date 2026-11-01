@@ -8,6 +8,7 @@ atglyph is not on crates.io yet, so a game depends on a release by its git tag, 
 
 ### Added
 
+- `Keep` can keep away from the others: `Station::Others` is the actors neither allied nor hostile, and `Keep::away(station, distance)` backs off inside `distance` and never closes in, named `keep_away`.
 - A mind keeps to its ground: an actor's `Ground` id, read through the game's `GroundRule`, holds its idle steps to the cells the game names, and one off its ground walks back. Herds: actors sharing a `Herd` id keep together with no leader, by `Keep::herd` on the middle of their living mates.
 - Carving a place out of solid rock a cell at a time: `DrunkardsWalk` opens a broad hall with rock standing in it, and `Aggregate`, diffusion-limited aggregation, grows branching tunnels; both open the share of the map asked for in one piece, from an `Origin`, with a brush width, a margin and, for aggregation, a pull toward the middle.
 - `CellBrightness`: a game draws each cell of a map brighter or darker than its tile, as high ground brighter than low, in sight and in memory alike.

@@ -206,6 +206,10 @@ pub enum Station {
     /// says its living mates stand: a flock that grazes together, with no
     /// leader to follow.
     Herd,
+    /// The others: actors neither allied nor hostile, nearest first, all of
+    /// them in sight. What a wary animal keeps away from, and what a
+    /// coward keeps its distance from without being at odds with it.
+    Others,
 }
 
 /// Where the living mates of a herd member stand, as a
@@ -349,6 +353,13 @@ impl Keep {
         Self { on: Station::Herd, keep_within, no_closer_than, gap: Gap::Crow }
     }
 
+    /// Keep away from `on` and nothing else: back off inside `distance`,
+    /// hold outside it, and never close in, as the crow flies. What a wary
+    /// animal is, and an archer that stands off but does not chase.
+    pub fn away(on: Station, distance: i32) -> Self {
+        Self { on, keep_within: i32::MAX, no_closer_than: distance, gap: Gap::Crow }
+    }
+
     /// The same station with its gap measured by `gap`.
     pub fn measured(mut self, gap: Gap) -> Self {
         self.gap = gap;
@@ -411,6 +422,10 @@ impl Keep {
                 let middle = Point::new(mean(|p| p.x), mean(|p| p.y));
                 Some((middle, vec![middle], false))
             }
+            Station::Others => {
+                let nearest = ctx.snapshot.others.first()?;
+                Some((nearest.pos, ctx.snapshot.others.iter().map(|o| o.pos).collect(), true))
+            }
             Station::Enemies => match ctx.snapshot.nearest_enemy() {
                 Some(enemy) => Some((enemy.pos, ctx.snapshot.enemies.iter().map(|e| e.pos).collect(), true)),
                 None if ctx.snapshot.wits.has(Wits::SEARCHES) => {
@@ -424,13 +439,19 @@ impl Keep {
 }
 
 impl<A: Copy> Tactic<A> for Keep {
-    /// The two names this behaviour has always had, because a log that says
-    /// `shadow` says more about what happened than one that says `keep`.
+    /// The names this behaviour has always had, because a log that says
+    /// `shadow` says more about what happened than one that says `keep`,
+    /// and `keep_away` for a keep that never closes in, whoever it keeps
+    /// away from.
     fn name(&self) -> &'static str {
+        if self.keep_within == i32::MAX {
+            return "keep_away";
+        }
         match self.on {
             Station::Allies | Station::Leader => "follow",
             Station::Enemies => "shadow",
             Station::Herd => "herd",
+            Station::Others => "keep",
         }
     }
     fn keeps_with(&self) -> Option<Station> {
@@ -2478,6 +2499,55 @@ mod tests {
 
     fn shadow(tactic: Keep, me: Point, foe: Point, blocked: &[Point]) -> Option<Decision<u32>> {
         shadow_of(tactic, me, foe, blocked, true)
+    }
+
+    /// A keeper's answer for one actor at `me` and one of the others at
+    /// `other`, on open floor.
+    fn keeping_from_other(tactic: Keep, me: Point, other: Point) -> Option<Decision<u32>> {
+        let (t, r) = open();
+        let view_t = t.view(&r);
+        let can_step = |p: Point| p != other && view_t.is_walkable(p);
+        let mut rng = StdRng::seed_from_u64(1);
+        let mut fields = Given::over(&view_t);
+        let mut s = Snapshot::alone(view(1, me.x, me.y, 10));
+        s.others.push(view(2, other.x, other.y, 10));
+        let mut ctx = TacticCtx {
+            snapshot: &s,
+            fields: &mut fields,
+            can_step: &can_step,
+            blocks_shot: &nothing_blocks,
+            blocks_burst: &|_| false,
+            bounds: arena(),
+            rng: &mut rng,
+        };
+        tactic.evaluate(&mut ctx)
+    }
+
+    #[test]
+    fn keeping_away_backs_off_from_another_inside_the_distance() {
+        let (me, other) = (Point::new(5, 5), Point::new(8, 5));
+        match keeping_from_other(Keep::away(Station::Others, 10), me, other) {
+            Some(Decision::Step(p)) => assert!(geometry::chebyshev(p, other) > 3, "stepped to {p:?}, which does not widen the gap"),
+            got => panic!("expected a step, got {got:?}"),
+        }
+    }
+
+    #[test]
+    fn keeping_away_holds_outside_the_distance() {
+        assert_eq!(keeping_from_other(Keep::away(Station::Others, 10), Point::new(0, 5), Point::new(10, 5)), None);
+    }
+
+    #[test]
+    fn keeping_away_never_closes_in() {
+        assert_eq!(keeping_from_other(Keep::away(Station::Others, 10), Point::new(0, 5), Point::new(40, 5)), None);
+    }
+
+    #[test]
+    fn keeping_away_is_named_keep_away() {
+        let away = Keep::away(Station::Others, 10);
+        assert_eq!(Tactic::<u32>::name(&away), "keep_away");
+        assert_eq!(Tactic::<u32>::name(&Keep::enemies(5, 3)), "shadow", "a keep that closes is named as before");
+        assert_eq!(Tactic::<u32>::keeps_with(&away), Some(Station::Others));
     }
 
     /// Whether a shot from `from` reaches `to` past `blocked`.
