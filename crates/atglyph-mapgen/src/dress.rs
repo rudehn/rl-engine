@@ -89,8 +89,9 @@ pub enum Spread {
 }
 
 /// How far from the area's openings a thing goes, by the path a body
-/// walks in from the nearest one, measured once before the dressing is
-/// laid; with no opening, every cell is as far as any other and a rule
+/// walks in from the nearest one, measured before the dressing is laid,
+/// and for [`Behind`](FromDoor::Behind) again round what it stands
+/// behind; with no opening, every cell is as far as any other and a rule
 /// keeps to none of them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
 pub enum FromDoor {
@@ -101,9 +102,12 @@ pub enum FromDoor {
     Far,
     /// The cells farther than every cell an earlier rule laid this glyph
     /// on, as shelves behind a counter, and every cell the spread offers
-    /// while nothing holds the glyph. The cells straight behind a gap in
-    /// a counter are no farther than its ends, so they stay clear as the
-    /// way behind it.
+    /// while nothing holds the glyph. Each cell is measured by the path
+    /// round the things of that glyph, and each of them by the path with
+    /// nothing standing, so a cell they stand between the door and is
+    /// behind them however near the door it lies; the cells straight
+    /// behind a gap in a counter are no farther than its ends, so they
+    /// stay clear as the way behind it.
     Behind(char),
 }
 
@@ -386,7 +390,7 @@ struct Around<'a> {
     place: Option<&'a Place>,
 }
 
-/// One area's cells in a frame three cells larger than its bounds all round,
+/// One area's cells in a frame [`LOOK`] cells larger than its bounds all round,
 /// indexed locally, so a look at a neighbour is an index and not a search
 /// of the area's cells.
 struct Frame {
@@ -452,6 +456,35 @@ impl Frame {
         count
     }
 
+    /// Whether every cell of `cells` is reached from the first by orthogonal
+    /// steps over cells of the frame that `pass`; true for none or one.
+    fn meet(&self, cells: &[Point], pass: impl Fn(Point) -> bool) -> bool {
+        let Some(&first) = cells.first() else { return true };
+        let Some(start) = self.at(first) else { return false };
+        let mut seen = vec![false; self.own.len()];
+        seen[start] = true;
+        let mut stack = vec![start];
+        let mut left = cells.iter().filter(|c| **c != first).count();
+        while let Some(i) = stack.pop() {
+            if left == 0 {
+                break;
+            }
+            let p = self.point(i);
+            for d in Direction::CARDINALS {
+                let q = p + d.offset();
+                if let Some(j) = self.at(q)
+                    && !seen[j]
+                    && pass(q)
+                {
+                    seen[j] = true;
+                    left -= cells.iter().filter(|c| **c == q).count();
+                    stack.push(j);
+                }
+            }
+        }
+        left == 0
+    }
+
     /// Whether the cell at `i` has a cell straight beside it that `open`
     /// leaves clear or the rim holds: somewhere a body stands to step onto
     /// it or to use what stands there.
@@ -489,6 +522,12 @@ pub fn dress_room(
     dress_area(terrain, tiles, rng, &area, dressing, Around { keep: openings, place: None }, floor)
 }
 
+/// How far round an area its frame reaches: a thing outside a door stands
+/// two from the area, a post or a well two out from the door is a cell
+/// beyond it, and the street round that is the one beyond, with a cell to
+/// spare for an obstacle two deep.
+const LOOK: i32 = 5;
+
 /// Lays `dressing` in `area` and repaints it, and returns its slots as
 /// marks: each thing on a cell its spread offers, drawn from `rng`, never
 /// on or beside a cell of `around.keep` or a way out of the area but
@@ -507,9 +546,7 @@ fn dress_area(
     let walkable = tiles.tables().walkable;
     let walk = |terrain: &Terrain, p: Point| terrain.get(p).is_some_and(|t| walkable[t.index()]);
     let held = |p: Point| around.place.is_some_and(|place| place.held(p));
-    // Three cells round: a thing outside a door stands two from the area,
-    // and whether it cuts the ground there is read a cell beyond.
-    let rect = area.bounds.inflate(3);
+    let rect = area.bounds.inflate(LOOK);
     let size = (rect.width * rect.height) as usize;
     let mut frame = Frame { rect, own: vec![false; size], rim: vec![false; size] };
     for c in &area.cells {
@@ -549,7 +586,7 @@ fn dress_area(
     for thing in &dressing.things {
         let mut cells = spread.cells(&frame, thing.at, &holding);
         if let Some(from) = thing.from_door {
-            cells = spread.keeping(cells, from, &holding);
+            cells = spread.keeping(&frame, cells, from, &holding);
         }
         cells.shuffle(rng);
         let want = match thing.count {
@@ -589,7 +626,7 @@ fn dress_area(
                     None => false,
                 };
                 let slot_at = |q: Point| held(q) || frame.at(q).is_some_and(|j| outside.contains(&j));
-                if !stands_clear_outside(frame.point(i), slot, clear, slot_at, around.place) {
+                if !stands_clear_outside(&frame, frame.point(i), slot, clear, slot_at, around.place) {
                     continue;
                 }
             }
@@ -629,36 +666,33 @@ fn beside(p: Point, q: Point) -> bool {
     (p.x - q.x).abs() <= 1 && (p.y - q.y).abs() <= 1
 }
 
-/// The eight cells round `p`, each straight beside the next and the last
-/// beside the first.
-fn ring(p: Point) -> [Point; 8] {
-    [(0, -1), (1, -1), (1, 0), (1, 1), (0, 1), (-1, 1), (-1, 0), (-1, -1)].map(|(dx, dy)| p.offset(dx, dy))
-}
-
 /// Whether a thing that blocks may stand on `p`, outside the area being
 /// dressed, with `clear` saying where a body may stand now and `slot_at`
 /// where a slot stands.
 ///
-/// Read on the cells round `p` alone: what `p` joins orthogonally it
-/// joins through its four straight neighbours, so if every clear cell of
-/// the eight round it is joined to the others round it, taking `p` parts
-/// nothing anywhere. Where a [`Place`] is known that is asked of `p`'s own
-/// area, its straight neighbours all of it, so neither that area nor the
-/// ground between areas is cut; and a slot on `p`, or one beside it,
-/// keeps a clear cell straight beside it to be reached from.
-fn stands_clear_outside(p: Point, slot: bool, clear: impl Fn(Point) -> bool, slot_at: impl Fn(Point) -> bool, place: Option<&Place>) -> bool {
+/// Read over `frame`: what `p` joins orthogonally it joins through its
+/// four straight neighbours, so if those that are clear still meet with
+/// `p` taken, by a way within the frame, taking `p` parts nothing. The
+/// frame reaches round an obstacle beside the way out, so a barrel by a
+/// door with a post two cells out still stands where the street goes
+/// round the post; a way that leaves the frame is not seen, which only
+/// refuses more. Where a [`Place`] is known that is asked of `p`'s own
+/// area, its straight neighbours all of it and the way between them too,
+/// so neither that area nor the ground between areas is cut; and a slot
+/// on `p`, or one beside it, keeps a clear cell straight beside it to be
+/// reached from.
+fn stands_clear_outside(frame: &Frame, p: Point, slot: bool, clear: impl Fn(Point) -> bool, slot_at: impl Fn(Point) -> bool, place: Option<&Place>) -> bool {
     let mine = place.and_then(|pl| pl.owner(p));
     let ours = |q: Point| clear(q) && place.and_then(|pl| pl.owner(q)) == mine;
     let straight = Direction::CARDINALS.map(|d| p + d.offset());
     if straight.iter().any(|q| clear(*q) && !ours(*q)) {
         return false;
     }
-    let ring = ring(p);
-    let runs = (0..8).filter(|&k| ours(ring[k]) && !ours(ring[(k + 7) % 8])).count();
-    if runs > 1 {
+    let joined: Vec<Point> = straight.iter().copied().filter(|q| ours(*q)).collect();
+    if !frame.meet(&joined, |q| q != p && ours(q)) {
         return false;
     }
-    if slot && !straight.iter().any(|q| ours(*q)) {
+    if slot && joined.is_empty() {
         return false;
     }
     straight.iter().filter(|q| slot_at(**q)).all(|q| Direction::CARDINALS.iter().map(|d| *q + d.offset()).any(|r| r != p && clear(r)))
@@ -676,6 +710,8 @@ struct Spreads {
     line: Vec<usize>,
     /// The cells [`Spread::OutsideDoor`] offers.
     outside: Vec<usize>,
+    /// The ways in, which every path is measured from.
+    ways: Vec<Point>,
 }
 
 impl Spreads {
@@ -707,18 +743,26 @@ impl Spreads {
         let touches = |p: Point| frame.own(p) || Direction::CARDINALS.iter().any(|d| frame.own(p + d.offset()));
         let ways: Vec<Point> = around.keep.iter().copied().filter(|k| frame.at(*k).is_some() && touches(*k)).collect();
         let doors: Vec<Point> = ways.iter().copied().filter(|w| !frame.own(*w)).collect();
-        Self { depth, path: Self::paths(frame, &ways), line: Self::line(frame, bounds, &ways), outside: Self::outside(frame, around, ground, &doors) }
+        Self {
+            depth,
+            path: Self::paths(frame, &ways, &[]),
+            line: Self::line(frame, bounds, &ways),
+            outside: Self::outside(frame, around, ground, &doors),
+            ways,
+        }
     }
 
     /// Each own cell's distance by path from `ways`, or from the rim where
-    /// there are none, as a mouth with no door is still a way in.
-    fn paths(frame: &Frame, ways: &[Point]) -> Vec<Option<u32>> {
+    /// there are none, as a mouth with no door is still a way in, stepping
+    /// round the cells of `standing`, which have none.
+    fn paths(frame: &Frame, ways: &[Point], standing: &[usize]) -> Vec<Option<u32>> {
         let size = frame.own.len();
         let mut path = vec![None; size];
         let mut queue: std::collections::VecDeque<(Point, u32)> = ways.iter().map(|w| (*w, 0)).collect();
         if queue.is_empty() {
             queue = (0..size).filter(|&i| frame.rim[i]).map(|i| (frame.point(i), 0)).collect();
         }
+        queue.retain(|(p, _)| frame.at(*p).is_none_or(|i| !standing.contains(&i)));
         for (p, _) in &queue {
             if let Some(i) = frame.at(*p).filter(|&i| frame.own[i]) {
                 path[i] = Some(0);
@@ -729,6 +773,7 @@ impl Spreads {
                 if let Some(j) = frame.at(p + dir.offset())
                     && frame.own[j]
                     && path[j].is_none()
+                    && !standing.contains(&j)
                 {
                     path[j] = Some(d + 1);
                     queue.push_back((frame.point(j), d + 1));
@@ -830,7 +875,7 @@ impl Spreads {
 
     /// Those of `cells` that keep as far from the openings as `from` asks,
     /// in the order given; all of them where the area has no opening.
-    fn keeping(&self, cells: Vec<usize>, from: FromDoor, holding: &[(char, usize)]) -> Vec<usize> {
+    fn keeping(&self, frame: &Frame, cells: Vec<usize>, from: FromDoor, holding: &[(char, usize)]) -> Vec<usize> {
         if self.path.iter().all(Option::is_none) {
             return cells;
         }
@@ -846,10 +891,14 @@ impl Spreads {
                 Some(&median) => keep(&|d| d >= median),
                 None => Vec::new(),
             },
-            FromDoor::Behind(g) => match holding.iter().filter(|(c, _)| *c == g).filter_map(|(_, i)| self.path[*i]).max() {
-                Some(front) => keep(&|d| d > front),
-                None => cells,
-            },
+            FromDoor::Behind(g) => {
+                let standing: Vec<usize> = holding.iter().filter(|(c, _)| *c == g).map(|(_, i)| *i).collect();
+                let Some(front) = standing.iter().filter_map(|&i| self.path[i]).max() else { return cells };
+                // Measured again with them standing, so a cell they
+                // stand between the door and is reached round them.
+                let round = Self::paths(frame, &self.ways, &standing);
+                cells.into_iter().filter(|&i| round[i].is_some_and(|d| d > front)).collect()
+            }
         }
     }
 }
@@ -1008,28 +1057,70 @@ mod tests {
         }
     }
 
-    /// Shelves behind a counter stand farther from the door, by path,
-    /// than any of the counter.
+    /// A shop's counter across and its shelves behind it, every shelf
+    /// along a wall.
+    fn shop() -> Dressing {
+        dressing(
+            "shop",
+            vec![slot('C', Spread::Across { gap: 1 }, 100), Thing { from_door: Some(FromDoor::Behind('C')), ..slot('S', Spread::Walls, 100) }],
+            None,
+        )
+    }
+
+    /// Shelves behind a counter stand farther from the door, by the path
+    /// round the counter through its gap, than any of the counter stands
+    /// by the path with nothing in the way.
     #[test]
     fn shelves_stand_behind_the_counter() {
         let (r, ..) = tiles();
         for s in 0..20 {
             let (mut terrain, cells, door) = house(&r, 9, 7);
-            let dist = from_door(&cells, door);
-            let far = |p: Point| dist.iter().find(|(q, _)| *q == p).unwrap().1;
-            let d = dressing(
-                "shop",
-                vec![slot('C', Spread::Across { gap: 1 }, 100), Thing { from_door: Some(FromDoor::Behind('C')), ..slot('S', Spread::Walls, 100) }],
-                None,
-            );
-            let marks = dress_room(&mut terrain, &r.tiles, &cells, &[door], &d, r.floor, &mut StdRng::seed_from_u64(s));
+            let marks = dress_room(&mut terrain, &r.tiles, &cells, &[door], &shop(), r.floor, &mut StdRng::seed_from_u64(s));
             let (counter, shelves) = (glyphs(&marks, 'C'), glyphs(&marks, 'S'));
             assert!(!counter.is_empty() && !shelves.is_empty(), "seed {s}: {marks:?}");
-            let front = counter.iter().map(|p| far(*p)).max().unwrap();
-            assert!(shelves.iter().all(|p| far(*p) > front), "seed {s}: a shelf no farther than the counter's {front}: {shelves:?}");
+            let bare = from_door(&cells, door);
+            let front = counter.iter().map(|p| bare.iter().find(|(q, _)| q == p).unwrap().1).max().unwrap();
+            let open: Vec<Point> = cells.iter().copied().filter(|p| !counter.contains(p)).collect();
+            let round = from_door(&open, door);
+            assert!(
+                shelves.iter().all(|p| round.iter().find(|(q, _)| q == p).unwrap().1 > front),
+                "seed {s}: a shelf no farther round the counter than its {front}: {shelves:?}"
+            );
             let stood: Vec<Point> = counter.iter().chain(&shelves).copied().collect();
             assert_eq!(regions(&cells, &stood), 1, "seed {s}: the room was cut");
         }
+    }
+
+    /// A room four across and six down, its door at the foot of its west
+    /// wall: the counter runs down it with its gap above the door's row,
+    /// its top end in the far corner from the door. The cells behind it
+    /// on the door's side of the gap are near the door with nothing
+    /// standing, yet a body walks round through the gap to reach them, so
+    /// they are behind the counter and shelves stand along the east wall
+    /// there too.
+    #[test]
+    fn shelves_stand_all_along_the_far_wall_behind_a_counter_that_ends_in_the_far_corner() {
+        let (r, ..) = tiles();
+        let bounds = GridRect::new(3, 3, 4, 6);
+        let door = Point::new(2, 8);
+        let mut low = 0;
+        for s in 0..20 {
+            let mut terrain = Terrain::from_fn(10, 12, |p| if bounds.contains(p) || p == door.offset(-1, 0) { r.floor } else { r.wall });
+            terrain.set(door, r.door);
+            let cells: Vec<Point> = bounds.cells().collect();
+            let marks = dress_room(&mut terrain, &r.tiles, &cells, &[door], &shop(), r.floor, &mut StdRng::seed_from_u64(s));
+            let (counter, shelves) = (glyphs(&marks, 'C'), glyphs(&marks, 'S'));
+            assert!(
+                counter.iter().all(|p| p.x == 4) && !counter.contains(&Point::new(4, 5)),
+                "seed {s}: the counter runs down x 4 with its gap at y 5: {counter:?}"
+            );
+            assert!(shelves.iter().all(|p| p.x >= 5), "seed {s}: a shelf before the counter: {shelves:?}");
+            assert!(!shelves.contains(&Point::new(5, 5)), "seed {s}: the way behind the gap is clear: {shelves:?}");
+            low += shelves.iter().filter(|p| p.x == 6 && p.y >= 6).count();
+            let stood: Vec<Point> = counter.iter().chain(&shelves).copied().collect();
+            assert_eq!(regions(&cells, &stood), 1, "seed {s}: the room was cut");
+        }
+        assert!(low > 0, "no shelf on the east wall below the gap");
     }
 
     /// A room with a street two cells wide outside its door, along the top
@@ -1061,6 +1152,29 @@ mod tests {
                 assert!(terrain.get(*p).is_some_and(|t| walkable[t.index()]), "seed {s}: a barrel on no ground at {p:?}");
             }
             assert_eq!(barrels.len(), 2, "seed {s}: both sides of the way out: {barrels:?}");
+        }
+    }
+
+    /// Outside a door on a street three cells wide with a pillar two cells
+    /// straight out from the door, a barrel flanking the way out leaves
+    /// the cell before the door joined to the street round the pillar, so
+    /// one is laid; the second would shut that cell in with the door.
+    #[test]
+    fn a_barrel_stands_outside_a_door_with_a_pillar_two_out() {
+        let (r, pillar, _) = tiles();
+        let bounds = GridRect::new(2, 6, 7, 5);
+        let door = Point::new(5, 5);
+        let street = GridRect::new(0, 2, 13, 3);
+        let cells: Vec<Point> = bounds.cells().collect();
+        for s in 0..20 {
+            let mut terrain = Terrain::from_fn(13, 14, |p| if bounds.contains(p) || street.contains(p) { r.floor } else { r.wall });
+            terrain.set(door, r.door);
+            terrain.set(door.offset(0, -2), pillar);
+            let d = dressing("store", vec![slot('b', Spread::OutsideDoor, 100)], None);
+            let marks = dress_room(&mut terrain, &r.tiles, &cells, &[door], &d, r.floor, &mut StdRng::seed_from_u64(s));
+            let barrels = glyphs(&marks, 'b');
+            assert_eq!(barrels.len(), 1, "seed {s}: one side of the way out: {barrels:?}");
+            assert!([door.offset(-1, -1), door.offset(1, -1)].contains(&barrels[0]), "seed {s}: {barrels:?}");
         }
     }
 
