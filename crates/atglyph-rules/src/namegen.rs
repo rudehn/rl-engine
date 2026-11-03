@@ -168,37 +168,17 @@ impl NameSet {
     }
 
     /// Whether `name` passes this set's rejections: inside its length in
-    /// characters, counted as cased; no space at either end or two
-    /// together; no character three times running; no pair repeated back
-    /// to back, `abab`; no run of three characters seen again later,
-    /// `karkar`; no word given twice, `Lo Lo`, which the runs miss when the
-    /// word is short; and none of its forbidden substrings. Everything but
-    /// the length is compared lowercased, so case never hides a repeat.
+    /// characters, counted as cased; and none of its forbidden substrings,
+    /// compared lowercased, so case never hides one. The rest is
+    /// [`reads_well`], which a name put together outside a set is held to
+    /// as well.
     pub fn accepts(&self, name: &str) -> bool {
         let (fewest, most) = self.length;
         if !(fewest..=most).contains(&name.chars().count()) {
             return false;
         }
         let lower = name.to_lowercase();
-        let chars: Vec<char> = lower.chars().collect();
-        if chars.first() == Some(&' ') || chars.last() == Some(&' ') || chars.windows(2).any(|w| w == [' ', ' ']) {
-            return false;
-        }
-        if chars.windows(3).any(|w| w[0] == w[1] && w[1] == w[2]) {
-            return false;
-        }
-        if chars.windows(4).any(|w| w[0] == w[2] && w[1] == w[3]) {
-            return false;
-        }
-        let runs: Vec<&[char]> = chars.windows(3).collect();
-        if runs.iter().enumerate().any(|(i, run)| runs[i + 1..].contains(run)) {
-            return false;
-        }
-        let words: Vec<&str> = lower.split(' ').collect();
-        if words.iter().enumerate().any(|(i, word)| words[i + 1..].contains(word)) {
-            return false;
-        }
-        !self.forbid.iter().any(|f| lower.contains(f.as_str()))
+        reads_well(name) && !self.forbid.iter().any(|f| lower.contains(f.as_str()))
     }
 
     /// One name put together and cased, before any rejection.
@@ -398,6 +378,33 @@ fn resolve(file: SetFile, wrong: &mut impl FnMut(String)) -> Option<NameSet> {
     Some(NameSet { pools, patterns, total: total as u32, case, length: (fewest, most), forbid })
 }
 
+/// Whether `name` reads well, whatever set it came from: no space at either
+/// end or two together; no character three times running; no pair repeated
+/// back to back, `abab`; no run of three characters seen again later,
+/// `karkar`; and no word given twice, `Lo Lo`, which the runs miss when the
+/// word is short. Compared lowercased, so case never hides a repeat. A
+/// name a game puts together from two of a book's sets is held to this
+/// too, since the sets' own length and forbidden substrings are not its.
+pub fn reads_well(name: &str) -> bool {
+    let lower = name.to_lowercase();
+    let chars: Vec<char> = lower.chars().collect();
+    if chars.first() == Some(&' ') || chars.last() == Some(&' ') || chars.windows(2).any(|w| w == [' ', ' ']) {
+        return false;
+    }
+    if chars.windows(3).any(|w| w[0] == w[1] && w[1] == w[2]) {
+        return false;
+    }
+    if chars.windows(4).any(|w| w[0] == w[2] && w[1] == w[3]) {
+        return false;
+    }
+    let runs: Vec<&[char]> = chars.windows(3).collect();
+    if runs.iter().enumerate().any(|(i, run)| runs[i + 1..].contains(run)) {
+        return false;
+    }
+    let words: Vec<&str> = lower.split(' ').collect();
+    !words.iter().enumerate().any(|(i, word)| words[i + 1..].contains(word))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -560,5 +567,14 @@ mod tests {
         for kept in ["kamer", "ka mer", "Tavik"] {
             assert!(set.accepts(kept), "{kept:?} should be kept");
         }
+    }
+
+    #[test]
+    fn a_name_put_together_elsewhere_is_held_to_the_same_rejections() {
+        assert!(reads_well("Ashford"));
+        assert!(!reads_well("Gullley"), "three of a letter running");
+        assert!(!reads_well("Karkar"), "a run of three seen again");
+        assert!(!reads_well("Lo Lo"), "a word given twice");
+        assert!(!reads_well(" Ashford"), "a stray space");
     }
 }

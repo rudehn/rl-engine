@@ -19,6 +19,7 @@ atglyph is not on crates.io yet, so a game depends on a release by its git tag, 
 - `RangeRules::check` names every divisor under one and multiplier under nought, and `StealthPlugin::by_range` refuses rules that fail it, naming each; a multiplier too large for a range saturates.
 - Cover: a tile may be `cover: true` in a tiles file, `TileProps::cover` and `TileTables::cover`, for a rule that makes an actor standing in it harder to notice.
 - Stealth by range: `StealthPlugin::by_range(RangeRules)` judges noticing by the subject's own `StealthRange`, within which anything not allied may notice it by the game's chance a turn and beyond which nothing does, an alert observer holding it in view within `hold` times the range; the plugin gives every actor a range at the base and every mind an `Aware` as each appears, and a neutral is hidden from a mind's others until noticed. `Hides` marks whatever can hide under either rule. Each `StealthRange` is worked out every turn from the actor's `LastDeed` and where it stands: waiting divides it, attacking multiplies it, the dark band and cover each divide it.
+- `namegen::reads_well` holds a name put together outside a set to a set's rejections.
 
 ### Changed
 
