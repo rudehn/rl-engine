@@ -120,7 +120,7 @@ pub use carve::{Aggregate, DrunkardsWalk, Origin};
 pub use cave::Cave;
 pub use chain::{BuildError, Chain, Pass, Phase};
 pub use context::{BaseContext, Outputs};
-pub use dress::{DistrictDressings, Dress, Dressed, Dressing};
+pub use dress::{DistrictDressings, Dress, Dressed, Dressing, dress_room};
 pub use lakes::{Bridge, Bridges, Lake, Lakes};
 pub use loops::OpenLoops;
 pub use place::{Climb, Ladder, LadderEnd, LadderStair, Lock, MapId, PlaceBuild, PlaceRules, Spot, StairLook, Streamed};

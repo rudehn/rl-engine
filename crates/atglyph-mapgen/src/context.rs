@@ -139,6 +139,19 @@ impl BaseContext {
         self.rng.as_mut().expect("a pass drew from its context before a stream was installed: run it in a Chain, or hand it one with set_rng from RunSeed::rng")
     }
 
+    /// The terrain, the tile registry and the stream together, for a pass
+    /// that works on the terrain and draws from the stream at once.
+    ///
+    /// # Panics
+    /// When nothing has installed a stream yet.
+    pub(crate) fn dressing_parts(&mut self) -> (&mut Terrain, &TileRegistry, &mut StdRng) {
+        let rng = self
+            .rng
+            .as_mut()
+            .expect("a pass drew from its context before a stream was installed: run it in a Chain, or hand it one with set_rng from RunSeed::rng");
+        (&mut self.terrain, &self.tiles, rng)
+    }
+
     /// Installs the stream for the pass about to run.
     pub fn set_rng(&mut self, rng: StdRng) {
         self.rng = Some(rng);

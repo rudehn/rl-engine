@@ -22,7 +22,7 @@
 //! after it published.
 
 use atglyph_core::{Direction, GridRect, Point};
-use atglyph_grid::TileId;
+use atglyph_grid::{Terrain, TileId, TileRegistry};
 use rand::Rng;
 use rand::seq::SliceRandom;
 
@@ -248,7 +248,8 @@ impl Pass for Dress {
         for (index, dressing) in laid {
             let area = areas.iter().find(|a| a.index == index).expect("checked above");
             let d = &self.dressings[dressing];
-            let marks = dress_area(ctx, area, d, &keep, self.floor);
+            let (terrain, tiles, rng) = ctx.dressing_parts();
+            let marks = dress_area(terrain, tiles, rng, area, d, &keep, self.floor);
             for (glyph, at) in marks {
                 ctx.emit(Stamped { bounds: GridRect::new(at.x, at.y, 1, 1), marks: vec![(glyph, at)], prefab: d.key });
             }
@@ -333,19 +334,50 @@ impl Frame {
     }
 }
 
+/// Lays `dressing` on the cells of one room of `terrain`, with no chain
+/// to run it, and returns its slots as the glyph and cell of each.
+///
+/// `cells` are the room's floor and `openings` its doors, or any other way
+/// in: by the two rules [`Dress`] keeps, nothing stands on or beside an
+/// opening, and nothing is laid that cuts the room in more pieces than it
+/// was or leaves a slot with no open cell straight beside it. Things are
+/// drawn from `rng`, and `floor` is the plain floor a tile is laid over.
+pub fn dress_room(
+    terrain: &mut Terrain,
+    tiles: &TileRegistry,
+    cells: &[Point],
+    openings: &[Point],
+    dressing: &Dressing,
+    floor: TileId,
+    rng: &mut impl Rng,
+) -> Vec<(char, Point)> {
+    let Some(first) = cells.first() else { return Vec::new() };
+    let bounds = cells.iter().fold(GridRect::new(first.x, first.y, 1, 1), |b, c| b.union(&GridRect::new(c.x, c.y, 1, 1)));
+    let area = Area { index: 0, shape: String::new(), district: String::new(), cells: cells.to_vec(), bounds, inner: bounds, entries: None };
+    dress_area(terrain, tiles, rng, &area, dressing, openings, floor)
+}
+
 /// Lays `dressing` in `area` and repaints it, and returns its slots as
-/// marks: each thing on a cell its spread offers, drawn from the pass's
-/// stream, never on or beside a cell of `keep` or a way out of the area,
-/// and never one that leaves the area in more regions than before or that
-/// leaves a slot with no open cell straight beside it.
-fn dress_area(ctx: &mut BaseContext, area: &Area, dressing: &Dressing, keep: &[Point], floor: TileId) -> Vec<(char, Point)> {
-    let walkable = ctx.tiles().tables().walkable;
-    let walk = |ctx: &BaseContext, p: Point| ctx.terrain().get(p).is_some_and(|t| walkable[t.index()]);
+/// marks: each thing on a cell its spread offers, drawn from `rng`, never
+/// on or beside a cell of `keep` or a way out of the area, and never one
+/// that leaves the area in more regions than before or that leaves a slot
+/// with no open cell straight beside it.
+fn dress_area(
+    terrain: &mut Terrain,
+    tiles: &TileRegistry,
+    rng: &mut impl Rng,
+    area: &Area,
+    dressing: &Dressing,
+    keep: &[Point],
+    floor: TileId,
+) -> Vec<(char, Point)> {
+    let walkable = tiles.tables().walkable;
+    let walk = |terrain: &Terrain, p: Point| terrain.get(p).is_some_and(|t| walkable[t.index()]);
     let rect = area.bounds.inflate(1);
     let size = (rect.width * rect.height) as usize;
     let mut frame = Frame { rect, own: vec![false; size], rim: vec![false; size] };
     for c in &area.cells {
-        if walk(ctx, *c)
+        if walk(terrain, *c)
             && let Some(i) = frame.at(*c)
         {
             frame.own[i] = true;
@@ -353,7 +385,7 @@ fn dress_area(ctx: &mut BaseContext, area: &Area, dressing: &Dressing, keep: &[P
     }
     for i in 0..size {
         let p = frame.point(i);
-        frame.rim[i] = !frame.own[i] && walk(ctx, p) && Direction::CARDINALS.iter().any(|d| frame.own(p + d.offset()));
+        frame.rim[i] = !frame.own[i] && walk(terrain, p) && Direction::CARDINALS.iter().any(|d| frame.own(p + d.offset()));
     }
     // Beside: any of the eight cells round, so nothing stands even
     // corner-on to a doorway.
@@ -375,7 +407,7 @@ fn dress_area(ctx: &mut BaseContext, area: &Area, dressing: &Dressing, keep: &[P
     let mut slots: Vec<usize> = Vec::new();
     for thing in &dressing.things {
         let mut cells = spread.cells(&frame, thing.at);
-        cells.shuffle(ctx.rng());
+        cells.shuffle(rng);
         let want = (cells.len() * thing.density_pct as usize + 50) / 100;
         let blocks = match thing.stands {
             Stand::Tile(t) => !walkable[t.index()],
@@ -389,7 +421,7 @@ fn dress_area(ctx: &mut BaseContext, area: &Area, dressing: &Dressing, keep: &[P
             // A tile is laid only over the plain floor, so it never
             // paints out a shore, a bridge or a tile another pass laid;
             // a slot only marks its cell, so it may stand on any of them.
-            let painted = matches!(thing.stands, Stand::Tile(_)) && ctx.terrain().get(frame.point(i)) != Some(floor);
+            let painted = matches!(thing.stands, Stand::Tile(_)) && terrain.get(frame.point(i)) != Some(floor);
             if taken[i] || near[i] || painted {
                 continue;
             }
@@ -409,7 +441,7 @@ fn dress_area(ctx: &mut BaseContext, area: &Area, dressing: &Dressing, keep: &[P
             let p = frame.point(i);
             match thing.stands {
                 Stand::Tile(t) => {
-                    ctx.terrain_mut().set(p, t);
+                    terrain.set(p, t);
                 }
                 Stand::Slot => {
                     slots.push(i);
@@ -419,11 +451,11 @@ fn dress_area(ctx: &mut BaseContext, area: &Area, dressing: &Dressing, keep: &[P
         }
     }
     if let Some((tile, pct)) = dressing.repaint {
-        let mut bare: Vec<usize> = (0..size).filter(|&i| frame.own[i] && !taken[i] && ctx.terrain().get(frame.point(i)) == Some(floor)).collect();
-        bare.shuffle(ctx.rng());
+        let mut bare: Vec<usize> = (0..size).filter(|&i| frame.own[i] && !taken[i] && terrain.get(frame.point(i)) == Some(floor)).collect();
+        bare.shuffle(rng);
         let want = (bare.len() * pct as usize + 50) / 100;
         for i in bare.into_iter().take(want) {
-            ctx.terrain_mut().set(frame.point(i), tile);
+            terrain.set(frame.point(i), tile);
         }
     }
     marks
@@ -505,6 +537,8 @@ mod tests {
     use crate::testing::{first_seeds, par_seeds};
     use atglyph_core::{Grid2D, RunSeed};
     use atglyph_grid::{CostSource, DijkstraMap, PathRules, TileProps};
+    use rand::SeedableRng;
+    use rand::rngs::StdRng;
     use std::collections::BTreeSet;
     use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
 
@@ -615,6 +649,39 @@ mod tests {
             }
         }
         count
+    }
+
+    /// A room dressed with no chain: the dressing lands on the room's own
+    /// cells and keeps off its door.
+    #[test]
+    fn a_room_is_dressed_on_its_own_without_a_chain() {
+        let (r, ..) = tiles();
+        let ctx = room(&r, 7, 5);
+        let cells: Vec<Point> = GridRect::new(2, 3, 7, 5).cells().collect();
+        let door = Point::new(2 + 7 / 2, 2);
+        let mut terrain = ctx.terrain().clone();
+        let d = dressing("beds", vec![slot('b', Spread::Walls, 100)], None);
+        let marks = dress_room(&mut terrain, &r.tiles, &cells, &[door], &d, r.floor, &mut StdRng::seed_from_u64(1));
+        assert!(!marks.is_empty());
+        assert!(marks.iter().all(|&(g, p)| g == 'b' && cells.contains(&p)));
+        assert!(marks.iter().all(|&(_, p)| (p.x - door.x).abs().max((p.y - door.y).abs()) > 1), "nothing on or beside the door");
+    }
+
+    /// A room dressed with things that block is never left in pieces.
+    #[test]
+    fn a_dressed_room_is_never_cut_in_two() {
+        let (r, pillar, _) = tiles();
+        for s in 0..20 {
+            let ctx = room(&r, 5, 3);
+            let cells: Vec<Point> = GridRect::new(2, 3, 5, 3).cells().collect();
+            let door = Point::new(2 + 5 / 2, 2);
+            let mut terrain = ctx.terrain().clone();
+            let d = dressing("junk", vec![Thing { glyph: 'x', stands: Stand::Tile(pillar), at: Spread::Scatter, density_pct: 100 }], None);
+            dress_room(&mut terrain, &r.tiles, &cells, &[door], &d, r.floor, &mut StdRng::seed_from_u64(s));
+            let blocked: Vec<Point> = cells.iter().copied().filter(|&c| terrain.get(c) == Some(pillar)).collect();
+            assert!(!blocked.is_empty(), "seed {s}: nothing was laid");
+            assert_eq!(regions(&cells, &blocked), 1, "seed {s}: the room was cut: {blocked:?}");
+        }
     }
 
     /// One dressing fills a small room and a hall each to its density:
