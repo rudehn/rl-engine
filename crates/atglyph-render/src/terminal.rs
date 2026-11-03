@@ -133,7 +133,18 @@ impl Plugin for TerminalPlugin {
             // no order against them could be drawn a frame late.
             .add_systems(Startup, draw_art)
             .add_systems(PreUpdate, (relayout, redraw_art, crate::pointer::track_pointer).chain())
-            .add_systems(PostUpdate, (spawn_pictures, draw_art_for_runs, flush_terminal).chain());
+            // And the cells reach the screen before Bevy lays the new text
+            // out, works out what is shown and moves what moved: a flush in
+            // no order against those drew the new colour on the old glyph
+            // for a frame.
+            .add_systems(
+                PostUpdate,
+                (spawn_pictures, draw_art_for_runs, flush_terminal)
+                    .chain()
+                    .before(bevy::sprite::update_text2d_layout)
+                    .before(bevy::camera::visibility::VisibilitySystems::VisibilityPropagate)
+                    .before(bevy::transform::TransformSystems::Propagate),
+            );
     }
 }
 
@@ -711,6 +722,45 @@ mod tests {
 
     fn terminal() -> Terminal {
         Terminal::new(8, 4, Vec2::new(10.0, 20.0))
+    }
+
+    /// The cells reach the screen before Bevy lays their text out, works
+    /// out what is shown and moves what moved, all late in `PostUpdate`:
+    /// a flush in no order against them was drawn half a frame late, the
+    /// new colour on the old glyph, so a step left last frame's tiles
+    /// standing in white for a frame where nothing is to be seen now.
+    #[test]
+    fn the_cells_are_flushed_before_bevy_lays_out_text_shows_or_moves_anything() {
+        use bevy::camera::visibility::VisibilitySystems;
+        use bevy::ecs::schedule::Schedules;
+        use bevy::transform::TransformSystems;
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins).add_plugins(TerminalPlugin::new(8, 4, Vec2::new(10.0, 20.0), 16.0));
+        // Bevy's text layout itself, and a stand-in in each of the sets that
+        // read what is shown and where: the schedule is only built, never run.
+        fn shown(_: Query<&Visibility>) {}
+        fn moved(_: Query<&Transform>) {}
+        app.add_systems(
+            PostUpdate,
+            (bevy::sprite::update_text2d_layout, shown.in_set(VisibilitySystems::VisibilityPropagate), moved.in_set(TransformSystems::Propagate)),
+        );
+        let flush = IntoSystem::into_system(flush_terminal).system_type();
+        let world = app.world_mut();
+        let mut schedule = world.resource_mut::<Schedules>().remove(PostUpdate).expect("PostUpdate");
+        schedule.initialize(world).expect("PostUpdate builds");
+        {
+            let names: Vec<_> = schedule.systems().expect("built").map(|(key, s)| (key, s.system_type(), s.name().to_string())).collect();
+            let of = |k| names.iter().find(|(key, _, _)| *key == k).expect("a system").clone();
+            let unordered: Vec<String> = schedule
+                .graph()
+                .conflicting_systems()
+                .iter()
+                .map(|(a, b, _)| (of(*a), of(*b)))
+                .filter(|(a, b)| a.1 == flush || b.1 == flush)
+                .map(|(a, b)| format!("{} and {}", a.2, b.2))
+                .collect();
+            assert!(unordered.is_empty(), "the flush runs in no order against {unordered:?}");
+        }
     }
 
     #[test]

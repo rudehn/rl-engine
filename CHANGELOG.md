@@ -40,6 +40,7 @@ atglyph is not on crates.io yet, so a game depends on a release by its git tag, 
 
 ### Fixed
 
+- The terminal's cells reach the screen before Bevy lays the new text out, works out what is shown and moves what moved in `PostUpdate`, so a step no longer leaves last frame's glyphs standing in the new colour for a frame, white where a cell turned blank, nor a picture where it was.
 - A herd member standing on its herd's middle steps off it, as its `no_closer_than` says, rather than asking for a field and then doing nothing.
 
 ## [0.5.0] - 2026-10-29
