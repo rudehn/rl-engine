@@ -78,6 +78,7 @@
 //! The values a content file writes, a [`Rotation`](prefab::Rotation), a
 //! [`Mirror`](prefab::Mirror), a [`Placement`](prefab::Placement), a
 //! [`Prefer`], a [`Stairs`](dungeon::Stairs), a [`Spread`](dress::Spread),
+//! a [`FromDoor`](dress::FromDoor),
 //! a [`DistrictDressings`] and a [`Barrier`], deserialize, so `atglyph-rules` reads its files
 //! straight into them rather than into copies it would translate; this
 //! crate reads no file itself.
@@ -152,7 +153,7 @@ pub mod prelude {
 mod tests {
     use super::*;
     use atglyph_core::Point;
-    use dress::Spread;
+    use dress::{FromDoor, Spread};
     use dungeon::Stairs;
     use prefab::{Mirror, Placement, Rotation};
 
@@ -185,9 +186,19 @@ mod tests {
             ]
         );
         assert_eq!(
-            read::<Vec<Spread>>("[Walls, Corners, Center, Rows(aisle: 2), Scatter]"),
-            [Spread::Walls, Spread::Corners, Spread::Center, Spread::Rows { aisle: 2 }, Spread::Scatter]
+            read::<Vec<Spread>>("[Walls, Corners, Center, Rows(aisle: 2), Scatter, Beside('T'), Across(gap: 1), OutsideDoor]"),
+            [
+                Spread::Walls,
+                Spread::Corners,
+                Spread::Center,
+                Spread::Rows { aisle: 2 },
+                Spread::Scatter,
+                Spread::Beside('T'),
+                Spread::Across { gap: 1 },
+                Spread::OutsideDoor
+            ]
         );
+        assert_eq!(read::<Vec<FromDoor>>("[Near, Far, Behind('C')]"), [FromDoor::Near, FromDoor::Far, FromDoor::Behind('C')]);
         let list: DistrictDressings = read(r#"(district: "halls", dressings: [("dust", 1)])"#);
         assert_eq!(list, DistrictDressings::new("halls", vec![("dust".into(), 1)]), "nothing is 0 when left out");
         assert!(ron::from_str::<DistrictDressings>(r#"(district: "halls", dressings: [], extra: 1)"#).is_err(), "an unknown field");

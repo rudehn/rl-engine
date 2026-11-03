@@ -7,7 +7,10 @@
 //! walls, in the corners, in the center, in rows with aisles between, or
 //! scattered, at a share of the cells that rule offers, with a share of
 //! the floor repainted. One dressing then dresses a small room, a long
-//! hall and a cave alike.
+//! hall and a cave alike. A house asks more: an exact count, one hearth
+//! however big the room, a place near or far from the door or behind
+//! another thing ([`FromDoor`]), beside another thing, a line across the
+//! room with a gap, as a shop's counter, or just outside the door.
 //!
 //! A dressing file is a list of [`DressingDef`], read once by [`load`],
 //! which resolves every name its legends carry exactly as a prefab's load
@@ -54,6 +57,7 @@
 //! //   every rule places a glyph of the legend.
 //! //   place:   the rules, laid in this order, each
 //! //     (glyph: 'c', at: Walls, density_pct: 30)
+//! //     (glyph: 'h', at: Walls, count: 1, from_door: Far)
 //! //   with at one of
 //! //     Walls              a cell with a wall straight beside it, not a
 //! //                        corner
@@ -63,8 +67,27 @@
 //! //                        from its walls, with aisle cells clear between
 //! //                        two lines; aisle is 1 or more
 //! //     Scatter            any cell of the area
-//! //   and density_pct the share in a hundred, 1 to 100, of the cells the
-//! //   rule offers that it fills
+//! //     Beside('t')        a cell straight beside one an earlier rule
+//! //                        laid 't' on
+//! //     Across(gap: 1)     one line across the area through its middle,
+//! //                        square to the way in from the nearest opening,
+//! //                        with gap cells open at its middle; gap is 1 or
+//! //                        more
+//! //     OutsideDoor        a cell outside the area flanking the way out of
+//! //                        an opening, never the cell straight out from it
+//! //   and how many, exactly one of
+//! //     density_pct: 30    the share in a hundred, 1 to 100, of the cells
+//! //                        the rule offers that it fills
+//! //     count: 1           that many, or count: (fewest, most), drawn
+//! //                        between; most is 1 or more, fewest no more than
+//! //                        most; fewer where the cells run out
+//! //   and optionally from_door, by the path in from the nearest opening:
+//! //     Near               the nearer half of the cells the rule offers
+//! //     Far                the farther half
+//! //     Behind('t')        the cells farther than every cell an earlier
+//! //                        rule laid 't' on
+//! //   from_door is refused with OutsideDoor; Beside and Behind name a glyph
+//! //   an earlier rule places
 //! //   repaint: optional; (tile, pct): this share in a hundred, 1 to 100,
 //! //            of the area's floor left clear is repainted with the tile,
 //! //            which must be one a body can stand on
@@ -75,10 +98,14 @@
 //!         legend: {
 //!             'b': Prop("cot"),
 //!             'w': Item(tag: "weapon", band: 1),
+//!             'h': Prop("hearth"),
+//!             's': Prop("stool"),
 //!         },
 //!         place: [
+//!             (glyph: 'h', at: Walls, count: 1, from_door: Far),
 //!             (glyph: 'b', at: Walls, density_pct: 40),
 //!             (glyph: 'w', at: Corners, density_pct: 50),
+//!             (glyph: 's', at: Beside('b'), count: (0, 2)),
 //!         ],
 //!         repaint: ("rubble", 10),
 //!     ),
@@ -105,7 +132,7 @@ use crate::names::Names;
 use crate::pool::Pool;
 use crate::prefab::{Legend, LegendRon, Legended, read_legend};
 use atglyph_mapgen::DistrictDressings;
-use atglyph_mapgen::dress::{Spread, Stand, Thing};
+use atglyph_mapgen::dress::{FromDoor, Spread, Stand, Thing};
 
 /// A dressing, as its file says it.
 pub struct DressingDef<M> {
@@ -156,15 +183,38 @@ struct DressingRon {
     repaint: Option<(String, u32)>,
 }
 
-/// One rule as authored: a glyph, where it goes, and how much of it, the
-/// share in a hundred of the cells `at` offers, so a hall gets more than a
-/// closet from one rule. What the glyph stands as is its legend's.
+/// One rule as authored: a glyph, where it goes, and how much of it,
+/// either the share in a hundred of the cells `at` offers, so a hall gets
+/// more than a closet from one rule, or a count, so a room of any size
+/// gets one hearth. What the glyph stands as is its legend's.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ThingRon {
     glyph: char,
     at: Spread,
-    density_pct: u32,
+    #[serde(default)]
+    density_pct: Option<u32>,
+    #[serde(default)]
+    count: Option<CountRon>,
+    #[serde(default)]
+    from_door: Option<FromDoor>,
+}
+
+/// A count as authored: `n`, or `(fewest, most)`.
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum CountRon {
+    Exactly(u32),
+    Between(u32, u32),
+}
+
+impl CountRon {
+    fn range(&self) -> (u32, u32) {
+        match *self {
+            CountRon::Exactly(n) => (n, n),
+            CountRon::Between(fewest, most) => (fewest, most),
+        }
+    }
 }
 
 /// Loads a dressing file, resolving every name in every legend through
@@ -173,9 +223,13 @@ struct ThingRon {
 ///
 /// Reports every problem in the file at once: whatever a prefab's legend
 /// refuses, an entry, a glyph placed that the legend does not hold or
-/// held and never placed, a density outside 1 to 100, rows with no aisle,
-/// a repaint tile unknown or one nothing can stand on or a share outside
-/// 1 to 100, a dressing that lays nothing, and two dressings of one name.
+/// held and never placed, a rule giving both a density and a count or
+/// neither, a density outside 1 to 100, a count of at most nought or with
+/// its fewest above its most, rows with no aisle, a line across with no
+/// gap, a distance from the door outside it, beside or behind a glyph no
+/// earlier rule places, a repaint tile unknown or one nothing can stand
+/// on or a share outside 1 to 100, a dressing that lays nothing, and two
+/// dressings of one name.
 pub fn load<M: 'static>(text: &str, tiles: &TileRegistry, names: &Names<'_>) -> Result<Registry<DressingDef<M>>, ContentError> {
     let options = ron::options::Options::default().with_default_extension(ron::extensions::Extensions::IMPLICIT_SOME);
     let all: Vec<DressingRon> = options.from_str(text).map_err(|e| ContentError::Parse(e.to_string()))?;
@@ -195,16 +249,46 @@ pub fn load<M: 'static>(text: &str, tiles: &TileRegistry, names: &Names<'_>) -> 
                 errors.push(format!("{name}: '{c}' is in the legend and placed by no rule"));
             }
         }
-        for t in &d.place {
+        for (k, t) in d.place.iter().enumerate() {
             let c = t.glyph;
             if !d.legend.contains_key(&c) {
                 errors.push(format!("{name}: '{c}' is placed and is not in the legend"));
             }
-            if !(1..=100).contains(&t.density_pct) {
-                errors.push(format!("{name}: '{c}' at {:?} fills {}% of its cells, and a density is a share in a hundred from 1 to 100", t.at, t.density_pct));
+            match (t.density_pct, &t.count) {
+                (Some(_), Some(_)) => {
+                    errors.push(format!("{name}: '{c}' at {:?} gives both a density_pct and a count, and a rule lays by one or the other", t.at))
+                }
+                (None, None) => errors.push(format!("{name}: '{c}' at {:?} gives neither a density_pct nor a count, so it lays nothing", t.at)),
+                (Some(pct), None) if !(1..=100).contains(&pct) => {
+                    errors.push(format!("{name}: '{c}' at {:?} fills {pct}% of its cells, and a density is a share in a hundred from 1 to 100", t.at));
+                }
+                (None, Some(count)) => match count.range() {
+                    (_, 0) => errors.push(format!("{name}: '{c}' at {:?} lays at most 0, so it lays nothing", t.at)),
+                    (fewest, most) if fewest > most => {
+                        errors.push(format!("{name}: '{c}' at {:?} counts from {fewest} to {most}, and the fewest is above the most", t.at));
+                    }
+                    _ => {}
+                },
+                _ => {}
             }
-            if t.at == (Spread::Rows { aisle: 0 }) {
-                errors.push(format!("{name}: '{c}' is laid in rows with no aisle between them, which is a block"));
+            match t.at {
+                Spread::Rows { aisle: 0 } => errors.push(format!("{name}: '{c}' is laid in rows with no aisle between them, which is a block")),
+                Spread::Across { gap: 0 } => errors.push(format!("{name}: '{c}' is laid across the room with no gap in its line, which cuts the room in two")),
+                Spread::OutsideDoor if t.from_door.is_some() => {
+                    errors.push(format!("{name}: '{c}' is laid outside the door and keeps a distance from it, and a cell outside is no distance in"));
+                }
+                _ => {}
+            }
+            let earlier = |g: char| d.place[..k].iter().any(|e| e.glyph == g);
+            if let Spread::Beside(g) = t.at
+                && !earlier(g)
+            {
+                errors.push(format!("{name}: '{c}' stands beside '{g}', which no earlier rule places"));
+            }
+            if let Some(FromDoor::Behind(g)) = t.from_door
+                && !earlier(g)
+            {
+                errors.push(format!("{name}: '{c}' stands behind '{g}', which no earlier rule places"));
             }
         }
         let repaint = match &d.repaint {
@@ -232,7 +316,14 @@ pub fn load<M: 'static>(text: &str, tiles: &TileRegistry, names: &Names<'_>) -> 
         let things = d
             .place
             .iter()
-            .map(|t| Thing { glyph: t.glyph, stands: legend.tile(t.glyph).map_or(Stand::Slot, Stand::Tile), at: t.at, density_pct: t.density_pct })
+            .map(|t| Thing {
+                glyph: t.glyph,
+                stands: legend.tile(t.glyph).map_or(Stand::Slot, Stand::Tile),
+                at: t.at,
+                density_pct: if t.count.is_some() { 0 } else { t.density_pct.unwrap_or(0) },
+                count: t.count.as_ref().map(CountRon::range),
+                from_door: t.from_door,
+            })
             .collect();
         defs.push(DressingDef { name: d.name, legend, things, repaint });
     }
@@ -395,6 +486,107 @@ mod tests {
         says("empty: lays nothing");
         says("two dressings are named \"empty\"");
         says("empty: repaints with unknown tile \"nowhere\"");
+    }
+
+    /// Every rule a house is furnished by, read from the file as the game
+    /// writes it.
+    #[test]
+    fn a_dressing_reads_count_from_door_and_the_new_spreads() {
+        let w = world();
+        let text = r#"[
+            (
+                name: "shop",
+                legend: { 'H': Mark, 'T': Mark, 'h': Mark, 'C': Prop("cot"), 'S': Mark, 'b': Mark },
+                place: [
+                    (glyph: 'H', at: Walls, count: 1, from_door: Far),
+                    (glyph: 'T', at: Center, count: (1, 2)),
+                    (glyph: 'h', at: Beside('T'), density_pct: 50),
+                    (glyph: 'C', at: Across(gap: 1), density_pct: 100),
+                    (glyph: 'S', at: Walls, density_pct: 100, from_door: Behind('C')),
+                    (glyph: 'b', at: OutsideDoor, count: (0, 2)),
+                ],
+            ),
+        ]"#;
+        let all = read(&w, text).unwrap();
+        let shop = all.get(all.expect("shop"));
+        let rule = |glyph: char, at: Spread, density_pct: u32, count: Option<(u32, u32)>, from_door: Option<FromDoor>| Thing {
+            glyph,
+            stands: Stand::Slot,
+            at,
+            density_pct,
+            count,
+            from_door,
+        };
+        assert_eq!(
+            shop.things,
+            vec![
+                rule('H', Spread::Walls, 0, Some((1, 1)), Some(FromDoor::Far)),
+                rule('T', Spread::Center, 0, Some((1, 2)), None),
+                rule('h', Spread::Beside('T'), 50, None, None),
+                rule('C', Spread::Across { gap: 1 }, 100, None, None),
+                rule('S', Spread::Walls, 100, None, Some(FromDoor::Behind('C'))),
+                rule('b', Spread::OutsideDoor, 0, Some((0, 2)), None),
+            ]
+        );
+    }
+
+    /// The errors loading one dressing of `place` rules, each a glyph of
+    /// its legend.
+    fn mistakes(place: &str) -> Vec<String> {
+        let w = world();
+        let text = format!(r#"[(name: "shop", legend: {{ 'T': Mark, 'h': Mark, 'S': Mark }}, place: [{place}])]"#);
+        match read(&w, &text) {
+            Err(ContentError::Invalid(errors)) => errors,
+            other => panic!("{place} was not refused: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_rule_with_both_count_and_density_is_refused() {
+        let errors = mistakes("(glyph: 'T', at: Center, count: 1, density_pct: 50), (glyph: 'h', at: Walls, count: 1), (glyph: 'S', at: Walls, count: 1)");
+        assert_eq!(errors, vec!["shop: 'T' at Center gives both a density_pct and a count, and a rule lays by one or the other"]);
+    }
+
+    #[test]
+    fn a_rule_with_neither_is_refused() {
+        let errors = mistakes("(glyph: 'T', at: Center), (glyph: 'h', at: Walls, count: 1), (glyph: 'S', at: Walls, count: 1)");
+        assert_eq!(errors, vec!["shop: 'T' at Center gives neither a density_pct nor a count, so it lays nothing"]);
+    }
+
+    #[test]
+    fn a_count_of_zero_or_fewest_above_most_is_refused() {
+        let errors = mistakes("(glyph: 'T', at: Center, count: 0), (glyph: 'h', at: Walls, count: (3, 2)), (glyph: 'S', at: Walls, count: (0, 0))");
+        assert_eq!(
+            errors,
+            vec![
+                "shop: 'T' at Center lays at most 0, so it lays nothing",
+                "shop: 'h' at Walls counts from 3 to 2, and the fewest is above the most",
+                "shop: 'S' at Walls lays at most 0, so it lays nothing",
+            ]
+        );
+    }
+
+    #[test]
+    fn beside_or_behind_a_glyph_no_earlier_rule_places_is_refused() {
+        let errors =
+            mistakes("(glyph: 'h', at: Beside('T'), count: 2), (glyph: 'T', at: Center, count: 1), (glyph: 'S', at: Walls, count: 1, from_door: Behind('C'))");
+        assert_eq!(errors, vec!["shop: 'h' stands beside 'T', which no earlier rule places", "shop: 'S' stands behind 'C', which no earlier rule places"]);
+    }
+
+    /// A line with no gap cuts every room it crosses, and a cell outside
+    /// the door is no distance in from it.
+    #[test]
+    fn a_line_with_no_gap_and_a_door_rule_outside_the_door_are_refused() {
+        let errors = mistakes(
+            "(glyph: 'T', at: Across(gap: 0), density_pct: 100), (glyph: 'h', at: OutsideDoor, count: 1, from_door: Near), (glyph: 'S', at: Walls, count: 1)",
+        );
+        assert_eq!(
+            errors,
+            vec![
+                "shop: 'T' is laid across the room with no gap in its line, which cuts the room in two",
+                "shop: 'h' is laid outside the door and keeps a distance from it, and a cell outside is no distance in",
+            ]
+        );
     }
 
     const LAYOUT: &str = r#"(

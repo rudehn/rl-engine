@@ -9,6 +9,7 @@ atglyph is not on crates.io yet, so a game depends on a release by its git tag, 
 ### Added
 
 - `dress::dress_room` dresses one room's cells on a terrain with no chain, by the rules `Dress` keeps, for a game that lays its own buildings.
+- Dressing rules for furnishing houses: a rule lays an exact `count` (`count: 1` or `count: (fewest, most)`) in place of `density_pct`, keeps `from_door` `Near`, `Far` or `Behind('c')` another thing by the path in from the nearest opening, and the spreads `Beside('c')`, `Across(gap: n)` for a line across the room with a gap, as a shop's counter, and `OutsideDoor` for a cell flanking the way out, never cutting the ground outside.
 - `Keep` can keep away from the others: `Station::Others` is the actors neither allied nor hostile, and `Keep::away(station, distance)` backs off inside `distance` and never closes in, named `keep_away`; a keep on the others steps by near fields, as `GiveWay` does.
 - `Keep::watching`: a keep that waits in its band while the nearest of its station is in sight, so a wary animal that has backed off far enough stands and watches rather than wandering back in.
 - A mind keeps to its ground: an actor's `Ground` id, read through the game's `GroundRule`, holds its idle steps to the cells the game names, and one off its ground walks back. Herds: actors sharing a `Herd` id keep together with no leader, by `Keep::herd` on the middle of their living mates.
@@ -21,6 +22,7 @@ atglyph is not on crates.io yet, so a game depends on a release by its git tag, 
 
 ### Changed
 
+- **Breaking:** `dress::Thing` has `count` and `from_door` fields, and `dress::Spread` has the variants `Beside`, `Across` and `OutsideDoor`; a game that writes a `Thing` literal adds `count: None, from_door: None` to lay as before, and one that matches a `Spread` names the new variants.
 - Waking the struck to whoever struck them runs in `ReactSet::Settle`: a game that reads `Noticed` or writes an `Aware` in `TurnSet::React` orders itself after that set, so a blow's notice is read in the pass it lands and the two never write in an order the scheduler picks.
 - **Breaking:** `Keep` has a `watch` field, false for every constructor; a game that writes a `Keep` literal adds `watch: false` to keep it as it was.
 - **Breaking:** `NoticeStats`, `StealthStats`, `notices`, `certain_radius` and `notice_chance` moved from `atglyph_rules::ai::awareness` to `atglyph_rules::ai::awareness::per_observer`; a game naming them by the old path names the new one, and `atglyph_rules::ai` and the prelude keep their names.
