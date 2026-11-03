@@ -9,7 +9,7 @@ atglyph is not on crates.io yet, so a game depends on a release by its git tag, 
 ### Added
 
 - `dress::dress_room` dresses one room's cells on a terrain with no chain, by the rules `Dress` keeps, for a game that lays its own buildings.
-- Dressing rules for furnishing houses: a rule lays an exact `count` (`count: 1` or `count: (fewest, most)`) in place of `density_pct`, keeps `from_door` `Near`, `Far` or `Behind('c')` another thing by the path in from the nearest opening, and the spreads `Beside('c')`, `Across(gap: n)` for a line across the room with a gap, as a shop's counter, and `OutsideDoor` for a cell flanking the way out, never cutting the ground outside.
+- Dressing rules for furnishing houses: a rule lays an exact `count` (`count: 1` or `count: (fewest, most)`) in place of `density_pct`, keeps `from_door` `Near` or `Far` by the path in from the nearest opening, or `Behind('c')` another thing by the path round the things laid as `'c'`, so a shop whose counter ends in the far corner has shelves along the whole far wall, and the spreads `Beside('c')`, `Across(gap: n)` for a line across the room with a gap, as a shop's counter, and `OutsideDoor` for a cell flanking the way out, never cutting the ground outside, read five cells round the area so a barrel by a door with a post two cells out stands where the street goes round it, and never joined to the street only through the room and out by another door.
 - `Keep` can keep away from the others: `Station::Others` is the actors neither allied nor hostile, and `Keep::away(station, distance)` backs off inside `distance` and never closes in, named `keep_away`; a keep on the others steps by near fields, as `GiveWay` does.
 - `Keep::watching`: a keep that waits in its band while the nearest of its station is in sight, so a wary animal that has backed off far enough stands and watches rather than wandering back in.
 - A mind keeps to its ground: an actor's `Ground` id, read through the game's `GroundRule`, holds its idle steps to the cells the game names, and one off its ground walks back. Herds: actors sharing a `Herd` id keep together with no leader, by `Keep::herd` on the middle of their living mates.
@@ -23,7 +23,6 @@ atglyph is not on crates.io yet, so a game depends on a release by its git tag, 
 
 ### Changed
 
-- `FromDoor::Behind('c')` measures each cell by the path round the things laid as `'c'`, so a cell a counter stands between the door and is behind it however near the door it lies, and a shop whose counter ends in the far corner has shelves along the whole far wall.
 - **Breaking:** `dress::Thing` has `count` and `from_door` fields, and `dress::Spread` has the variants `Beside`, `Across` and `OutsideDoor`; a game that writes a `Thing` literal adds `count: None, from_door: None` to lay as before, and one that matches a `Spread` names the new variants.
 - Waking the struck to whoever struck them runs in `ReactSet::Settle`: a game that reads `Noticed` or writes an `Aware` in `TurnSet::React` orders itself after that set, so a blow's notice is read in the pass it lands and the two never write in an order the scheduler picks.
 - **Breaking:** `Keep` has a `watch` field, false for every constructor; a game that writes a `Keep` literal adds `watch: false` to keep it as it was.
@@ -41,7 +40,6 @@ atglyph is not on crates.io yet, so a game depends on a release by its git tag, 
 
 ### Fixed
 
-- A thing laid `OutsideDoor` is checked for cutting the ground over the ground round its area, five cells out, rather than the eight cells round it, so a barrel by a door with a post or a well two cells out is laid where the street goes round it.
 - A herd member standing on its herd's middle steps off it, as its `no_closer_than` says, rather than asking for a field and then doing nothing.
 
 ## [0.5.0] - 2026-10-29

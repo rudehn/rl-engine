@@ -676,11 +676,13 @@ fn beside(p: Point, q: Point) -> bool {
 /// frame reaches round an obstacle beside the way out, so a barrel by a
 /// door with a post two cells out still stands where the street goes
 /// round the post; a way that leaves the frame is not seen, which only
-/// refuses more. Where a [`Place`] is known that is asked of `p`'s own
-/// area, its straight neighbours all of it and the way between them too,
-/// so neither that area nor the ground between areas is cut; and a slot
-/// on `p`, or one beside it, keeps a clear cell straight beside it to be
-/// reached from.
+/// refuses more, and nor is a way through the area being dressed, so a
+/// cell before one door is never joined to the street only in at that
+/// door and out at another. Where a [`Place`] is known that is asked of
+/// `p`'s own area, its straight neighbours all of it and the way between
+/// them too, so neither that area nor the ground between areas is cut;
+/// and a slot on `p`, or one beside it, keeps a clear cell straight beside
+/// it to be reached from.
 fn stands_clear_outside(frame: &Frame, p: Point, slot: bool, clear: impl Fn(Point) -> bool, slot_at: impl Fn(Point) -> bool, place: Option<&Place>) -> bool {
     let mine = place.and_then(|pl| pl.owner(p));
     let ours = |q: Point| clear(q) && place.and_then(|pl| pl.owner(q)) == mine;
@@ -689,7 +691,7 @@ fn stands_clear_outside(frame: &Frame, p: Point, slot: bool, clear: impl Fn(Poin
         return false;
     }
     let joined: Vec<Point> = straight.iter().copied().filter(|q| ours(*q)).collect();
-    if !frame.meet(&joined, |q| q != p && ours(q)) {
+    if !frame.meet(&joined, |q| q != p && ours(q) && !frame.own(q)) {
         return false;
     }
     if slot && joined.is_empty() {
@@ -1175,6 +1177,47 @@ mod tests {
             let barrels = glyphs(&marks, 'b');
             assert_eq!(barrels.len(), 1, "seed {s}: one side of the way out: {barrels:?}");
             assert!([door.offset(-1, -1), door.offset(1, -1)].contains(&barrels[0]), "seed {s}: {barrels:?}");
+        }
+    }
+
+    /// Outside two doors onto one street three cells wide, a pillar two
+    /// cells straight out from the first, the cell before each door stays
+    /// joined to the street outside: never by a way in through one door,
+    /// across the room and out through the other.
+    #[test]
+    fn a_barrel_by_one_of_two_doors_never_leaves_its_way_out_reached_only_through_the_room() {
+        let (r, pillar, _) = tiles();
+        let bounds = GridRect::new(2, 6, 7, 5);
+        let doors = [Point::new(3, 5), Point::new(7, 5)];
+        let street = GridRect::new(0, 2, 13, 3);
+        let cells: Vec<Point> = bounds.cells().collect();
+        let walkable = r.tiles.tables().walkable;
+        for s in 0..20 {
+            let mut terrain = Terrain::from_fn(13, 14, |p| if bounds.contains(p) || street.contains(p) { r.floor } else { r.wall });
+            for door in doors {
+                terrain.set(door, r.door);
+            }
+            terrain.set(doors[0].offset(0, -2), pillar);
+            let d = dressing("store", vec![slot('b', Spread::OutsideDoor, 100)], None);
+            let marks = dress_room(&mut terrain, &r.tiles, &cells, &doors, &d, r.floor, &mut StdRng::seed_from_u64(s));
+            let barrels = glyphs(&marks, 'b');
+            // The street's open cells, the room and its doors left out.
+            let open = |p: Point| street.contains(p) && terrain.get(p).is_some_and(|t| walkable[t.index()]) && !barrels.contains(&p);
+            for door in doors {
+                let out = door.offset(0, -1);
+                let mut seen = vec![out];
+                let mut i = 0;
+                while i < seen.len() {
+                    for d in Direction::CARDINALS {
+                        let q = seen[i] + d.offset();
+                        if open(q) && !seen.contains(&q) {
+                            seen.push(q);
+                        }
+                    }
+                    i += 1;
+                }
+                assert!(seen.contains(&Point::new(0, 2)), "seed {s}: the way out of {door:?} is shut off the street by {barrels:?}");
+            }
         }
     }
 
