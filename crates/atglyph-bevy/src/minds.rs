@@ -27,7 +27,7 @@ use std::sync::Arc;
 use atglyph_core::{Direction, Grid2D, GridRect, Point, geometry};
 use atglyph_grid::{BitGrid, CostSource, DijkstraMap, PathRules};
 use atglyph_rules::ai::recent::Recent;
-use atglyph_rules::ai::tactics::{Herded, Movement, Moving, OnGround, Station, Ways};
+use atglyph_rules::ai::tactics::{Herded, Movement, Moving, OnGround, OnRounds, Station, Ways};
 use atglyph_rules::ai::{StepAs, Trail, sort_roster, step_as};
 use atglyph_rules::{ActorView, Brain, Choice, Decision, MovementProfile, Snapshot, TacticCtx, Wits};
 use bevy::ecs::lifecycle::HookContext;
@@ -147,6 +147,28 @@ pub struct GroundRule(pub Arc<dyn Fn(u16, MapId, Point) -> bool + Send + Sync>);
 /// Saved by `atglyph-save` with the actor.
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Herd(pub u64);
+
+/// The rounds an actor walks: each point of `route` in turn, from the last
+/// back to the first, and a route of one point is a post it keeps. Read by
+/// the [`WalkRounds`](atglyph_rules::ai::tactics::WalkRounds) tactic through
+/// the [`OnRounds`](atglyph_rules::ai::tactics::OnRounds) sense
+/// `sense_rounds` pushes, which moves `next` on past a point the actor
+/// stands on, and past one somebody else stands on once the actor is beside
+/// it, so a loiterer on a point never stops a round. With a [`Ground`] and
+/// the game's [`GroundRule`], its steps keep to its ground. Saved by
+/// `atglyph-save` with the actor.
+///
+/// A component of its own beside [`Moves`] rather than another
+/// [`Movement`], because a round changes as it is walked and a movement is
+/// a fixed description; an actor may have both, its brain saying which has
+/// the turn.
+#[derive(Component, Debug, Clone, PartialEq, Eq)]
+pub struct Rounds {
+    /// The points walked, in order; empty walks nothing.
+    pub route: Vec<Point>,
+    /// Which of `route` is walked to next.
+    pub next: usize,
+}
 
 /// The one actor a mind follows: a band's chief, a hireling's employer.
 /// Read by [`Keep::leader`](atglyph_rules::ai::tactics::Keep::leader) through
@@ -865,14 +887,57 @@ pub(crate) fn perceive_roster(
 /// game gave a [`GroundRule`].
 pub(crate) fn sense_moves(mut thinking: ResMut<Thinking>, sight: Sight, rule: Option<Res<GroundRule>>, moves: Query<(&Moves, &Position, Option<&Ground>)>) {
     let Some((Moves(movement), at, ground)) = thinking.actor().and_then(|actor| moves.get(actor).ok()) else { return };
-    let (movement, me) = (*movement, at.0);
-    let ground = ground.zip(rule).map(|(Ground(id), rule)| {
+    let movement = *movement;
+    let ground = on_ground(&sight, rule.as_deref(), ground, at.0);
+    if let Some(snapshot) = thinking.snapshot_mut() {
+        snapshot.add_sense(Moving { movement, ground });
+    }
+}
+
+/// Which of the nine cells round `me` are an actor's [`Ground`], when it has
+/// one and the game gave a [`GroundRule`] to read it by.
+fn on_ground(sight: &Sight, rule: Option<&GroundRule>, ground: Option<&Ground>, me: Point) -> Option<OnGround> {
+    ground.zip(rule).map(|(Ground(id), rule)| {
         let map = sight.current_map();
         let on = |at: Point| (rule.0)(*id, map, at);
         OnGround { here: on(me), beside: std::array::from_fn(|i| on(me + Direction::from_index(i).offset())) }
-    });
+    })
+}
+
+/// Tells the mind holding the turn the point of its [`Rounds`] it walks to,
+/// and its [`Ground`] as `sense_moves` reads it.
+///
+/// Moves the round on first, past the point the mind stands on, and past
+/// one somebody else stands on once it is beside it: here rather than in
+/// the tactic, which reads a snapshot and changes nothing, and on the
+/// mind's own turn, so a round moves on only for a mind that walks it. A
+/// hunt that crosses the next point counts as coming to it, which is what
+/// a watchman would say too.
+pub(crate) fn sense_rounds(
+    mut thinking: ResMut<Thinking>,
+    sight: Sight,
+    rule: Option<Res<GroundRule>>,
+    occupancy: Res<Occupancy>,
+    mut rounds: Query<(&mut Rounds, &Position, Option<&Ground>)>,
+) {
+    let Some((mut rounds, at, ground)) = thinking.actor().and_then(|actor| rounds.get_mut(actor).ok()) else { return };
+    let (me, len) = (at.0, rounds.route.len());
+    if len == 0 {
+        return;
+    }
+    let mut next = rounds.next % len;
+    let passed = |p: Point| p == me || (geometry::chebyshev(me, p) == 1 && occupancy.is_occupied(p));
+    if len > 1 && passed(rounds.route[next]) {
+        next = (next + 1) % len;
+    }
+    // Only a change is written, so a round standing still marks nothing changed.
+    if rounds.next != next {
+        rounds.next = next;
+    }
+    let to = rounds.route[next];
+    let ground = on_ground(&sight, rule.as_deref(), ground, me);
     if let Some(snapshot) = thinking.snapshot_mut() {
-        snapshot.add_sense(Moving { movement, ground });
+        snapshot.add_sense(OnRounds { to, ground });
     }
 }
 
@@ -1237,7 +1302,7 @@ impl Plugin for MindsPlugin {
             .add_systems(Turn, sense.in_set(DecideSet::Sense))
             .add_systems(Turn, begin_thinking.in_set(PerceiveSet::Begin))
             .add_systems(Turn, perceive_roster.in_set(PerceiveSet::Roster))
-            .add_systems(Turn, (sense_moves, sense_herds, sense_leaders, sense_ways).chain().in_set(PerceiveSet::Annotate))
+            .add_systems(Turn, (sense_moves, sense_rounds, sense_herds, sense_leaders, sense_ways).chain().in_set(PerceiveSet::Annotate))
             .add_systems(Turn, decide_minds.in_set(DecideSet::Minds));
     }
 
@@ -2607,6 +2672,160 @@ mod tests {
             seen.insert(at);
         }
         assert!(seen.len() > 10, "it roamed rather than stood: {} cells", seen.len());
+    }
+
+    /// The points of `route` that `trail` stood on, in the order it came to
+    /// them, each arrival once however long it stayed.
+    fn arrivals(trail: &[Point], route: &[Point]) -> Vec<usize> {
+        let mut came = Vec::new();
+        let mut last = None;
+        for at in trail {
+            let on = route.iter().position(|p| p == at);
+            if on.is_some() && on != last {
+                came.extend(on);
+            }
+            last = on;
+        }
+        came
+    }
+
+    /// A walker on rounds: on our side, so nothing it sees is a foe, with a
+    /// brain that only walks them.
+    fn walker(app: &mut App, at: Point, route: Vec<Point>) -> Entity {
+        use atglyph_rules::ai::tactics::WalkRounds;
+        let us = atglyph_rules::FactionId::from_raw(0);
+        let brain = Brain::new().then(WalkRounds);
+        app.world_mut().spawn((Actor, Blocks, Position(at), Health::full(10), Faction(us), Mind(Arc::new(brain)), Rounds { route, next: 0 })).id()
+    }
+
+    /// A mind on rounds walks to each point of its route in turn, and from
+    /// the last back to the first, round and round.
+    #[test]
+    fn a_mind_on_rounds_walks_its_route_in_turn_and_back_to_the_first() {
+        let (mut app, start, _) = arena();
+        let us = atglyph_rules::FactionId::from_raw(0);
+        let player = app.world_mut().spawn((Actor, Player, Blocks, Position(start.offset(0, -6)), Viewshed::new(8), Health::full(30), Faction(us))).id();
+        let route = vec![start.offset(5, 0), start.offset(5, 5), start.offset(0, 5)];
+        let guard = walker(&mut app, start, route.clone());
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        app.update();
+        let mut trail = Vec::new();
+        for _ in 0..50 {
+            play(&mut app, player, 1);
+            trail.push(app.world().get::<Position>(guard).unwrap().0);
+        }
+        let came = arrivals(&trail, &route);
+        assert!(came.len() >= 5, "it walked the route more than once round: {came:?}, {trail:?}");
+        assert!(came.iter().enumerate().all(|(i, p)| *p == i % 3), "each point in turn, the first again after the last: {came:?}");
+        assert_eq!(app.world().get::<LastTactic>(guard).unwrap().0, Some("walk_rounds"));
+    }
+
+    /// A mind on rounds hunts a foe it sees when its brain puts hunting
+    /// first, off its route, and once it has lost the foe it goes back to
+    /// the point it was walking to and on round its route.
+    #[test]
+    fn a_mind_on_rounds_breaks_off_to_hunt_and_comes_back_to_its_route() {
+        use atglyph_rules::ai::tactics::WalkRounds;
+        let (mut app, start, kind) = arena();
+        let (us, them) = (atglyph_rules::FactionId::from_raw(0), atglyph_rules::FactionId::from_raw(1));
+        let player = app.world_mut().spawn((Actor, Player, Blocks, Position(start.offset(4, 0)), Viewshed::new(8), Health::full(400), Faction(us))).id();
+        // A wall between where the player ends up and the route.
+        let wall: Vec<Point> = (-8..=12).map(|dy| start.offset(12, dy)).collect();
+        crate::testing::wall_off(&mut app, &wall);
+        let route = vec![start.offset(-6, 0), start.offset(-6, 6)];
+        let brain = Brain::new().then(MeleeAdjacent).then(Hunt).then(WalkRounds);
+        let guard = app
+            .world_mut()
+            .spawn((
+                (Actor, Blocks, Position(route[0]), Health::full(20), Faction(them), Perception(10), MeleeAttack::new(kind, DiceRoll::flat(1))),
+                (Mind(Arc::new(brain)), Rounds { route: route.clone(), next: 0 }),
+            ))
+            .id();
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        app.update();
+        let mut furthest = 0;
+        for _ in 0..12 {
+            play(&mut app, player, 1);
+            furthest = furthest.max(app.world().get::<Position>(guard).unwrap().0.x - route[0].x);
+        }
+        assert!(furthest >= 8, "it broke off its rounds to hunt the player: {furthest} cells east of its route at most");
+        app.world_mut().get_mut::<Position>(player).unwrap().0 = start.offset(18, 0);
+        let mut trail = Vec::new();
+        for _ in 0..80 {
+            play(&mut app, player, 1);
+            trail.push(app.world().get::<Position>(guard).unwrap().0);
+        }
+        let came = arrivals(&trail, &route);
+        assert!(came.len() >= 3, "it lost the player behind the wall and walked its rounds again: {came:?}, {trail:?}");
+        assert!(came.windows(2).all(|w| w[0] != w[1]), "each point in turn: {came:?}");
+        assert_eq!(app.world().get::<LastTactic>(guard).unwrap().0, Some("walk_rounds"));
+    }
+
+    /// A route of one point is a post: the mind walks to it and stands
+    /// there turn after turn.
+    #[test]
+    fn a_route_of_one_point_is_a_post() {
+        let (mut app, start, _) = arena();
+        let us = atglyph_rules::FactionId::from_raw(0);
+        let player = app.world_mut().spawn((Actor, Player, Blocks, Position(start), Viewshed::new(8), Health::full(30), Faction(us))).id();
+        let post = start.offset(3, 3);
+        let guard = walker(&mut app, start.offset(9, 3), vec![post]);
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        app.update();
+        let mut trail = Vec::new();
+        for _ in 0..12 {
+            play(&mut app, player, 1);
+            trail.push(app.world().get::<Position>(guard).unwrap().0);
+        }
+        assert!(trail[5..].iter().all(|at| *at == post), "on its post by the sixth turn and on it since: {trail:?}");
+        assert_eq!(app.world().get::<Rounds>(guard).unwrap().next, 0);
+    }
+
+    /// A point of the route somebody else stands on is passed by once the
+    /// mind is beside it, so a villager loitering on a point never stops a
+    /// round.
+    #[test]
+    fn a_mind_on_rounds_passes_a_point_somebody_stands_on() {
+        let (mut app, start, _) = arena();
+        let us = atglyph_rules::FactionId::from_raw(0);
+        let player = app.world_mut().spawn((Actor, Player, Blocks, Position(start.offset(0, -6)), Viewshed::new(8), Health::full(30), Faction(us))).id();
+        let route = vec![start.offset(5, 0), start.offset(5, 5)];
+        app.world_mut().spawn((Actor, Blocks, Position(route[0]), Health::full(10), Faction(us)));
+        let guard = walker(&mut app, start, route.clone());
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        app.update();
+        let mut trail = Vec::new();
+        for _ in 0..20 {
+            play(&mut app, player, 1);
+            trail.push(app.world().get::<Position>(guard).unwrap().0);
+        }
+        assert!(trail.contains(&route[1]), "it went on to the next point: {trail:?}");
+    }
+
+    /// The ground a mind on rounds keeps to is the sense's to carry, as the
+    /// one a mind that moves keeps to is.
+    #[test]
+    fn a_mind_on_rounds_is_told_its_ground() {
+        let (mut app, start, _) = arena();
+        let us = atglyph_rules::FactionId::from_raw(0);
+        let player = app.world_mut().spawn((Actor, Player, Blocks, Position(start.offset(0, -6)), Viewshed::new(8), Health::full(30), Faction(us))).id();
+        // Its ground a row of the floor, and its second point off it, so
+        // every way there leaves the row.
+        let row = start.y;
+        app.insert_resource(GroundRule(Arc::new(move |id, _, at| id == 1 && at.y == row)));
+        let route = vec![start.offset(6, 0), start.offset(6, 6)];
+        let guard = walker(&mut app, start, route.clone());
+        app.world_mut().entity_mut(guard).insert(Ground(1));
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        app.update();
+        let mut trail = Vec::new();
+        for _ in 0..20 {
+            play(&mut app, player, 1);
+            let at = app.world().get::<Position>(guard).unwrap().0;
+            assert_eq!(at.y, row, "it stepped off its ground to {at:?}");
+            trail.push(at);
+        }
+        assert!(trail.contains(&route[0]), "it walked the part of its round on its ground: {trail:?}");
     }
 
     /// Three of a herd, far apart with no leader, draw together on the

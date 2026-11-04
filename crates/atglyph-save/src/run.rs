@@ -49,8 +49,8 @@ use atglyph_bevy::EngineApp;
 use atglyph_bevy::{
     AbandonRun, ActiveStatuses, ActorMaker, ApplyStatus, Burning, ContinueRun, ContinueSaved, Counters, Dead, Emptied, EndOfFrame, EndRun, Ending, EngineState,
     Equipped, Faction, Ground, Health, Herd, Hidden, Inventory, ItemLevel, ItemMaker, JoinStamp, Leader, LeaveRun, MapId, Moves, OnMap, PlaceEntered, Player,
-    Position, PrepareRun, PropKind, Quests, Registries, Remains, RunResumed, SavedRun, Seed, SideWas, Stack, Stair, Stocked, Transition, Turns, Wearable,
-    WorkKinds, Working,
+    Position, PrepareRun, PropKind, Quests, Registries, Remains, Rounds, RunResumed, SavedRun, Seed, SideWas, Stack, Stair, Stocked, Transition, Turns,
+    Wearable, WorkKinds, Working,
 };
 use atglyph_core::{Id, Point};
 use atglyph_rules::ai::tactics::Movement;
@@ -607,6 +607,10 @@ pub struct EntityState {
     /// The herd it keeps with, for an actor given a `Herd`.
     #[serde(default)]
     pub herd: Option<u64>,
+    /// The rounds it walks and which point is next, for an actor given
+    /// `Rounds`, so a watchman goes on round from where it was.
+    #[serde(default)]
+    pub rounds: Option<(Vec<Point>, usize)>,
     /// What it was in the middle of, for an actor at work.
     #[serde(default)]
     pub working: Option<SavedWork>,
@@ -713,6 +717,7 @@ impl EntityState {
             movement: e.get::<Moves>().map(|m| m.0),
             ground: e.get::<Ground>().map(|g| g.0),
             herd: e.get::<Herd>().map(|h| h.0),
+            rounds: e.get::<Rounds>().map(|r| (r.route.clone(), r.next)),
             // By id only when the leader has one already: one that was not
             // saved, a body gone at the end of its frame, is not given an id
             // that would come back bound to nothing.
@@ -798,6 +803,9 @@ impl EntityState {
         }
         if let Some(id) = self.herd {
             target.insert(Herd(id));
+        }
+        if let Some((route, next)) = &self.rounds {
+            target.insert(Rounds { route: route.clone(), next: *next });
         }
         if let Some(side) = side_was {
             target.insert(Faction(side));
@@ -1934,12 +1942,12 @@ mod tests {
         );
     }
 
-    /// An actor moves the same way, on the same ground and in the same herd
-    /// after a load, by the engine: the game's own record of it says nothing
-    /// of them, and a guard that forgot its cell would wander off the first
-    /// time it had nothing better to do.
+    /// An actor moves the same way, on the same ground, in the same herd and
+    /// on the same rounds after a load, by the engine: the game's own record
+    /// of it says nothing of them, and a guard that forgot its cell would
+    /// wander off the first time it had nothing better to do.
     #[test]
-    fn an_actor_keeps_its_movement_ground_and_herd_when_the_run_is_continued() {
+    fn an_actor_keeps_its_movement_ground_herd_and_rounds_when_the_run_is_continued() {
         let backend = std::sync::Arc::new(MemoryBackend::default());
         let (mut app, start) = game(Saves(backend.clone()));
         app.world_mut().spawn((Actor, Player, Blocks, You, Position(start), Viewshed::new(6), RevealsMap, Health::full(30)));
@@ -1949,7 +1957,10 @@ mod tests {
             (Actor, Blocks, Person("Bo".into()), Position(start.offset(0, 4)), Health::full(20)),
             (Moves(Movement::Roam { at: post, reach: 5 }), atglyph_bevy::Ground(3), Herd(9)),
         ));
+        let rounds = Rounds { route: vec![post, start.offset(5, 3), start.offset(5, 6)], next: 1 };
+        app.world_mut().spawn((Actor, Blocks, Person("Cy".into()), Position(start.offset(0, 5)), Health::full(20), rounds.clone()));
         play(&mut app);
+        let walked = app.world_mut().query_filtered::<&Rounds, With<Person>>().single(app.world()).unwrap().clone();
         save_run(app.world_mut()).unwrap();
 
         let (mut back, _) = game(Saves(backend));
@@ -1967,8 +1978,12 @@ mod tests {
             vec![
                 ("Ada".into(), Some(Moves(Movement::Hold(post))), None, None),
                 ("Bo".into(), Some(Moves(Movement::Roam { at: post, reach: 5 })), Some(atglyph_bevy::Ground(3)), Some(Herd(9))),
+                ("Cy".into(), None, None, None),
             ]
         );
+        let w = back.world_mut();
+        let back_rounds = w.query_filtered::<&Rounds, With<Person>>().single(w).unwrap().clone();
+        assert_eq!(back_rounds, walked, "its rounds, and how far round them it was");
     }
 
     /// A follower follows the same leader after a load, by the engine: its

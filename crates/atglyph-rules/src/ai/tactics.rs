@@ -881,6 +881,59 @@ impl<A: Copy> Tactic<A> for Idle {
     }
 }
 
+/// The point of its rounds a mind is walking to, and the ground it keeps
+/// to, as a [`Sense`](crate::ai::Sense).
+///
+/// The engine's `sense_rounds` pushes it from an actor's `Rounds`
+/// component, having moved the round on past a point the mind stands on,
+/// with the ground read from its `Ground` through the game's `GroundRule`
+/// as [`Moving`]'s is; an actor on no rounds is not pushed one. A game
+/// running minds without `atglyph-bevy` pushes it itself.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct OnRounds {
+    /// The point it is walking to.
+    pub to: Point,
+    /// Where it may stand, round the cell it is on; `None` keeps it to no
+    /// ground in particular.
+    pub ground: Option<OnGround>,
+}
+
+/// Walk rounds: with nothing better to do, step toward the point of the
+/// mind's rounds its [`OnRounds`] sense names, and wait on it.
+///
+/// Low in a brain, below hunting and searching, so a watchman fights what
+/// it meets and goes back to its round once the fight is done, to the
+/// point it was walking to rather than the start. The waiting is a post's:
+/// a round of one point is a post the mind stands on, and beside it while
+/// something else stands there, since the cell will be free again. A round
+/// of more never waits on a point, since the sense has already moved it on
+/// to the next by the time the mind stands there.
+///
+/// Its steps keep to its ground: down the field toward the point, the best
+/// step that is ground, and a wait when none is rather than a step off it
+/// or a turn left to a tactic that might take one. A mind a hunt took off
+/// its ground walks back toward the point by whatever way leads there.
+/// Leaves the turn to the next tactic for a mind with no [`OnRounds`]
+/// sense, so one brain serves a kind whether or not this one walks rounds.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct WalkRounds;
+
+impl<A: Copy> Tactic<A> for WalkRounds {
+    fn name(&self) -> &'static str {
+        "walk_rounds"
+    }
+    fn evaluate(&self, ctx: &mut TacticCtx<'_, A>) -> Option<Decision<A>> {
+        let OnRounds { to, ground } = *ctx.snapshot.sense::<OnRounds>()?;
+        let me = ctx.snapshot.me.pos;
+        if me == to || (geometry::chebyshev(me, to) <= 1 && !(ctx.can_step)(to)) {
+            return Some(Decision::Wait);
+        }
+        let keeps = |step: Point| ground.is_none_or(|g| !g.here || g.at(step - me));
+        let step = ctx.fields.descents_toward(&[to], me).into_iter().find(|step| steps_to(ctx, me, *step) && keeps(*step));
+        Some(step.map_or(Decision::Wait, Decision::Step))
+    }
+}
+
 /// Step out of the way of anyone who is neither friend nor foe standing
 /// too close: a civilian in a crowd, a guard treading round a shopkeeper.
 ///
@@ -1939,6 +1992,80 @@ mod tests {
         let ground = OnGround { here: false, beside };
         assert!(ground.at(Direction::ALL[3].offset()) && !ground.at(Point::ZERO));
         assert!(!ground.at(Point::new(2, 0)));
+    }
+
+    /// What [`WalkRounds`] decides for `snapshot` on open floor, with fields
+    /// built over it and every open cell free but those `taken`.
+    fn walk_rounds(snapshot: &Snapshot<u32>, taken: &[Point]) -> Option<Decision<u32>> {
+        let r = TileRegistry::standard();
+        let t = Terrain::filled(40, 40, r.expect("floor"));
+        let view_t = t.view(&r);
+        let can_step = |p: Point| view_t.is_walkable(p) && !taken.contains(&p);
+        let mut fields = Given::over(&view_t);
+        let mut rng = StdRng::seed_from_u64(1);
+        WalkRounds.evaluate(&mut TacticCtx {
+            snapshot,
+            fields: &mut fields,
+            can_step: &can_step,
+            blocks_shot: &nothing_blocks,
+            blocks_burst: &|_| false,
+            bounds: arena(),
+            rng: &mut rng,
+        })
+    }
+
+    fn on_rounds(me: Point, to: Point, ground: Option<OnGround>) -> Snapshot<u32> {
+        let mut snapshot = Snapshot::alone(view(0, me.x, me.y, 10));
+        snapshot.add_sense(OnRounds { to, ground });
+        snapshot
+    }
+
+    #[test]
+    fn walk_rounds_steps_toward_the_next_point_and_waits_on_it() {
+        let (me, to) = (Point::new(5, 5), Point::new(9, 5));
+        assert_eq!(walk_rounds(&on_rounds(me, to, None), &[]), Some(Decision::Step(Point::new(6, 5))));
+        assert_eq!(walk_rounds(&on_rounds(to, to, None), &[]), Some(Decision::Wait), "standing on it");
+        assert_eq!(Tactic::<u32>::name(&WalkRounds), "walk_rounds");
+    }
+
+    #[test]
+    fn walk_rounds_leaves_the_turn_to_the_next_tactic_for_a_mind_on_no_rounds() {
+        assert_eq!(walk_rounds(&Snapshot::alone(view(0, 5, 5, 10)), &[]), None);
+    }
+
+    /// The best step toward the point, the diagonal, is off its ground, so
+    /// it takes the next best that is not.
+    #[test]
+    fn walk_rounds_steps_toward_the_next_point_only_onto_its_ground() {
+        let me = Point::new(5, 5);
+        let ground = ground_where(me, |p| p.y <= 5);
+        assert_eq!(walk_rounds(&on_rounds(me, Point::new(9, 9), ground), &[]), Some(Decision::Step(Point::new(6, 5))));
+    }
+
+    /// With no step toward the point on its ground, it waits rather than
+    /// leave it, or leave the turn to a tactic that might.
+    #[test]
+    fn walk_rounds_with_no_step_on_its_ground_waits() {
+        let me = Point::new(5, 5);
+        let ground = ground_where(me, |p| p == me);
+        assert_eq!(walk_rounds(&on_rounds(me, Point::new(9, 9), ground), &[]), Some(Decision::Wait));
+    }
+
+    /// Hunting can take a mind off its ground; it walks back toward its
+    /// point by whatever way leads there.
+    #[test]
+    fn walk_rounds_off_its_ground_walks_back_toward_the_next_point() {
+        let me = Point::new(12, 10);
+        let ground = ground_where(me, |p| p.x <= 10);
+        assert_eq!(walk_rounds(&on_rounds(me, Point::new(8, 10), ground), &[]), Some(Decision::Step(Point::new(11, 10))));
+    }
+
+    /// Beside a point something else stands on it waits for it, as a
+    /// holder does beside its cell, rather than sidestep round it.
+    #[test]
+    fn walk_rounds_beside_a_taken_point_waits_for_it() {
+        let to = Point::new(6, 5);
+        assert_eq!(walk_rounds(&on_rounds(Point::new(5, 5), to, None), &[to]), Some(Decision::Wait));
     }
 
     fn herding(from: Point) -> Snapshot<u32> {
