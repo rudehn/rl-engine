@@ -560,8 +560,20 @@ mod tests {
         stage.tick();
         let rows = stage.rows();
         let text = rows.join("\n");
-        assert!(rows.iter().any(|r| r.contains("│ ! 3 flagons of cider     10  ")), "the whole name and the price:\n{text}");
-        assert!(rows.iter().any(|r| r.contains("- 2 files           10 each")), "a row with the room still says each:\n{text}");
+        // The words of the row of `name` from its first word on, by their
+        // tokens rather than the columns they fall in.
+        let from = |name: &str| -> Vec<String> {
+            let words: Vec<&str> = name.split(' ').collect();
+            let row = rows.iter().find(|r| r.contains(name)).unwrap_or_else(|| panic!("a row of {name}:\n{text}"));
+            let tokens: Vec<&str> = row.split_whitespace().collect();
+            let at = tokens.windows(words.len()).position(|w| w == words.as_slice()).unwrap_or_else(|| panic!("{name} whole:\n{text}"));
+            tokens[at..].iter().map(|t| t.to_string()).collect()
+        };
+        assert!(!text.contains('\u{2026}'), "nothing is cut short:\n{text}");
+        let cider = from("3 flagons of cider");
+        assert_eq!(cider[4], "10", "the whole name and the price:\n{text}");
+        assert_ne!(cider.get(5).map(String::as_str), Some("each"), "and no each:\n{text}");
+        assert_eq!(from("2 files")[..4], ["2", "files", "10", "each"], "a row with the room still says each:\n{text}");
     }
 
     /// The labels of the customer's side, in order.
