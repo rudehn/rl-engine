@@ -631,6 +631,48 @@ impl<A: Copy, T: Tactic<A>> Tactic<A> for Leashed<T> {
     }
 }
 
+/// The tactic it wraps, held to the mind's ground: a step it would take
+/// from the ground off it becomes a wait, and anything else goes through.
+///
+/// What keeps a watchman's hunt, or its search, inside what it watches.
+/// [`Idle`] and [`WalkRounds`] already keep to a mind's ground, but a hunt
+/// above them chases a foe wherever it runs, and they only walk the mind
+/// back after. Leaving the turn to them instead, as [`Leashed`] does, would
+/// have a mind facing a foe past the edge step back toward its post, step
+/// out again next turn, and pace for as long as the foe stood there; so it
+/// holds the line, and goes back once it has lost the foe. A blow or a
+/// shot over the line is no step and goes through.
+///
+/// The ground is the one [`OnRounds`] carries, or [`Moving`]'s for a mind on
+/// no rounds, both read from the mind's `Ground`. With neither, or a sense
+/// with no ground, every step goes through. A mind already off its ground,
+/// shoved or fled there, is let back onto it, and a step that keeps it off
+/// is left to the tactics after, which walk it home, rather than kept
+/// waiting out there.
+#[derive(Debug, Clone, Copy)]
+pub struct Grounded<T>(pub T);
+
+impl<A: Copy, T: Tactic<A>> Tactic<A> for Grounded<T> {
+    fn name(&self) -> &'static str {
+        self.0.name()
+    }
+
+    fn evaluate(&self, ctx: &mut TacticCtx<'_, A>) -> Option<Decision<A>> {
+        let decision = self.0.evaluate(ctx)?;
+        let ground = ctx.snapshot.sense::<OnRounds>().map(|r| r.ground).or_else(|| ctx.snapshot.sense::<Moving>().map(|m| m.ground)).flatten();
+        let (Decision::Step(to), Some(ground)) = (&decision, ground) else { return Some(decision) };
+        match (ground.here, ground.at(*to - ctx.snapshot.me.pos)) {
+            (_, true) => Some(decision),
+            (true, false) => Some(Decision::Wait),
+            (false, false) => None,
+        }
+    }
+
+    fn keeps_with(&self) -> Option<Station> {
+        self.0.keeps_with()
+    }
+}
+
 /// The tactic it wraps, only while the one the mind follows is out of its
 /// sight; and nothing for a mind that follows nobody.
 ///
@@ -2946,6 +2988,84 @@ mod tests {
         assert_eq!(led_by(&leashed, led(3)), None, "four is past it, and the turn passes on");
         assert_eq!(led_by(&leashed, None), Some(Decision::Step(Point::new(7, 6))), "with nobody to keep near, anywhere");
         assert_eq!((Tactic::<u32>::name(&leashed), Tactic::<u32>::keeps_with(&leashed)), ("step_to", Some(Station::Enemies)));
+    }
+
+    /// What `tactic` decides for a mind at `me` on open ground, hunting
+    /// `quarry`, its ground told by `sense`.
+    fn hunting(tactic: &dyn Tactic<u32>, me: Point, quarry: Point, sense: Option<GroundSense>) -> Option<Decision<u32>> {
+        let r = TileRegistry::standard();
+        let t = Terrain::filled(40, 40, r.expect("floor"));
+        let view_t = t.view(&r);
+        let can_step = |p: Point| view_t.is_walkable(p) && p != quarry;
+        let mut s = Snapshot::alone(view(1, me.x, me.y, 10));
+        s.enemies.push(view(2, quarry.x, quarry.y, 10));
+        match sense {
+            Some(GroundSense::Rounds(ground)) => s.add_sense(OnRounds { to: me, ground }),
+            Some(GroundSense::Moves(ground)) => s.add_sense(Moving { movement: Movement::Hold(me), ground }),
+            None => {}
+        }
+        let mut fields = Given::over(&view_t);
+        let mut rng = StdRng::seed_from_u64(1);
+        tactic.evaluate(&mut TacticCtx {
+            snapshot: &s,
+            fields: &mut fields,
+            can_step: &can_step,
+            blocks_shot: &nothing_blocks,
+            blocks_burst: &|_| false,
+            bounds: arena(),
+            rng: &mut rng,
+        })
+    }
+
+    /// Which sense tells a mind its ground: walking rounds, or holding.
+    #[derive(Clone, Copy)]
+    enum GroundSense {
+        Rounds(Option<OnGround>),
+        Moves(Option<OnGround>),
+    }
+
+    /// A grounded hunter at the edge of its ground holds the line while its
+    /// quarry stands past it, by either sense its ground comes in, and
+    /// closes on it again once it is back on the ground.
+    #[test]
+    fn a_grounded_hunter_waits_at_its_edge_while_its_quarry_is_outside_and_closes_when_it_comes_back() {
+        let me = Point::new(10, 10);
+        let ground = ground_where(me, |p| p.x <= 10);
+        for sense in [GroundSense::Rounds(ground), GroundSense::Moves(ground)] {
+            assert_eq!(hunting(&Grounded(Hunt), me, Point::new(14, 10), Some(sense)), Some(Decision::Wait), "outside, it holds the line");
+            assert_eq!(hunting(&Grounded(Hunt), me, Point::new(6, 10), Some(sense)), Some(Decision::Step(Point::new(9, 10))), "inside, it closes");
+        }
+        let at_edge = Point::new(11, 10);
+        assert_eq!(
+            hunting(&Grounded(MeleeAdjacent), me, at_edge, Some(GroundSense::Rounds(ground))),
+            Some(Decision::Attack(2)),
+            "a blow over the line is no step and goes through"
+        );
+        assert_eq!((Tactic::<u32>::name(&Grounded(Hunt)), Tactic::<u32>::keeps_with(&Grounded(Hunt))), ("hunt", Some(Station::Enemies)));
+    }
+
+    /// A hunter with no ground, by no sense or by a sense with none, hunts
+    /// as it would unwrapped.
+    #[test]
+    fn an_ungrounded_hunter_hunts_as_it_would_unwrapped() {
+        let (me, quarry) = (Point::new(10, 10), Point::new(14, 10));
+        let unwrapped = hunting(&Hunt, me, quarry, None);
+        assert_eq!(unwrapped, Some(Decision::Step(Point::new(11, 10))));
+        for sense in [None, Some(GroundSense::Rounds(None)), Some(GroundSense::Moves(None))] {
+            assert_eq!(hunting(&Grounded(Hunt), me, quarry, sense), unwrapped);
+        }
+    }
+
+    /// A mind already off its ground, as a shove or a flight leaves one,
+    /// may step back onto it, and leaves a step that keeps it off to the
+    /// tactics after, which walk it home, rather than standing out there.
+    #[test]
+    fn a_grounded_hunter_off_its_ground_steps_back_on_and_leaves_any_other_step() {
+        let me = Point::new(12, 10);
+        let ground = ground_where(me, |p| p.x <= 11);
+        let sense = Some(GroundSense::Rounds(ground));
+        assert_eq!(hunting(&Grounded(Hunt), me, Point::new(8, 10), sense), Some(Decision::Step(Point::new(11, 10))), "back onto its ground");
+        assert_eq!(hunting(&Grounded(Hunt), me, Point::new(16, 10), sense), None, "further off it, the turn passes on");
     }
 
     /// Out of sight, a wrapped tactic decides only while the leader is out
