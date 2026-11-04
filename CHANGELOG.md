@@ -42,6 +42,7 @@ atglyph is not on crates.io yet, so a game depends on a release by its git tag, 
 - By range, a pass works out only the stealth ranges that could have changed, of an actor that moved or finished an action and of every actor when the light or the map changed, and a pass that relights nothing no longer marks `Lighting` changed.
 - A `Keep` backing off a mind that stands on its ground keeps to that ground, as `Idle` does, and a watching keep waits only on it, leaving one off its ground to `Idle` to walk back.
 - `Keep::herd` and `GiveWay` step by near fields, and `GiveWay` gives way only to those within its `space` and 8 cells past it: a herd closing up or a crowd of bystanders no longer floods every loaded cell for each member's step.
+- The look cursor forecasts no fight, no duel and no odds, with one of a side the player's `CombatRules::spares`, whose blows never land on them, as with an ally.
 - The trade screen lists the rows of one name together, where the first of them stands, and otherwise in the bag's order, so a thing sold to a trader goes in beside the trader's own of its name rather than to the foot of the list.
 
 ### Fixed

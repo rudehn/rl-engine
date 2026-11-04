@@ -310,7 +310,8 @@ type Fighter = Option<&'static Health>;
 /// count in the panel exactly as they will in the fight, and its speed from
 /// [`Speeds`], so haste counts as the turns count it.
 ///
-/// No fight is forecast with an ally, nor with anyone standing in a
+/// No fight is forecast with an ally, nor with one of a side the player's
+/// [`spares`](CombatRules::spares), nor with anyone standing in a
 /// [`peaceful`](atglyph_bevy::PlaceBuild::peaceful) place, where no blow lands:
 /// the odds of a fight that cannot happen are nothing a player is asking.
 /// A neutral subject is forecast as a hostile one is, since a rat that
@@ -382,6 +383,11 @@ pub(crate) fn collect_inspect(mut view: ResMut<InspectView>, duelists: Duelists)
         return;
     }
     if relation == Some(Relation::Allied) || duelists.map.is_peaceful(on.map_or(MapId::ZERO, |m| m.0)) {
+        return;
+    }
+    // Nor with one of a side the player's spares, whose blows never land
+    // on them, by the combat rules' own answer.
+    if duelists.rules.spares_side(my_faction.map(|f| f.0), theirs.and_then(|(_, f)| f).map(|f| f.0)) {
         return;
     }
     let Some((subject, _)) = theirs else { return };
@@ -685,6 +691,26 @@ mod tests {
         let view = stage.app.world().resource::<InspectView>();
         let row = view.subject.as_ref().expect("the friend, pointed at");
         assert_eq!((row.label.as_str(), row.relation), ("a friend", Some(Relation::Allied)));
+        assert_eq!((view.duel, view.odds.is_some()), (None, false), "and no fight forecast with them");
+    }
+
+    /// Nobody forecasts a fight that cannot happen: a foe of a side the
+    /// player's spares is named, its side said, and no duel is run, since
+    /// no blow of the player's lands on one.
+    #[test]
+    fn a_foe_the_player_spares_is_never_forecast_as_a_fight() {
+        let mut stage = stage();
+        let ours = stage.app.world().get::<Faction>(stage.player).expect("the player's side").0;
+        let side = atglyph_rules::FactionId::from_raw(2);
+        let rules = std::mem::take(&mut *stage.app.world_mut().resource_mut::<CombatRules>());
+        stage.app.insert_resource(rules.hostile(ours, side).spares(ours, side));
+        let spared = stage.actor("a townsman", 't', 1, 0);
+        stage.app.world_mut().entity_mut(spared).insert(Faction(side));
+        stage.tick();
+        stage.press(CursorKeys::default().look);
+        let view = stage.app.world().resource::<InspectView>();
+        let row = view.subject.as_ref().expect("the townsman, pointed at");
+        assert_eq!((row.label.as_str(), row.relation), ("a townsman", Some(Relation::Hostile)));
         assert_eq!((view.duel, view.odds.is_some()), (None, false), "and no fight forecast with them");
     }
 
