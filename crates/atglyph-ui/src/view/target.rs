@@ -416,7 +416,9 @@ impl Aiming<'_, '_> {
         let aim = self.aim(pointing);
         list.into_iter().find(|s| {
             let Ok(health) = self.living.get(s.entity) else { return false };
-            aim.worth_aiming_at(self.bystanders.relation(user, s.entity), s.entity == user, health.current < health.max)
+            // A foe the user spares is nothing to aim harm at.
+            let spared = aim != Aim::Ally && self.bystanders.spares(user, s.entity);
+            !spared && aim.worth_aiming_at(self.bystanders.relation(user, s.entity), s.entity == user, health.current < health.max)
         })
     }
 }
@@ -552,7 +554,10 @@ pub(crate) fn aim_cursor(mut view: ResMut<TargetView>, mut modals: ResMut<Modals
                     // under the cursor there is no attack to write, and the
                     // box already says there is no target, so the cursor
                     // stays up for the player to move.
-                    let Some(target) = mark(&aiming.occupancy, user, view.cursor, |who| aiming.living.contains(who)) else { return };
+                    let Some(target) = mark(&aiming.occupancy, user, view.cursor, |who| aiming.living.contains(who) && !aiming.bystanders.spares(user, who))
+                    else {
+                        return;
+                    };
                     intents.attacks.write(Intent::new(user, Attack(target)));
                 }
             }
@@ -566,11 +571,12 @@ pub(crate) fn aim_cursor(mut view: ResMut<TargetView>, mut modals: ResMut<Modals
     }
 }
 
-/// Who a shot at `cell` is at: whoever living stands there, never the one
-/// shooting. The one rule the cursor writes the attack by and the preview
-/// names its target by.
-fn mark(occupancy: &Occupancy, user: Entity, cell: Point, alive: impl Fn(Entity) -> bool) -> Option<Entity> {
-    occupancy.first_at(cell).filter(|who| *who != user && alive(*who))
+/// Who a shot at `cell` is at: whoever stands there that `may` allows,
+/// the living the shooter does not spare, never the one shooting. The one
+/// rule the cursor writes the attack by and the preview names its target
+/// by.
+fn mark(occupancy: &Occupancy, user: Entity, cell: Point, may: impl Fn(Entity) -> bool) -> Option<Entity> {
+    occupancy.first_at(cell).filter(|who| *who != user && may(*who))
 }
 
 /// Puts the cursor away and forgets what it was aiming.
@@ -696,8 +702,11 @@ pub(crate) fn collect_target(mut view: ResMut<TargetView>, modals: Res<Modals>, 
         view.unknown = from_item.is_some_and(|item| reach.unknown.contains(item));
         let span = AimRange { distance: atglyph_core::geometry::chebyshev(from, view.cursor), effective: gun.effective_range(), max: gun.range };
         view.span = (!view.unknown).then_some(span);
-        let flies = shot(&reach.map, &reach.occupancy, from, view.cursor, gun.range);
-        let target = mark(&reach.occupancy, user, view.cursor, |who| reach.living.contains(who));
+        // Past whoever the user spares, as the resolver fires it, and never
+        // at one of them.
+        let spared = |who: Entity| reach.bystanders.spares(user, who);
+        let flies = shot(&reach.map, &reach.occupancy, from, view.cursor, gun.range, spared);
+        let target = mark(&reach.occupancy, user, view.cursor, |who| reach.living.contains(who) && !spared(who));
         // Point blank is a blow, struck with whatever the user fights with
         // in hand; anything further needs a clear line to the target.
         let point_blank = atglyph_core::geometry::is_adjacent(from, view.cursor);
@@ -730,7 +739,7 @@ pub(crate) fn collect_target(mut view: ResMut<TargetView>, modals: Res<Modals>, 
         let (Ok((_, name)), Some(throwable)) = (reach.missiles.get(item), reach.throws.of(user, item)) else { return };
         view.what = name.map(|n| n.as_str().to_string()).unwrap_or_default();
         view.launcher = throwable.launched.and_then(|(e, _)| reach.names.get(e).ok()).map(|n| n.as_str().to_string()).unwrap_or_default();
-        let thrown = flight(&reach.map, &reach.occupancy, from, view.cursor, throwable.range);
+        let thrown = flight(&reach.map, &reach.occupancy, from, view.cursor, throwable.range, |who| reach.bystanders.spares(user, who));
         // Rolled against whoever living the flight strikes first, as the
         // resolver rolls, which need not be who the cursor is on; the range
         // read is to where it strikes, the distance the chance was worked
@@ -1600,6 +1609,50 @@ mod tests {
         stage.press(KeyCode::Enter);
         assert_eq!(attacks(&mut stage), vec![far], "the resolver judges the blocked line, as it would any attack");
         assert!(!stage.app.world().resource::<TargetView>().aiming());
+    }
+
+    /// The preview of a shot and of a throw flies past one the user spares,
+    /// as the resolvers do, to the foe behind, where the cursor opens
+    /// though the spared one is a nearer foe; a shot at the spared one
+    /// itself has nobody to strike.
+    #[test]
+    fn a_shot_and_a_throw_preview_their_flight_past_one_the_user_spares() {
+        let mut stage = Stage::new_with((ThrowingPlugin, TargetViewPlugin), |_| {});
+        stage.tick();
+        let (user, kind) = (stage.player, stage.kind);
+        let ours = stage.app.world().get::<Faction>(user).expect("the player takes a side").0;
+        let side = atglyph_rules::FactionId::from_raw(2);
+        let rules = std::mem::take(&mut *stage.app.world_mut().resource_mut::<CombatRules>());
+        stage.app.insert_resource(rules.hostile(ours, side).spares(ours, side));
+        stage.app.world_mut().entity_mut(user).insert(RangedAttack::new(kind, atglyph_core::DiceRoll::flat(2), 6));
+        let knife = stage.app.world_mut().spawn((Item, Name::new("knife"), Throwable::new(Some(6), Some((kind, atglyph_core::DiceRoll::flat(2)))))).id();
+        stage.app.world_mut().get_mut::<Inventory>(user).expect("a bag").items.push(knife);
+        let near = stage.actor("near", 'n', 2, 0);
+        stage.app.world_mut().entity_mut(near).insert(Faction(side));
+        let far = stage.actor("far", 'f', 4, 0);
+        stage.tick();
+        let at = stage.at;
+
+        stage.app.world_mut().write_message(AimFire { user });
+        stage.tick();
+        let view = stage.app.world().resource::<TargetView>();
+        assert_eq!(view.cursor, at.offset(4, 0), "the foe behind");
+        assert!(view.legal, "with the spared one no bar to the shot: {:?}", view.why);
+        assert_eq!(view.landing, Some(at.offset(4, 0)));
+        assert_eq!(view.targets.iter().map(|r| r.entity).collect::<Vec<_>>(), vec![far]);
+        stage.press(KeyCode::ArrowLeft);
+        stage.press(KeyCode::ArrowLeft);
+        let view = stage.app.world().resource::<TargetView>();
+        assert_eq!(view.cursor, at.offset(2, 0));
+        assert_eq!(view.why, vec![Blocked::NoTarget], "the spared one is nobody to shoot");
+        stage.press(KeyCode::Escape);
+
+        stage.app.world_mut().write_message(AimThrow { user, item: knife });
+        stage.tick();
+        let view = stage.app.world().resource::<TargetView>();
+        assert_eq!(view.cursor, at.offset(4, 0), "the foe behind");
+        assert_eq!(view.targets.iter().map(|r| r.entity).collect::<Vec<_>>(), vec![far], "which the flight strikes");
+        assert_eq!(view.landing, Some(at.offset(4, 0)));
     }
 
     /// A gun worn is a gun to aim: the cursor opens for a user whose only

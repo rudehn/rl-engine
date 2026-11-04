@@ -591,9 +591,11 @@ pub(crate) fn land_aimed_uses(
 /// gas, statuses and damage, so whatever a trigger starts is resolved in
 /// the pass that set it off. Every actor under the footprint is a target,
 /// the one who set it off included: a grenade does not ask whose it was.
-/// An actor's own triggers are the one exception, and spare the actor
+/// An actor's own triggers are one exception, and spare the actor
 /// they belong to, since a bite, an aura or a cloud it gives off is aimed
 /// at whoever is round it: a monster's fire aura does not burn the monster.
+/// Whoever the user's side [`spares`](crate::combat::CombatRules::spares)
+/// is the other: a grenade the player throws passes over them.
 /// The user is whoever set it off, or the carrier when it is
 /// [`LandsAsItself`], an actor, or nobody set it off. A carrier with an
 /// [`EffectBonus`](super::EffectBonus) lands its effects with it added,
@@ -651,8 +653,10 @@ pub(crate) fn land_triggers(
                     for cell in &cells {
                         for who in world.occupancy().at(*cell) {
                             // An actor's own answer spares it: an aura
-                            // burns whoever stands round its bearer.
-                            if alive.contains(*who) && !targets.contains(who) && !(actor && *who == f.on) {
+                            // burns whoever stands round its bearer. And
+                            // whoever its user's side spares is passed over.
+                            let spared = (actor && *who == f.on) || uses.bystanders.spares(user, *who);
+                            if alive.contains(*who) && !targets.contains(who) && !spared {
                                 targets.push(*who);
                             }
                         }

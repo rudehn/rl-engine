@@ -319,6 +319,10 @@ pub struct CombatRules {
     /// How far a thrower throws a thing with no range of its own, if
     /// throws reach at all: see [`reach`](Self::reach).
     pub reach: Option<ThrowReach>,
+    /// Every side that harms nobody of another, as `(by, spared)` pairs:
+    /// see [`spares`](Self::spares). A list rather than a set, since a
+    /// game names a handful.
+    pub spares: Vec<(FactionId, FactionId)>,
 }
 
 /// How far an actor throws a thing that names no range of its own: `base`,
@@ -352,6 +356,7 @@ impl CombatRules {
             unaware: None,
             death_ends_run: true,
             reach: None,
+            spares: Vec::new(),
         }
     }
 
@@ -445,6 +450,63 @@ impl CombatRules {
     pub fn allied(mut self, a: FactionId, b: FactionId) -> Self {
         self.factions.set_mutual(a, b, Relation::Allied);
         self
+    }
+
+    /// `by` harms nobody of `spared`, whatever the two are to each other,
+    /// and `spared` need not return it.
+    ///
+    /// An attack by one of `by` on one of `spared`, a blow or a shot, is
+    /// refused before it is made, as a bump into a neutral is: the player
+    /// keeps the turn. A thing one of `by` throws, launches or casts flies
+    /// past one of `spared` as if nobody stood there and can strike what
+    /// is behind; no area of theirs lands on one, but for what is aimed at
+    /// allies, which is no harm; and a mind of `by` never makes one its
+    /// target. Fire and gas are nobody's once lit or let out, and burn and
+    /// choke whoever stands in them.
+    ///
+    /// A rule beside the relations rather than a fourth relation, because
+    /// it says what one side may do to another and not how it regards it:
+    /// a town's folk are neutral to the player, and stay neutral, and
+    /// whether the player could strike them is a separate question with a
+    /// separate answer. A foe it spares is still hated, so it still wakes
+    /// a sleeper and is still watched for.
+    pub fn spares(mut self, by: FactionId, spared: FactionId) -> Self {
+        if !self.spares.contains(&(by, spared)) {
+            self.spares.push((by, spared));
+        }
+        self
+    }
+
+    /// Whether an actor of side `by` spares one of side `target`, as
+    /// [`spares`](Self::spares) says: never when either takes no side.
+    pub fn spares_side(&self, by: Option<FactionId>, target: Option<FactionId>) -> bool {
+        by.zip(target).is_some_and(|pair| self.spares.contains(&pair))
+    }
+}
+
+/// Whether `by` spares `other`, by the sides `sides` reads them on: never
+/// itself, nor anyone when either takes no side or there are no rules.
+///
+/// The one answer for two actors, which
+/// [`Bystanders::spares`](crate::ability::Bystanders::spares) gives a game
+/// and a resolver with no `Bystanders` of its own asks directly.
+pub(crate) fn spared(rules: Option<&CombatRules>, sides: &Query<&Faction>, by: Entity, other: Entity) -> bool {
+    let side = |e: Entity| sides.get(e).ok().map(|f| f.0);
+    by != other && rules.is_some_and(|r| r.spares_side(side(by), side(other)))
+}
+
+/// How side `by` stands to side `other` when it comes to choosing whom to
+/// fight: the relation the rules give, with a foe it spares read as a
+/// neutral, since it will not be struck. `None` where no relation can be
+/// asked, as [`stance`](atglyph_rules::faction::stance) has it.
+///
+/// What a bump and a mind decide by, so a foe a side spares is walked into
+/// and stepped round as a neutral is rather than swung at.
+pub(crate) fn regard(rules: Option<&CombatRules>, by: Option<FactionId>, other: Option<FactionId>) -> Option<Relation> {
+    let relation = atglyph_rules::faction::stance(rules.map(|r| &r.factions), by, other);
+    match relation {
+        Some(Relation::Hostile) if rules.is_some_and(|r| r.spares_side(by, other)) => Some(Relation::Neutral),
+        _ => relation,
     }
 }
 
@@ -1002,6 +1064,9 @@ struct ChosenAttack {
 /// way, since what a weapon does to itself happens at the trigger, not
 /// at the target.
 ///
+/// An attack on one the attacker [`spares`](CombatRules::spares) is refused
+/// before it is made, and a shot flies past one standing in its way.
+///
 /// An attack with an [`AttackShape`] strikes its target and every foe the
 /// shape reaches, the target rolled for first and the rest in the shape's
 /// order, so an attack with none draws from the combat stream exactly what
@@ -1035,10 +1100,18 @@ pub(crate) fn resolve_attacks(
             resolution.done(actor, atglyph_core::turn::BASE_ACTION_COST);
             continue;
         };
+        // Refused before anything is struck at or fired, as a bump into a
+        // neutral is, so a blow at one the attacker spares costs the
+        // player nothing and sets nothing off.
+        if sides.spares(actor, target) {
+            resolution.failed(actor, atglyph_core::turn::BASE_ACTION_COST);
+            continue;
+        }
         // The gun is kept beside the attack it became, so the odds can read
-        // its reach.
+        // its reach. A shot flies past whoever its shooter spares.
         let adjacent = geometry::is_adjacent(pos.0, target_pos.0);
-        let gun = if adjacent { None } else { loadout.ranged_with(actor).filter(|(_, r)| line_of_fire(map, occupancy, pos.0, target_pos.0, r.range)) };
+        let past = |other: Entity| sides.spares(actor, other);
+        let gun = if adjacent { None } else { loadout.ranged_with(actor).filter(|(_, r)| line_of_fire(map, occupancy, pos.0, target_pos.0, r.range, past)) };
         let melee = if adjacent { loadout.melee_with(actor) } else { None };
         // `gun` is already filtered by line of fire, so it stands for both facts.
         let chosen = match atglyph_rules::arms::choose_reach(adjacent, gun.is_some(), melee.is_some(), gun.is_some()) {
@@ -1077,7 +1150,9 @@ pub(crate) fn resolve_attacks(
         };
         let mut struck_at = vec![(target, target_pos.0)];
         if let Some(shape) = shape {
-            let foe = |other: Entity| other != actor && alive.contains(other) && sides.relation(actor, other) == Some(Relation::Hostile);
+            let foe = |other: Entity| {
+                other != actor && alive.contains(other) && sides.relation(actor, other) == Some(Relation::Hostile) && !sides.spares(actor, other)
+            };
             struck_at.extend(reached(shape, pos.0, (target, target_pos.0), gun.map(|(_, r)| r.range), map, occupancy, foe));
         }
         let strikes = loadout.strikes(actor);
@@ -1315,32 +1390,46 @@ fn land(
 /// throw, an ability and a thing's aimed use all ask this, so they agree
 /// about what is in the way and where they come to rest.
 ///
-/// Anyone standing in the way stops a flight, and so does anything that
-/// stops projectiles; only the second is a wall, which
-/// [`footprint`](atglyph_grid::footprint) brings nothing to rest inside. One
-/// gathering rather than one per resolver because the copies drifted
-/// apart: a shot came to rest inside the wall a throw stopped short of.
-pub(crate) fn projectile(map: &WorldMap, occupancy: &Occupancy, mode: atglyph_grid::TargetMode, from: Point, aim: Point) -> atglyph_grid::Footprint {
+/// Anyone standing in the way stops a flight, but for whoever `past`
+/// lets it fly by, and so does anything that stops projectiles; only the
+/// second is a wall, which [`footprint`](atglyph_grid::footprint) brings
+/// nothing to rest inside. One gathering rather than one per resolver
+/// because the copies drifted apart: a shot came to rest inside the wall a
+/// throw stopped short of.
+pub(crate) fn projectile(
+    map: &WorldMap,
+    occupancy: &Occupancy,
+    mode: atglyph_grid::TargetMode,
+    from: Point,
+    aim: Point,
+    past: impl Fn(Entity) -> bool,
+) -> atglyph_grid::Footprint {
     let walls = |p: Point| map.blocks_projectiles(p);
-    atglyph_grid::footprint(mode, from, aim, map.window_tiles(), |p| walls(p) || occupancy.is_occupied(p), walls)
+    atglyph_grid::footprint(mode, from, aim, map.window_tiles(), |p| walls(p) || occupancy.at(p).iter().any(|who| !past(*who)), walls)
 }
 
 /// Where a shot from `from` at `to` flies within `range`: a bolt's flight,
 /// the one a throw and a bolt ability take too.
 ///
 /// It reaches `to`, or stops short of it at the first thing that stops
-/// projectiles or anyone standing in between, and comes to rest in front
-/// of a wall rather than inside it. [`line_of_fire`] is this reaching
-/// `to`, and a targeting preview draws this same call, so what the player
-/// is shown and what the resolver decides cannot disagree.
-pub fn shot(map: &WorldMap, occupancy: &Occupancy, from: Point, to: Point, range: i32) -> atglyph_grid::Footprint {
-    projectile(map, occupancy, atglyph_grid::TargetMode::Bolt { range }, from, to)
+/// projectiles or anyone standing in between but whoever `past` lets it
+/// fly by, and comes to rest in front of a wall rather than inside it.
+/// [`line_of_fire`] is this reaching `to`, and a targeting preview draws
+/// this same call, so what the player is shown and what the resolver
+/// decides cannot disagree.
+///
+/// `past` is whoever the shooter [`spares`](CombatRules::spares), which
+/// [`Bystanders::spares`](crate::ability::Bystanders::spares) answers;
+/// `|_| false` for a flight anyone stops.
+pub fn shot(map: &WorldMap, occupancy: &Occupancy, from: Point, to: Point, range: i32, past: impl Fn(Entity) -> bool) -> atglyph_grid::Footprint {
+    projectile(map, occupancy, atglyph_grid::TargetMode::Bolt { range }, from, to, past)
 }
 
 /// Whether a shot from `from` reaches `to` within `range`: nothing that
-/// stops projectiles and nobody standing in between.
-pub fn line_of_fire(map: &WorldMap, occupancy: &Occupancy, from: Point, to: Point, range: i32) -> bool {
-    shot(map, occupancy, from, to, range).reached == Some(to)
+/// stops projectiles and nobody standing in between but whoever `past`
+/// lets it fly by.
+pub fn line_of_fire(map: &WorldMap, occupancy: &Occupancy, from: Point, to: Point, range: i32, past: impl Fn(Entity) -> bool) -> bool {
+    shot(map, occupancy, from, to, range, past).reached == Some(to)
 }
 
 /// Everything that decides how much of a hit lands: the stages, the kinds
@@ -2609,6 +2698,91 @@ mod tests {
         let (mut app, _, player, others) = crowd(0, gun, &[((3, 0), THEIRS), ((4, 0), THEIRS), ((5, 0), THEIRS)]);
         attack(&mut app, player, others[0]);
         assert_eq!(taken(&app, &others), [4, 4, 0], "the target and the foe behind it; the next is in the shape but past the range");
+    }
+
+    /// The rules in play, made to say that `by` spares `spared` as well.
+    fn spare(app: &mut App, by: FactionId, spared: FactionId) {
+        let rules = std::mem::take(&mut *app.world_mut().resource_mut::<CombatRules>());
+        app.insert_resource(rules.spares(by, spared));
+    }
+
+    /// Who the side `by` spares, and only that way round.
+    #[test]
+    fn a_side_spares_only_whom_it_is_said_to_and_only_one_way() {
+        let rules = CombatRules::new().hostile(OURS, THEIRS).spares(OURS, BYSTANDERS);
+        assert!(rules.spares_side(Some(OURS), Some(BYSTANDERS)));
+        assert!(!rules.spares_side(Some(BYSTANDERS), Some(OURS)), "sparing is not returned");
+        assert!(!rules.spares_side(Some(OURS), Some(THEIRS)), "nor given to anyone else");
+        assert!(!rules.spares_side(None, Some(BYSTANDERS)) && !rules.spares_side(Some(OURS), None), "and someone with no side spares and is spared by nobody");
+        assert!(!CombatRules::new().spares_side(Some(OURS), Some(BYSTANDERS)), "nobody spares anyone until the game says");
+    }
+
+    /// An attack by a side on one it spares is refused before it is made,
+    /// a blow and a shot alike: nothing is struck at, nothing lands, and the
+    /// player keeps its turn, as with a bump into a neutral. A sweep or a
+    /// pierce at a foe passes over one it spares beside or behind it.
+    #[test]
+    fn a_blow_at_a_spared_side_is_refused_and_lands_nothing() {
+        let blade = |kind| MeleeAttack::new(kind, DiceRoll::flat(5));
+        let gun = |kind| RangedAttack::new(kind, DiceRoll::flat(4), 6);
+        for (what, (mut app, _, player, others)) in [("a blow", crowd(0, blade, &[((1, 0), THEIRS)])), ("a shot", crowd(0, gun, &[((3, 0), THEIRS)]))] {
+            spare(&mut app, OURS, THEIRS);
+            let before = app.world().resource::<Turns>().now();
+            attack(&mut app, player, others[0]);
+            assert_eq!(taken(&app, &others), [0], "{what}: nothing landed");
+            let seen = app.world().resource::<Seen>();
+            assert!(seen.struck.is_empty() && seen.dealt.is_empty(), "{what}: nothing was struck at");
+            assert_eq!(app.world().resource::<Turns>().now(), before, "{what}: the turn was kept");
+            assert!(app.world().get::<MyTurn>(player).is_some(), "{what}: and is still the player's");
+        }
+
+        let shaped = |shape| move |kind| MeleeAttack::new(kind, DiceRoll::flat(5)).shaped(shape);
+        let all_foes = |app: &mut App| {
+            app.insert_resource(CombatRules::new().hostile(OURS, THEIRS).hostile(OURS, BYSTANDERS).spares(OURS, BYSTANDERS));
+        };
+        let (mut app, _, player, others) = crowd(0, shaped(AttackShape::Sweep), &[((1, 0), THEIRS), ((0, 1), BYSTANDERS), ((-1, 0), THEIRS)]);
+        all_foes(&mut app);
+        attack(&mut app, player, others[0]);
+        assert_eq!(taken(&app, &others), [5, 0, 5], "a sweep passes over the spared foe beside the player");
+        let (mut app, _, player, others) = crowd(0, shaped(AttackShape::Pierce(2)), &[((1, 0), THEIRS), ((2, 0), BYSTANDERS), ((3, 0), THEIRS)]);
+        all_foes(&mut app);
+        attack(&mut app, player, others[0]);
+        assert_eq!(taken(&app, &others), [5, 0, 5], "and a pierce over the spared foe behind its target");
+    }
+
+    /// A shot flies past one its shooter spares as if nobody stood there,
+    /// and strikes the foe behind.
+    #[test]
+    fn a_shot_flies_past_a_spared_actor_and_strikes_what_is_behind() {
+        let gun = |kind| RangedAttack::new(kind, DiceRoll::flat(4), 6);
+        let (mut app, _, player, others) = crowd(0, gun, &[((2, 0), BYSTANDERS), ((4, 0), THEIRS)]);
+        spare(&mut app, OURS, BYSTANDERS);
+        attack(&mut app, player, others[1]);
+        assert_eq!(taken(&app, &others), [0, 4]);
+    }
+
+    /// With nobody spared, or only by a side other than the attacker's, a
+    /// blow at a neutral lands as it always did, and anyone standing in
+    /// the way of a shot stops it.
+    #[test]
+    fn without_spares_nothing_changes() {
+        let blade = |kind| MeleeAttack::new(kind, DiceRoll::flat(5));
+        let gun = |kind| RangedAttack::new(kind, DiceRoll::flat(4), 6);
+        for sparing in [false, true] {
+            let (mut app, _, player, others) = crowd(0, blade, &[((1, 0), BYSTANDERS)]);
+            if sparing {
+                spare(&mut app, THEIRS, BYSTANDERS);
+            }
+            attack(&mut app, player, others[0]);
+            assert_eq!(taken(&app, &others), [5], "sparing by another side {sparing}: the neutral was struck");
+
+            let (mut app, _, player, others) = crowd(0, gun, &[((2, 0), BYSTANDERS), ((4, 0), THEIRS)]);
+            if sparing {
+                spare(&mut app, THEIRS, BYSTANDERS);
+            }
+            attack(&mut app, player, others[1]);
+            assert_eq!(taken(&app, &others), [0, 0], "sparing by another side {sparing}: the neutral in the way stopped the shot");
+        }
     }
 
     /// A watched shot that pierces flies once, from the shooter to the

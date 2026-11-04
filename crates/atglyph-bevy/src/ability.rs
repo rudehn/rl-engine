@@ -488,13 +488,26 @@ impl Bystanders<'_, '_> {
         Some(rules.factions.relation(a.0, b.0))
     }
 
+    /// Whether `user` spares `other`, by [`CombatRules::spares`]: never
+    /// itself, nor anyone when either takes no side or the game has no
+    /// rules.
+    pub fn spares(&self, user: Entity, other: Entity) -> bool {
+        crate::combat::spared(self.rules.as_deref(), &self.factions, user, other)
+    }
+
     /// Where `aimed` lands, who it hits, and why the aim would be refused.
     ///
     /// The one answer to the question, for an ability and for a thing's
     /// aimed use alike. The resolvers land a use with it and the targeting
     /// cursor previews one with it, so the two cannot disagree. Who counts
     /// as hit is [`Aim::hits`] over every living actor under the footprint,
-    /// the user included; what refuses an aim is [`aim_blocked`]. The
+    /// the user included; what refuses an aim is [`aim_blocked`].
+    ///
+    /// Whoever the user [`spares`](Self::spares) is not there to it: a
+    /// projectile flies past one, and nothing lands on one but what is
+    /// aimed at allies or at the user alone. Not an area that only harms,
+    /// because a landing cannot tell harm from help, and an ally's mend
+    /// is the one aim that is surely help. The
     /// landing adds nothing to what it lands, and a thing that lands its
     /// effects stronger sets its own bonus on it.
     ///
@@ -504,7 +517,7 @@ impl Bystanders<'_, '_> {
     /// landing only one of the resolvers actually carries out.
     pub fn land(&self, aimed: Aimed, map: &WorldMap, occupancy: &Occupancy) -> Landed {
         let Aimed { user, source, targeting, origin, aim, sees_aim } = aimed;
-        let Footprint { cells, path, reached, landing } = crate::combat::projectile(map, occupancy, targeting.mode, origin, aim);
+        let Footprint { cells, path, reached, landing } = crate::combat::projectile(map, occupancy, targeting.mode, origin, aim, |who| self.spares(user, who));
         let mut refused = aim_blocked(targeting, &cells, sees_aim);
         // A projectile that stopped short of where it was pointed, at its
         // range or on whatever stood in the way, is refused rather than
@@ -520,9 +533,11 @@ impl Bystanders<'_, '_> {
             // Whatever the shape, the only one it wants is the one using it.
             targets.push(user);
         } else {
+            let help = targeting.aim == Aim::Ally;
             for cell in &cells {
                 for who in occupancy.at(*cell) {
-                    if !targets.contains(who) && self.alive.contains(*who) && targeting.aim.hits(self.relation(user, *who), *who == user) {
+                    let spared = !help && self.spares(user, *who);
+                    if !targets.contains(who) && self.alive.contains(*who) && !spared && targeting.aim.hits(self.relation(user, *who), *who == user) {
                         targets.push(*who);
                     }
                 }
@@ -980,7 +995,7 @@ pub(crate) fn weigh_self_abilities(world: &mut World) {
                 if u.aim != Aim::SelfOnly {
                     return true;
                 }
-                let cells = crate::combat::projectile(map, occupancy, u.mode, origin, origin).cells;
+                let cells = crate::combat::projectile(map, occupancy, u.mode, origin, origin, |_| false).cells;
                 let source = Source::Ability(u.ability);
                 let landing = Landing {
                     user: thinker,
@@ -1419,6 +1434,36 @@ mod tests {
         app.world_mut().write_message(Intent::new(me, Use { ability: bolt, aim: start.offset(4, 1) }));
         app.update();
         assert_eq!(hp(&app, ours), 17, "a bolt aimed at a foe passes an ally by");
+    }
+
+    /// What a side casts lands on nobody of a side it spares: a ball on the
+    /// ground passes over one standing in it, a bolt flies past one in its
+    /// way to the foe behind, and a mend aimed at allies still mends one.
+    #[test]
+    fn an_ability_of_a_sparing_side_lands_on_nobody_it_spares() {
+        let (mut app, start) = app();
+        let (us, spared_side) = (atglyph_rules::FactionId::from_raw(0), atglyph_rules::FactionId::from_raw(2));
+        let rules = std::mem::take(&mut *app.world_mut().resource_mut::<CombatRules>());
+        app.insert_resource(rules.spares(us, spared_side).allied(us, spared_side));
+        let (bolt, burst, salve) = (ability(&app, "bolt"), ability(&app, "burst"), ability(&app, "salve"));
+        let me = caster(&mut app, start, 20, &[bolt, burst, salve]);
+        let them = foe(&mut app, start.offset(4, 0));
+        let beside = app.world_mut().spawn((Actor, Blocks, Position(start.offset(4, 1)), Health::full(20), Faction(spared_side))).id();
+        let hurt = Health { current: 10, max: 20 };
+        let between = app.world_mut().spawn((Actor, Blocks, Position(start.offset(2, 0)), hurt, Faction(spared_side))).id();
+        settle(&mut app);
+
+        app.world_mut().write_message(Intent::new(me, Use { ability: burst, aim: start.offset(4, 0) }));
+        app.update();
+        assert_eq!((hp(&app, them), hp(&app, beside)), (17, 20), "the ball passed over the spared one beside the foe");
+
+        app.world_mut().write_message(Intent::new(me, Use { ability: bolt, aim: start.offset(4, 0) }));
+        app.update();
+        assert_eq!((hp(&app, them), hp(&app, between)), (13, 10), "the bolt flew past the spared one in its way");
+
+        app.world_mut().write_message(Intent::new(me, Use { ability: salve, aim: start.offset(2, 0) }));
+        app.update();
+        assert_eq!(hp(&app, between), 15, "and what is aimed at allies is no harm, and lands on one");
     }
 
     /// A body's chance to turn a use back is one in two unless the game

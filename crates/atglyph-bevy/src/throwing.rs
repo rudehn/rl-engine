@@ -10,7 +10,8 @@
 //!
 //! [`flight`] is the one answer to where a throw goes. The resolver throws
 //! with it and the targeting cursor previews with it, so the cells a player
-//! is shown are the cells the item will fly through.
+//! is shown are the cells the item will fly through. A throw flies past
+//! whoever its thrower [`spares`](crate::combat::CombatRules::spares).
 
 use crate::app::EngineApp;
 use atglyph_core::turn::BASE_ACTION_COST;
@@ -228,9 +229,13 @@ pub struct Flight {
 /// flight a bolt takes, as [`shot`](crate::combat::shot) answers it, so a
 /// thrown thing and a spell agree about what is in the way and where they
 /// come to rest.
-pub fn flight(map: &WorldMap, occupancy: &Occupancy, from: Point, at: Point, range: i32) -> Flight {
-    let Footprint { path, reached, landing, .. } = crate::combat::projectile(map, occupancy, TargetMode::Bolt { range }, from, at);
-    let struck = reached.and_then(|end| occupancy.first_at(end));
+///
+/// It flies by whoever `past` lets it, the thrower's spared as
+/// [`Bystanders::spares`](crate::ability::Bystanders::spares) answers, and
+/// strikes nobody `past` names: aimed at one, it comes down at their feet.
+pub fn flight(map: &WorldMap, occupancy: &Occupancy, from: Point, at: Point, range: i32, past: impl Fn(Entity) -> bool) -> Flight {
+    let Footprint { path, reached, landing, .. } = crate::combat::projectile(map, occupancy, TargetMode::Bolt { range }, from, at, &past);
+    let struck = reached.and_then(|end| occupancy.at(end).iter().copied().find(|who| !past(*who)));
     Flight { path, struck, rests: landing.unwrap_or(from) }
 }
 
@@ -250,6 +255,11 @@ pub struct Launch<'w, 's> {
     marks: crate::accuracy::Marksmanship<'w, 's>,
     /// How far and how hard the thrower throws it, given what it wears.
     throws: ThrowRules<'w, 's>,
+    /// Everyone's side, for whom the thrower spares, by the rules
+    /// [`ThrowRules`] holds. Not a `Bystanders`, which writes what a
+    /// reflection writes and would tie the throw to every resolver that
+    /// lands a use.
+    sides: Query<'w, 's, &'static crate::combat::Faction>,
 }
 
 /// A throw that has left the hand and not yet come down: what it will do
@@ -284,7 +294,7 @@ pub(crate) fn resolve_throws(
     mut reports: ThrowReports,
     stuck: Query<(), With<crate::items::Stuck>>,
 ) {
-    let Launch { map, occupancy, mut rng, mut throwers, mut missiles, alive, mut cues, mut cue_wait, mut airborne, marks, throws } = launch;
+    let Launch { map, occupancy, mut rng, mut throwers, mut missiles, alive, mut cues, mut cue_wait, mut airborne, marks, throws, sides } = launch;
     for intent in intents.read() {
         let (actor, Throw { item, at }) = (intent.actor, intent.action);
         if !resolution.claim(actor) {
@@ -305,7 +315,8 @@ pub(crate) fn resolve_throws(
             continue;
         }
         let ThrowAs { range, strike, launched, .. } = thrown_as;
-        let Flight { struck, rests, .. } = flight(&map, &occupancy, pos.0, at, range);
+        let spares = |who: Entity| crate::combat::spared(throws.combat.as_deref(), &sides, actor, who);
+        let Flight { struck, rests, .. } = flight(&map, &occupancy, pos.0, at, range, spares);
 
         // One leaves the hand: off the top of a stack, which makes it a
         // thing of its own, or the item itself.
@@ -813,6 +824,58 @@ mod tests {
         assert!(rig.app.world().get::<Inventory>(rig.player).unwrap().contains(knives));
         assert_eq!(rig.app.world().get::<Name>(*item).map(|n| n.as_str()), Some("knife"), "it is still a knife");
         assert_eq!(rig.now(), 100, "a throw is one action");
+    }
+
+    /// Someone of a third side, neutral to both and spared by the
+    /// player's, `dx` east of the player.
+    fn spared(rig: &mut Rig, dx: i32) -> Entity {
+        let side = atglyph_rules::FactionId::from_raw(2);
+        let rules = std::mem::take(&mut *rig.app.world_mut().resource_mut::<crate::combat::CombatRules>());
+        rig.app.insert_resource(rules.spares(rig.sides.ours, side));
+        let e = rig.app.world_mut().spawn((Actor, Blocks, Position(rig.start.offset(dx, 0)), Health::full(20), Faction(side))).id();
+        rig.app.update();
+        e
+    }
+
+    /// A thing thrown or launched by a side flies past one it spares as if
+    /// nobody stood there, and strikes the foe behind; aimed at one it
+    /// spares, it comes down at their feet and strikes nobody.
+    #[test]
+    fn a_missile_flies_past_a_spared_actor_and_strikes_what_is_behind() {
+        let mut rig = Rig::new();
+        let knives = rig.knives(3);
+        let near = spared(&mut rig, 2);
+        let far = rig.mark(4);
+
+        let events = rig.throw(knives, 4);
+        let [ItemEvent::Thrown { at, struck, .. }] = events.as_slice() else { panic!("one throw: {events:?}") };
+        assert_eq!((*at, *struck), (Position(rig.start.offset(4, 0)), Some(far)), "past the spared one to the foe");
+        assert_eq!((rig.hp(near), rig.hp(far)), (20, 17));
+
+        rig.reach(4, 0);
+        let arrow = rig.missile(7);
+        rig.launcher(7, true);
+        let events = rig.throw(arrow, 4);
+        let [ItemEvent::Thrown { struck, .. }] = events.as_slice() else { panic!("one launch: {events:?}") };
+        assert_eq!(*struck, Some(far), "a launched one too");
+        assert_eq!((rig.hp(near), rig.hp(far)), (20, 12));
+
+        let events = rig.throw(knives, 2);
+        let [ItemEvent::Thrown { at, struck, .. }] = events.as_slice() else { panic!("one throw: {events:?}") };
+        assert_eq!((*at, *struck), (Position(rig.start.offset(2, 0)), None), "aimed at the spared one, it lies at their feet");
+        assert_eq!(rig.hp(near), 20);
+    }
+
+    /// What bursts where a thing a side threw comes down lands on nobody
+    /// that side spares, and on everyone else it catches.
+    #[test]
+    fn a_burst_where_a_sparing_sides_throw_comes_down_passes_over_whom_it_spares() {
+        let mut rig = Rig::new();
+        let grenades = rig.grenades(1);
+        let near = spared(&mut rig, 3);
+        let far = rig.mark(4);
+        rig.throw(grenades, 4);
+        assert_eq!((rig.hp(near), rig.hp(far)), (20, 16));
     }
 
     #[test]

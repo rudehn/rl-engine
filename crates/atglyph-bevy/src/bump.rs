@@ -24,6 +24,9 @@
 //! swapped with like an ally, and with [`BumpRules::minds_too`] a mind
 //! steps past it the same way.
 //!
+//! A foe of a side the bumper [`spares`](CombatRules::spares) is bumped as
+//! a neutral, since it is not to be struck.
+//!
 //! A bump into something that offers one thing, a crate or a captive,
 //! takes it up as an [`Interact`]; one offering more, or one it refuses,
 //! is a [`Bumped`] with `offers` set, for a screen to ask or explain. A
@@ -36,7 +39,6 @@ use atglyph_core::turn::{BASE_ACTION_COST, step_cost};
 use atglyph_core::{Direction, Point};
 use atglyph_rules::FactionId;
 use atglyph_rules::bump::{BumpOutcome, Offered, classify_offers, resolve_bump};
-use atglyph_rules::faction::stance;
 use bevy::prelude::*;
 
 use crate::combat::{Attack, CombatRules, Faction, Health};
@@ -218,7 +220,7 @@ pub(crate) fn redirect_bumps(mut intents: MessageReader<Intent<Bump>>, mut resol
         // resolver strikes by: alive, with health to lose.
         let someone = way.occupancy.at(target).iter().copied().find(|other| way.standing.contains(*other));
         let theirs = someone.and_then(|other| way.standing.get(other).ok().flatten());
-        let regard = someone.and_then(|_| stance(way.rules.as_deref().map(|r| &r.factions), side.map(|f| f.0), theirs.map(|f| f.0)));
+        let regard = someone.and_then(|_| crate::combat::regard(way.rules.as_deref(), side.map(|f| f.0), theirs.map(|f| f.0)));
         let bumps = way.bumps.as_deref();
         let (offered, what) = way.offers_at(actor, target);
         // One that offers something is dealt with before it is passed, when
@@ -643,6 +645,21 @@ mod tests {
         rig.bump(Direction::East);
         assert_eq!(rig.at(), start, "a side nobody named gives no way");
         assert_eq!(rig.app.world().resource::<Heard>().0, vec![Bumped { actor: rig.player, into: critter, offers: false }]);
+    }
+
+    /// A bump into a foe of a side the bumper spares is refused, for
+    /// nothing, as a bump into a neutral is: it is no blow.
+    #[test]
+    fn a_bump_into_a_foe_the_bumper_spares_is_refused_as_one_into_a_neutral() {
+        let mut rig = Rig::new();
+        rig.app.insert_resource(CombatRules::new().hostile(rig.ours, rig.theirs).spares(rig.ours, rig.theirs));
+        let start = rig.at();
+        let foe = rig.beside(Some(rig.theirs), Vec::new());
+        let before = rig.now();
+        rig.bump(Direction::East);
+        assert_eq!((rig.at(), rig.now()), (start, before), "refused, for nothing");
+        assert_eq!(rig.app.world().get::<Health>(foe).unwrap().current, 20, "and nothing struck");
+        assert_eq!(rig.app.world().resource::<Heard>().0, vec![Bumped { actor: rig.player, into: foe, offers: false }]);
     }
 
     /// With `offers_first`, a giving-way neutral that offers one thing is

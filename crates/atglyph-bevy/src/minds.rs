@@ -835,7 +835,9 @@ type Seen = (Entity, &'static Position, Option<&'static Health>, Option<&'static
 ///
 /// The roster, in [`PerceiveSet::Roster`](crate::plugin::PerceiveSet::Roster).
 /// With a [`CombatRules`] the faction matrix says who is a foe and who a
-/// friend, and a neutral, or anyone with no side, is one of the others;
+/// friend, and a neutral, a foe of a side the mind
+/// [`spares`](CombatRules::spares), or anyone with no side, is one of the
+/// others, so no tactic ever makes one its target;
 /// without one, in a game with no combat, everyone seen is one of the
 /// others, and a mind still steps round them.
 pub(crate) fn perceive_roster(
@@ -846,10 +848,9 @@ pub(crate) fn perceive_roster(
 ) {
     let Some(thinker) = thinking.actor() else { return };
     let Some(mine) = thinking.snapshot().map(|s| s.me.faction) else { return };
-    let factions = rules.as_deref().map(|r| &r.factions);
     let seen = actors.iter().filter(|(e, pos, _, _, on)| *e != thinker && sight.perceives(&thinking, pos.0, *on)).map(|(e, pos, health, faction, _)| {
         let view = ActorView { id: e, pos: pos.0, health: health.map(vitals), faction: faction.map(|f| f.0) };
-        (view, atglyph_rules::faction::stance(factions, mine, faction.map(|f| f.0)))
+        (view, crate::combat::regard(rules.as_deref(), mine, faction.map(|f| f.0)))
     });
     let (enemies, allies, others) = sort_roster(seen);
     if let Some(snapshot) = thinking.snapshot_mut() {
@@ -1088,7 +1089,7 @@ pub(crate) fn decide_minds(
     let side_of = |e: Entity| sides.get(e).ok().map(|f| f.0);
     let mine = side_of(thinker);
     let passing = bumps.as_deref().filter(|r| r.minds_too && !r.gives_way(mine));
-    let neutral = |e: Entity| atglyph_rules::faction::stance(rules.as_deref().map(|r| &r.factions), mine, side_of(e)) == Some(atglyph_rules::Relation::Neutral);
+    let neutral = |e: Entity| crate::combat::regard(rules.as_deref(), mine, side_of(e)) == Some(atglyph_rules::Relation::Neutral);
     let gives_way = |p: Point| {
         let here = occupancy.at(p);
         passing.is_some_and(|r| !here.is_empty() && here.iter().all(|e| r.gives_way(side_of(*e)) && neutral(*e)))
@@ -1105,8 +1106,10 @@ pub(crate) fn decide_minds(
     let opens = |p: Point| opens_doors && map.opens(p).is_some() && map.lock(p).is_none();
     let can_step = |p: Point| (map.is_walkable(p) || opens(p)) && (!occupancy.is_occupied(p) || gives_way(p)) && !thinking.is_hazard(p);
     // The predicate the ability resolver uses, so what a tactic thinks a
-    // shape will cover is what it does cover.
-    let blocks_shot = |p: Point| map.blocks_projectiles(p) || occupancy.is_occupied(p);
+    // shape will cover is what it does cover: a shot flies past whoever the
+    // mind spares.
+    let spares = |e: Entity| crate::combat::spared(rules.as_deref(), sides, thinker, e);
+    let blocks_shot = |p: Point| map.blocks_projectiles(p) || occupancy.at(p).iter().any(|e| !spares(*e));
     let blocks_burst = |p: Point| map.blocks_projectiles(p);
     let wary = wits.has(Wits::WARY);
     let mut walking = Walking { fields, map, profile: profile.map(|p| p.0).unwrap_or_default(), opens_doors, wary };
@@ -1505,6 +1508,36 @@ mod tests {
         assert!(app.world().get_entity(monster).is_err(), "the monster despawned by the end of the frame");
         assert!(!app.world().resource::<Occupancy>().is_occupied(mpos));
         assert!(!app.world().resource::<Turns>().contains(monster));
+    }
+
+    /// A mind of a side hostile to the player's, which spares it, never
+    /// strikes or shoots the player however long it stands beside or in
+    /// sight of it: the player is no foe of its to choose.
+    #[test]
+    fn a_mind_never_targets_a_side_it_spares() {
+        let (mut app, start, blunt) = arena();
+        let (us, them) = (atglyph_rules::FactionId::from_raw(0), atglyph_rules::FactionId::from_raw(1));
+        let rules = std::mem::take(&mut *app.world_mut().resource_mut::<CombatRules>());
+        app.insert_resource(rules.spares(them, us));
+        let player = app.world_mut().spawn((Actor, Player, Blocks, Position(start), Viewshed::new(8), Health::full(30), Faction(us))).id();
+        let brain = Arc::new(Brain::new().then(atglyph_rules::ai::tactics::ShootAtRange::default()).then(MeleeAdjacent).then(Hunt));
+        let monsters = [(1, 0), (-4, 0)].map(|(dx, dy)| {
+            let at = Position(start.offset(dx, dy));
+            let arms = (MeleeAttack::new(blunt, DiceRoll::flat(3)), crate::combat::RangedAttack::new(blunt, DiceRoll::flat(3), 6));
+            app.world_mut().spawn((Actor, Blocks, at, Health::full(5), Faction(them), Perception(8), arms, Mind(brain.clone()))).id()
+        });
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        for _ in 0..20 {
+            if app.world().get::<MyTurn>(player).is_some() {
+                app.world_mut().write_message(Intent::new(player, Wait));
+            }
+            app.update();
+        }
+        assert_eq!(app.world().get::<Health>(player).unwrap().current, 30, "never struck or shot");
+        for monster in monsters {
+            let last = app.world().get::<LastTactic>(monster).and_then(|t| t.0);
+            assert!(!matches!(last, Some("melee_adjacent" | "shoot_at_range" | "hunt")), "nor chosen as a target: {last:?}");
+        }
     }
 
     /// The player, and a mind of `brain`, on the player's side or the other,
