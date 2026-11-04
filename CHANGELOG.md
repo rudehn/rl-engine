@@ -42,11 +42,13 @@ atglyph is not on crates.io yet, so a game depends on a release by its git tag, 
 - By range, a pass works out only the stealth ranges that could have changed, of an actor that moved or finished an action and of every actor when the light or the map changed, and a pass that relights nothing no longer marks `Lighting` changed.
 - A `Keep` backing off a mind that stands on its ground keeps to that ground, as `Idle` does, and a watching keep waits only on it, leaving one off its ground to `Idle` to walk back.
 - `Keep::herd` and `GiveWay` step by near fields, and `GiveWay` gives way only to those within its `space` and 8 cells past it: a herd closing up or a crowd of bystanders no longer floods every loaded cell for each member's step.
+- The trade screen lists the rows of one name together, where the first of them stands, and otherwise in the bag's order, so a thing sold to a trader goes in beside the trader's own of its name rather than to the foot of the list.
 
 ### Fixed
 
 - The terminal's cells reach the screen before Bevy lays the new text out, works out what is shown and moves what moved in `PostUpdate`, so a step no longer leaves last frame's glyphs standing in the new colour for a frame, white where a cell turned blank, nor a picture where it was.
 - A herd member standing on its herd's middle steps off it, as its `no_closer_than` says, rather than asking for a field and then doing nothing.
+- A trade screen row's price says "each" only where the word fits beside the whole of the row's name, so a long name, `5 loaves of bread` at a purse that cannot pay, is never cut short for it.
 
 ## [0.5.0] - 2026-10-29
 
