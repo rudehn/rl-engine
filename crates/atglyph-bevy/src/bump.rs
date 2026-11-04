@@ -124,6 +124,13 @@ pub struct BumpRules {
     /// off what each of the two is put onto, as a step would, so stepping
     /// past one is no way over the plate it stood on.
     pub minds_too: bool,
+    /// Whether one that gives way and offers something is dealt with
+    /// before it is passed: a bump into it is taken up as an [`Interact`]
+    /// when it offers one thing, or is a [`Bumped`] with `offers` set when
+    /// it offers several. One that offers nothing is still swapped with.
+    /// For a side that is mostly harmless but has members, a store keeper
+    /// among them, whom walking into must open the trade.
+    pub offers_first: bool,
 }
 
 impl BumpRules {
@@ -149,6 +156,12 @@ impl BumpRules {
     /// Minds step past whoever gives way, as the player's bump does.
     pub fn minds_too(mut self) -> Self {
         self.minds_too = true;
+        self
+    }
+
+    /// A neutral that gives way and offers something is dealt with first.
+    pub fn offers_first(mut self) -> Self {
+        self.offers_first = true;
         self
     }
 
@@ -207,8 +220,10 @@ pub(crate) fn redirect_bumps(mut intents: MessageReader<Intent<Bump>>, mut resol
         let theirs = someone.and_then(|other| way.standing.get(other).ok().flatten());
         let regard = someone.and_then(|_| stance(way.rules.as_deref().map(|r| &r.factions), side.map(|f| f.0), theirs.map(|f| f.0)));
         let bumps = way.bumps.as_deref();
-        let gives_way = bumps.is_some_and(|r| r.gives_way(theirs.map(|f| f.0)));
         let (offered, what) = way.offers_at(actor, target);
+        // One that offers something is dealt with before it is passed, when
+        // the rules say so: without the giving way, the offer is taken up.
+        let gives_way = bumps.is_some_and(|r| r.gives_way(theirs.map(|f| f.0)) && !(r.offers_first && !matches!(offered, Offered::None)));
         match resolve_bump(someone, regard, gives_way, bumps.is_some_and(|r| r.allies == OnAlly::Swap), offered, way.map.opens(target).is_some()) {
             BumpOutcome::Interact(offer) => {
                 out.interacts.write(Intent::new(actor, Interact { target: offer.target, verb: offer.verb, thing: None }));
@@ -628,6 +643,37 @@ mod tests {
         rig.bump(Direction::East);
         assert_eq!(rig.at(), start, "a side nobody named gives no way");
         assert_eq!(rig.app.world().resource::<Heard>().0, vec![Bumped { actor: rig.player, into: critter, offers: false }]);
+    }
+
+    /// With `offers_first`, a giving-way neutral that offers one thing is
+    /// dealt with, not swapped with; one offering nothing still gives way.
+    #[test]
+    fn with_offers_first_a_giving_way_neutral_that_offers_trade_is_dealt_with() {
+        let mut rig = Rig::new();
+        let small = small_side(&mut rig);
+        rig.app.insert_resource(BumpRules::new().give_way(small).offers_first());
+        let talk = rig.verb("talk");
+        let start = rig.at();
+        let critter = rig.beside(Some(small), vec![crate::props::Offering::new(talk, 100)]);
+        rig.bump(Direction::East);
+        assert_eq!(rig.at(), start, "the player does not move");
+        assert_eq!(rig.app.world().get::<Position>(critter).unwrap().0, start.offset(1, 0), "nor does it");
+        let heard = &rig.app.world().resource::<Heard>().2;
+        assert_eq!(heard.len(), 1, "and what it offers was taken up");
+        assert_eq!(heard[0].verb, talk);
+    }
+
+    /// Nothing offered, nothing to deal with: it gives way as before.
+    #[test]
+    fn with_offers_first_a_giving_way_neutral_that_offers_nothing_still_gives_way() {
+        let mut rig = Rig::new();
+        let small = small_side(&mut rig);
+        rig.app.insert_resource(BumpRules::new().give_way(small).offers_first());
+        let start = rig.at();
+        let critter = rig.beside(Some(small), Vec::new());
+        rig.bump(Direction::East);
+        assert_eq!(rig.at(), start.offset(1, 0));
+        assert_eq!(rig.app.world().get::<Position>(critter).unwrap().0, start);
     }
 
     /// A dead-end corridor one cell wide east of the player, a critter of the small

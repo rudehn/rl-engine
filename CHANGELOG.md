@@ -8,6 +8,7 @@ atglyph is not on crates.io yet, so a game depends on a release by its git tag, 
 
 ### Added
 
+- `BumpRules::offers_first`: a bump into a neutral of a giving-way side that offers something is dealt with (taken up as an `Interact`, or a `Bumped` with `offers` when it offers several) before it gives way, so walking into a store keeper opens the trade; one offering nothing is still swapped with.
 - `dress::dress_room` dresses one room's cells on a terrain with no chain, by the rules `Dress` keeps, for a game that lays its own buildings.
 - Dressing rules for furnishing houses: a rule lays an exact `count` (`count: 1` or `count: (fewest, most)`) in place of `density_pct`, keeps `from_door` `Near` or `Far` by the path in from the nearest opening, or `Behind('c')` another thing by the path round the things laid as `'c'`, so a shop whose counter ends in the far corner has shelves along the whole far wall, and the spreads `Beside('c')`, `Across(gap: n)` for a line across the room with a gap, as a shop's counter, and `OutsideDoor` for a cell flanking the way out, never cutting the ground outside, read five cells round the area so a barrel by a door with a post two cells out stands where the street goes round it, and never joined to the street only through the room and out by another door.
 - `Keep` can keep away from the others: `Station::Others` is the actors neither allied nor hostile, and `Keep::away(station, distance)` backs off inside `distance` and never closes in, named `keep_away`; a keep on the others steps by near fields, as `GiveWay` does.
