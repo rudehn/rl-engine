@@ -641,7 +641,9 @@ impl<A: Copy, T: Tactic<A>> Tactic<A> for Leashed<T> {
 /// have a mind facing a foe past the edge step back toward its post, step
 /// out again next turn, and pace for as long as the foe stood there; so it
 /// holds the line, and goes back once it has lost the foe. A blow or a
-/// shot over the line is no step and goes through.
+/// shot over the line is no step and goes through. It judges a step of one
+/// cell, since [`OnGround`] knows only the eight beside the mind, and holds
+/// a longer one as a step off it.
 ///
 /// The ground is the one [`OnRounds`] carries, or [`Moving`]'s for a mind on
 /// no rounds, both read from the mind's `Ground`. With neither, or a sense

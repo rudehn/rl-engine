@@ -27,6 +27,7 @@ atglyph is not on crates.io yet, so a game depends on a release by its git tag, 
 
 ### Changed
 
+- **Breaking:** `CombatRules` has a public `spares` field, `BumpRules` a public `offers_first` field and `atglyph_save::EntityState` a public `rounds` field; a game that writes one of them as a struct literal adds `spares: Vec::new()`, `offers_first: false` or `rounds: None` to keep it as it was, and a save written before reads `rounds` as `None`.
 - **Breaking:** `shot`, `line_of_fire` and `flight` take `past`, whoever the flight goes by, the shooter's spared as `Bystanders::spares` answers; a game that calls one passes `|_| false` to keep anyone in the way stopping it.
 - **Breaking:** `dress::Thing` has `count` and `from_door` fields, and `dress::Spread` has the variants `Beside`, `Across` and `OutsideDoor`; a game that writes a `Thing` literal adds `count: None, from_door: None` to lay as before, and one that matches a `Spread` names the new variants.
 - Waking the struck to whoever struck them runs in `ReactSet::Settle`: a game that reads `Noticed` or writes an `Aware` in `TurnSet::React` orders itself after that set, so a blow's notice is read in the pass it lands and the two never write in an order the scheduler picks.

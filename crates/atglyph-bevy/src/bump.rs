@@ -680,6 +680,26 @@ mod tests {
         assert_eq!(heard[0].verb, talk);
     }
 
+    /// With `offers_first`, a giving-way neutral that offers two things is
+    /// a question for a screen, as anyone offering two is: nobody moves,
+    /// neither is taken up, the turn is kept, and the bump says it was into
+    /// something that offers.
+    #[test]
+    fn with_offers_first_a_giving_way_neutral_that_offers_two_things_asks() {
+        let mut rig = Rig::new();
+        let small = small_side(&mut rig);
+        rig.app.insert_resource(BumpRules::new().give_way(small).offers_first());
+        let (free, talk) = (rig.verb("free"), rig.verb("talk"));
+        let (start, before) = (rig.at(), rig.now());
+        let critter = rig.beside(Some(small), vec![crate::props::Offering::new(free, 100), crate::props::Offering::new(talk, 100)]);
+        rig.bump(Direction::East);
+        assert_eq!((rig.at(), rig.now()), (start, before), "the player does not move, for nothing");
+        assert_eq!(rig.app.world().get::<Position>(critter).unwrap().0, start.offset(1, 0), "nor does it");
+        let heard = rig.app.world().resource::<Heard>();
+        assert_eq!(heard.0, vec![Bumped { actor: rig.player, into: critter, offers: true }], "a question for a screen");
+        assert!(heard.2.is_empty(), "and neither was taken up");
+    }
+
     /// Nothing offered, nothing to deal with: it gives way as before.
     #[test]
     fn with_offers_first_a_giving_way_neutral_that_offers_nothing_still_gives_way() {
