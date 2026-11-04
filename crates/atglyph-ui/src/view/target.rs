@@ -375,7 +375,9 @@ impl Aiming<'_, '_> {
     /// with the user first when the aim can take its user.
     ///
     /// Held to what the user can see as well as the player, for a user
-    /// that is not the player.
+    /// that is not the player. A foe the user spares is nothing to aim harm
+    /// at, so an aim that is not an ally's passes over one, as the
+    /// resolvers would refuse it or fly past it.
     fn candidates(&self, user: Entity, pointing: Pointing) -> Vec<Sighting> {
         let Ok((from, sight)) = self.users.get(user) else { return Vec::new() };
         let aim = self.aim(pointing);
@@ -386,12 +388,14 @@ impl Aiming<'_, '_> {
                 let is_user = s.entity == user;
                 let seen = is_user || sight.is_none_or(|v| v.can_see(s.at));
                 let relation = self.bystanders.relation(user, s.entity);
-                seen && match pointing {
+                let spared = aim != Aim::Ally && self.bystanders.spares(user, s.entity);
+                let takes = match pointing {
                     Pointing::Ability(_) | Pointing::Use(_) => aim.cycles_to(relation, is_user, s.actor),
                     // Something thrown or shot can be sent at anyone but
                     // whoever sends it.
                     Pointing::Throw(_) | Pointing::Fire => s.actor && !is_user,
-                }
+                };
+                seen && !spared && takes
             })
             .collect()
     }
@@ -416,9 +420,7 @@ impl Aiming<'_, '_> {
         let aim = self.aim(pointing);
         list.into_iter().find(|s| {
             let Ok(health) = self.living.get(s.entity) else { return false };
-            // A foe the user spares is nothing to aim harm at.
-            let spared = aim != Aim::Ally && self.bystanders.spares(user, s.entity);
-            !spared && aim.worth_aiming_at(self.bystanders.relation(user, s.entity), s.entity == user, health.current < health.max)
+            aim.worth_aiming_at(self.bystanders.relation(user, s.entity), s.entity == user, health.current < health.max)
         })
     }
 }
@@ -1653,6 +1655,36 @@ mod tests {
         assert_eq!(view.cursor, at.offset(4, 0), "the foe behind");
         assert_eq!(view.targets.iter().map(|r| r.entity).collect::<Vec<_>>(), vec![far], "which the flight strikes");
         assert_eq!(view.landing, Some(at.offset(4, 0)));
+    }
+
+    /// Cycling the foes to aim harm at passes over one the user spares, as
+    /// the cursor's opening does: Tab goes from one foe to the other and
+    /// back, never stopping on the spared one between them.
+    #[test]
+    fn cycling_the_foes_to_shoot_passes_over_one_the_user_spares() {
+        let mut stage = Stage::new_with(TargetViewPlugin, |_| {});
+        stage.tick();
+        let (user, kind) = (stage.player, stage.kind);
+        let ours = stage.app.world().get::<Faction>(user).expect("the player takes a side").0;
+        let side = atglyph_rules::FactionId::from_raw(2);
+        let rules = std::mem::take(&mut *stage.app.world_mut().resource_mut::<CombatRules>());
+        stage.app.insert_resource(rules.hostile(ours, side).spares(ours, side));
+        stage.app.world_mut().entity_mut(user).insert(RangedAttack::new(kind, atglyph_core::DiceRoll::flat(2), 6));
+        let near = stage.actor("near", 'n', 0, 2);
+        stage.app.world_mut().entity_mut(near).insert(Faction(side));
+        stage.actor("east", 'e', 3, 0);
+        stage.actor("west", 'w', -4, 0);
+        stage.tick();
+        let at = stage.at;
+
+        stage.app.world_mut().write_message(AimFire { user });
+        stage.tick();
+        let mut stops = vec![stage.app.world().resource::<TargetView>().cursor];
+        for _ in 0..3 {
+            stage.press(KeyCode::Tab);
+            stops.push(stage.app.world().resource::<TargetView>().cursor);
+        }
+        assert_eq!(stops, [at.offset(3, 0), at.offset(-4, 0), at.offset(3, 0), at.offset(-4, 0)], "from foe to foe and never to the spared one");
     }
 
     /// A gun worn is a gun to aim: the cursor opens for a user whose only

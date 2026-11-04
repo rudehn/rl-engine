@@ -43,6 +43,7 @@ atglyph is not on crates.io yet, so a game depends on a release by its git tag, 
 - A `Keep` backing off a mind that stands on its ground keeps to that ground, as `Idle` does, and a watching keep waits only on it, leaving one off its ground to `Idle` to walk back.
 - `Keep::herd` and `GiveWay` step by near fields, and `GiveWay` gives way only to those within its `space` and 8 cells past it: a herd closing up or a crowd of bystanders no longer floods every loaded cell for each member's step.
 - The look cursor forecasts no fight, no duel and no odds, with one of a side the player's `CombatRules::spares`, whose blows never land on them, as with an ally.
+- The aim's Tab passes over one the user spares when aiming harm, as the cursor's opening already did, so cycling a shot or a throw goes from foe to foe.
 - The trade screen lists the rows of one name together, where the first of them stands, and otherwise in the bag's order, so a thing sold to a trader goes in beside the trader's own of its name rather than to the foot of the list.
 
 ### Fixed
