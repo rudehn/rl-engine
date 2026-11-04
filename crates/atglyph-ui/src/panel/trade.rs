@@ -402,7 +402,9 @@ fn draw_side(
         terminal.fill(GridRect::new(list.x, y, list.width, 1), Cell::new(' ', fg).on(bg));
         // What one changes hands for, or why it cannot: a short purse
         // still shows the price, since how short is the useful part. A
-        // row of more than one says the price is for one, where it fits.
+        // row of more than one says the price is for one, where it fits
+        // beside the whole of the row's name: the name is what the row is,
+        // so it is the word saying the price is for one that gives way.
         let price = match (row.refused, row.each) {
             (None, Some(each)) => each.to_string(),
             (Some(TradeRefusal::Short), Some(each)) => format!("{} {each}", words.refusal(TradeRefusal::Short, deal)),
@@ -411,7 +413,10 @@ fn draw_side(
         };
         let room = (list.width / 2).max(0) as usize;
         let per_one = format!("{price} {}", words.each);
-        let price = match row.count > 1 && row.each.is_some() && matches!(row.refused, None | Some(TradeRefusal::Short)) && per_one.chars().count() <= room {
+        // The glyph and its space, the name, and the space before the price.
+        let beside = (list.width.max(0) as usize).saturating_sub(row.row.label.chars().count() + 3);
+        let fits = per_one.chars().count() <= room.min(beside);
+        let price = match row.count > 1 && row.each.is_some() && matches!(row.refused, None | Some(TradeRefusal::Short)) && fits {
             true => per_one,
             false => clip(&price, room),
         };
@@ -541,6 +546,22 @@ mod tests {
         assert!(stage.app.world().get::<Inventory>(trader).is_some_and(|b| b.items.len() == 3), "to the trader");
         let rows = stage.rows();
         assert!(rows[16].contains(" w all "), "the border names the game's key:\n{}", rows.join("\n"));
+    }
+
+    /// A stack whose name and price for one will not both fit on its row
+    /// keeps its whole name, and the word saying the price is for one is
+    /// what gives way.
+    #[test]
+    fn a_rows_whole_name_comes_before_saying_its_price_is_for_one() {
+        let (mut stage, trader) = stage();
+        let glyph = atglyph_render::Glyph::new('!', Color::WHITE);
+        let cider = stage.app.world_mut().spawn((Item, Name::new("flagon of cider"), glyph, Stack { key: 3, count: 3 }, Worth(10))).id();
+        stage.app.world_mut().get_mut::<Inventory>(trader).expect("a bag").items.push(cider);
+        stage.tick();
+        let rows = stage.rows();
+        let text = rows.join("\n");
+        assert!(rows.iter().any(|r| r.contains("│ ! 3 flagons of cider     10  ")), "the whole name and the price:\n{text}");
+        assert!(rows.iter().any(|r| r.contains("- 2 files           10 each")), "a row with the room still says each:\n{text}");
     }
 
     /// The labels of the customer's side, in order.

@@ -148,7 +148,8 @@ pub(crate) fn collect_trade(
     // Each side's rows, with the one who pays for a deal on it: the
     // customer pays for wares, the trader for what the customer sells.
     let rows = |bag: &Inventory, worn: Option<&Equipped>, deal: Deal, payer_purse: u32| -> Vec<TradeRow> {
-        bag.items
+        let listed: Vec<(String, TradeRow)> = bag
+            .items
             .iter()
             .filter(|item| !is_currency(**item))
             .filter_map(|item| {
@@ -163,17 +164,35 @@ pub(crate) fn collect_trade(
                 if deal == Deal::Bought && (each.is_none() || ware.worn) {
                     return None;
                 }
-                Some(TradeRow {
+                let row = TradeRow {
                     row: Row::new(*item, label, glyph.copied().unwrap_or(Glyph::new('?', Color::WHITE))),
                     count,
                     each,
                     refused: terms.quote(deal, ware, 1, payer_purse).err(),
-                })
+                };
+                Some((name.map(|n| n.as_str().to_string()).unwrap_or_default(), row))
             })
-            .collect()
+            .collect();
+        alike_together(listed)
     };
     view.wares = rows(trader.2, trader.3, Deal::Bought, customer_purse);
     view.pack = rows(customer.2, customer.3, Deal::Sold, trader_purse);
+}
+
+/// `listed`'s rows with every thing of one name together, where the first
+/// of that name stands, and otherwise in the order they came: a dagger
+/// sold to a trader who has two goes in beside them rather than to the
+/// foot of the list, while the order a bag keeps is kept.
+fn alike_together(mut listed: Vec<(String, TradeRow)>) -> Vec<TradeRow> {
+    let mut names: Vec<String> = Vec::new();
+    for (name, _) in &listed {
+        if !names.contains(name) {
+            names.push(name.clone());
+        }
+    }
+    // A stable sort, so rows of one name keep their own order.
+    listed.sort_by_key(|(name, _)| names.iter().position(|n| n == name));
+    listed.into_iter().map(|(_, row)| row).collect()
 }
 
 #[cfg(test)]
@@ -263,6 +282,23 @@ mod tests {
         let view = stage.app.world().resource::<TradeView>();
         assert_eq!(view.wares.iter().map(|r| r.row.label.as_str()).collect::<Vec<_>>(), vec!["2 files", "lamp"], "no rag, no coat");
         assert_eq!(view.pack.iter().map(|r| r.row.label.as_str()).collect::<Vec<_>>(), vec!["awl", "pebble"], "the pack is listed whole");
+    }
+
+    /// A thing sold to a trader who already has one of its name is listed
+    /// beside it, not at the foot of the list, and the rest keep the order
+    /// the bag keeps.
+    #[test]
+    fn a_thing_sold_goes_in_beside_the_trader_s_own_of_its_name() {
+        let (mut stage, trader) = stage();
+        let w = stage.app.world_mut();
+        let first = w.spawn((Item, Name::new("awl"), Worth(6))).id();
+        let comb = w.spawn((Item, Name::new("comb"), Worth(2))).id();
+        let sold = w.spawn((Item, Name::new("awl"), Worth(6))).id();
+        w.get_mut::<Inventory>(trader).expect("a bag").items.extend([first, comb, sold]);
+        open(&mut stage, trader);
+        let view = stage.app.world().resource::<TradeView>();
+        let wares: Vec<&str> = view.wares.iter().map(|r| r.row.label.as_str()).collect();
+        assert_eq!(wares, vec!["2 files", "lamp", "awl", "awl", "comb"]);
     }
 
     /// The line under the trader's name is whatever the game pushes onto
