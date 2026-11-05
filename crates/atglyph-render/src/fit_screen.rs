@@ -16,7 +16,7 @@
 
 use atglyph_bevy::settings::Settings;
 use bevy::prelude::*;
-use bevy::window::{Monitor, PrimaryMonitor, PrimaryWindow, WindowMode, WindowPosition};
+use bevy::window::{Monitor, PrimaryMonitor, PrimaryWindow, RequestRedraw, WindowMode, WindowPosition};
 
 use crate::layout;
 
@@ -75,8 +75,9 @@ struct Fitting {
 enum Stage {
     /// Hidden, waiting for a monitor; frames waited so far.
     Measure(u32),
-    /// Sized, to be placed here and shown.
-    Place(IVec2),
+    /// Sized, to be placed and shown at this opening on the monitor at
+    /// this position and scale.
+    Place(Opening, IVec2, f32),
     /// Opened, or left alone.
     Done,
 }
@@ -86,7 +87,9 @@ impl Plugin for FitScreenPlugin {
         if cfg!(target_arch = "wasm32") {
             return;
         }
-        app.insert_resource(Fitting { cols: self.cols, rows: self.rows, cell: self.cell, kept: None, stage: Stage::Done }).add_systems(Update, open);
+        app.add_message::<RequestRedraw>()
+            .insert_resource(Fitting { cols: self.cols, rows: self.rows, cell: self.cell, kept: None, stage: Stage::Done })
+            .add_systems(Update, open);
     }
 
     /// Once, before the window is made: hides it until it is sized, unless
@@ -117,7 +120,23 @@ impl Plugin for FitScreenPlugin {
 ///
 /// The primary monitor, where a new window opens; any monitor when none is
 /// marked primary, as on Wayland.
-fn open(mut fitting: ResMut<Fitting>, mut windows: Query<&mut Window, With<PrimaryWindow>>, monitors: Query<(&Monitor, Has<PrimaryMonitor>)>) {
+///
+/// A frame that leaves the window hidden asks for the next one: under
+/// reactive updates, as `WinitSettings::desktop_app` runs them, a frame
+/// comes only when something asks, and a hidden window gets no input to
+/// ask for it.
+///
+/// The size is the logical size for the primary monitor at its scale,
+/// which a window keeps as it moves between monitors; the window asks for
+/// it in its own scale, the monitor it was made on, which `resolution.set`
+/// does. Its position is given in what the window reads it in, which on
+/// macOS is points converted at the window's own scale too.
+fn open(
+    mut fitting: ResMut<Fitting>,
+    mut windows: Query<&mut Window, With<PrimaryWindow>>,
+    monitors: Query<(&Monitor, Has<PrimaryMonitor>)>,
+    mut redraw: MessageWriter<RequestRedraw>,
+) {
     if fitting.stage == Stage::Done {
         return;
     }
@@ -130,6 +149,7 @@ fn open(mut fitting: ResMut<Fitting>, mut windows: Query<&mut Window, With<Prima
                     window.visible = true;
                     Stage::Done
                 } else {
+                    redraw.write(RequestRedraw);
                     Stage::Measure(waited + 1)
                 };
                 return;
@@ -143,10 +163,11 @@ fn open(mut fitting: ResMut<Fitting>, mut windows: Query<&mut Window, With<Prima
                 "the window opens at {} by {} logical pixels, on a screen of {} by {} keeping {kept:?}",
                 opening.size.x, opening.size.y, screen.size.x, screen.size.y
             );
-            fitting.stage = Stage::Place(physical_frame(&opening, monitor.physical_position, scale));
+            fitting.stage = Stage::Place(opening, monitor.physical_position, scale);
+            redraw.write(RequestRedraw);
         }
-        Stage::Place(at) => {
-            window.position = WindowPosition::At(at);
+        Stage::Place(opening, monitor, scale) => {
+            window.position = WindowPosition::At(physical_frame(&opening, monitor, scale, window.resolution.scale_factor(), DESKTOP));
             window.visible = true;
             fitting.stage = Stage::Done;
         }
@@ -271,11 +292,30 @@ pub(crate) fn opening(cols: i32, rows: i32, cell: Vec2, screen: &Screen) -> Open
 /// pixels: far under one, so a size that is whole stays whole.
 const ROUNDING: f32 = 1e-3;
 
-/// The top-left corner, in physical pixels on the desktop, of a window's
-/// frame at `opening` on a monitor whose top-left corner is at `monitor`.
-pub(crate) fn physical_frame(opening: &Opening, monitor: IVec2, scale: f32) -> IVec2 {
-    monitor + (opening.frame * scale).round().as_ivec2()
+/// The top-left corner, in the physical pixels a window's position is
+/// given in, of its frame at `opening` on a monitor whose top-left corner
+/// is at `monitor` and whose scale is `monitor_scale`, for a window whose
+/// own scale is `window_scale`.
+pub(crate) fn physical_frame(opening: &Opening, monitor: IVec2, monitor_scale: f32, window_scale: f32, desktop: Desktop) -> IVec2 {
+    match desktop {
+        // winit gives a macOS monitor's position in points times its own
+        // scale, and reads a window's in pixels over the window's scale.
+        Desktop::Points => ((monitor.as_vec2() / monitor_scale + opening.frame) * window_scale).round().as_ivec2(),
+        Desktop::Pixels => monitor + (opening.frame * monitor_scale).round().as_ivec2(),
+    }
 }
+
+/// What a window's position on the desktop is read in.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) enum Desktop {
+    /// Points, as macOS lays its screens out.
+    Points,
+    /// Physical pixels, as Windows and X11 do.
+    Pixels,
+}
+
+/// This platform's desktop.
+pub(crate) const DESKTOP: Desktop = if cfg!(target_os = "macos") { Desktop::Points } else { Desktop::Pixels };
 
 #[cfg(test)]
 mod tests {
@@ -339,7 +379,7 @@ mod tests {
     /// Monitors from smaller than the grid to far larger, at the scale
     /// factors displays come in, with and without a dock down one side.
     fn screens() -> impl Iterator<Item = Screen> {
-        let factors = [1.0_f32, 1.25, 1.5, 2.0, 3.0];
+        let factors = [1.0_f32, 1.1, 1.25, 1.5, 1.75, 2.0, 3.0];
         let insets = [default(), Insets { top: 24.0, bottom: 78.0, ..default() }, Insets { top: 37.0, left: 90.0, ..default() }];
         factors.into_iter().flat_map(move |scale| {
             insets.into_iter().flat_map(move |inset| {
@@ -506,5 +546,64 @@ mod tests {
         }
         assert!(window(&app, id).visible);
         assert_eq!(window(&app, id).resolution.size(), Vec2::new(800.0, 640.0));
+    }
+
+    /// The redraws asked for since the last call, taken.
+    fn redraws_asked(app: &mut App) -> usize {
+        app.world_mut().resource_mut::<Messages<RequestRedraw>>().drain().count()
+    }
+
+    /// Under reactive updates, as `WinitSettings::desktop_app` runs, a
+    /// frame comes only when something asks for one, so a frame that
+    /// leaves the window hidden asks for the next itself.
+    #[test]
+    fn every_frame_that_leaves_the_window_hidden_asks_for_another() {
+        let (mut app, id) = app(false);
+        app.update();
+        assert_eq!(redraws_asked(&mut app), 1, "waiting for a monitor");
+        monitor(&mut app, UVec2::new(2880, 1800), IVec2::ZERO, true);
+        app.update();
+        assert!(!window(&app, id).visible);
+        assert_eq!(redraws_asked(&mut app), 1, "sized, still to be placed and shown");
+        app.update();
+        assert!(window(&app, id).visible);
+        assert_eq!(redraws_asked(&mut app), 0, "shown: nothing more to do");
+    }
+
+    /// macOS reads a position in its points, converting the physical pixels
+    /// it is given by the window's own scale; Windows and X11 read physical
+    /// pixels on the desktop as they are.
+    #[test]
+    fn the_frame_is_given_in_the_pixels_the_window_is_read_in() {
+        let open = Opening { size: UVec2::new(900, 720), frame: Vec2::new(270.0, 47.0) };
+        let primary = IVec2::new(2880, -400);
+        assert_eq!(physical_frame(&open, primary, 2.0, 2.0, Desktop::Points), IVec2::new(2880 + 540, -400 + 94));
+        assert_eq!(physical_frame(&open, primary, 2.0, 1.0, Desktop::Points), IVec2::new(1440 + 270, -200 + 47), "made on a monitor of 1x");
+        assert_eq!(physical_frame(&open, primary, 2.0, 2.0, Desktop::Pixels), IVec2::new(2880 + 540, -400 + 94));
+        assert_eq!(physical_frame(&open, primary, 2.0, 1.0, Desktop::Pixels), IVec2::new(2880 + 540, -400 + 94), "pixels are pixels");
+    }
+
+    /// The window made on a monitor of another scale than the primary's,
+    /// where it is to open: sized in logical pixels, which the window
+    /// keeps on the move, and placed in what its own scale reads.
+    #[test]
+    fn a_window_made_on_a_monitor_of_another_scale_opens_where_and_as_large_as_on_the_primary() {
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins)
+            .add_plugins(crate::FullscreenPlugin)
+            .add_plugins(FitScreenPlugin { platform: false, ..FitScreenPlugin::new(80, 40, CELL) });
+        let id = app.world_mut().spawn((Window { resolution: WindowResolution::new(800, 640), ..Window::default() }, PrimaryWindow)).id();
+        app.finish();
+        app.cleanup();
+        monitor(&mut app, UVec2::new(2880, 1800), IVec2::new(1920, 0), true);
+        app.update();
+        app.update();
+        let open = opening(80, 40, CELL, &Screen::new(UVec2::new(2880, 1800), 2.0, KEPT));
+        assert_eq!(window(&app, id).resolution.size(), open.size.as_vec2(), "the logical size for the primary");
+        assert_eq!(window(&app, id).resolution.physical_size(), open.size, "asked of a window at 1x");
+        // macOS's points: the primary's left edge, 1920 pixels at 2x, is
+        // 960 points over, read at the window's 1x; elsewhere pixels.
+        let at = if cfg!(target_os = "macos") { IVec2::new(960, 0) + open.frame.as_ivec2() } else { IVec2::new(1920, 0) + (open.frame * 2.0).as_ivec2() };
+        assert_eq!(window(&app, id).position, WindowPosition::At(at));
     }
 }
