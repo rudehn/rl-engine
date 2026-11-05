@@ -1234,7 +1234,7 @@ mod tests {
         r.app.world_mut().resource_mut::<Loads>().0.clear();
         walk(&mut r, atglyph_core::Direction::West, 3 * STREAMED_CHUNK as usize);
         let map = r.app.world().resource::<WorldMap>();
-        assert_eq!(map.tile(changed), Some(wall), "the change was laid back on the rebuilt chunk");
+        assert_eq!(map.tile(changed), Some(wall), "the change came back with its chunk");
         let loads = &r.app.world().resource::<Loads>().0;
         assert!(!loads.is_empty() && loads.iter().all(|l| !l.first), "and no chunk came back as new");
     }

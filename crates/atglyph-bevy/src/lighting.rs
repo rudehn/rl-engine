@@ -991,6 +991,62 @@ mod tests {
         assert_eq!(app.world().resource::<Lighting>().band(Point::new(10, 1)), LightBand::Lit);
     }
 
+    /// The test ground streamed, with a lamp a tile in from the corner of
+    /// every chunk.
+    struct LampGround(TileRegistry);
+
+    impl PlaceRules for LampGround {
+        fn build(&self, map: MapId, seed: PlaceSeed) -> Result<PlaceBuild, BuildError> {
+            crate::testing::StreamedGround(self.0.clone()).build(map, seed)
+        }
+
+        fn tiles(&self) -> TileTables {
+            self.0.tables()
+        }
+
+        fn streamed(&self, _: MapId) -> Option<crate::places::Streamed> {
+            Some(crate::testing::StreamedGround::layout())
+        }
+
+        fn build_chunk(&self, map: MapId, chunk: Point, seed: PlaceSeed) -> Result<Terrain, BuildError> {
+            let mut terrain = crate::testing::StreamedGround(self.0.clone()).build_chunk(map, chunk, seed)?;
+            terrain.set(Point::new(1, 1), self.0.expect("lamp"));
+            Ok(terrain)
+        }
+    }
+
+    /// A chunk's glowing tile is lit as the chunk first loads, and walking
+    /// away until the chunk leaves the window and back lights it no
+    /// second time: its fixture never went out.
+    #[test]
+    fn a_glowing_tile_on_a_chunk_left_and_come_back_to_is_lit_once() {
+        use crate::testing::STREAMED_CHUNK;
+        let mut app = headless_app();
+        app.add_plugins((crate::fov::FovPlugin, crate::items::ItemsPlugin, LightingPlugin));
+        let mut tiles = TileRegistry::standard();
+        tiles.register(atglyph_grid::TileProps::wall("lamp").light(lamp())).unwrap();
+        app.insert_resource(WorldMap::new(tiles.tables()));
+        app.insert_resource(PlaceRulesRes(Box::new(LampGround(tiles)))).insert_resource(crate::seed::Seed(crate::testing::TEST_SEED));
+        let player = app.world_mut().spawn((Actor, Player, Blocks, Position(Point::ZERO), Viewshed::new(6), Inventory::default())).id();
+        app.world_mut().write_message(WarpRequest::into_place(player, MapId(1)));
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        app.update();
+        app.update();
+        let start = crate::testing::StreamedGround::layout().entry;
+        let lamp_here = Point::new(start.x + 1, start.y + 1);
+        let lit_here = |app: &mut App| fixtures(app).iter().filter(|(p, _, _)| *p == lamp_here).count();
+        assert_eq!(lit_here(&mut app), 1, "the lamp of the chunk the player stands on is lit");
+
+        app.world_mut().get_mut::<Position>(player).unwrap().0 = start.offset(3 * STREAMED_CHUNK, 0);
+        app.update();
+        assert!(!app.world().resource::<WorldMap>().is_loaded(lamp_here), "its chunk left the window");
+        app.world_mut().get_mut::<Position>(player).unwrap().0 = start;
+        app.update();
+        app.update();
+        assert!(app.world().resource::<WorldMap>().is_loaded(lamp_here));
+        assert_eq!(lit_here(&mut app), 1, "back in the window, it is lit once still");
+    }
+
     /// A prop whose definition sheds light carries it however it came to
     /// be one: stood by `spawn_prop`, or given its kind on an entity that
     /// was something else first. A prop whose definition sheds none

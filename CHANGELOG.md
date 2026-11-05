@@ -30,6 +30,7 @@ atglyph is not on crates.io yet, so a game depends on a release by its git tag, 
 ### Changed
 
 - **Breaking:** `Streamed` has a public `slack` field; a game that writes one as a struct literal adds `slack: 0` to keep its window moving at every chunk's edge, and a save written before reads it as 0.
+- A streamed place keeps the chunks that left its window last whole, twice a window's worth, so walking back over ground just left builds nothing; `PlaceRules::build_chunk` is asked again only for a chunk left longer ago, and its edits are laid back on it as before.
 - **Breaking:** `CombatRules` has a public `spares` field, `BumpRules` a public `offers_first` field and `atglyph_save::EntityState` a public `rounds` field; a game that writes one of them as a struct literal adds `spares: Vec::new()`, `offers_first: false` or `rounds: None` to keep it as it was, and a save written before reads `rounds` as `None`.
 - **Breaking:** `shot`, `line_of_fire` and `flight` take `past`, whoever the flight goes by, the shooter's spared as `Bystanders::spares` answers; a game that calls one passes `|_| false` to keep anyone in the way stopping it.
 - **Breaking:** `dress::Thing` has `count` and `from_door` fields, and `dress::Spread` has the variants `Beside`, `Across` and `OutsideDoor`; a game that writes a `Thing` literal adds `count: None, from_door: None` to lay as before, and one that matches a `Spread` names the new variants.
@@ -52,6 +53,7 @@ atglyph is not on crates.io yet, so a game depends on a release by its git tag, 
 
 ### Fixed
 
+- A glowing tile on a chunk of a streamed place that left the window and came back is lit once, not once more for every return.
 - The terminal's cells reach the screen before Bevy lays the new text out, works out what is shown and moves what moved in `PostUpdate`, so a step no longer leaves last frame's glyphs standing in the new colour for a frame, white where a cell turned blank, nor a picture where it was.
 - A herd member standing on its herd's middle steps off it, as its `no_closer_than` says, rather than asking for a field and then doing nothing.
 - A trade screen row's price says "each" only where the word fits beside the whole of the row's name, so a long name, `5 loaves of bread` at a purse that cannot pay, is never cut short for it.

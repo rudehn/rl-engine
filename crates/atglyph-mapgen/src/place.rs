@@ -164,9 +164,10 @@ impl PlaceBuild {
 /// north-west corner of the first, so a tile of it is addressed as a tile
 /// of any place is. The framework keeps the chunks within [`reach`](Self::reach)
 /// of the player's own loaded, builds each as it comes into reach from
-/// [`PlaceRules::build_chunk`], and lets one go as it leaves, keeping only
-/// what was changed on it, which it lays back on the rebuilt chunk when
-/// the chunk comes into reach again.
+/// [`PlaceRules::build_chunk`], and lets one go as it leaves, keeping what
+/// was changed on it and, for the last few to leave, the whole chunk; a
+/// chunk left longer ago is built again when it comes back into reach,
+/// and what was changed on it laid back on it.
 ///
 /// So a chunk's build must be a pure function of the run and the chunk:
 /// built twice, it is the same both times, and two chunks built in either
@@ -315,8 +316,8 @@ pub trait PlaceRules: Send + Sync {
     /// Builds `chunk` of the [`Streamed`] place `map`, from `seed`, the
     /// place's own share of the run's seed, the same for every chunk of
     /// it: `chunk` tiles a side, row by row from the chunk's north-west
-    /// corner. A pure function of the two, since a chunk is built again
-    /// every time it comes back into reach. Only asked of a map
+    /// corner. A pure function of the two, since a chunk left long enough
+    /// is built again when it comes back into reach. Only asked of a map
     /// [`streamed`](Self::streamed) names.
     fn build_chunk(&self, map: MapId, chunk: Point, seed: PlaceSeed) -> Result<Terrain, BuildError> {
         let _ = (chunk, seed);

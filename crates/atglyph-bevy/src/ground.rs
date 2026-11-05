@@ -1,14 +1,17 @@
 //! What a place's tiles are kept in: the whole of them, or, for a
 //! [`Streamed`] place, the chunks within reach of the player.
 //!
-//! A streamed place keeps a window of chunks loaded. A chunk that leaves
-//! the window is dropped and only what was changed on it is kept, by tile,
-//! the last change to each; when the chunk comes back into reach it is
-//! built again from the rules and those changes are laid back on it. So an
-//! untouched chunk costs nothing to keep, however much of the place has
-//! been walked.
+//! A streamed place keeps a window of chunks loaded. What was changed on a
+//! chunk is kept for good, by tile, the last change to each. A chunk that
+//! leaves the window is kept whole a while, among the last few to leave,
+//! so walking back and forth over the same ground builds nothing twice;
+//! one that left longer ago is dropped, keeping only its changes, and
+//! when it comes back into reach it is built again from the rules and
+//! those changes are laid back on it. So an untouched chunk costs nothing
+//! to keep, however much of the place has been walked, and one left a
+//! moment ago costs nothing to bring back.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 
 use atglyph_core::{Grid2D, GridRect, Point};
 use atglyph_grid::{BitGrid, Terrain, TileId};
@@ -85,11 +88,17 @@ pub(crate) struct Surface {
     chunks: Vec<Chunk>,
     /// The edits of every chunk out of the window that has any.
     kept: BTreeMap<Point, BTreeMap<u32, TileId>>,
+    /// The tiles of the chunks that left the window last, edits laid on,
+    /// the last to leave at the back: at most [`Surface::keeps`] of them.
+    /// A list, not a map, because it is a handful of chunks searched once
+    /// for each chunk that comes in.
+    left: VecDeque<(Point, Terrain)>,
     /// Every chunk ever built, so a game populates each once.
     made: BitGrid,
-    /// Every loaded chunk whose glowing tiles have their light up. Never
-    /// saved, as a whole place's light is not: a restored run lights each
-    /// chunk again as it loads.
+    /// Every chunk whose glowing tiles have their light up, loaded or
+    /// not: what lights them is not let go of with the chunk. Never saved,
+    /// as a whole place's light is not: a restored run lights each chunk
+    /// again as it loads.
     lit: BitGrid,
 }
 
@@ -111,6 +120,7 @@ impl Surface {
             centre: None,
             chunks: Vec::new(),
             kept: BTreeMap::new(),
+            left: VecDeque::new(),
             made: BitGrid::new(w, h),
             lit: BitGrid::new(w, h),
         }
@@ -185,10 +195,19 @@ impl Surface {
         Ok(loaded)
     }
 
+    /// How many chunks out of the window are kept whole: two windows'
+    /// worth, enough to walk round a corner where four chunks meet and back
+    /// with nothing built twice.
+    fn keeps(&self) -> usize {
+        let side = 2 * self.layout.reach.max(0) as usize + 1;
+        2 * side * side
+    }
+
     /// Moves the window onto `chunks`: keeps what it already holds there,
-    /// builds the rest with `build` and lays each one's kept edits back on
-    /// it, and lets go of what left, keeping the edits of each. Answers
-    /// every chunk that came in.
+    /// takes back whole what left it a moment ago, builds the rest with
+    /// `build` and lays each one's kept edits back on it, and lets go of
+    /// what left, keeping the edits of each and the last few whole.
+    /// Answers every chunk that came in.
     ///
     /// Nothing is changed if a build fails, so a failed load leaves the
     /// window where it was.
@@ -199,7 +218,7 @@ impl Surface {
         let side = self.layout.chunk;
         let mut built: Vec<(Point, Terrain)> = Vec::new();
         for chunk in cells(chunks) {
-            if self.window.contains(chunk) && !self.chunks.is_empty() {
+            if self.window.contains(chunk) && !self.chunks.is_empty() || self.left.iter().any(|(c, _)| *c == chunk) {
                 continue;
             }
             let terrain = build(chunk)?;
@@ -215,11 +234,18 @@ impl Surface {
             let next = match old.remove(&chunk) {
                 Some(kept) => kept,
                 None => {
-                    let mut terrain = fresh.remove(&chunk).expect("every chunk not kept was built");
                     let edits = self.kept.remove(&chunk).unwrap_or_default();
-                    for (&i, &id) in &edits {
-                        terrain.set_idx(i as usize, id);
-                    }
+                    let terrain = match self.left.iter().position(|(c, _)| *c == chunk) {
+                        // Left with its edits on it.
+                        Some(i) => self.left.remove(i).expect("found where it is").1,
+                        None => {
+                            let mut terrain = fresh.remove(&chunk).expect("every chunk not kept was built");
+                            for (&i, &id) in &edits {
+                                terrain.set_idx(i as usize, id);
+                            }
+                            terrain
+                        }
+                    };
                     let first = !self.made.contains(chunk);
                     self.made.insert(chunk);
                     loaded.push(Loaded { chunk, first });
@@ -228,11 +254,17 @@ impl Surface {
             };
             self.chunks.push(next);
         }
+        // A chunk's light stays up as it leaves: what lights it stands
+        // where it stood, and lighting it again would light it twice.
         for (chunk, left) in old {
-            self.lit.set(chunk, false);
             if !left.edits.is_empty() {
                 self.kept.insert(chunk, left.edits);
             }
+            self.left.push_back((chunk, left.terrain));
+        }
+        let keeps = self.keeps();
+        while self.left.len() > keeps {
+            self.left.pop_front();
         }
         self.window = chunks;
         Ok(loaded)
@@ -315,6 +347,68 @@ mod tests {
         let back = surface.load(GridRect::new(0, 0, 2, 2), build).unwrap();
         assert!(back.iter().all(|l| !l.first), "built before, so none is a first");
         assert_eq!(surface.get(Point::new(1, 1)), Some(TileId(9)), "laid back on the rebuilt chunk");
+    }
+
+    /// [`build`], counting every chunk built in `built`.
+    fn counting(built: &mut Vec<Point>) -> impl FnMut(Point) -> Result<Terrain, BuildError> + '_ {
+        move |chunk| {
+            built.push(chunk);
+            build(chunk)
+        }
+    }
+
+    /// A chunk that left the window comes back as it was left, edits and
+    /// all, with nothing built: what was built is kept, not only what was
+    /// changed.
+    #[test]
+    fn a_chunk_left_and_come_back_to_is_not_built_again_and_is_as_it_was_left() {
+        let mut surface = Surface::new(layout());
+        let mut built = Vec::new();
+        surface.load(GridRect::new(0, 0, 2, 2), counting(&mut built)).unwrap();
+        surface.set(Point::new(1, 1), TileId(9));
+        let before: Vec<(Point, TileId)> = surface.chunk_tiles(Point::new(0, 0)).collect();
+        surface.load(GridRect::new(2, 0, 2, 2), counting(&mut built)).unwrap();
+        built.clear();
+        let back = surface.load(GridRect::new(0, 0, 2, 2), counting(&mut built)).unwrap();
+        assert!(built.is_empty(), "nothing built coming back: {built:?}");
+        assert_eq!(back.len(), 4, "every chunk that came back is still said to have come in");
+        assert!(back.iter().all(|l| !l.first));
+        assert_eq!(surface.chunk_tiles(Point::new(0, 0)).collect::<Vec<_>>(), before, "tile for tile as it was left");
+        assert_eq!(surface.edits(), [(Point::new(0, 0), vec![(5, TileId(9))])], "and its edit still kept");
+    }
+
+    /// Only so many chunks out of the window are kept, the ones left last:
+    /// twice a window's worth. One left longer ago is built again, its
+    /// edits laid back on it as ever.
+    #[test]
+    fn only_the_chunks_left_last_are_kept() {
+        let row = Streamed { chunks: (30, 1), ..layout() };
+        let mut surface = Surface::new(row);
+        surface.load(GridRect::new(0, 0, 1, 1), build).unwrap();
+        surface.set(Point::new(1, 1), TileId(9));
+        for x in 1..30 {
+            surface.load(GridRect::new(x, 0, 1, 1), build).unwrap();
+        }
+        let mut built = Vec::new();
+        surface.load(GridRect::new(28, 0, 2, 1), counting(&mut built)).unwrap();
+        assert!(built.is_empty(), "the chunk left last is kept");
+        surface.load(GridRect::new(29 - 18, 0, 1, 1), counting(&mut built)).unwrap();
+        assert!(built.is_empty(), "and the eighteenth left before it, two windows of three by three");
+        surface.load(GridRect::new(0, 0, 1, 1), counting(&mut built)).unwrap();
+        assert_eq!(built, [Point::new(0, 0)], "the first, left long ago, is built again");
+        assert_eq!(surface.get(Point::new(1, 1)), Some(TileId(9)), "with its edit laid back on it");
+    }
+
+    /// A chunk's light stays up when it leaves the window: what lit it
+    /// stays where it stood, so coming back lights nothing twice.
+    #[test]
+    fn a_chunk_that_leaves_keeps_its_light_up() {
+        let mut surface = Surface::new(layout());
+        surface.load(GridRect::new(0, 0, 1, 1), build).unwrap();
+        surface.mark_lit(Point::new(0, 0));
+        surface.load(GridRect::new(3, 2, 1, 1), build).unwrap();
+        surface.load(GridRect::new(0, 0, 1, 1), build).unwrap();
+        assert_eq!(surface.unlit().count(), 0);
     }
 
     #[test]
