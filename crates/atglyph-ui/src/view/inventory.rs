@@ -77,6 +77,11 @@ pub struct ItemRow {
     pub shot: Option<Strike>,
     /// The extra rolls every hit carries while it is worn.
     pub strikes: Vec<Strike>,
+    /// What it adds to what it launches while worn, for a launcher.
+    pub launches: Option<LaunchLine>,
+    /// How far it lets its wearer see in the dark, for a thing that lends
+    /// sight, [`WornDarkSight`](atglyph_bevy::WornDarkSight).
+    pub dark_sight: Option<i32>,
     /// What it does, one line per effect that has something to say, each
     /// named by the moment that sets it off: `use: mends 5`, `on landing:
     /// 3 kinetic in a burst of 1`. Empty for most of a bag.
@@ -127,6 +132,52 @@ pub struct ItemRow {
     /// no key that would take it off, and says so. In the bag a stuck thing
     /// is not, since only being worn holds it.
     pub stuck: bool,
+    /// What putting it on would change, for a thing that can be worn and
+    /// is not: where it would go and what would come off. `None` for a
+    /// thing worn or that cannot be, and for a wearer with no
+    /// [`Equipped`].
+    pub replacing: Option<Replacing>,
+}
+
+/// What a launcher adds to what it launches, as a bag reads it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LaunchLine {
+    /// What it launches, by the tag's registered name.
+    pub ammo: String,
+    /// The cells it adds to how far a thing launched flies.
+    pub range: u32,
+    /// The roll it adds to what a thing launched strikes for.
+    pub roll: atglyph_core::DiceRoll,
+}
+
+/// What putting a thing on would change, against what its wearer has on:
+/// the slot it would go in, what would come off, and the slots left bare.
+///
+/// Worked out by [`Equipment::swap`](atglyph_rules::Equipment::swap), the
+/// rule the items resolver equips by, so a screen never names a slot or a
+/// thing that wearing it would not. Where it would push off a
+/// [`Stuck`](atglyph_bevy::Stuck) thing, wearing it is refused; the row then says what it would take off
+/// were that free, and the stuck thing's row says it is stuck.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Replacing {
+    /// The slot it would go in, by its registered name.
+    pub slot: String,
+    /// What would come off, in the order the thing's slots are taken.
+    pub off: Vec<TakenOff>,
+    /// The slots what comes off holds that the thing would not take, by
+    /// their registered names, left bare: the hand a one-hander frees,
+    /// put on in place of a two-hander.
+    pub frees: Vec<String>,
+}
+
+/// A worn thing that putting another on would take off.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TakenOff {
+    /// It, described as the bag describes it.
+    pub row: ItemRow,
+    /// The slots of its the other would take, by their registered names:
+    /// the slot it goes in, or only the hand a two-hander takes as well.
+    pub from: Vec<String>,
 }
 
 /// What a use that asks for one of its user's things asks for, as a bag
@@ -178,6 +229,8 @@ impl ItemRow {
             blow: None,
             shot: None,
             strikes: Vec::new(),
+            launches: None,
+            dark_sight: None,
             used: Vec::new(),
             charges: None,
             ready_in: None,
@@ -251,6 +304,9 @@ type Does = (
 );
 /// Whether an item is not yet known, and whether it will not come off.
 type Marks = (Has<atglyph_bevy::Unknown>, Has<atglyph_bevy::Stuck>);
+/// What an item lends its wearer beyond a blow: a launcher's roll and
+/// reach, and sight in the dark.
+type Lends = (Option<&'static atglyph_bevy::Launcher>, Option<&'static atglyph_bevy::WornDarkSight>);
 
 /// How a trigger's lines are introduced on a bag's row: by what the player
 /// does to set it off, in the engine's own moments, and by the moment's
@@ -335,47 +391,91 @@ fn describe_uses(
 }
 
 /// Fills [`InventoryView`] from the player's bag.
-pub(crate) fn collect_inventory(
-    mut view: ResMut<InventoryView>,
-    registries: Option<Res<Registries>>,
-    moments: Option<Res<TriggerKinds>>,
-    player: Query<(Entity, &Inventory, Option<&Equipped>), With<Player>>,
-    items: Query<(Looks, Arms, Does, Marks), With<Item>>,
-    tags: Query<&Tagged>,
-    throws: atglyph_bevy::Throws,
-) {
+pub(crate) fn collect_inventory(mut view: ResMut<InventoryView>, player: Query<(Entity, &Inventory, Option<&Equipped>), With<Player>>, items: ItemRows) {
     view.rows.clear();
     view.entity = None;
     let Ok((entity, bag, worn)) = player.single() else { return };
     view.entity = Some(entity);
-    let registries = registries.as_deref();
-    let moments = moments.as_deref();
-    let kind_name = |kind| registries.map(|r| r.damage_kinds.name(kind).to_string()).unwrap_or_default();
-    let slot_name = |slot| registries.map(|r| r.slots.name(slot).to_string()).unwrap_or_default();
-    let strike = |(kind, dice): (atglyph_rules::damage::DamageKindId, atglyph_core::DiceRoll), range: Option<i32>| Strike {
-        kind: kind_name(kind),
-        dice,
-        range,
-        also: None,
-    };
-    for &item in &bag.items {
-        let Ok((
+    view.rows.extend(bag.items.iter().filter_map(|item| items.row(entity, bag, worn, *item)));
+}
+
+/// Describes a thing as a bag row reads it, for whoever would carry or
+/// wear it: the bag's own rows, and the trade screen's on both sides, so
+/// a thing reads the same on a counter as in the pack.
+#[derive(bevy::ecs::system::SystemParam)]
+pub(crate) struct ItemRows<'w, 's> {
+    registries: Option<Res<'w, Registries>>,
+    moments: Option<Res<'w, TriggerKinds>>,
+    items: Query<'w, 's, (Looks, Arms, Does, Marks, Lends), With<Item>>,
+    tags: Query<'w, 's, &'static Tagged>,
+    throws: atglyph_bevy::Throws<'w, 's>,
+}
+
+impl ItemRows<'_, '_> {
+    /// `item` as `holder` reads it, carrying `bag` and wearing `worn`: how
+    /// far it would throw it, what a use of it may be made on among `bag`,
+    /// where it is worn, and, when it is not worn and could be, what
+    /// putting it on would change. `None` for a thing that is not an
+    /// [`Item`].
+    pub(crate) fn row(&self, holder: Entity, bag: &Inventory, worn: Option<&Equipped>, item: Entity) -> Option<ItemRow> {
+        let mut row = self.plain(holder, bag, worn, item)?;
+        let (Some(worn), Some(shape)) = (worn, self.items.get(item).ok().and_then(|((_, _, _, wearable, _, _), ..)| wearable)) else { return Some(row) };
+        if row.worn() {
+            return Some(row);
+        }
+        // What wearing it would take off, by the rule the resolver equips
+        // by. Where a stuck thing refuses it, what it would take off were
+        // that free, so the row can say what stands in the way.
+        let stuck = |thing: Entity| self.items.get(thing).is_ok_and(|(.., (_, stuck), _)| stuck);
+        let swap = worn.0.swap(item, &shape.0, stuck).or_else(|_| worn.0.swap(item, &shape.0, |_| false));
+        let slot_name = |slot| self.registries.as_deref().map(|r| r.slots.name(slot).to_string()).unwrap_or_default();
+        row.replacing = swap.ok().map(|swap| Replacing {
+            slot: slot_name(swap.slot),
+            off: swap
+                .off
+                .iter()
+                .filter_map(|(thing, from)| {
+                    Some(TakenOff { row: self.plain(holder, bag, Some(worn), *thing)?, from: from.iter().map(|s| slot_name(*s)).collect() })
+                })
+                .collect(),
+            frees: swap.frees.iter().map(|s| slot_name(*s)).collect(),
+        });
+        Some(row)
+    }
+
+    /// `item` described with no word on what putting it on would change.
+    fn plain(&self, holder: Entity, bag: &Inventory, worn: Option<&Equipped>, item: Entity) -> Option<ItemRow> {
+        let (
             (name, glyph, stack, wearable, _, tagged),
             (armor, resists, melee, ranged, strikes, bestows),
             (triggers, consumable, pulse, attuned, bonus),
             (unknown, stuck),
-        )) = items.get(item)
-        else {
-            continue;
+            (launcher, sight),
+        ) = self.items.get(item).ok()?;
+        let registries = self.registries.as_deref();
+        let moments = self.moments.as_deref();
+        let kind_name = |kind| registries.map(|r| r.damage_kinds.name(kind).to_string()).unwrap_or_default();
+        let slot_name = |slot| registries.map(|r| r.slots.name(slot).to_string()).unwrap_or_default();
+        let tag_name = |tag| registries.map(|r| r.tags.name(tag).to_string()).unwrap_or_default();
+        let strike = |(kind, dice): (atglyph_rules::damage::DamageKindId, atglyph_core::DiceRoll), range: Option<i32>| Strike {
+            kind: kind_name(kind),
+            dice,
+            range,
+            also: None,
         };
         let slot = worn.and_then(|w| w.slot_of(item));
-        // How it flies from the player, its own range or the player's reach.
-        let thrown = throws.of(entity, item);
+        // How it flies from its holder, its own range or the holder's reach.
+        let thrown = self.throws.of(holder, item);
         // What its use may be made on, by the rule the resolver takes a
         // choice by, among the things the bag lists.
         let asks = triggers.and_then(Triggers::asks).map(|asks| Asking {
             prompt: asks.prompt.clone(),
-            choices: bag.items.iter().copied().filter(|on| items.contains(*on) && atglyph_bevy::may_use_on(asks, item, *on, bag, tags.get(*on).ok())).collect(),
+            choices: bag
+                .items
+                .iter()
+                .copied()
+                .filter(|on| self.items.contains(*on) && atglyph_bevy::may_use_on(asks, item, *on, bag, self.tags.get(*on).ok()))
+                .collect(),
         });
         // What it does, in the effects' own words: the same lines the
         // ability list shows under an ability, since they are the same
@@ -419,18 +519,21 @@ pub(crate) fn collect_inventory(
             blow: melee.map(|m| strike((m.kind, m.dice), None)),
             shot: ranged.map(|r| strike((r.kind, r.dice), Some(r.range))),
             strikes: strikes.map(|s| s.0.iter().map(|hit| strike(*hit, None)).collect()).unwrap_or_default(),
+            launches: launcher.map(|l| LaunchLine { ammo: tag_name(l.ammo), range: l.range, roll: l.damage }),
+            dark_sight: sight.map(|s| s.0),
             bestows: bestows
                 .map(|b| b.0.iter().map(|(stat, op)| (registries.map(|r| r.stats.name(*stat).to_string()).unwrap_or_default(), *op)).collect())
                 .unwrap_or_default(),
-            tags: tagged.map(|t| t.0.iter().map(|tag| registries.map(|r| r.tags.name(*tag).to_string()).unwrap_or_default()).collect()).unwrap_or_default(),
+            tags: tagged.map(|t| t.0.iter().map(|tag| tag_name(*tag)).collect()).unwrap_or_default(),
             facets: Vec::new(),
             seems: Vec::new(),
             ready_in,
             attuned,
             unknown: false,
             stuck: stuck && slot.is_some(),
+            replacing: None,
         };
-        view.rows.push(if unknown { row.withheld() } else { row });
+        Some(if unknown { row.withheld() } else { row })
     }
 }
 

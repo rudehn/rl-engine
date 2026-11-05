@@ -237,6 +237,42 @@ impl<I: Copy + Eq> Equipment<I> {
     pub fn is_free(&self, slot: SlotId) -> bool {
         self.in_slot(slot).is_none()
     }
+
+    /// What putting `item` on in `shape` would change, without putting it
+    /// on: the slot it would go in, what would come off and from which of
+    /// its slots, and the slots left empty. Refused as
+    /// [`equip_keeping`](Self::equip_keeping) refuses, with nothing that
+    /// `stays` coming off.
+    ///
+    /// Worked out by equipping a copy, so a screen comparing a thing with
+    /// what it replaces never names a slot or a thing the real equip would
+    /// not.
+    pub fn swap(&self, item: I, shape: &EquipShape, stays: impl Fn(I) -> bool) -> Result<Swap<I>, EquipError> {
+        let mut after = self.clone();
+        let displaced = after.equip_keeping(item, shape, stays)?;
+        let slot = after.slot_of(item).expect("a thing just put on is worn");
+        let taken: Vec<SlotId> = std::iter::once(slot).chain(shape.also.iter().copied()).collect();
+        let held = |thing: I| (0..self.slots.len()).map(|i| SlotId::from_raw(i as u32)).filter(move |s| self.in_slot(*s) == Some(thing));
+        let off = displaced.iter().map(|thing| (*thing, held(*thing).filter(|s| taken.contains(s)).collect())).collect();
+        let frees = displaced.iter().flat_map(|thing| held(*thing)).filter(|s| !taken.contains(s)).collect();
+        Ok(Swap { slot, off, frees })
+    }
+}
+
+/// What putting a thing on would change, as [`Equipment::swap`] works it
+/// out.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Swap<I> {
+    /// The slot it would go in.
+    pub slot: SlotId,
+    /// What would come off, each once, in the order the thing's slots are
+    /// taken, with the slots of each that the thing would take: a
+    /// two-hander takes the off hand from what holds only that.
+    pub off: Vec<(I, Vec<SlotId>)>,
+    /// The slots what comes off holds that the thing would not take, which
+    /// are left empty: the off hand a one-hander frees, put on in place of
+    /// a two-hander.
+    pub frees: Vec<SlotId>,
 }
 
 /// How much better a wearer would be for putting `item` on in `shape`,
@@ -344,6 +380,47 @@ mod tests {
         assert_eq!(eq.equip(2, &shield), Ok(vec![3]), "a shield displaces the two-hander whole");
         assert!(eq.is_free(main));
         assert_eq!(eq.in_slot(off), Some(2));
+    }
+
+    /// A thing put on over another says what comes off and from where,
+    /// and changes nothing worn.
+    #[test]
+    fn a_swap_names_what_comes_off_from_which_slots_and_puts_nothing_on() {
+        let (r, main, off, left, right) = hands_and_fingers();
+        let mut eq: Equipment<u32> = Equipment::for_slots(&r);
+        eq.equip(1, &EquipShape::in_slot(main)).unwrap();
+        let before = eq.clone();
+        let swap = eq.swap(2, &EquipShape::in_slot(main), |_| false).unwrap();
+        assert_eq!(swap, Swap { slot: main, off: vec![(1, vec![main])], frees: vec![] });
+        assert_eq!(eq, before, "nothing went on");
+        let ring = eq.swap(3, &EquipShape::in_any([left, right]), |_| false).unwrap();
+        assert_eq!(ring, Swap { slot: left, off: vec![], frees: vec![] }, "a free slot, and nothing comes off");
+        assert_eq!(eq.swap(4, &EquipShape::in_slot(off), |thing| thing == 1).map(|s| s.off), Ok(vec![]), "the off hand is free");
+    }
+
+    /// A two-hander takes the second hand from what holds it, and a
+    /// one-hander put on over a two-hander frees the hand it does not take.
+    #[test]
+    fn a_swap_says_the_hand_a_two_hander_takes_and_the_hand_a_one_hander_frees() {
+        let (r, main, off, _, _) = hands_and_fingers();
+        let mut eq: Equipment<u32> = Equipment::for_slots(&r);
+        eq.equip(1, &EquipShape::in_slot(off)).unwrap();
+        let bow = EquipShape::in_slot(main).and_claims(off);
+        assert_eq!(eq.swap(2, &bow, |_| false), Ok(Swap { slot: main, off: vec![(1, vec![off])], frees: vec![] }), "the bow takes the off hand from 1");
+
+        eq.equip(2, &bow).unwrap();
+        let sword = eq.swap(3, &EquipShape::in_slot(main), |_| false).unwrap();
+        assert_eq!(sword, Swap { slot: main, off: vec![(2, vec![main])], frees: vec![off] }, "the bow comes off whole and the off hand is left empty");
+    }
+
+    /// A swap is refused as wearing it would be: nothing comes off that
+    /// stays on.
+    #[test]
+    fn a_swap_is_refused_where_what_holds_the_slot_stays_on() {
+        let (r, main, _, _, _) = hands_and_fingers();
+        let mut eq: Equipment<u32> = Equipment::for_slots(&r);
+        eq.equip(1, &EquipShape::in_slot(main)).unwrap();
+        assert_eq!(eq.swap(2, &EquipShape::in_slot(main), |thing| thing == 1), Err(EquipError::Kept(main)));
     }
 
     #[test]

@@ -110,7 +110,7 @@ pub mod items {
     };
     pub use atglyph_bevy::loot::{Drops, Found, ItemMaker, LootArea, LootPlugin, LootSet, Provenance};
     pub use atglyph_bevy::parts::{ActorParts, Attacks, ItemLevel, ItemParts, LightWhen, innate_statuses, insert_parts};
-    pub use atglyph_rules::equip::{EquipError, EquipShape, Equipment, SlotDef, SlotId};
+    pub use atglyph_rules::equip::{EquipError, EquipShape, Equipment, SlotDef, SlotId, Swap};
     pub use atglyph_rules::loot::{DropRow, DropTable, Layout, LevelRow, LevelTable, LootRow, LootTable, Placed, ScatterRules, plan_scatter};
     pub use atglyph_rules::tag::{TagDef, TagId};
 }
@@ -239,8 +239,8 @@ pub mod ui {
     pub use atglyph_ui::view::{
         AbilityRow, AbilityView, AbilityViewPlugin, AimAt, AimFire, AimRange, AimThrow, AimUse, Asking, Bar, ContainerView, ContainerViewPlugin, EndingSection,
         EndingView, GearLine, GearView, GearViewPlugin, GroundRow, GroundView, GroundViewPlugin, InspectView, InspectViewPlugin, InventoryView,
-        InventoryViewPlugin, ItemRow, NearbyFollowers, NearbyStatuses, NearbyView, NearbyViewPlugin, OfferRow, OffersView, OffersViewPlugin, OpenContainer,
-        Row, Seems, TargetView, TargetViewPlugin, VitalsViewPlugin, WorkRow, target_modal,
+        InventoryViewPlugin, ItemRow, LaunchLine, NearbyFollowers, NearbyStatuses, NearbyView, NearbyViewPlugin, OfferRow, OffersView, OffersViewPlugin,
+        OpenContainer, Replacing, Row, Seems, TakenOff, TargetView, TargetViewPlugin, VitalsViewPlugin, WorkRow, target_modal,
     };
     pub use atglyph_ui::{UiPlugin, panel};
 }

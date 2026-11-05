@@ -35,7 +35,7 @@ pub use ending::{EndingSection, EndingView, EndingViewPlugin};
 pub use gear::{GearLine, GearSlot, GearView, GearViewPlugin};
 pub use ground::{GroundRow, GroundView, GroundViewPlugin};
 pub use inspect::{InspectView, InspectViewPlugin};
-pub use inventory::{Asking, InventoryView, InventoryViewPlugin, ItemRow};
+pub use inventory::{Asking, InventoryView, InventoryViewPlugin, ItemRow, LaunchLine, Replacing, TakenOff};
 pub use nearby::{NearbyFollowers, NearbyStatuses, NearbyView, NearbyViewPlugin};
 pub use offers::{OfferRow, OffersView, OffersViewPlugin};
 pub use party::{PartyView, PartyViewPlugin};

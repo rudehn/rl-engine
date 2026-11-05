@@ -15,6 +15,11 @@
 //! more than one; it closes itself when the trade ends, as the container
 //! screen does when its container goes out of reach.
 //!
+//! Under the two lists, where the screen is tall enough, the row picked
+//! out on either side is described as the bag describes it, under a rule
+//! naming it, and weighed against what the customer wears, so a helm is
+//! seen to beat the cap worn before it is bought.
+//!
 //! Every word it draws is the game's or a [`TradeWords`] default the game
 //! may replace: the title is the trader's `Name`, the line under it is
 //! the game's facet, and the currency is named by the currency's own
@@ -29,6 +34,7 @@ use bevy::prelude::*;
 use crate::app::UiApp;
 use crate::controls::{Chord, ControlInput, key_name};
 use crate::modal::{ModalId, Modals};
+use crate::panel::inventory::{describe, print_lines};
 use crate::panel::{clear, clip, frame, section};
 use crate::tone::{Palette, Tones};
 use crate::view::trade::{TradeRow, TradeView, TradeViewPlugin};
@@ -357,9 +363,16 @@ pub(crate) fn draw_trade(mut terminal: ResMut<Terminal>, mut menu: ResMut<TradeM
         x += text.chars().count() as i32 + 1;
     }
 
+    // The pane under the lists, and its rule, where the screen is tall
+    // enough to keep a useful list over it: at most a third or so of the
+    // height, and none at all below three rows, so a short screen keeps
+    // its lists whole.
+    let pane = ((inner.height - 9) / 2).min(10);
+    let pane = if pane >= 3 { pane } else { 0 };
+    let under = if pane > 0 { pane + 1 } else { 0 };
     let gap = 2;
     let half = (inner.width - gap) / 2;
-    let lists = GridRect::new(inner.x, inner.y + 2, half, inner.height - 3);
+    let lists = GridRect::new(inner.x, inner.y + 2, half, inner.height - 3 - under);
     let wares = lists;
     let pack = GridRect::new(inner.x + half + gap, lists.y, inner.width - half - gap, lists.height);
     let selected = |side| (menu.side == side).then_some(menu.selected());
@@ -370,8 +383,32 @@ pub(crate) fn draw_trade(mut terminal: ResMut<Terminal>, mut menu: ResMut<TradeM
     // screen as well as off the row.
     let purse = |amount: u32| crate::view::sum_of(&view.currency, amount);
     for (side, amount) in [(wares, view.trader_purse), (pack, view.purse)] {
-        terminal.print_on(side.x, inner.bottom() - 1, &clip(&purse(amount), side.width.max(0) as usize), palette.get(Tones::NOTICE), surface);
+        terminal.print_on(side.x, inner.bottom() - 1 - under, &clip(&purse(amount), side.width.max(0) as usize), palette.get(Tones::NOTICE), surface);
     }
+    if pane > 0 {
+        let picked = match menu.side {
+            TradeSide::Wares => view.wares.get(menu.wares),
+            TradeSide::Pack => view.pack.get(menu.pack),
+        };
+        draw_pane(&mut terminal, GridRect::new(inner.x, inner.bottom() - under, inner.width, under), picked, palette);
+    }
+}
+
+/// The row picked out, on whichever side, described as the bag describes
+/// it, under a rule that names it: what it is, and against what the
+/// customer wears, what putting it on would change.
+fn draw_pane(terminal: &mut Terminal, rect: GridRect, picked: Option<&TradeRow>, palette: &Palette) {
+    for x in rect.x..rect.right() {
+        terminal.put(x, rect.y, '\u{2500}', palette.get(Tones::FRAME));
+    }
+    let Some(row) = picked else { return };
+    let width = rect.width.max(0) as usize;
+    let name = clip(&row.row.label, width.saturating_sub(6));
+    if !name.is_empty() {
+        terminal.print_on(rect.x + 2, rect.y, &format!(" {name} "), palette.get(Tones::TITLE), palette.get(Tones::SURFACE));
+    }
+    let lines = row.described.as_ref().map(|item| describe(item, width)).unwrap_or_default();
+    print_lines(terminal, (rect.x, rect.y + 1, rect.bottom()), width, &lines, palette);
 }
 
 /// One side of the trade under its heading, and the deal its rows are
@@ -574,6 +611,67 @@ mod tests {
         assert_eq!(cider[4], "10", "the whole name and the price:\n{text}");
         assert_ne!(cider.get(5).map(String::as_str), Some("each"), "and no each:\n{text}");
         assert_eq!(from("2 files")[..4], ["2", "files", "10", "each"], "a row with the room still says each:\n{text}");
+    }
+
+    /// A trade screen tall enough for a pane under its lists, the trader
+    /// selling a helm and the player wearing a cap: the pane describes the
+    /// row picked out on either side as the bag does, under a rule that
+    /// names it, and a ware that would go on in place of what is worn says
+    /// what it replaces and what changes.
+    #[test]
+    fn the_pane_under_the_lists_describes_the_row_picked_out_and_compares_a_ware_with_what_is_worn() {
+        let mut stage = Stage::new_with(TradePanel::new(GridRect::new(0, 0, 60, 24)), |app| {
+            app.add_plugins((PropsPlugin, TradePlugin));
+            app.insert_resource(Seed(TEST_SEED));
+            let tags = Registry::from_defs(vec![TagDef::new("scrip"), TagDef::new("armor")]).expect("two tags");
+            app.insert_resource(Currency(tags.expect("scrip")));
+            let mut registries = app.world_mut().resource_mut::<Registries>();
+            registries.tags = tags;
+            registries.slots = Registry::from_defs(vec![atglyph_rules::SlotDef::new("head")]).expect("one slot");
+        })
+        .screen(60, 24);
+        let (armor, head) = {
+            let r = stage.app.world().resource::<Registries>();
+            (r.tags.expect("armor"), r.slots.expect("head"))
+        };
+        let glyph = atglyph_render::Glyph::new('[', Color::WHITE);
+        let shape = atglyph_rules::EquipShape::in_slot(head);
+        let w = stage.app.world_mut();
+        let helm = w.spawn((Item, Name::new("helm"), glyph, Tagged(vec![armor]), Wearable(shape.clone()), Armor(2), Worth(20))).id();
+        let cap = w.spawn((Item, Name::new("cap"), glyph, Tagged(vec![armor]), Wearable(shape.clone()), Armor(1), Worth(4))).id();
+        let at = stage.at.offset(1, 0);
+        let trader = w.spawn((Actor, Name::new("Odda"), Position(at), Inventory { items: vec![helm] }, Trader { buys: vec![armor], pays_pct: 50 })).id();
+        let mut worn = Equipped(atglyph_rules::Equipment::with_slot_count(1));
+        worn.equip(cap, &shape).expect("it fits");
+        let player = stage.player;
+        stage.app.world_mut().entity_mut(player).insert((Inventory { items: vec![cap] }, worn));
+        let trade = stage.app.world().resource::<Verbs>().get(TRADE).expect("declared");
+        stage.app.world_mut().write_message(Interacted { actor: player, target: trader, verb: trade, thing: None });
+        stage.tick();
+        stage.tick();
+
+        let rows = stage.rows();
+        let text = rows.join("\n");
+        let pane = |rows: &[String]| -> Vec<String> {
+            let rule = rows.iter().rposition(|r| r.starts_with("\u{2502} \u{2500}")).unwrap_or_else(|| panic!("a rule over the pane:\n{}", rows.join("\n")));
+            rows[rule..rows.len() - 1].iter().map(|r| r.trim_start_matches("\u{2502} ").trim_end_matches('\u{2502}').trim_end().to_string()).collect()
+        };
+        let shown = pane(&rows);
+        assert!(
+            shown[0].starts_with("\u{2500}\u{2500} helm \u{2500}") && shown[0].chars().count() == 56,
+            "a rule the width of the screen naming the ware:\n{text}"
+        );
+        assert_eq!(
+            shown[1..],
+            ["armor +2".to_string(), "goes on the head".into(), "replaces: cap".into(), "  armor 1 -> 2 (+1)".into(), "".into(), "".into(),],
+            "{text}"
+        );
+
+        stage.press(KeyCode::ArrowRight);
+        let rows = stage.rows();
+        let pane = pane(&rows);
+        assert!(pane[0].contains(" cap "), "{}", rows.join("\n"));
+        assert_eq!(pane[1..3], ["armor +1".to_string(), "worn on the head".to_string()], "{}", rows.join("\n"));
     }
 
     /// The labels of the customer's side, in order.

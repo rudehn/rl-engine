@@ -48,6 +48,15 @@
 //! [`ItemRow::seems`](crate::view::inventory::ItemRow::seems), is said in
 //! place of the bare word.
 //!
+//! A thing that could be worn and is not is then weighed against what it
+//! would take off, by its
+//! [`replacing`](crate::view::inventory::ItemRow::replacing): what it
+//! replaces in the slot it goes in, or that nothing is worn there, the
+//! hand a two-hander takes from what holds it and the hand a one-hander
+//! frees, and each number that would change, old to new and by how much,
+//! a gain in the good tone and a loss in the bad. Picking a row out puts
+//! nothing on.
+//!
 //! Every action closes every screen, since it spends a turn and the turn
 //! loop assumes nothing is up while it runs.
 
@@ -65,9 +74,10 @@ use crate::panel::sheet::plain_op;
 use crate::panel::{clear, clip, frame, wrap};
 use crate::tone::{Palette, ToneId, Tones};
 use crate::view::ability::turns;
-use crate::view::inventory::{InventoryView, InventoryViewPlugin, ItemRow};
-use crate::view::sheet::Strike;
+use crate::view::inventory::{InventoryView, InventoryViewPlugin, ItemRow, LaunchLine, TakenOff};
+use crate::view::sheet::{ResistLine, Strike};
 use crate::view::target::{AimThrow, AimUse};
+use atglyph_rules::stats::Op;
 
 /// The name the bag's modal is declared under.
 pub(crate) const INVENTORY_MODAL: &str = "inventory";
@@ -654,11 +664,20 @@ pub(crate) fn strike(s: &Strike) -> String {
     }
 }
 
-/// The lines describing `row`: its numbers and what the game added, then
-/// where it goes and whether it will come off, then what it does and has
-/// left. A thing not yet known says so in place of its numbers and of what
-/// it does and has left, and is described by the rest.
-fn describe(row: &ItemRow, width: usize) -> Vec<(String, ToneId)> {
+/// The lines describing `row` to fit `width`: the thing itself, then what
+/// putting it on would change. Shared with the trade screen, so a ware on
+/// a counter reads as it would in the bag.
+pub(crate) fn describe(row: &ItemRow, width: usize) -> Vec<(String, ToneId)> {
+    let mut lines = about(row, width);
+    lines.extend(compare(row, width));
+    lines
+}
+
+/// The lines describing `row` itself: its numbers and what the game added,
+/// then where it goes and whether it will come off, then what it does and
+/// has left. A thing not yet known says so in place of its numbers and of
+/// what it does and has left, and is described by the rest.
+fn about(row: &ItemRow, width: usize) -> Vec<(String, ToneId)> {
     let mut lines: Vec<(String, ToneId)> = Vec::new();
     let mut say = |text: String, tone: ToneId| lines.extend(wrap(&text, width).into_iter().map(|l| (l, tone)));
     // What the game says a thing not yet known seems, its kind known and
@@ -679,6 +698,12 @@ fn describe(row: &ItemRow, width: usize) -> Vec<(String, ToneId)> {
     }
     for extra in &row.strikes {
         say(format!("+{}", strike(extra)), Tones::TEXT);
+    }
+    if let Some(launch) = &row.launches {
+        say(format!("launches {} +{}, range +{}", launch.ammo, launch.roll, launch.range), Tones::TEXT);
+    }
+    if let Some(tiles) = row.dark_sight {
+        say(format!("sees {tiles} in the dark"), Tones::TEXT);
     }
     if row.armor != 0 {
         say(format!("armor {:+}", row.armor), Tones::TEXT);
@@ -742,6 +767,209 @@ fn describe(row: &ItemRow, width: usize) -> Vec<(String, ToneId)> {
         (false, false, _) => {}
     }
     lines
+}
+
+/// What putting `row` on would change, under what it is: what it replaces
+/// in the slot it goes in, or that nothing is worn there; what else it
+/// takes, and from what; the slots it leaves bare; and each number that
+/// would change, old to new and by how much, a gain in the good tone and a
+/// loss in the bad. Nothing for a thing worn or that cannot be.
+///
+/// A thing that will not come off stands in the way, and is said to in
+/// place of the numbers, since wearing it is refused. Neither is any
+/// number compared while either side is not yet known: the numbers of a
+/// thing unknown are withheld, and a difference with nothing would be a
+/// guess passed off as a reading.
+fn compare(row: &ItemRow, width: usize) -> Vec<(String, ToneId)> {
+    let Some(replacing) = &row.replacing else { return Vec::new() };
+    let mut lines: Vec<(String, ToneId)> = Vec::new();
+    let mut say = |text: String, tone: ToneId| lines.extend(wrap(&text, width).into_iter().map(|l| (l, tone)));
+    let (in_slot, beside): (Vec<&TakenOff>, Vec<&TakenOff>) = replacing.off.iter().partition(|t| t.from.contains(&replacing.slot));
+    if in_slot.is_empty() {
+        say(format!("nothing worn on the {}", replacing.slot), Tones::MUTED);
+    } else {
+        say(format!("replaces: {}", in_slot.iter().map(|t| t.row.label.as_str()).collect::<Vec<_>>().join(" and ")), Tones::TEXT);
+    }
+    for taken in beside {
+        say(format!("takes the {} from {}", taken.from.join(" and the "), atglyph_core::noun::with_the(&taken.row.label)), Tones::TEXT);
+    }
+    if !replacing.frees.is_empty() {
+        say(format!("frees the {}", replacing.frees.join(" and the ")), Tones::MUTED);
+    }
+    let stuck: Vec<&TakenOff> = replacing.off.iter().filter(|t| t.row.stuck).collect();
+    for taken in &stuck {
+        say(format!("{} will not come off", atglyph_core::noun::with_the(&taken.row.label)), Tones::BAD);
+    }
+    if !stuck.is_empty() || row.unknown || replacing.off.iter().any(|t| t.row.unknown) {
+        return lines;
+    }
+    let off: Vec<&ItemRow> = replacing.off.iter().map(|t| &t.row).collect();
+    lines.extend(table(&changes(row, &off), width));
+    lines
+}
+
+/// One number putting a thing on would change: what it is, the old and
+/// the new in words, and the difference, in halves so a roll's mean of
+/// 2.5 is exact; `None` for a change that is no better or worse, such as
+/// what a launcher launches.
+struct Change {
+    what: String,
+    old: String,
+    new: String,
+    halves: Option<i64>,
+}
+
+/// Twice the mean of `roll`, so a mean of 2.5 is a whole number.
+fn halves(roll: atglyph_core::DiceRoll) -> i64 {
+    let dice = if roll.num == 0 || roll.sides == 0 { 0 } else { roll.num as i64 * (roll.sides as i64 + 1) };
+    dice + 2 * roll.bonus as i64
+}
+
+/// A difference in halves as a signed number: `+1`, `-2.5`.
+fn signed_halves(halves: i64) -> String {
+    let sign = if halves < 0 { '-' } else { '+' };
+    match halves.abs() {
+        whole if whole % 2 == 0 => format!("{sign}{}", whole / 2),
+        half => format!("{sign}{}.5", half / 2),
+    }
+}
+
+/// Every number that putting `row` on in place of `off` would change, in
+/// the order the bag describes them: armor, the blow, the shot, the extra
+/// rolls, what a launcher adds, what is resisted, sight in the dark, and
+/// the stats. What stays the same is left out.
+fn changes(row: &ItemRow, off: &[&ItemRow]) -> Vec<Change> {
+    let mut changes = Vec::new();
+    let mut change = |what: &str, old: String, new: String, halves: Option<i64>| {
+        if old != new {
+            changes.push(Change { what: what.to_string(), old, new, halves });
+        }
+    };
+    let none = || "none".to_string();
+    let worn_armor: i32 = off.iter().map(|r| r.armor).sum();
+    if worn_armor != 0 || row.armor != 0 {
+        change("armor", worn_armor.to_string(), row.armor.to_string(), Some(2 * (row.armor - worn_armor) as i64));
+    }
+    // A blow or a shot is struck with one thing, the first worn that has
+    // one, and named by its kind only where the kinds differ.
+    for (what, of) in [("blow", (|r: &ItemRow| r.blow.clone()) as fn(&ItemRow) -> Option<Strike>), ("shot", |r: &ItemRow| r.shot.clone())] {
+        let (old, new) = (off.iter().find_map(|r| of(r)), of(row));
+        let kinds_differ = matches!((&old, &new), (Some(a), Some(b)) if a.kind != b.kind);
+        let said = |s: &Option<Strike>| match s {
+            None => none(),
+            Some(s) if kinds_differ => strike(s),
+            Some(s) => match s.range {
+                Some(range) => format!("{} to {range}", s.dice),
+                None => s.dice.to_string(),
+            },
+        };
+        let mean = |s: &Option<Strike>| s.as_ref().map_or(0, |s| halves(s.dice));
+        if old.is_some() || new.is_some() {
+            change(what, said(&old), said(&new), Some(mean(&new) - mean(&old)));
+        }
+    }
+    let extras = |rows: &mut dyn Iterator<Item = &Strike>| -> (String, i64) {
+        let all: Vec<&Strike> = rows.collect();
+        let said = all.iter().map(|s| format!("+{}", strike(s))).collect::<Vec<_>>().join(", ");
+        (if said.is_empty() { none() } else { said }, all.iter().map(|s| halves(s.dice)).sum())
+    };
+    let (old_extra, old_mean) = extras(&mut off.iter().flat_map(|r| &r.strikes));
+    let (new_extra, new_mean) = extras(&mut row.strikes.iter());
+    change("extra", old_extra, new_extra, Some(new_mean - old_mean));
+    let worn_launch = off.iter().find_map(|r| r.launches.as_ref());
+    if worn_launch.is_some() || row.launches.is_some() {
+        if let (Some(old), Some(new)) = (worn_launch, &row.launches) {
+            change("ammo", old.ammo.clone(), new.ammo.clone(), None);
+        }
+        let roll = |l: Option<&LaunchLine>| l.map_or_else(none, |l| format!("+{}", l.roll));
+        let mean = |l: Option<&LaunchLine>| l.map_or(0, |l| halves(l.roll));
+        change("launch", roll(worn_launch), roll(row.launches.as_ref()), Some(mean(row.launches.as_ref()) - mean(worn_launch)));
+        let range = |l: Option<&LaunchLine>| l.map_or_else(none, |l| format!("+{}", l.range));
+        let cells = |l: Option<&LaunchLine>| l.map_or(0, |l| l.range as i64);
+        change("range", range(worn_launch), range(row.launches.as_ref()), Some(2 * (cells(row.launches.as_ref()) - cells(worn_launch))));
+    }
+    // Each kind resisted on either side, in the order they are first met.
+    let mut kinds: Vec<&str> = Vec::new();
+    for line in row.resists.iter().chain(off.iter().flat_map(|r| &r.resists)) {
+        if !kinds.contains(&line.name.as_str()) {
+            kinds.push(&line.name);
+        }
+    }
+    for kind in kinds {
+        let pct = |rows: &mut dyn Iterator<Item = &ResistLine>| -> i32 { rows.filter(|r| r.name == kind).map(|r| r.pct).sum() };
+        let (old, new) = (pct(&mut off.iter().flat_map(|r| &r.resists)), pct(&mut row.resists.iter()));
+        change(&format!("resists {kind}"), format!("{old}%"), format!("{new}%"), Some(2 * (new - old) as i64));
+    }
+    let worn_sight = off.iter().filter_map(|r| r.dark_sight).max();
+    if worn_sight.is_some() || row.dark_sight.is_some() {
+        let said = |tiles: Option<i32>| tiles.map_or_else(none, |t| t.to_string());
+        let gain = row.dark_sight.unwrap_or(0) - worn_sight.unwrap_or(0);
+        change("dark sight", said(worn_sight), said(row.dark_sight), Some(2 * gain as i64));
+    }
+    // Each stat moved on either side: a sum where every move is an add,
+    // and the moves themselves, no better or worse, where any is not.
+    let mut stats: Vec<&str> = Vec::new();
+    for (stat, _) in row.bestows.iter().chain(off.iter().flat_map(|r| &r.bestows)) {
+        if !stats.contains(&stat.as_str()) {
+            stats.push(stat);
+        }
+    }
+    for stat in stats {
+        let ops = |rows: &mut dyn Iterator<Item = &(String, Op)>| -> Vec<Op> { rows.filter(|(s, _)| s == stat).map(|(_, op)| *op).collect() };
+        let (old, new) = (ops(&mut off.iter().flat_map(|r| &r.bestows)), ops(&mut row.bestows.iter()));
+        let sum = |ops: &[Op]| -> Option<i32> { ops.iter().map(|op| if let Op::Add(n) = op { Some(*n) } else { None }).sum() };
+        match (sum(&old), sum(&new)) {
+            (Some(was), Some(will)) => change(stat, format!("{was:+}"), format!("{will:+}"), Some(2 * (will - was) as i64)),
+            _ => {
+                let said = |ops: &[Op]| if ops.is_empty() { none() } else { ops.iter().map(|op| plain_op(*op)).collect::<Vec<_>>().join(", ") };
+                change(stat, said(&old), said(&new), None);
+            }
+        }
+    }
+    changes
+}
+
+/// `changes` as lines under what a thing replaces, set in columns, the
+/// difference after each in brackets, where the widest fits `width`, and
+/// each said plainly and wrapped where it does not.
+fn table(changes: &[Change], width: usize) -> Vec<(String, ToneId)> {
+    let widest = |of: fn(&Change) -> &str| changes.iter().map(|c| of(c).chars().count()).max().unwrap_or(0);
+    let (what, old, new) = (widest(|c| &c.what), widest(|c| &c.old), widest(|c| &c.new));
+    let diff = |c: &Change| c.halves.filter(|h| *h != 0).map(|h| format!(" ({})", signed_halves(h))).unwrap_or_default();
+    let columns = |c: &Change| format!("  {:<what$} {:<old$} -> {:<new$}{}", c.what, c.old, c.new, diff(c)).trim_end().to_string();
+    let aligned = changes.iter().all(|c| columns(c).chars().count() <= width);
+    let mut lines = Vec::new();
+    for c in changes {
+        let tone = match c.halves {
+            Some(h) if h > 0 => Tones::GOOD,
+            Some(h) if h < 0 => Tones::BAD,
+            _ => Tones::TEXT,
+        };
+        if aligned {
+            lines.push((columns(c), tone));
+        } else {
+            let plain = format!("{} {} -> {}{}", c.what, c.old, c.new, diff(c));
+            lines.extend(wrap(&plain, width.saturating_sub(2)).into_iter().map(|l| (format!("  {l}"), tone)));
+        }
+    }
+    lines
+}
+
+/// Prints `lines` down from row `y` to `bottom` at `x`, each clipped to
+/// `width`, on the surface. Lines past the last row are marked by an
+/// ellipsis in the muted tone at the end of the last, since words cut
+/// short without a mark read as all there is.
+pub(crate) fn print_lines(terminal: &mut Terminal, (x, y, bottom): (i32, i32, i32), width: usize, lines: &[(String, ToneId)], palette: &Palette) {
+    let room = (bottom - y).max(0) as usize;
+    let cut = lines.len() > room;
+    for (i, (line, tone)) in lines.iter().take(room).enumerate() {
+        let last = cut && i + 1 == room;
+        let text = if last { clip(line, width.saturating_sub(2)) } else { clip(line, width) };
+        terminal.print_on(x, y + i as i32, &text, palette.get(*tone), palette.get(Tones::SURFACE));
+        if last && width > 0 {
+            terminal.print_on(x + width as i32 - 1, y + i as i32, "\u{2026}", palette.get(Tones::MUTED), palette.get(Tones::SURFACE));
+        }
+    }
 }
 
 /// What the bag is drawn from.
@@ -847,9 +1075,7 @@ pub(crate) fn draw_inventory(mut terminal: ResMut<Terminal>, mut menu: ResMut<In
     more(&mut terminal, rect.y, titled, inner.right() - 1, '\u{25b2}', first, palette);
     more(&mut terminal, rule_y, inner.x, inner.right() - 1, '\u{25bc}', rows.len() - first - list_rows, palette);
     let Some(row) = rows.get(at) else { return };
-    for (y, (line, tone)) in (rule_y + 1..inner.bottom()).zip(describe(row, width)) {
-        terminal.print_on(inner.x, y, &clip(&line, width), palette.get(tone), surface);
-    }
+    print_lines(&mut terminal, (inner.x, rule_y + 1, inner.bottom()), width, &describe(row, width), palette);
 }
 
 /// Says on row `y` that `count` rows are out of view, `arrow` pointing to
@@ -946,6 +1172,146 @@ mod tests {
         stage.app.world_mut().get_mut::<Equipped>(player).unwrap().equip(axe, &shape).unwrap();
         stage.tick();
         assert_eq!(inside(&stage, 4), "worn on the main hand and the off hand");
+    }
+
+    /// A player wearing a cap on the head and a dagger in the left hand,
+    /// carrying a helm, a bow that goes in the right hand and takes the
+    /// left, a scarf for the bare neck and a pebble, with the bag drawn
+    /// tall enough to say what each would change.
+    fn wardrobe() -> (Stage, Entity, Entity) {
+        let mut stage = Stage::new_with(InventoryPanel::new(GridRect::new(0, 0, 52, 22)).title("Bag"), |app| {
+            let mut registries = app.world_mut().resource_mut::<Registries>();
+            registries.slots =
+                Registry::from_defs(vec![SlotDef::new("right hand"), SlotDef::new("left hand"), SlotDef::new("head"), SlotDef::new("neck")]).unwrap();
+            registries.tags = Registry::from_defs(vec![atglyph_rules::TagDef::new("arrow")]).unwrap();
+        })
+        .screen(52, 22);
+        let (player, kind) = (stage.player, stage.kind);
+        let (right, left, head, neck, arrow) = {
+            let r = stage.app.world().resource::<Registries>();
+            (r.slots.expect("right hand"), r.slots.expect("left hand"), r.slots.expect("head"), r.slots.expect("neck"), r.tags.expect("arrow"))
+        };
+        let w = stage.app.world_mut();
+        let cap = w.spawn((Item, Name::new("cap"), Wearable(EquipShape::in_slot(head)), Armor(1))).id();
+        let dagger = w.spawn((Item, Name::new("dagger"), Wearable(EquipShape::in_slot(left)), MeleeAttack::new(kind, DiceRoll::new(1, 4)))).id();
+        let helm = w.spawn((Item, Name::new("helm"), Wearable(EquipShape::in_slot(head)), Armor(2))).id();
+        let launcher = atglyph_bevy::Launcher { ammo: arrow, range: 4, damage: DiceRoll::new(1, 4) };
+        let bow = w.spawn((Item, Name::new("bow"), Wearable(EquipShape::in_slot(right).and_claims(left)), launcher)).id();
+        let scarf = w.spawn((Item, Name::new("scarf"), Wearable(EquipShape::in_slot(neck)), Armor(1))).id();
+        let pebble = w.spawn((Item, Name::new("pebble"))).id();
+        let mut worn = Equipped(Equipment::with_slot_count(4));
+        worn.equip(cap, &EquipShape::in_slot(head)).unwrap();
+        worn.equip(dagger, &EquipShape::in_slot(left)).unwrap();
+        w.entity_mut(player).insert((Inventory { items: vec![cap, dagger, helm, bow, scarf, pebble] }, worn));
+        stage.tick();
+        stage.press(KeyCode::KeyI);
+        (stage, bow, dagger)
+    }
+
+    /// Every line of the bag's words about the row picked out, under the
+    /// rule, with the tone of each line's first letter.
+    fn described(stage: &Stage) -> Vec<(String, ToneId)> {
+        let rule = (1..stage.rows().len() as i32).find(|y| inside(stage, *y).starts_with('\u{2500}')).expect("a rule under the rows");
+        let palette = stage.app.world().resource::<Palette>();
+        let terminal = stage.app.world().resource::<Terminal>();
+        let tone_of = |c| [Tones::TEXT, Tones::MUTED, Tones::GOOD, Tones::BAD].into_iter().find(|t| palette.get(*t) == c).unwrap_or(Tones::FRAME);
+        (rule + 1..stage.rows().len() as i32 - 1)
+            .map(|y| {
+                let text = inside(stage, y);
+                let lead = text.chars().take_while(|c| *c == ' ').count() as i32;
+                let fg = terminal.get(2 + lead, y).map(|c| c.fg).unwrap_or_default();
+                (text, tone_of(fg))
+            })
+            .filter(|(text, _)| !text.is_empty())
+            .collect()
+    }
+
+    /// A helm picked out over a cap worn on the head says what it replaces
+    /// and the armor each gives, the gain in the good tone, and a cap
+    /// picked out over a helm the loss in the bad one.
+    #[test]
+    fn a_helm_picked_out_over_a_worn_cap_says_it_replaces_the_cap_and_the_armor_it_adds() {
+        let (mut stage, _, _) = wardrobe();
+        stage.press(KeyCode::ArrowDown);
+        stage.press(KeyCode::ArrowDown);
+        let lines = described(&stage);
+        let texts: Vec<&str> = lines.iter().map(|(t, _)| t.as_str()).collect();
+        assert_eq!(texts, ["armor +2", "goes on the head", "replaces: cap", "  armor 1 -> 2 (+1)"]);
+        assert_eq!(lines[3].1, Tones::GOOD, "more armor is better");
+        assert!(!texts.iter().any(|t| t.contains("dagger")), "nothing about the hands");
+
+        // The helm on, the cap is the worse of the two.
+        let player = stage.player;
+        let helm = stage.app.world().get::<Inventory>(player).unwrap().items[2];
+        let head = stage.app.world().resource::<Registries>().slots.expect("head");
+        stage.app.world_mut().get_mut::<Equipped>(player).unwrap().equip(helm, &EquipShape::in_slot(head)).unwrap();
+        stage.press(KeyCode::ArrowUp);
+        stage.press(KeyCode::ArrowUp);
+        let lines = described(&stage);
+        assert_eq!(lines.last().map(|(t, tone)| (t.as_str(), *tone)), Some(("  armor 2 -> 1 (-1)", Tones::BAD)), "{lines:?}");
+    }
+
+    /// A bow picked out says the right hand is bare and that it takes the
+    /// left from the dagger, and what that gives up and gains: the dagger's
+    /// blow lost in the bad tone, the bow's roll and reach won in the good.
+    #[test]
+    fn a_bow_over_a_dagger_says_the_hand_it_takes_and_the_blow_given_up() {
+        let (mut stage, _, _) = wardrobe();
+        stage.press(KeyCode::KeyD);
+        stage.press(KeyCode::Escape);
+        let lines = described(&stage);
+        let texts: Vec<&str> = lines.iter().map(|(t, _)| t.as_str()).collect();
+        assert_eq!(
+            texts,
+            [
+                "launches arrow +1d4, range +4",
+                "goes on the right hand, and takes the left hand",
+                "nothing worn on the right hand",
+                "takes the left hand from the dagger",
+                "  blow   1d4  -> none (-2.5)",
+                "  launch none -> +1d4 (+2.5)",
+                "  range  none -> +4   (+4)",
+            ],
+            "{lines:?}"
+        );
+        let tones: Vec<ToneId> = lines[4..].iter().map(|(_, tone)| *tone).collect();
+        assert_eq!(tones, [Tones::BAD, Tones::GOOD, Tones::GOOD]);
+    }
+
+    /// A dagger picked out over the bow it would take off frees the hand
+    /// the bow took and it does not.
+    #[test]
+    fn a_dagger_over_a_bow_frees_the_hand_it_does_not_take() {
+        let (mut stage, bow, _) = wardrobe();
+        let player = stage.player;
+        let (right, left) = {
+            let r = stage.app.world().resource::<Registries>();
+            (r.slots.expect("right hand"), r.slots.expect("left hand"))
+        };
+        stage.app.world_mut().get_mut::<Equipped>(player).unwrap().equip(bow, &EquipShape::in_slot(right).and_claims(left)).unwrap();
+        stage.press(KeyCode::ArrowDown);
+        let texts: Vec<String> = described(&stage).into_iter().map(|(t, _)| t).collect();
+        assert!(texts.contains(&"replaces: bow".to_string()) && texts.contains(&"frees the right hand".to_string()), "{texts:?}");
+    }
+
+    /// A thing that goes where nothing is worn says so, and all it gives is
+    /// a gain; a thing that is not worn at all, or is worn already,
+    /// compares itself with nothing.
+    #[test]
+    fn a_bare_slot_says_nothing_is_worn_there_and_a_thing_not_worn_compares_with_nothing() {
+        let (mut stage, _, _) = wardrobe();
+        stage.press(KeyCode::KeyE);
+        stage.press(KeyCode::Escape);
+        let texts: Vec<String> = described(&stage).into_iter().map(|(t, _)| t).collect();
+        assert_eq!(texts, ["armor +1", "goes on the neck", "nothing worn on the neck", "  armor 0 -> 1 (+1)"], "all it gives is a gain");
+
+        stage.press(KeyCode::ArrowDown);
+        let texts: Vec<String> = described(&stage).into_iter().map(|(t, _)| t).collect();
+        assert!(texts.is_empty(), "a pebble says nothing at all: {texts:?}");
+        stage.press(KeyCode::KeyA);
+        stage.press(KeyCode::Escape);
+        let texts: Vec<String> = described(&stage).into_iter().map(|(t, _)| t).collect();
+        assert_eq!(texts, ["armor +1", "worn on the head"], "the cap worn replaces nothing");
     }
 
     /// The text inside the frame on row `y`, border and padding cut off.

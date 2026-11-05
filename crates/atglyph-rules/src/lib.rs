@@ -174,7 +174,7 @@ pub use balance::{BandRow, Report, ThreatSubject, threat};
 pub use content::{BandedEntry, BandedTable, ContentError, Named, Registry, load_spawns};
 pub use damage::{DamageKind, DamageStage, Hit, Resistances, resolve};
 pub use dressing::DressingDef;
-pub use equip::{EquipError, EquipShape, Equipment, SlotDef, SlotId};
+pub use equip::{EquipError, EquipShape, Equipment, SlotDef, SlotId, Swap};
 pub use events::{Change, CounterDef, CounterId, Fact, FactDef, FactKind, Ledger, Matcher, Need, Objective, QuestDef, QuestId, QuestState, Tally, Tracker};
 pub use faction::{FactionId, Factions, Relation};
 pub use fire::Tinder;
@@ -206,7 +206,7 @@ pub mod prelude {
     pub use crate::balance::{BandRow, Report, ThreatSubject, threat};
     pub use crate::content::{BandedEntry, BandedTable, ContentError, Named, Registry, load_spawns};
     pub use crate::damage::{DamageKind, DamageStage, Hit, Resistances, resolve};
-    pub use crate::equip::{EquipError, EquipShape, Equipment, SlotDef, SlotId};
+    pub use crate::equip::{EquipError, EquipShape, Equipment, SlotDef, SlotId, Swap};
     pub use crate::events::{
         Change, CounterDef, CounterId, Fact, FactDef, FactKind, Ledger, Matcher, Need, Objective, QuestDef, QuestId, QuestState, Tally, Tracker,
     };

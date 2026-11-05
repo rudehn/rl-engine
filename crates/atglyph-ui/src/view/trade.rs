@@ -24,6 +24,7 @@ use atglyph_render::Glyph;
 use bevy::prelude::*;
 
 use crate::view::Row;
+use crate::view::inventory::{ItemRow, ItemRows};
 
 /// One thing on either side of a trade.
 #[derive(Debug, Clone, PartialEq)]
@@ -38,6 +39,12 @@ pub struct TradeRow {
     pub each: Option<u32>,
     /// Why one could not change hands, if it could not.
     pub refused: Option<TradeRefusal>,
+    /// The thing described as the customer's bag describes it, the
+    /// customer's numbers and what putting it on would change against what
+    /// the customer wears, on either side, so a ware is weighed against
+    /// what it would replace before it is bought. `None` for a thing that
+    /// is not an [`Item`].
+    pub described: Option<ItemRow>,
 }
 
 impl TradeRow {
@@ -107,6 +114,15 @@ type Side = (Option<&'static Name>, Option<&'static Glyph>, &'static Inventory, 
 /// One carried thing, as a trade reads it.
 type Piece = (Option<&'static Name>, Option<&'static Glyph>, Option<&'static Stack>, Option<&'static Worth>, Option<&'static Tagged>);
 
+/// What the things on a counter are read from: each as a trade prices it,
+/// the currency's name, and each as the customer's bag describes it.
+#[derive(bevy::ecs::system::SystemParam)]
+pub(crate) struct Goods<'w, 's> {
+    items: Query<'w, 's, Piece>,
+    named: crate::view::NamedPieces<'w, 's>,
+    described: ItemRows<'w, 's>,
+}
+
 /// Fills [`TradeView`] from the open trade, if there is one.
 ///
 /// A row's refusal is what a deal for one would meet, since one is what a
@@ -118,9 +134,9 @@ pub(crate) fn collect_trade(
     currency: Option<Res<Currency>>,
     sides: Query<Side>,
     traders: Query<&Trader>,
-    items: Query<Piece>,
-    named: crate::view::NamedPieces,
+    goods: Goods,
 ) {
+    let Goods { items, named, described } = &goods;
     view.parties = None;
     view.trader = None;
     view.wares.clear();
@@ -139,7 +155,7 @@ pub(crate) fn collect_trade(
     view.parties = Some(parties);
     view.purse = customer_purse;
     view.trader_purse = trader_purse;
-    view.currency = crate::view::currency_name(currency.as_ref(), customer.2.items.iter().chain(&trader.2.items).copied(), &named);
+    view.currency = crate::view::currency_name(currency.as_ref(), customer.2.items.iter().chain(&trader.2.items).copied(), named);
     view.trader = Some(Row::new(
         parties.trader,
         trader.0.map(|n| n.as_str().to_string()).unwrap_or_default(),
@@ -169,6 +185,7 @@ pub(crate) fn collect_trade(
                     count,
                     each,
                     refused: terms.quote(deal, ware, 1, payer_purse).err(),
+                    described: described.row(parties.customer, customer.2, customer.3, *item),
                 };
                 Some((name.map(|n| n.as_str().to_string()).unwrap_or_default(), row))
             })
