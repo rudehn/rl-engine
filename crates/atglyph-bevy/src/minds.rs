@@ -292,15 +292,28 @@ const COMPOSED_UP_TO: usize = 4;
 /// are thrown away only when the cells it stands on differ, so an actor's
 /// step costs a walk over the index and never a flood.
 ///
-/// Window-local, like every grid the engine keeps; the points a tactic
-/// hands in and gets back are translated at the boundary, so no map is
-/// ever copied to shift its origin.
+/// Local to the window each was flooded over, like every grid the engine
+/// keeps; the points a tactic hands in and gets back are translated at the
+/// boundary, so no map is ever copied to shift its origin.
+///
+/// A field outlives a move of a streamed place's window where it leads
+/// exactly as one flooded over the new window would: the move takes ground
+/// away on one side and brings it in on the other, and a way through either
+/// costs at least a step for every cell from the mind out to that ground
+/// and back in to its goal. Where the field's own cost from a cell and its
+/// neighbours is less than that, no way through the ground that moved could
+/// be shorter, nor was the one it found through it, so the field gives the
+/// steps a fresh flood would; elsewhere it is flooded again over the new
+/// window. A field leading away reads the whole window, so any move
+/// floods it again. Flooding every field again on every move cost a step
+/// across a chunk's edge more than every other part of it together.
 #[derive(Resource)]
 pub struct FlowFields {
-    /// The map's cost epoch and window generation the fields were built
-    /// for: a field is window-local, so one built before the window moved
-    /// leads from cells that are now somewhere else.
+    /// The map's cost epoch and arrival the fields were built under: a
+    /// change of either is a change of the ground under every field.
     epoch: Option<(u64, u64)>,
+    /// The window, in world tiles, the ground below was read off.
+    window: GridRect,
     /// Every cell of the current map something that is not an actor stands
     /// on and blocks, sorted, in world coordinates.
     standing: Vec<Point>,
@@ -314,8 +327,8 @@ pub struct FlowFields {
     snares: BitGrid,
     /// The window's ground, read off the map for the epoch.
     footing: Footing,
-    fields: Recent<FieldKey, DijkstraMap>,
-    floods: Recent<FloodKey, DijkstraMap>,
+    fields: Recent<FieldKey, Flooded>,
+    floods: Recent<FloodKey, Flooded>,
     /// The last near field, flooded afresh for each mind that asks one.
     near: DijkstraMap,
 }
@@ -324,6 +337,7 @@ impl Default for FlowFields {
     fn default() -> Self {
         Self {
             epoch: None,
+            window: GridRect::new(0, 0, 0, 0),
             standing: Vec::new(),
             walls: BitGrid::new(0, 0),
             traps: Vec::new(),
@@ -338,14 +352,18 @@ impl Default for FlowFields {
 
 impl FlowFields {
     /// Throws every field away and reads the ground again if the map's cost
-    /// epoch or its window has moved since they were built.
+    /// epoch or arrival has moved since they were built, and reads the
+    /// ground again, keeping the fields, if only the window moved.
     fn refresh(&mut self, map: &WorldMap) {
-        let epoch = (map.cost_epoch(), map.generation());
+        let epoch = (map.cost_epoch(), map.arrival());
+        let window = map.window_tiles();
         if self.epoch != Some(epoch) {
             self.fields.clear();
             self.floods.clear();
+        }
+        if self.epoch != Some(epoch) || self.window != window {
             self.epoch = Some(epoch);
-            let window = map.window_tiles();
+            self.window = window;
             self.walls = BitGrid::new(window.width, window.height);
             for p in self.standing.iter().filter_map(|p| map.to_local(*p)) {
                 self.walls.insert(p);
@@ -388,10 +406,15 @@ impl FlowFields {
         &self.near
     }
 
-    /// The field for `key`, built if it is not there.
-    fn ensure(&mut self, key: FieldKey, map: &WorldMap) -> Option<&DijkstraMap> {
+    /// The field for `key` as a mind at `from` reads it, and the world tile
+    /// at the top-left of the window it was flooded over: the one kept, if
+    /// it leads from `from` as a flood over the window now would, else one
+    /// flooded now.
+    fn ensure(&mut self, key: FieldKey, from: Point, map: &WorldMap) -> Option<(&DijkstraMap, Point)> {
         self.refresh(map);
-        if !self.fields.touch(&key) {
+        let window = map.window_tiles();
+        let kept = self.fields.touch(&key) && self.fields.get(&key).is_some_and(|f| f.over == window || self.leads_as_flooded_now(f, &key, from, map));
+        if !kept {
             let (goals, profile, opens_doors, wary, away) = &key;
             let goals: Vec<(Point, Point)> = goals.iter().filter_map(|g| Some((*g, map.to_local(*g)?))).collect();
             if goals.is_empty() {
@@ -412,13 +435,14 @@ impl FlowFields {
                 let mut field: Option<DijkstraMap> = None;
                 for (goal, local) in goals {
                     let from = (goal, *profile, *opens_doors, *wary);
-                    if !self.floods.touch(&from) {
+                    // A flood is composed only with floods over the same window.
+                    if !(self.floods.touch(&from) && self.floods.get(&from).is_some_and(|f| f.over == window)) {
                         let view = ground(&[local]);
                         let mut flood = DijkstraMap::covering(&view);
                         flood.build(&view, [local], PathRules::default());
-                        self.floods.insert(from, flood);
+                        self.floods.insert(from, Flooded { map: flood, over: window });
                     }
-                    let flood = self.floods.get(&from)?;
+                    let flood = &self.floods.get(&from)?.map;
                     match field.as_mut() {
                         Some(field) => field.take_lower(flood),
                         None => field = Some(flood.clone()),
@@ -437,9 +461,72 @@ impl FlowFields {
                 field.scale(-12, 10);
                 field.rescan(&view, PathRules::default());
             }
-            self.fields.insert(key.clone(), field);
+            self.fields.insert(key.clone(), Flooded { map: field, over: window });
         }
-        self.fields.get(&key)
+        self.fields.get(&key).map(|f| (&f.map, f.over.origin()))
+    }
+
+    /// Whether `field`, flooded for `key` over a window the map's has since
+    /// moved from, leads from `from` exactly as a flood over the window now
+    /// would: at `from` and each cell round it, the cost it found is less
+    /// than the least any way through ground that moved could cost, or the
+    /// cell is one nothing walks in either window.
+    ///
+    /// A way through ground that moved leaves the ground both windows hold,
+    /// so it costs at least a step, each no cheaper than the cheapest tile,
+    /// for every cell from the cell out past that ground's edge and from
+    /// there back in to the nearest goal. A cost found under that bound
+    /// was found by a way inside the ground both hold, which is still
+    /// there, and no way through what moved can beat it.
+    fn leads_as_flooded_now(&self, field: &Flooded, key: &FieldKey, from: Point, map: &WorldMap) -> bool {
+        let (goals, _, opens_doors, _, away) = key;
+        if *away {
+            return false;
+        }
+        let window = map.window_tiles();
+        let Some(both) = field.over.intersection(&window) else { return false };
+        // How far each side of the ground both hold lies from ground that
+        // moved: none past a side where neither window reaches further.
+        let reaches = |a: &GridRect| (a.x < both.x, a.right() > both.right(), a.y < both.y, a.bottom() > both.bottom());
+        let (over, now) = (reaches(&field.over), reaches(&window));
+        let sides = (over.0 || now.0, over.1 || now.1, over.2 || now.2, over.3 || now.3);
+        let out = |p: Point| -> i64 {
+            let mut d = i64::MAX;
+            if sides.0 {
+                d = d.min(i64::from(p.x - both.x + 1));
+            }
+            if sides.1 {
+                d = d.min(i64::from(both.right() - p.x));
+            }
+            if sides.2 {
+                d = d.min(i64::from(p.y - both.y + 1));
+            }
+            if sides.3 {
+                d = d.min(i64::from(both.bottom() - p.y));
+            }
+            d
+        };
+        if goals.iter().any(|g| !both.contains(*g)) {
+            return false;
+        }
+        let Some(back) = goals.iter().map(|g| out(*g)).min() else { return false };
+        let tables = map.tables();
+        let Some(cheapest) = tables.move_cost.iter().zip(&tables.walkable).filter(|(_, w)| **w).map(|(c, _)| i64::from(*c)).min() else { return false };
+        let costs = self.footing.costs(*opens_doors);
+        std::iter::once(from).chain(Direction::ALL.iter().map(|d| from + d.offset())).all(|p| {
+            if !both.contains(p) {
+                return !field.over.contains(p) && !window.contains(p);
+            }
+            match field.map.value(p - field.over.origin()) {
+                Some(v) => i64::from(v) < cheapest.saturating_mul(out(p).saturating_add(back)),
+                None => {
+                    // Unreached: the same in both only where nothing walks.
+                    let local = p - window.origin();
+                    let idx = (local.y * window.width + local.x) as usize;
+                    self.walls.get_idx(idx) || costs[idx].is_none()
+                }
+            }
+        })
     }
 
     /// Takes `cells` as everything that stands on the current map, and
@@ -529,6 +616,12 @@ impl Footing {
     }
 }
 
+/// A field or a flood, and the window, in world tiles, it was flooded over.
+struct Flooded {
+    map: DijkstraMap,
+    over: GridRect,
+}
+
 /// The window as a field floods it: the map's own costs, a wall wherever
 /// something stands, and for a wary mind a trap's price on a shown trap's
 /// cell; except under a goal, which is where the field leads and so is
@@ -583,21 +676,22 @@ struct Walking<'a> {
 
 impl Walking<'_> {
     /// The field toward or away from `goals`, priced for shown traps when
-    /// `wary` and there is one, and `from` in its coordinates.
-    fn field(&mut self, goals: &[Point], from: Point, away: bool, wary: bool) -> Option<(&DijkstraMap, Point)> {
+    /// `wary` and there is one, `from` in its coordinates, and the world
+    /// tile at its top-left.
+    fn field(&mut self, goals: &[Point], from: Point, away: bool, wary: bool) -> Option<(&DijkstraMap, Point, Point)> {
         let mut goals = goals.to_vec();
         goals.sort();
         goals.dedup();
-        let local = self.map.to_local(from)?;
+        self.map.to_local(from)?;
         let priced = wary && !self.fields.traps.is_empty();
-        Some((self.fields.ensure((goals, self.profile, self.opens_doors, priced, away), self.map)?, local))
+        let (field, origin) = self.fields.ensure((goals, self.profile, self.opens_doors, priced, away), from, self.map)?;
+        Some((field, from - origin, origin))
     }
 
     fn descents(&mut self, goals: &[Point], from: Point, away: bool) -> Vec<Point> {
-        let origin = self.map.window_tiles().origin();
         let wary = self.wary;
         match self.field(goals, from, away, wary) {
-            Some((field, local)) => field.descents(local).into_iter().map(|p| p + origin).collect(),
+            Some((field, local, origin)) => field.descents(local).into_iter().map(|p| p + origin).collect(),
             None => Vec::new(),
         }
     }
@@ -644,7 +738,7 @@ impl atglyph_rules::Fields for Walking<'_> {
     /// of gap that sets it off over the trap. The same flood the mind walks
     /// down unless it is wary on a map with a trap shown.
     fn on_foot(&mut self, goals: &[Point], from: Point) -> Option<u32> {
-        let (field, local) = self.field(goals, from, false, false)?;
+        let (field, local, _) = self.field(goals, from, false, false)?;
         field.value(local).and_then(|v| u32::try_from(v).ok())
     }
 
@@ -1808,7 +1902,10 @@ mod tests {
         let (mut app, player, hunter, start) = among_props(Brain::new().then(Hunt), false, &[]);
         waiting(&mut app, player, 1);
         let marked = (vec![Point::new(-99, -99)], MovementProfile::default(), false, false, false);
-        app.world_mut().resource_mut::<FlowFields>().fields.insert(marked.clone(), DijkstraMap::new(atglyph_core::GridRect::new(0, 0, 1, 1)));
+        app.world_mut()
+            .resource_mut::<FlowFields>()
+            .fields
+            .insert(marked.clone(), Flooded { map: DijkstraMap::new(atglyph_core::GridRect::new(0, 0, 1, 1)), over: atglyph_core::GridRect::new(0, 0, 1, 1) });
         let before = app.world().get::<Position>(hunter).unwrap().0;
         waiting(&mut app, player, 2);
         assert_ne!(app.world().get::<Position>(hunter).unwrap().0, before, "the hunter walked");
@@ -1822,7 +1919,10 @@ mod tests {
     fn an_actor_stepping_throws_no_field_away_and_something_standing_that_goes_does() {
         let mut fields = FlowFields::default();
         fields.see_standing(vec![Point::new(3, 3)]);
-        fields.fields.insert((vec![Point::ZERO], MovementProfile::default(), false, false, false), DijkstraMap::new(atglyph_core::GridRect::new(0, 0, 1, 1)));
+        fields.fields.insert(
+            (vec![Point::ZERO], MovementProfile::default(), false, false, false),
+            Flooded { map: DijkstraMap::new(atglyph_core::GridRect::new(0, 0, 1, 1)), over: atglyph_core::GridRect::new(0, 0, 1, 1) },
+        );
         fields.see_standing(vec![Point::new(3, 3)]);
         let held = (vec![Point::ZERO], MovementProfile::default(), false, false, false);
         assert!(fields.fields.get(&held).is_some(), "the same cells stand: the field is kept");
@@ -3005,19 +3105,19 @@ mod tests {
         let walker = MovementProfile::default();
         let (a, b, c) = (start.offset(2, 0), start.offset(0, 2), start.offset(-2, 0));
         let mut fields = FlowFields::default();
-        assert!(fields.ensure((vec![a, b], walker, false, false, false), map).is_some());
-        assert!(fields.ensure((vec![a], walker, false, false, false), map).is_some());
+        assert!(fields.ensure((vec![a, b], walker, false, false, false), start, map).is_some());
+        assert!(fields.ensure((vec![a], walker, false, false, false), start, map).is_some());
         let flood = |g: Point| fields.floods.get(&(g, walker, false, false)).is_some();
         assert!(flood(a) && flood(b) && !flood(c), "a flood for each goal either field has, and none for the goal not yet asked");
         assert!(fields.fields.get(&(vec![a], walker, false, false, false)).is_some(), "and both fields");
-        assert!(fields.ensure((vec![a, c], walker, false, false, false), map).is_some());
+        assert!(fields.ensure((vec![a, c], walker, false, false, false), start, map).is_some());
         let flood = |g: Point| fields.floods.get(&(g, walker, false, false)).is_some();
         assert!(flood(a) && flood(b) && flood(c), "one flood more, for the one goal that is new");
         // A composed field is the flood from all of its goals together.
         let view = map.view();
         let mut whole = DijkstraMap::covering(&view);
         whole.build(&view, [a, b].iter().filter_map(|g| map.to_local(*g)), PathRules::default());
-        let composed = fields.ensure((vec![a, b], walker, false, false, false), map).unwrap();
+        let (composed, _) = fields.ensure((vec![a, b], walker, false, false, false), start, map).unwrap();
         assert!(whole.iter().eq(composed.iter()), "cell for cell what one flood from both gives");
     }
 
@@ -3035,10 +3135,10 @@ mod tests {
         let walker = MovementProfile::default();
         let key = |i: i32| (vec![start.offset(i % 8, i / 8)], walker, false, false, false);
         let mut fields = FlowFields::default();
-        fields.ensure(key(0), map);
+        fields.ensure(key(0), start, map);
         for i in 1..=40 {
-            fields.ensure(key(i), map);
-            fields.ensure(key(0), map);
+            fields.ensure(key(i), start, map);
+            fields.ensure(key(0), start, map);
         }
         assert!(fields.fields.get(&key(1)).is_none(), "the one asked for once, longest ago, went first");
         assert!(fields.fields.get(&key(40)).is_some(), "and the newest is held");
@@ -3277,5 +3377,109 @@ mod tests {
 
         let restored = world.spawn((JoinStamp(9), Leader(chief))).id();
         assert_eq!(joined(&world, restored), Some(9), "a stamp put back with the leader, as a load does, is kept");
+    }
+    /// The test ground streamed and loaded round its entry, with a wall
+    /// broken by one gap east of the middle, and how to stream it.
+    fn walled_surface() -> (WorldMap, crate::testing::StreamedGround) {
+        use crate::places::PlaceRules;
+        let rules = crate::testing::StreamedGround(atglyph_grid::TileRegistry::standard());
+        let layout = crate::testing::StreamedGround::layout();
+        let mut map = WorldMap::new(rules.0.tables());
+        map.install_streamed(crate::places::MapId::ZERO, layout);
+        map.switch_to(crate::places::MapId::ZERO);
+        let seed = atglyph_core::PlaceSeed::of(crate::testing::TEST_SEED, 0);
+        map.stream(crate::places::MapId::ZERO, layout.entry, |c| rules.build_chunk(crate::places::MapId::ZERO, c, seed)).unwrap();
+        let wall = rules.0.expect("wall");
+        for y in 50..94 {
+            if y != 70 {
+                map.set_tile(Point::new(layout.entry.x + 22, y), wall);
+            }
+        }
+        (map, rules)
+    }
+
+    /// Nothing a mind decides changes because the window moved under it:
+    /// down a field toward a goal kept through a move a chunk east, every
+    /// cell of the new window is led the same way as down a field flooded
+    /// afresh over it, the cells the move could not have changed by the
+    /// field kept and the rest by one flooded again. A field leading away
+    /// is flooded again at once.
+    #[test]
+    fn a_mind_is_led_the_same_down_a_field_kept_through_a_window_move_as_down_one_flooded_afresh() {
+        use crate::places::PlaceRules;
+        let (mut map, rules) = walled_surface();
+        let layout = crate::testing::StreamedGround::layout();
+        let goal = layout.entry.offset(16, 0);
+        let profile = MovementProfile(0);
+        let walk = |fields: &mut FlowFields, map: &WorldMap, from: Point, away: bool| {
+            let mut walking = Walking { fields, map, profile, opens_doors: false, wary: false };
+            walking.descents(&[goal], from, away)
+        };
+        let mut kept = FlowFields::default();
+        walk(&mut kept, &map, goal.offset(3, 3), false);
+        walk(&mut kept, &map, goal.offset(3, 3), true);
+        let before = map.window_tiles();
+        let seed = atglyph_core::PlaceSeed::of(crate::testing::TEST_SEED, 0);
+        let east = layout.entry.offset(crate::testing::STREAMED_CHUNK + layout.slack + 1, 0);
+        map.stream(crate::places::MapId::ZERO, east, |c| rules.build_chunk(crate::places::MapId::ZERO, c, seed)).unwrap();
+        let window = map.window_tiles();
+        assert_eq!(window.x, before.x + crate::testing::STREAMED_CHUNK, "the window moved a chunk east");
+
+        let key = (vec![goal], profile, false, false, false);
+        let mut fresh = FlowFields::default();
+        let mut cells: Vec<Point> = window.cells().collect();
+        cells.sort_by_key(|p| (atglyph_core::geometry::chebyshev(*p, goal), p.y, p.x));
+        let mut by_kept = 0;
+        for from in cells {
+            assert_eq!(walk(&mut kept, &map, from, false), walk(&mut fresh, &map, from, false), "led the same from {from:?}");
+            by_kept += usize::from(kept.fields.get(&key).is_some_and(|f| f.over == before));
+        }
+        assert!(by_kept > 100, "the field kept through the move led the cells round its goal, {by_kept} of them");
+        assert!(kept.fields.get(&key).is_some_and(|f| f.over == window), "and the far cells by one flooded again");
+        let from = goal.offset(3, 3);
+        assert_eq!(walk(&mut kept, &map, from, true), walk(&mut fresh, &map, from, true), "away from the goal");
+        assert!(kept.fields.get(&(vec![goal], profile, false, false, true)).is_some_and(|f| f.over == window), "the field away is flooded again");
+    }
+    /// A field the move made wrong is not kept: the goal stands in a
+    /// corridor whose far mouth was just past the window's edge, so before
+    /// the move the way in from below it went round by the near mouth, and
+    /// after it the far mouth is the shorter. A mind below the corridor is
+    /// led to the far mouth, as down a field flooded afresh.
+    #[test]
+    fn a_field_the_move_made_wrong_is_flooded_again() {
+        use crate::places::{MapId, PlaceRules};
+        let rules = crate::testing::StreamedGround(atglyph_grid::TileRegistry::standard());
+        let layout = crate::testing::StreamedGround::layout();
+        let mut map = WorldMap::new(rules.0.tables());
+        map.install_streamed(MapId::ZERO, layout);
+        map.switch_to(MapId::ZERO);
+        let seed = atglyph_core::PlaceSeed::of(crate::testing::TEST_SEED, 0);
+        map.stream(MapId::ZERO, layout.entry, |c| rules.build_chunk(MapId::ZERO, c, seed)).unwrap();
+        let window = map.window_tiles();
+        let (wall, at) = (rules.0.expect("wall"), |dx: i32, dy: i32| layout.entry.offset(dx, dy));
+        // The corridor's sides, to the window's east edge, and its west end
+        // with a mouth in it.
+        for x in 6..window.right() - layout.entry.x {
+            map.set_tile(at(x, -4), wall);
+            map.set_tile(at(x, 4), wall);
+        }
+        for y in [-3, -2, -1, 1, 2, 3] {
+            map.set_tile(at(6, y), wall);
+        }
+        let goal = at(28, 0);
+        let below = at(21, 8);
+        let profile = MovementProfile(0);
+        let walk = |fields: &mut FlowFields, map: &WorldMap, from: Point| {
+            let mut walking = Walking { fields, map, profile, opens_doors: false, wary: false };
+            walking.descents(&[goal], from, false)
+        };
+        let mut kept = FlowFields::default();
+        let west = walk(&mut kept, &map, below);
+        assert!(west.first().is_some_and(|step| step.x < below.x), "before the move, round by the near mouth: {west:?}");
+        let east = layout.entry.offset(crate::testing::STREAMED_CHUNK + layout.slack + 1, 0);
+        map.stream(MapId::ZERO, east, |c| rules.build_chunk(MapId::ZERO, c, seed)).unwrap();
+        let led = walk(&mut kept, &map, below);
+        assert_eq!(led, walk(&mut FlowFields::default(), &map, below));
+        assert!(led.first().is_some_and(|step| step.x > below.x), "after it, to the far mouth: {led:?}");
     }
 }
