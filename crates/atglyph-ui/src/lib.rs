@@ -200,6 +200,10 @@ pub enum ViewSet {
     Collect,
     /// The game pushes what the engine cannot know.
     Annotate,
+    /// The engine finishes a view from what the game pushed: the trade
+    /// screen counts things alike as one row only once the game has noted
+    /// what tells one apart.
+    Settle,
     /// The narrator writes the log from what the turns did, after the game
     /// has had its say about the rows.
     Speak,
@@ -237,7 +241,10 @@ impl Plugin for UiPlugin {
             .init_resource::<RepeatPace>()
             .init_resource::<Repeats>()
             .init_resource::<MessageLog>()
-            .configure_sets(Update, (ViewSet::Sight, ViewSet::Collect, ViewSet::Annotate, ViewSet::Speak).chain().in_set(atglyph_bevy::PresentSet::Narrate))
+            .configure_sets(
+                Update,
+                (ViewSet::Sight, ViewSet::Collect, ViewSet::Annotate, ViewSet::Settle, ViewSet::Speak).chain().in_set(atglyph_bevy::PresentSet::Narrate),
+            )
             .add_systems(First, |mut modals: ResMut<Modals>| modals.begin_frame())
             // Before anything reads a key, and before key repeat advances:
             // a window that lost focus never saw what was released while

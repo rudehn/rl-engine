@@ -455,10 +455,7 @@ fn draw_side(
         let fg = palette.get(if row.open() { Tones::TEXT } else { Tones::MUTED });
         terminal.fill(GridRect::new(list.x, y, list.width, 1), Cell::new(' ', fg).on(bg));
         // What one changes hands for, or why it cannot: a short purse
-        // still shows the price, since how short is the useful part. A
-        // row of more than one says the price is for one, where it fits
-        // beside the whole of the row's name: the name is what the row is,
-        // so it is the word saying the price is for one that gives way.
+        // still shows the price, since how short is the useful part.
         let price = match (row.refused, row.each) {
             (None, Some(each)) => each.to_string(),
             (Some(TradeRefusal::Short), Some(each)) => format!("{} {each}", words.refusal(TradeRefusal::Short, deal)),
@@ -466,13 +463,19 @@ fn draw_side(
             (None, None) => String::new(),
         };
         let room = (list.width / 2).max(0) as usize;
-        let per_one = format!("{price} {}", words.each);
         // The glyph and its space, the name, and the space before the price.
         let beside = (list.width.max(0) as usize).saturating_sub(row.row.label.chars().count() + 3);
-        let fits = per_one.chars().count() <= room.min(beside);
-        let price = match row.count > 1 && row.each.is_some() && matches!(row.refused, None | Some(TradeRefusal::Short)) && fits {
-            true => per_one,
-            false => clip(&price, room),
+        let price = match (row.count > 1, row.each) {
+            // A row of more than one always says its price is for one,
+            // since a bare `60` beside `2 leggings` reads as the two for
+            // sixty: the whole of it where it fits beside the name, then
+            // without the refusal, which the row's muted tone says too,
+            // and else the name is cut short to make room, never the price.
+            (true, Some(each)) if matches!(row.refused, None | Some(TradeRefusal::Short)) => {
+                let bare = format!("{each} {}", words.each);
+                [format!("{price} {}", words.each), bare.clone()].into_iter().find(|said| said.chars().count() <= room.min(beside)).unwrap_or(bare)
+            }
+            _ => clip(&price, room),
         };
         let price_x = list.right() - price.chars().count() as i32;
         terminal.print_on(price_x, y, &price, fg, bg);
@@ -506,7 +509,12 @@ mod tests {
     /// half from a till of 9; the player with 25 in scrip and an awl worth
     /// 6. The screen is added and the trade opened.
     fn stage() -> (Stage, Entity) {
-        let mut stage = Stage::new_with(TradePanel::new(GridRect::new(10, 5, 60, 12)), |app| {
+        stage_in(GridRect::new(10, 5, 60, 12))
+    }
+
+    /// [`stage`] with the screen in `rect`.
+    fn stage_in(rect: GridRect) -> (Stage, Entity) {
+        let mut stage = Stage::new_with(TradePanel::new(rect), |app| {
             app.add_plugins((PropsPlugin, TradePlugin));
             app.insert_resource(Seed(TEST_SEED));
             let tags = Registry::from_defs(vec![TagDef::new("scrip"), TagDef::new("tool")]).expect("two tags");
@@ -602,11 +610,11 @@ mod tests {
         assert!(rows[16].contains(" w all "), "the border names the game's key:\n{}", rows.join("\n"));
     }
 
-    /// A stack whose name and price for one will not both fit on its row
-    /// keeps its whole name, and the word saying the price is for one is
-    /// what gives way.
+    /// A counted row always says its price is for one: where its name and
+    /// `10 each` will not both fit, the name is cut short, never the word,
+    /// since a bare `10` beside `3 flagons` reads as the three for ten.
     #[test]
-    fn a_rows_whole_name_comes_before_saying_its_price_is_for_one() {
+    fn a_counted_rows_price_always_says_each_and_its_name_gives_way() {
         let (mut stage, trader) = stage();
         let glyph = atglyph_render::Glyph::new('!', Color::WHITE);
         let cider = stage.app.world_mut().spawn((Item, Name::new("flagon of cider"), glyph, Stack { key: 3, count: 3 }, Worth(10))).id();
@@ -614,20 +622,32 @@ mod tests {
         stage.tick();
         let rows = stage.rows();
         let text = rows.join("\n");
-        // The words of the row of `name` from its first word on, by their
-        // tokens rather than the columns they fall in.
-        let from = |name: &str| -> Vec<String> {
-            let words: Vec<&str> = name.split(' ').collect();
+        let row = |name: &str| rows.iter().find(|r| r.contains(name)).unwrap_or_else(|| panic!("a row of {name}:\n{text}")).clone();
+        let wares = |row: String| row.chars().skip(12).take(27).collect::<String>().trim_end().to_string();
+        assert!(wares(row("3 flagons of ci")).ends_with("\u{2026} 10 each"), "the name cut short, the price for one whole:\n{text}");
+        assert!(wares(row("2 files")).ends_with("10 each"), "a row with the room says each too:\n{text}");
+    }
+
+    /// A counted row the purse cannot meet says so and that its price is
+    /// for one where both fit, and gives up saying it cannot be paid, which
+    /// its muted tone says too, before it gives up `each`.
+    #[test]
+    fn a_counted_row_past_the_purse_gives_up_cannot_pay_before_each() {
+        let (mut stage, trader) = stage_in(GridRect::new(0, 0, 80, 14));
+        let glyph = atglyph_render::Glyph::new('[', Color::WHITE);
+        let w = stage.app.world_mut();
+        let pairs: Vec<Entity> = (0..2).map(|_| w.spawn((Item, Name::new("leather leggings"), glyph, crate::narrate::MassNoun, Worth(60))).id()).collect();
+        let pans: Vec<Entity> = (0..2).map(|_| w.spawn((Item, Name::new("pan"), glyph, Worth(60))).id()).collect();
+        w.get_mut::<Inventory>(trader).expect("a bag").items.extend(pairs.into_iter().chain(pans));
+        stage.tick();
+        let rows = stage.rows();
+        let text = rows.join("\n");
+        let wares = |name: &str| -> String {
             let row = rows.iter().find(|r| r.contains(name)).unwrap_or_else(|| panic!("a row of {name}:\n{text}"));
-            let tokens: Vec<&str> = row.split_whitespace().collect();
-            let at = tokens.windows(words.len()).position(|w| w == words.as_slice()).unwrap_or_else(|| panic!("{name} whole:\n{text}"));
-            tokens[at..].iter().map(|t| t.to_string()).collect()
+            row.chars().skip(2).take(37).collect::<String>().split_whitespace().collect::<Vec<_>>().join(" ")
         };
-        assert!(!text.contains('\u{2026}'), "nothing is cut short:\n{text}");
-        let cider = from("3 flagons of cider");
-        assert_eq!(cider[4], "10", "the whole name and the price:\n{text}");
-        assert_ne!(cider.get(5).map(String::as_str), Some("each"), "and no each:\n{text}");
-        assert_eq!(from("2 files")[..4], ["2", "files", "10", "each"], "a row with the room still says each:\n{text}");
+        assert_eq!(wares("2 pans"), "[ 2 pans cannot pay 60 each", "{text}");
+        assert_eq!(wares("2 leather leggings"), "[ 2 leather leggings 60 each", "the name whole, and each:\n{text}");
     }
 
     /// A trade screen tall enough for a pane under its lists, the trader

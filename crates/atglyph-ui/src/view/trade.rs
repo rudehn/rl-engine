@@ -120,7 +120,9 @@ pub struct TradeViewPlugin;
 
 impl Plugin for TradeViewPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<TradeView>().add_systems(Update, collect_trade.in_set(crate::ViewSet::Collect));
+        app.init_resource::<TradeView>()
+            .add_systems(Update, collect_trade.in_set(crate::ViewSet::Collect))
+            .add_systems(Update, count_alike.in_set(crate::ViewSet::Settle));
     }
 
     fn finish(&self, app: &mut App) {
@@ -228,7 +230,7 @@ pub(crate) fn collect_trade(
                 Some((noun, row))
             })
             .collect();
-        counted(alike_together(listed))
+        alike_together(listed).into_iter().map(|(_, row)| row).collect()
     };
     view.wares = rows(trader.2, trader.3, Deal::Bought, customer_purse);
     view.pack = rows(customer.2, customer.3, Deal::Sold, trader_purse);
@@ -250,33 +252,52 @@ fn alike_together(mut listed: Vec<(Noun, TradeRow)>) -> Vec<(Noun, TradeRow)> {
     listed
 }
 
-/// `listed`'s rows with each run of things alike, not stacked, made one
-/// row counting them, so a counter of three daggers reads `3 daggers`
-/// once rather than `dagger` three times.
-fn counted(listed: Vec<(Noun, TradeRow)>) -> Vec<TradeRow> {
-    let mut rows: Vec<(Noun, TradeRow)> = Vec::new();
-    for (name, row) in listed {
-        match rows.last_mut() {
-            Some((last_name, last)) if *last_name == name && alike(last, &row) => {
-                last.items.push(row.row.entity);
-                last.count += 1;
-                last.row.label = listed_as(&name, last.count);
-            }
-            _ => rows.push((name, row)),
-        }
+/// Makes each set of things alike on either side, not stacked, one row
+/// counting them, so a counter of three daggers reads `3 daggers` once
+/// rather than `dagger` three times.
+///
+/// After the game has annotated the rows, in
+/// [`ViewSet::Settle`](crate::ViewSet::Settle), so a thing the game notes,
+/// the other weapon among daggers, is told apart by its note and stays a
+/// row of its own, its note on it alone.
+pub(crate) fn count_alike(mut view: ResMut<TradeView>, nouns: Query<(Option<&Name>, Has<crate::narrate::MassNoun>)>) {
+    if view.parties.is_none() {
+        return;
     }
-    rows.into_iter().map(|(_, row)| row).collect()
+    let noun = |row: &TradeRow| -> Noun {
+        let (name, mass) = nouns.get(row.row.entity).unwrap_or((None, false));
+        (name.map(|n| n.as_str().to_string()).unwrap_or_default(), mass)
+    };
+    let view = &mut *view;
+    for side in [&mut view.wares, &mut view.pack] {
+        let mut rows: Vec<(Noun, TradeRow)> = Vec::new();
+        for row in side.drain(..) {
+            let name = noun(&row);
+            match rows.iter_mut().find(|(n, group)| *n == name && alike(group, &row)) {
+                Some((name, group)) => {
+                    group.items.push(row.row.entity);
+                    group.count += 1;
+                    if !name.0.is_empty() {
+                        group.row.label = listed_as(name, group.count);
+                    }
+                }
+                None => rows.push((name, row)),
+            }
+        }
+        side.extend(rows.into_iter().map(|(_, row)| row));
+    }
 }
 
 /// Whether `row`, one thing not stacked, is alike `group`, a row of such
-/// things: in look, price, whether it could change hands, and its
-/// description, the thing itself aside.
+/// things: in look, price, whether it could change hands, what the game
+/// noted on it, and its description, the thing itself aside.
 fn alike(group: &TradeRow, row: &TradeRow) -> bool {
     let unstacked = |r: &TradeRow| r.count as usize == r.items.len();
     let described = |r: &TradeRow| r.described.clone().map(|d| ItemRow { entity: Entity::PLACEHOLDER, ..d });
+    let listed = |r: &TradeRow| Row { entity: Entity::PLACEHOLDER, label: String::new(), ..r.row.clone() };
     unstacked(group)
         && row.count == 1
-        && group.row.glyph == row.row.glyph
+        && listed(group) == listed(row)
         && (group.each, group.refused) == (row.each, row.refused)
         && described(group) == described(row)
 }
@@ -403,6 +424,31 @@ mod tests {
         assert_eq!(rows, vec![("2 files", 2, 1), ("lamp", 1, 1), ("2 combs", 2, 2), ("comb", 1, 1)]);
         assert_eq!(view.wares[2].items, combs, "the row stands for both");
         assert_eq!(view.wares[2].row.entity, combs[0], "and is the first of them");
+    }
+
+    /// A thing the game notes, in its row or in what describes it, is
+    /// never counted in with things it does not note: two combs, one of
+    /// them noted, are two rows.
+    #[test]
+    fn a_thing_the_game_notes_is_not_counted_in_with_things_alike_it_does_not() {
+        let (mut stage, trader) = stage();
+        let w = stage.app.world_mut();
+        let combs: Vec<Entity> = (0..3).map(|_| w.spawn((Item, Name::new("comb"), Worth(2))).id()).collect();
+        w.get_mut::<Inventory>(trader).expect("a bag").items.extend(combs.iter().copied());
+        let noted = combs[1];
+        stage.app.add_systems(
+            Update,
+            (move |mut view: ResMut<TradeView>| {
+                for item in view.described_mut().filter(|d| d.entity == noted) {
+                    item.facets.push(crate::Facet::new("note", "the good one"));
+                }
+            })
+            .in_set(crate::ViewSet::Annotate),
+        );
+        open(&mut stage, trader);
+        let view = stage.app.world().resource::<TradeView>();
+        let rows: Vec<(&str, Vec<Entity>)> = view.wares.iter().map(|r| (r.row.label.as_str(), r.items.clone())).collect();
+        assert_eq!(rows[2..], [("2 combs", vec![combs[0], combs[2]]), ("comb", vec![noted])], "the noted comb on its own");
     }
 
     /// A stuff or a pair counted is counted as written, `2 leggings`, as
