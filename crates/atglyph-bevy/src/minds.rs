@@ -413,6 +413,11 @@ impl FlowFields {
     fn ensure(&mut self, key: FieldKey, from: Point, map: &WorldMap) -> Option<(&DijkstraMap, Point)> {
         self.refresh(map);
         let window = map.window_tiles();
+        // A kept field is judged by the ground as its mind walks it, so a
+        // mind that opens doors needs the costs of opening read first.
+        if key.2 {
+            self.footing.read_opening(map);
+        }
         let kept = self.fields.touch(&key) && self.fields.get(&key).is_some_and(|f| f.over == window || self.leads_as_flooded_now(f, &key, from, map));
         if !kept {
             let (goals, profile, opens_doors, wary, away) = &key;
@@ -719,16 +724,36 @@ impl Walking<'_> {
 impl Walking<'_> {
     /// The descents from `from` of a field away from `goals` over the
     /// square `radius` cells round it, cut to the window, each goal beyond
-    /// it moved in to the square's edge on its side.
+    /// it standing on the open cell of the square's edge nearest it.
+    ///
+    /// The open cell, not the one straight toward it: a flood ignores a
+    /// goal on a wall, which left no field to run down, and a goal is
+    /// exempt from what stands, which made a prop on that cell one to flee
+    /// across.
     fn descents_within(&mut self, goals: &[Point], from: Point, radius: i32) -> Vec<Point> {
         let window = self.map.window_tiles();
         let Some(local) = self.map.to_local(from) else { return Vec::new() };
         let radius = radius.max(1);
         let square = GridRect::from_corners(local.offset(-radius, -radius), local.offset(radius, radius));
         let Some(bound) = square.intersection(&GridRect::new(0, 0, window.width, window.height)) else { return Vec::new() };
-        let edge = |v: i32, lo: i32, size: i32| v.clamp(lo, lo + size - 1);
-        let mut goals: Vec<Point> =
-            goals.iter().map(|g| *g - window.origin()).map(|g| Point::new(edge(g.x, bound.x, bound.width), edge(g.y, bound.y, bound.height))).collect();
+        self.fields.refresh(self.map);
+        if self.opens_doors {
+            self.fields.footing.read_opening(self.map);
+        }
+        let (footing, walls) = (&self.fields.footing, &self.fields.walls);
+        let costs = footing.costs(self.opens_doors);
+        let open = |p: Point| {
+            let idx = (p.y * window.width + p.x) as usize;
+            costs[idx].is_some() && !walls.get_idx(idx)
+        };
+        let mut goals: Vec<Point> = goals
+            .iter()
+            .map(|g| *g - window.origin())
+            .filter_map(|g| match bound.contains(g) {
+                true => Some(g),
+                false => bound.border().filter(|p| open(*p)).min_by_key(|p| (atglyph_core::geometry::chebyshev(*p, g), p.y, p.x)),
+            })
+            .collect();
         if goals.is_empty() {
             return Vec::new();
         }
@@ -3406,6 +3431,7 @@ mod tests {
         let restored = world.spawn((JoinStamp(9), Leader(chief))).id();
         assert_eq!(joined(&world, restored), Some(9), "a stamp put back with the leader, as a load does, is kept");
     }
+
     /// The test ground streamed and loaded round its entry, with a wall
     /// broken by one gap east of the middle, and how to stream it.
     fn walled_surface() -> (WorldMap, crate::testing::StreamedGround) {
@@ -3468,6 +3494,7 @@ mod tests {
         assert_eq!(walk(&mut kept, &map, from, true), walk(&mut fresh, &map, from, true), "away from the goal");
         assert!(kept.fields.get(&(vec![goal], profile, false, false, true)).is_some_and(|f| f.over == window), "the field away is flooded again");
     }
+
     /// A field the move made wrong is not kept: the goal stands in a
     /// corridor whose far mouth was just past the window's edge, so before
     /// the move the way in from below it went round by the near mouth, and
@@ -3510,6 +3537,7 @@ mod tests {
         assert_eq!(led, walk(&mut FlowFields::default(), &map, below));
         assert!(led.first().is_some_and(|step| step.x > below.x), "after it, to the far mouth: {led:?}");
     }
+
     /// A hurt mind runs from its foe and gets clear of it, and every field
     /// it runs down is flooded over ground within its flight's reach of it,
     /// never the whole window: no away field is kept, and the one flooded
@@ -3536,10 +3564,8 @@ mod tests {
             let from = app.world().get::<Position>(runner).unwrap().0;
             app.update();
             let fields = app.world().resource::<FlowFields>();
-            let map = app.world().resource::<WorldMap>();
             let whole_away = (vec![start], MovementProfile::default(), false, false, true);
             assert!(fields.fields.get(&whole_away).is_none(), "no away field over the window is kept");
-            let _ = map;
             let reached: Vec<Point> = fields.near.iter().map(|(p, _)| p).collect();
             let (xs, ys) = (reached.iter().map(|p| p.x), reached.iter().map(|p| p.y));
             let span = |lo: Option<i32>, hi: Option<i32>| hi.zip(lo).map_or(0, |(h, l)| h - l + 1);
@@ -3548,5 +3574,49 @@ mod tests {
         }
         let gap = atglyph_core::geometry::chebyshev(start, app.world().get::<Position>(runner).unwrap().0);
         assert!(gap >= 10, "it got clear: {gap} cells off");
+    }
+
+    /// A mind that opens doors reads a field kept through a window move
+    /// as one that does not: the costs of opening are read again for the
+    /// new window before the kept field is judged by them, and it is led
+    /// as down a field flooded afresh, through the door in the wall.
+    #[test]
+    fn a_mind_that_opens_doors_is_led_the_same_down_a_field_kept_through_a_window_move() {
+        use crate::places::PlaceRules;
+        let (mut map, rules) = walled_surface();
+        let layout = crate::testing::StreamedGround::layout();
+        assert!(map.set_tile(Point::new(layout.entry.x + 22, 70), rules.0.expect("door_closed")), "a door shut in the gap");
+        let goal = layout.entry.offset(16, 0);
+        let profile = MovementProfile(0);
+        let walk = |fields: &mut FlowFields, map: &WorldMap, from: Point| {
+            let mut walking = Walking { fields, map, profile, opens_doors: true, wary: false };
+            walking.descents(&[goal], from, false)
+        };
+        let mut kept = FlowFields::default();
+        walk(&mut kept, &map, goal.offset(3, 3));
+        let seed = atglyph_core::PlaceSeed::of(crate::testing::TEST_SEED, 0);
+        let east = layout.entry.offset(crate::testing::STREAMED_CHUNK + layout.slack + 1, 0);
+        map.stream(crate::places::MapId::ZERO, east, |c| rules.build_chunk(crate::places::MapId::ZERO, c, seed)).unwrap();
+        let mut fresh = FlowFields::default();
+        for from in [goal.offset(3, 3), goal.offset(-2, 1), Point::new(layout.entry.x + 26, 70)] {
+            assert_eq!(walk(&mut kept, &map, from), walk(&mut fresh, &map, from), "led the same from {from:?}");
+        }
+    }
+
+    /// A foe beyond a fleer's reach stands for it on the nearest open cell
+    /// of the reach's edge on its side: where the cell straight toward it
+    /// is a wall, or something stands there, the fleer still runs from it
+    /// down the field, rather than finding no field at all.
+    #[test]
+    fn a_foe_beyond_the_reach_is_fled_from_where_its_side_of_the_reach_is_walled() {
+        let (mut map, rules) = walled_surface();
+        let me = crate::testing::StreamedGround::layout().entry;
+        let foe = me.offset(12, 0);
+        assert!(map.set_tile(me.offset(5, 0), rules.0.expect("wall")), "the cell straight toward the foe on the reach's edge is wall");
+        let mut fields = FlowFields::default();
+        fields.see_standing(vec![me.offset(5, 1)]);
+        let mut walking = Walking { fields: &mut fields, map: &map, profile: MovementProfile(0), opens_doors: false, wary: false };
+        let away = walking.descents_within(&[foe], me, 5);
+        assert!(away.first().is_some_and(|p| p.x < me.x), "away from the foe: {away:?}");
     }
 }

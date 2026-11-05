@@ -33,7 +33,7 @@ atglyph is not on crates.io yet, so a game depends on a release by its git tag, 
 
 - `WorldMap::view` and `opening_view` find the window and the current place once, when made, rather than for every cell a shadowcast or a flood reads, which was most of what reading a cell cost.
 - **Breaking:** `FleeWhenHurt` has a public `within` field, how far round itself a mind looks for its way away, and runs down a field over that square alone rather than the whole loaded window, so a flight costs the same however much is loaded; `FleeWhenHurt::at(pct)` gives `FleeWhenHurt::WITHIN`, 20 cells, and a game that writes the struct literal adds `within: FleeWhenHurt::WITHIN`.
-- **Breaking:** `Streamed` has a public `slack` field; a game that writes one as a struct literal adds `slack: 0` to keep its window moving at every chunk's edge, and a save written before reads it as 0.
+- **Breaking:** `Streamed` has a public `slack` field; a game that writes one as a struct literal adds `slack: 0` to keep its window moving at every chunk's edge, and a save written before reads it as 0: a run restored from such a save keeps the slack of 0 its saved layout carries, safe with any sight a game's reach allows, its window only moving at every edge as before.
 - A streamed place keeps the chunks that left its window last whole, twice a window's worth, so walking back over ground just left builds nothing; `PlaceRules::build_chunk` is asked again only for a chunk left longer ago, and its edits are laid back on it as before.
 - A streamed place's window moving no longer moves the map's opacity and cost epochs: a viewshed whose sight lies in what the window holds before and after is kept as it was cast, the lighting marks only the viewers whose sight a move lit or darkened, and the rest are cast again as before, so a move no longer recasts every viewer in the window.
 - A mind's flow field toward its goals outlives a move of a streamed place's window wherever it provably leads as one flooded over the new window would, its cost from the mind's cell and those round it below the least any way through the ground that moved could cost, and is flooded again elsewhere; a field leading away is flooded again at once. Nothing a mind decides changes because the window moved under it.
@@ -59,6 +59,7 @@ atglyph is not on crates.io yet, so a game depends on a release by its git tag, 
 
 ### Fixed
 
+- A mind that opens doors no longer panics reading a flow field kept through a move of a streamed place's window, and a fleer whose foe is beyond its reach flees from the nearest open cell of its reach's edge toward it rather than from one that may be a wall or under a prop.
 - An ambient a game writes in the middle of a streamed place stands while the window moves round the player, as it does on a place built whole, rather than going back to the place's own at every move.
 - A glowing tile on a chunk of a streamed place that left the window and came back is lit once, not once more for every return.
 - The terminal's cells reach the screen before Bevy lays the new text out, works out what is shown and moves what moved in `PostUpdate`, so a step no longer leaves last frame's glyphs standing in the new colour for a frame, white where a cell turned blank, nor a picture where it was.
