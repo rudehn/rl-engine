@@ -133,7 +133,22 @@ impl Plugin for TradeViewPlugin {
 type Side = (Option<&'static Name>, Option<&'static Glyph>, &'static Inventory, Option<&'static Equipped>);
 
 /// One carried thing, as a trade reads it.
-type Piece = (Option<&'static Name>, Option<&'static Glyph>, Option<&'static Stack>, Option<&'static Worth>, Option<&'static Tagged>);
+type Piece =
+    (Option<&'static Name>, Option<&'static Glyph>, Option<&'static Stack>, Option<&'static Worth>, Option<&'static Tagged>, Has<crate::narrate::MassNoun>);
+
+/// A thing's name, and whether it is a stuff or a pair, counted as
+/// written.
+type Noun = (String, bool);
+
+/// `count` of a thing called `name` as a row lists it: the name alone for
+/// one, and the count before it for more, the name made plural unless it
+/// is a stuff or a pair, `2 leggings`, as the log counts them.
+fn listed_as((name, mass): &Noun, count: u32) -> String {
+    match (mass, count) {
+        (true, 2..) => format!("{count} {name}"),
+        _ => atglyph_core::noun::listed(name, count),
+    }
+}
 
 /// What the things on a counter are read from: each as a trade prices it,
 /// the currency's name, and each as the customer's bag describes it.
@@ -185,14 +200,15 @@ pub(crate) fn collect_trade(
     // Each side's rows, with the one who pays for a deal on it: the
     // customer pays for wares, the trader for what the customer sells.
     let rows = |bag: &Inventory, worn: Option<&Equipped>, deal: Deal, payer_purse: u32| -> Vec<TradeRow> {
-        let listed: Vec<(String, TradeRow)> = bag
+        let listed: Vec<(Noun, TradeRow)> = bag
             .items
             .iter()
             .filter(|item| !is_currency(**item))
             .filter_map(|item| {
-                let (name, glyph, stack, worth, tags) = items.get(*item).ok()?;
+                let (name, glyph, stack, worth, tags, mass) = items.get(*item).ok()?;
                 let count = stack.map_or(1, |s| s.count);
-                let label = name.map(|n| atglyph_core::noun::listed(n.as_str(), count)).unwrap_or_default();
+                let noun: Noun = (name.map(|n| n.as_str().to_string()).unwrap_or_default(), mass);
+                let label = if name.is_some() { listed_as(&noun, count) } else { String::new() };
                 let ware = Ware { worth: worth.copied(), tags: tags.map_or(&[], |t| t.0.as_slice()), worn: worn.is_some_and(|w| w.contains(*item)) };
                 let each = terms.each(deal, ware);
                 // Only what is for sale is on the trader's side; the
@@ -209,7 +225,7 @@ pub(crate) fn collect_trade(
                     described: described.row(parties.customer, customer.2, customer.3, *item),
                     items: vec![*item],
                 };
-                Some((name.map(|n| n.as_str().to_string()).unwrap_or_default(), row))
+                Some((noun, row))
             })
             .collect();
         counted(alike_together(listed))
@@ -222,8 +238,8 @@ pub(crate) fn collect_trade(
 /// of that name stands, and otherwise in the order they came: a dagger
 /// sold to a trader who has two goes in beside them rather than to the
 /// foot of the list, while the order a bag keeps is kept.
-fn alike_together(mut listed: Vec<(String, TradeRow)>) -> Vec<(String, TradeRow)> {
-    let mut names: Vec<String> = Vec::new();
+fn alike_together(mut listed: Vec<(Noun, TradeRow)>) -> Vec<(Noun, TradeRow)> {
+    let mut names: Vec<Noun> = Vec::new();
     for (name, _) in &listed {
         if !names.contains(name) {
             names.push(name.clone());
@@ -237,14 +253,14 @@ fn alike_together(mut listed: Vec<(String, TradeRow)>) -> Vec<(String, TradeRow)
 /// `listed`'s rows with each run of things alike, not stacked, made one
 /// row counting them, so a counter of three daggers reads `3 daggers`
 /// once rather than `dagger` three times.
-fn counted(listed: Vec<(String, TradeRow)>) -> Vec<TradeRow> {
-    let mut rows: Vec<(String, TradeRow)> = Vec::new();
+fn counted(listed: Vec<(Noun, TradeRow)>) -> Vec<TradeRow> {
+    let mut rows: Vec<(Noun, TradeRow)> = Vec::new();
     for (name, row) in listed {
         match rows.last_mut() {
             Some((last_name, last)) if *last_name == name && alike(last, &row) => {
                 last.items.push(row.row.entity);
                 last.count += 1;
-                last.row.label = atglyph_core::noun::listed(&name, last.count);
+                last.row.label = listed_as(&name, last.count);
             }
             _ => rows.push((name, row)),
         }
@@ -387,6 +403,19 @@ mod tests {
         assert_eq!(rows, vec![("2 files", 2, 1), ("lamp", 1, 1), ("2 combs", 2, 2), ("comb", 1, 1)]);
         assert_eq!(view.wares[2].items, combs, "the row stands for both");
         assert_eq!(view.wares[2].row.entity, combs[0], "and is the first of them");
+    }
+
+    /// A stuff or a pair counted is counted as written, `2 leggings`, as
+    /// the log says it, never with a second plural on it.
+    #[test]
+    fn things_alike_named_as_a_stuff_are_counted_as_written() {
+        let (mut stage, trader) = stage();
+        let w = stage.app.world_mut();
+        let pairs: Vec<Entity> = (0..2).map(|_| w.spawn((Item, Name::new("leggings"), crate::narrate::MassNoun, Worth(2))).id()).collect();
+        w.get_mut::<Inventory>(trader).expect("a bag").items.extend(pairs);
+        open(&mut stage, trader);
+        let view = stage.app.world().resource::<TradeView>();
+        assert_eq!(view.wares.iter().map(|r| r.row.label.as_str()).collect::<Vec<_>>(), vec!["2 files", "lamp", "2 leggings"]);
     }
 
     /// The line under the trader's name is whatever the game pushes onto
