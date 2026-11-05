@@ -483,12 +483,6 @@ impl WorldMap {
         self.tile(p).and_then(|t| self.tables.closes[t.index()])
     }
 
-    /// Whether `p` blocks sight: its tile does, or the veil over it. Unloaded
-    /// tiles do.
-    pub(crate) fn is_opaque(&self, p: Point) -> bool {
-        self.tile(p).is_none_or(|t| self.tables.opaque[t.index()]) || self.veil.1.contains(p - self.veil.0)
-    }
-
     /// Whether `p` stops a projectile. Unloaded tiles do.
     pub(crate) fn blocks_projectiles(&self, p: Point) -> bool {
         self.tile(p).is_none_or(|t| self.tables.blocks_projectiles[t.index()])
@@ -520,7 +514,7 @@ impl WorldMap {
     /// A view of the window that grid algorithms can run over, in
     /// window-local coordinates.
     pub fn view(&self) -> WindowView<'_> {
-        WindowView { map: self, opening: false }
+        WindowView::of(self, false)
     }
 
     /// The same view for a mover that opens what it walks into: a closed
@@ -529,7 +523,7 @@ impl WorldMap {
     /// door under a [`Lock`] is wall here, key or no key, so no mind is
     /// led to one.
     pub fn opening_view(&self) -> WindowView<'_> {
-        WindowView { map: self, opening: true }
+        WindowView::of(self, true)
     }
 
     /// Every built place, for saving: a place built whole with every
@@ -671,37 +665,65 @@ pub struct WorldMapSave {
 }
 
 /// The current place as a grid in its own coordinates.
+///
+/// The window and the place are found once, when the view is made, and
+/// not again for every cell a scan or a flood reads: finding them was
+/// most of what reading a cell cost, and a shadowcast or a flood reads
+/// thousands.
 #[derive(Debug, Clone, Copy)]
 pub struct WindowView<'a> {
     map: &'a WorldMap,
     /// Whether a tile that opens costs its opening rather than blocking.
     opening: bool,
+    /// The window, in world tiles.
+    window: GridRect,
+    /// The current place, if there is one.
+    place: Option<&'a PlaceMap>,
 }
 
-impl WindowView<'_> {
+impl<'a> WindowView<'a> {
+    fn of(map: &'a WorldMap, opening: bool) -> Self {
+        WindowView { map, opening, window: map.window_tiles(), place: map.active_place() }
+    }
+
     /// The map this views.
     pub fn map(&self) -> &WorldMap {
         self.map
     }
 
     fn world(&self, idx: usize) -> Point {
-        self.map.to_world(self.idx_point(idx))
+        self.idx_point(idx) + self.window.origin()
+    }
+
+    /// The tile at world `p`, as [`WorldMap::tile`] reads it.
+    fn tile(&self, p: Point) -> Option<TileId> {
+        self.place?.ground.get(p)
+    }
+
+    /// Whether world `p` can be stood on now, as [`WorldMap::is_walkable`]
+    /// reads it.
+    fn is_walkable(&self, p: Point) -> bool {
+        self.tile(p).is_some_and(|t| self.map.tables.walkable[t.index()])
     }
 }
 
 impl Grid2D for WindowView<'_> {
     fn width(&self) -> i32 {
-        self.map.window_tiles().width
+        self.window.width
     }
 
     fn height(&self) -> i32 {
-        self.map.window_tiles().height
+        self.window.height
     }
 }
 
+/// Whether a cell blocks sight: its tile does, or the veil over it.
+/// Unloaded tiles do.
 impl OpacitySource for WindowView<'_> {
     fn is_opaque_idx(&self, idx: usize) -> bool {
-        self.map.is_opaque(self.world(idx))
+        let p = self.world(idx);
+        let (origin, veil) = &self.map.veil;
+        self.tile(p).is_none_or(|t| self.map.tables.opaque[t.index()]) || veil.contains(p - *origin)
     }
 }
 
@@ -715,14 +737,18 @@ impl CostSource for WindowView<'_> {
             if self.map.lock(p).is_some() {
                 return None;
             }
-            let into = self.map.opens(p)?.index();
+            let into = self.tile(p).and_then(|t| self.map.tables.opens[t.index()])?.index();
             self.map.tables.walkable[into].then(|| atglyph_core::turn::BASE_ACTION_COST + self.map.tables.move_cost[into])
         };
-        self.map.cost(p).or_else(|| if self.opening { opened() } else { None })
+        let tile = self.tile(p)?;
+        let walked = self.map.tables.walkable[tile.index()].then(|| self.map.tables.move_cost[tile.index()]);
+        walked.or_else(|| if self.opening { opened() } else { None })
     }
 
+    /// The map's own corner rule, [`WorldMap::lets_diagonal_past`], read
+    /// through the view.
     fn lets_diagonal_past(&self, p: Point) -> bool {
-        self.checked_idx(p).is_some_and(|idx| self.map.lets_diagonal_past(self.world(idx)))
+        self.checked_idx(p).is_some_and(|idx| self.is_walkable(self.world(idx)))
     }
 }
 

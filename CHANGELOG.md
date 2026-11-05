@@ -30,6 +30,7 @@ atglyph is not on crates.io yet, so a game depends on a release by its git tag, 
 
 ### Changed
 
+- `WorldMap::view` and `opening_view` find the window and the current place once, when made, rather than for every cell a shadowcast or a flood reads, which was most of what reading a cell cost.
 - **Breaking:** `FleeWhenHurt` has a public `within` field, how far round itself a mind looks for its way away, and runs down a field over that square alone rather than the whole loaded window, so a flight costs the same however much is loaded; `FleeWhenHurt::at(pct)` gives `FleeWhenHurt::WITHIN`, 20 cells, and a game that writes the struct literal adds `within: FleeWhenHurt::WITHIN`.
 - **Breaking:** `Streamed` has a public `slack` field; a game that writes one as a struct literal adds `slack: 0` to keep its window moving at every chunk's edge, and a save written before reads it as 0.
 - A streamed place keeps the chunks that left its window last whole, twice a window's worth, so walking back over ground just left builds nothing; `PlaceRules::build_chunk` is asked again only for a chunk left longer ago, and its edits are laid back on it as before.
