@@ -1221,9 +1221,10 @@ mod tests {
         let window = r.app.world().resource::<WorldMap>().window_tiles();
         assert_eq!((window.width, window.height), (3 * STREAMED_CHUNK, 3 * STREAMED_CHUNK), "the player's chunk and one each way");
 
-        walk(&mut r, atglyph_core::Direction::East, STREAMED_CHUNK as usize);
+        let slack = crate::testing::StreamedGround::layout().slack as usize;
+        walk(&mut r, atglyph_core::Direction::East, STREAMED_CHUNK as usize + slack);
         let map = r.app.world().resource::<WorldMap>();
-        assert_eq!(map.window_tiles().x, window.x + STREAMED_CHUNK, "the window followed the player a chunk east");
+        assert_eq!(map.window_tiles().x, window.x + STREAMED_CHUNK, "the window followed the player a chunk east, once the slack was walked");
         assert!(r.app.world().resource::<Loads>().0.iter().all(|l| l.first), "every chunk so far is new");
 
         walk(&mut r, atglyph_core::Direction::East, 2 * STREAMED_CHUNK as usize);
@@ -1236,6 +1237,36 @@ mod tests {
         assert_eq!(map.tile(changed), Some(wall), "the change was laid back on the rebuilt chunk");
         let loads = &r.app.world().resource::<Loads>().0;
         assert!(!loads.is_empty() && loads.iter().all(|l| !l.first), "and no chunk came back as new");
+    }
+
+    /// The start is the first tile of its chunk, so a step west is over
+    /// the chunk's edge: pacing there within the slack loads nothing and
+    /// keeps the window where it was, a step past the slack moves it a
+    /// chunk west, and walking back over the edge leaves it there.
+    #[test]
+    fn pacing_over_a_chunks_edge_within_the_slack_loads_nothing() {
+        use crate::testing::{STREAMED_CHUNK, StreamedGround};
+        use atglyph_core::Direction::{East, West};
+        let mut r = streamed_rig();
+        let slack = StreamedGround::layout().slack as usize;
+        assert!(slack > 0, "the test ground has slack");
+        let window = r.app.world().resource::<WorldMap>().window_tiles();
+        r.app.world_mut().resource_mut::<Loads>().0.clear();
+        for _ in 0..3 {
+            walk(&mut r, West, slack);
+            walk(&mut r, East, slack);
+        }
+        assert_eq!(at(&r, r.player), r.start);
+        assert!(r.app.world().resource::<Loads>().0.is_empty(), "nothing loaded pacing over the edge");
+        assert_eq!(r.app.world().resource::<WorldMap>().window_tiles(), window);
+
+        walk(&mut r, West, slack + 1);
+        assert_eq!(r.app.world().resource::<WorldMap>().window_tiles().x, window.x - STREAMED_CHUNK, "a tile past the slack moves it");
+        assert_eq!(r.app.world().resource::<Loads>().0.len(), 3, "a column of chunks came in");
+        r.app.world_mut().resource_mut::<Loads>().0.clear();
+        walk(&mut r, East, slack + 1);
+        assert!(r.app.world().resource::<Loads>().0.is_empty(), "and stepping back over the edge loads nothing");
+        assert_eq!(r.app.world().resource::<WorldMap>().window_tiles().x, window.x - STREAMED_CHUNK);
     }
 
     /// Streamed everywhere: every map these rules are asked about is

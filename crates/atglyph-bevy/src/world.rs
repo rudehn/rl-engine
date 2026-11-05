@@ -320,18 +320,20 @@ impl WorldMap {
     /// Moves the window of the streamed place `map` to the chunks round
     /// `around`, building what comes into it with `build` and letting go
     /// of what leaves, and answers every chunk that came in. Nothing for a
-    /// place built whole, or one already loaded round `around`.
+    /// place built whole, or one already loaded round `around`, which a
+    /// window is while `around` is within the place's
+    /// [`slack`](Streamed::slack) of the chunk it was made round.
     ///
     /// When `map` is the one being read, everything cast over the window
     /// is stale once it moves, so the generation and both epochs move with
     /// it and the veil is lifted.
     pub fn stream(&mut self, map: MapId, around: Point, build: impl FnMut(Point) -> Result<Terrain, BuildError>) -> Result<Vec<ChunkLoaded>, BuildError> {
         let Some(Ground::Streamed(surface)) = self.places.get_mut(&map).map(|p| &mut p.ground) else { return Ok(Vec::new()) };
-        let Some(wanted) = surface.layout.window_round(around) else { return Ok(Vec::new()) };
+        let Some((centre, wanted)) = surface.following(around) else { return Ok(Vec::new()) };
         if surface.holds(wanted) {
             return Ok(Vec::new());
         }
-        let loaded = surface.load(wanted, build)?;
+        let loaded = surface.load_round(centre, build)?;
         let layout = surface.layout;
         if map == self.current {
             self.generation += 1;
@@ -344,10 +346,10 @@ impl WorldMap {
 
     /// Whether the streamed place `map` would move its window to stand
     /// round `around`: false for a place built whole, or one already
-    /// loaded round it.
+    /// loaded round it, slack and all.
     pub(crate) fn wants_streaming(&self, map: MapId, around: Point) -> bool {
         let Some(Ground::Streamed(surface)) = self.places.get(&map).map(|p| &p.ground) else { return false };
-        surface.layout.window_round(around).is_some_and(|wanted| !surface.holds(wanted))
+        surface.following(around).is_some_and(|(_, wanted)| !surface.holds(wanted))
     }
 
     /// Whether `p` on `map` is there to read, whether or not `map` is the

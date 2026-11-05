@@ -183,6 +183,21 @@ pub struct Streamed {
     /// keeps three by three. Wide enough that sight never reaches past
     /// what is loaded, so with a chunk wider than sight, one.
     pub reach: i32,
+    /// How far, in tiles, the player may stand into a chunk round the one
+    /// the window was made round before the window moves to it, so pacing
+    /// along a chunk's edge loads and lets go of nothing: a step over the
+    /// edge and back is no move at all, and the window follows only once
+    /// the player is `slack` tiles into the next chunk. Zero moves the
+    /// window with every chunk's edge crossed.
+    ///
+    /// Sight must still stop short of what is loaded, so with a reach of
+    /// one it is no wider than a chunk less the slack. A few tiles, an
+    /// eighth of a chunk or so, is enough to walk a town on an edge
+    /// without a move; it is cut to a tile short of a chunk, and a window
+    /// of the player's chunk alone has none. A save written before it was
+    /// named reads it as zero.
+    #[serde(default)]
+    pub slack: i32,
     /// Where an arrival from above stands.
     pub entry: Point,
     /// The light everywhere in it before anything is lit.
@@ -211,9 +226,29 @@ impl Streamed {
     /// player's own and every one within [`reach`](Self::reach) of it, cut
     /// short by the place's edge, in chunks. `None` off the place.
     pub fn window_round(&self, p: Point) -> Option<GridRect> {
-        let at = self.chunk_of(p)?;
+        self.window_of(self.chunk_of(p)?)
+    }
+
+    /// The chunks kept loaded round `centre`: it and every one within
+    /// [`reach`](Self::reach) of it, cut short by the place's edge, in
+    /// chunks. `None` for a chunk off the place.
+    pub fn window_of(&self, centre: Point) -> Option<GridRect> {
+        let at = centre;
         let wanted = GridRect::new(at.x - self.reach, at.y - self.reach, 2 * self.reach + 1, 2 * self.reach + 1);
         wanted.intersection(&GridRect::new(0, 0, self.chunks.0, self.chunks.1))
+    }
+
+    /// The chunk to make the window round while the player stands on
+    /// `p`, when it was made round `centre` before: `centre` still while
+    /// `p` is within [`slack`](Self::slack) tiles of it, else the chunk
+    /// `p` is on. `None` off the place.
+    pub fn centre_following(&self, centre: Option<Point>, p: Point) -> Option<Point> {
+        let at = self.chunk_of(p)?;
+        let slack = if self.reach >= 1 { self.slack.clamp(0, self.chunk - 1) } else { 0 };
+        match centre {
+            Some(centre) if self.chunk_bounds(centre).inflate(slack).contains(p) => Some(centre),
+            _ => Some(at),
+        }
     }
 }
 
@@ -561,5 +596,57 @@ mod tests {
         assert_eq!(ladder.stairs(MapId(1), entry, Some(exit)), vec![down_from(MapId(2))], "the top");
         assert_eq!(ladder.stairs(MapId(3), entry, Some(exit)), vec![up_from(MapId(2))], "the bottom");
         assert_eq!(ladder.stairs(MapId(2), entry, None), vec![up_from(MapId(1))], "a floor with no exit");
+    }
+    /// Five chunks across and down, each ten tiles a side, the window one
+    /// chunk each way, given `slack`.
+    fn surface(slack: i32) -> Streamed {
+        Streamed { chunk: 10, chunks: (5, 5), reach: 1, slack, entry: Point::new(25, 25), ambient: Light::DARK, peaceful: false }
+    }
+
+    #[test]
+    fn with_no_slack_the_window_is_always_made_round_the_players_chunk() {
+        let layout = surface(0);
+        assert_eq!(layout.centre_following(Some(Point::new(2, 2)), Point::new(30, 25)), Some(Point::new(3, 2)), "a tile over the edge moves it");
+        assert_eq!(layout.window_of(Point::new(3, 2)), layout.window_round(Point::new(30, 25)));
+    }
+
+    /// The window stays made round its chunk while the player is within
+    /// the slack of it, moves once the player is that far into the next,
+    /// and does not come back for a step back over the edge: pacing along
+    /// an edge moves nothing.
+    #[test]
+    fn the_window_moves_only_once_the_player_is_its_slack_into_another_chunk() {
+        let layout = surface(3);
+        let centre = Some(Point::new(2, 2));
+        assert_eq!(layout.centre_following(centre, Point::new(30, 25)), centre, "a tile over the edge");
+        assert_eq!(layout.centre_following(centre, Point::new(32, 27)), centre, "three tiles in, counting the first");
+        assert_eq!(layout.centre_following(centre, Point::new(33, 25)), Some(Point::new(3, 2)), "four tiles in");
+        assert_eq!(layout.centre_following(centre, Point::new(17, 17)), centre, "corner-wise as well");
+        assert_eq!(layout.centre_following(centre, Point::new(16, 25)), Some(Point::new(1, 2)));
+        let moved = Some(Point::new(3, 2));
+        assert_eq!(layout.centre_following(moved, Point::new(29, 25)), moved, "a step back over the edge keeps the new window");
+        assert_eq!(layout.centre_following(None, Point::new(30, 25)), Some(Point::new(3, 2)), "with no window yet, round the player");
+        assert_eq!(layout.centre_following(centre, Point::new(99, 25)), None, "off the place");
+    }
+
+    /// The player never stands outside the window: slack is cut to a tile
+    /// short of a chunk, and a window of the player's chunk alone has none.
+    #[test]
+    fn slack_never_lets_the_player_off_the_window() {
+        let wide = surface(25);
+        assert_eq!(wide.centre_following(Some(Point::new(2, 2)), Point::new(38, 25)), Some(Point::new(2, 2)), "nine tiles in");
+        assert_eq!(wide.centre_following(Some(Point::new(2, 2)), Point::new(39, 25)), Some(Point::new(3, 2)), "the last tile of the chunk");
+        let alone = Streamed { reach: 0, ..surface(3) };
+        assert_eq!(alone.centre_following(Some(Point::new(2, 2)), Point::new(30, 25)), Some(Point::new(3, 2)));
+    }
+
+    /// A save written before slack was named reads it as none, so the
+    /// window follows as it always did.
+    #[test]
+    fn a_layout_saved_with_no_slack_reads_as_none() {
+        let text = ron::to_string(&surface(3)).unwrap();
+        let before = text.replace("slack:3,", "");
+        assert_ne!(before, text, "the slack was written as {text}");
+        assert_eq!(ron::from_str::<Streamed>(&before).unwrap(), surface(0));
     }
 }

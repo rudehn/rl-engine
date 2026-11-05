@@ -119,7 +119,7 @@ pub const STREAMED_CHUNK: i32 = 16;
 
 /// Open ground built a chunk at a time: map zero, [`STREAMED_CHUNKS`]
 /// chunks a side of [`STREAMED_CHUNK`] tiles, keeping the chunks one each
-/// way round the player's loaded, floor everywhere but a wall round the
+/// way round the player's loaded with two tiles of slack, floor everywhere but a wall round the
 /// whole place. A test that walks a streamed place, or leaves part of one
 /// behind, stands on this.
 #[derive(Debug, Clone)]
@@ -133,6 +133,7 @@ impl StreamedGround {
             chunk: STREAMED_CHUNK,
             chunks: (STREAMED_CHUNKS, STREAMED_CHUNKS),
             reach: 1,
+            slack: 2,
             entry: Point::new(side / 2, side / 2),
             ambient: atglyph_grid::Light::DARK,
             peaceful: false,

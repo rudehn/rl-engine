@@ -77,6 +77,10 @@ pub(crate) struct Surface {
     pub(crate) layout: Streamed,
     /// The loaded chunks, in chunks; empty until the first load.
     window: GridRect,
+    /// The chunk the window was made round, which it stays round while the
+    /// player is within the layout's slack of it; `None` until the first
+    /// load, and in a surface restored from a save.
+    centre: Option<Point>,
     /// The window's chunks, row by row.
     chunks: Vec<Chunk>,
     /// The edits of every chunk out of the window that has any.
@@ -101,7 +105,15 @@ impl Surface {
     /// A surface laid out as `layout`, nothing loaded and nothing built.
     pub(crate) fn new(layout: Streamed) -> Surface {
         let (w, h) = layout.chunks;
-        Surface { layout, window: GridRect::new(0, 0, 0, 0), chunks: Vec::new(), kept: BTreeMap::new(), made: BitGrid::new(w, h), lit: BitGrid::new(w, h) }
+        Surface {
+            layout,
+            window: GridRect::new(0, 0, 0, 0),
+            centre: None,
+            chunks: Vec::new(),
+            kept: BTreeMap::new(),
+            made: BitGrid::new(w, h),
+            lit: BitGrid::new(w, h),
+        }
     }
 
     /// A surface restored from its edits and the chunks once built, with
@@ -153,6 +165,24 @@ impl Surface {
     /// Whether the window is `chunks` already.
     pub(crate) fn holds(&self, chunks: GridRect) -> bool {
         self.window == chunks && !self.chunks.is_empty()
+    }
+
+    /// The chunk to make the window round while the player stands on
+    /// `around`, and the window round it, by the layout's slack: the
+    /// window there is now while the player is within the slack of the
+    /// chunk it was made round. `None` off the place.
+    pub(crate) fn following(&self, around: Point) -> Option<(Point, GridRect)> {
+        let centre = self.layout.centre_following(self.centre.filter(|_| !self.chunks.is_empty()), around)?;
+        Some((centre, self.layout.window_of(centre)?))
+    }
+
+    /// Moves the window round `centre`, as [`load`](Self::load) does, and
+    /// keeps it as the chunk the window follows from.
+    pub(crate) fn load_round(&mut self, centre: Point, build: impl FnMut(Point) -> Result<Terrain, BuildError>) -> Result<Vec<Loaded>, BuildError> {
+        let Some(chunks) = self.layout.window_of(centre) else { return Ok(Vec::new()) };
+        let loaded = self.load(chunks, build)?;
+        self.centre = Some(centre);
+        Ok(loaded)
     }
 
     /// Moves the window onto `chunks`: keeps what it already holds there,
@@ -253,7 +283,7 @@ mod tests {
 
     /// Four chunks across and three down, each four tiles a side.
     fn layout() -> Streamed {
-        Streamed { chunk: 4, chunks: (4, 3), reach: 1, entry: Point::new(1, 1), ambient: Light::DARK, peaceful: false }
+        Streamed { chunk: 4, chunks: (4, 3), reach: 1, slack: 0, entry: Point::new(1, 1), ambient: Light::DARK, peaceful: false }
     }
 
     /// Every tile of a chunk is the chunk's column, so where a tile came
