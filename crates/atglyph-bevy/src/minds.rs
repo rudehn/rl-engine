@@ -799,7 +799,7 @@ type Seeing = (&'static Position, &'static mut Viewshed, Option<&'static DarkSig
 /// One that did not move pays nothing.
 pub(crate) fn sense(map: Res<WorldMap>, lighting: Option<Res<Lighting>>, mut viewers: Query<Seeing, MindsTurn>) {
     let Ok((pos, mut viewshed, dark, perception)) = viewers.single_mut() else { return };
-    if crate::fov::is_stale(&viewshed, &map) {
+    if crate::fov::is_stale(&viewshed, &map, pos.0) {
         crate::fov::cast(&map, lighting.as_deref(), pos.0, dark.map(|d| d.0).unwrap_or(0), perception.map(|p| p.0), &mut viewshed);
     }
 }

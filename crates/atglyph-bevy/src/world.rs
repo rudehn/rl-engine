@@ -88,9 +88,14 @@ impl PlaceMap {
 #[derive(Resource, Debug)]
 pub struct WorldMap {
     tables: TileTables,
-    /// Bumped every time the current map changes, so viewsheds know to
-    /// recompute.
+    /// Bumped every time the current map changes or its window moves, so
+    /// whatever is cast over the window knows to look again.
     generation: u64,
+    /// Bumped every time the current map changes or a run is restored:
+    /// an arrival, after which nothing cast over the window before is any
+    /// guide, where a window that only moved left what it still holds as
+    /// it was.
+    arrival: u64,
     /// Bumped every time an edit changes what blocks sight, so viewsheds
     /// and light know to recompute without anyone moving.
     opacity_epoch: u64,
@@ -108,7 +113,16 @@ pub struct WorldMap {
 impl WorldMap {
     /// An empty map: no place built, and none current.
     pub fn new(tables: TileTables) -> Self {
-        Self { tables, generation: 0, opacity_epoch: 0, cost_epoch: 0, current: MapId::ZERO, places: BTreeMap::new(), veil: (Point::ZERO, BitGrid::new(0, 0)) }
+        Self {
+            tables,
+            generation: 0,
+            arrival: 0,
+            opacity_epoch: 0,
+            cost_epoch: 0,
+            current: MapId::ZERO,
+            places: BTreeMap::new(),
+            veil: (Point::ZERO, BitGrid::new(0, 0)),
+        }
     }
 
     /// Hides what is behind every cell in `cells` on the current map, on top
@@ -287,6 +301,7 @@ impl WorldMap {
         if self.current != map {
             self.current = map;
             self.generation += 1;
+            self.arrival += 1;
             self.lift_veil();
         }
         true
@@ -324,9 +339,11 @@ impl WorldMap {
     /// window is while `around` is within the place's
     /// [`slack`](Streamed::slack) of the chunk it was made round.
     ///
-    /// When `map` is the one being read, everything cast over the window
-    /// is stale once it moves, so the generation and both epochs move with
-    /// it and the veil is lifted.
+    /// When `map` is the one being read, the generation moves and the veil
+    /// is lifted, but neither epoch: no tile changed, and what the window
+    /// still holds is as it was, so a viewshed whose sight lies in it is
+    /// kept, and whatever else was cast over the window is cast again by
+    /// whoever cast it, as far as the move reaches it.
     pub fn stream(&mut self, map: MapId, around: Point, build: impl FnMut(Point) -> Result<Terrain, BuildError>) -> Result<Vec<ChunkLoaded>, BuildError> {
         let Some(Ground::Streamed(surface)) = self.places.get_mut(&map).map(|p| &mut p.ground) else { return Ok(Vec::new()) };
         let Some((centre, wanted)) = surface.following(around) else { return Ok(Vec::new()) };
@@ -337,8 +354,6 @@ impl WorldMap {
         let layout = surface.layout;
         if map == self.current {
             self.generation += 1;
-            self.opacity_epoch += 1;
-            self.cost_epoch += 1;
             self.lift_veil();
         }
         Ok(loaded.into_iter().map(|Loaded { chunk, first }| ChunkLoaded { map, chunk, bounds: layout.chunk_bounds(chunk), first }).collect())
@@ -389,6 +404,18 @@ impl WorldMap {
     /// Changes whenever the current map changes or its window moves.
     pub(crate) fn generation(&self) -> u64 {
         self.generation
+    }
+
+    /// Changes whenever the current map changes or a run is restored, and
+    /// not when the window only moves.
+    pub(crate) fn arrival(&self) -> u64 {
+        self.arrival
+    }
+
+    /// The whole of the current place, loaded or not; empty while no place
+    /// is current.
+    pub(crate) fn place_bounds(&self) -> GridRect {
+        self.active_place().map_or(GridRect::new(0, 0, 0, 0), |place| place.ground.bounds())
     }
 
     /// Changes whenever an edit changes what blocks sight.
@@ -573,6 +600,7 @@ impl WorldMap {
         self.current = MapId::ZERO;
         self.switch_to(save.current);
         self.generation += 1;
+        self.arrival += 1;
     }
 }
 

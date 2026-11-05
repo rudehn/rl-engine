@@ -1,6 +1,6 @@
 //! The components engine systems read and write.
 
-use atglyph_core::Point;
+use atglyph_core::{GridRect, Point};
 use atglyph_grid::BitGrid;
 use bevy::prelude::*;
 
@@ -72,10 +72,12 @@ pub struct RevealsMap;
 /// `line` is every tile the actor has an unobstructed line to; `visible`
 /// is what it actually sees, which is the same set unless the game has
 /// turned lighting on, and then only what is lit, within its dark sight
-/// or adjacent. Both cover the loaded window, not the world, and `origin`
-/// says which world tile their bit 0 is. Only the FOV system clears
-/// `dirty`; anything that moves the actor or changes what blocks sight
-/// or light sets it.
+/// or adjacent. Both cover the window they were cast over, not the world,
+/// and `origin` says which world tile their bit 0 is: a window that moves
+/// while the actor's sight lies in what it holds both before and after
+/// leaves them as they were cast, since they would be cast the same. Only
+/// the FOV system clears `dirty`; anything that moves the actor or changes
+/// what blocks sight or light sets it.
 #[derive(Component, Debug, Clone)]
 pub struct Viewshed {
     /// Sight radius in tiles.
@@ -94,12 +96,23 @@ pub struct Viewshed {
     /// Whether this sees the whole loaded window whatever stands in the
     /// way and however dark it is. Set by [`Viewshed::everywhere`].
     everywhere: bool,
+    /// The window it was last cast over, in world tiles.
+    over: GridRect,
 }
 
 impl Viewshed {
     /// A viewshed of `range` that has never been computed.
     pub fn new(range: i32) -> Self {
-        Self { range, dirty: true, epoch: 0, origin: Point::ZERO, visible: BitGrid::new(0, 0), line: BitGrid::new(0, 0), everywhere: false }
+        Self {
+            range,
+            dirty: true,
+            epoch: 0,
+            origin: Point::ZERO,
+            visible: BitGrid::new(0, 0),
+            line: BitGrid::new(0, 0),
+            everywhere: false,
+            over: GridRect::new(0, 0, 0, 0),
+        }
     }
 
     /// A viewshed that sees every tile of the loaded window: no wall stops
@@ -117,6 +130,16 @@ impl Viewshed {
     /// Whether this is one that [sees everywhere](Self::everywhere).
     pub(crate) fn sees_everywhere(&self) -> bool {
         self.everywhere
+    }
+
+    /// The window it was last cast over, in world tiles.
+    pub(crate) fn cast_over(&self) -> GridRect {
+        self.over
+    }
+
+    /// Notes the window it is being cast over.
+    pub(crate) fn set_cast_over(&mut self, window: GridRect) {
+        self.over = window;
     }
 
     /// Whether the world tile `p` is currently seen.

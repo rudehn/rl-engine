@@ -178,15 +178,18 @@ pub struct Lighting {
     dynamic_emitters: Vec<Emitter>,
     composed_with: Light,
     generation: Option<u64>,
+    /// The map's arrival the fields were fitted under, so a window that
+    /// only moved is told from a place arrived on.
+    arrival: Option<u64>,
     epoch: u64,
     static_dirty: bool,
     /// Light shed by cells rather than entities, and the map it is on.
     glow: (MapId, Vec<(Point, LightSource)>),
     /// Whether the glow was replaced by a different one since the last cast.
     glow_moved: bool,
-    /// The place whose ambient was last taken, and the map's generation
-    /// then, which a switch of maps and a restored run both move. `None`
-    /// while no place is current.
+    /// The place whose ambient was last taken, and the map's arrival
+    /// then, which a switch of maps and a restored run both move and a
+    /// window moving does not. `None` while no place is current.
     followed: Option<(MapId, u64)>,
 }
 
@@ -206,6 +209,7 @@ impl Lighting {
             dynamic_emitters: Vec::new(),
             composed_with: Light::DARK,
             generation: None,
+            arrival: None,
             epoch: 0,
             static_dirty: true,
             glow: (MapId::ZERO, Vec::new()),
@@ -245,10 +249,10 @@ impl Lighting {
     }
 
     /// Takes the current place's ambient, once per arrival: when the place
-    /// or the map's generation differs from the last one taken, which is
-    /// a switch of maps or a restored run, and never otherwise, so an
+    /// or the map's arrival differs from the last one taken, which is a
+    /// switch of maps or a restored run, and never otherwise, so an
     /// ambient a game writes in the middle of a place stands until the
-    /// player leaves it.
+    /// player leaves it, however the window moves meanwhile.
     fn follow_place(&mut self, map: &WorldMap) {
         if self.follows(map) {
             return;
@@ -258,7 +262,7 @@ impl Lighting {
             self.followed = None;
             return;
         };
-        let key = (here, map.generation());
+        let key = (here, map.arrival());
         if self.followed == Some(key) {
             return;
         }
@@ -267,12 +271,12 @@ impl Lighting {
     }
 
     /// Whether [`follow_place`](Self::follow_place) has nothing to take:
-    /// the place and generation are the ones last taken, or there is no
+    /// the place and arrival are the ones last taken, or there is no
     /// place and nothing was. Asked first through a shared borrow, so a
     /// pass that changes nothing does not mark the lighting changed.
     fn follows(&self, map: &WorldMap) -> bool {
         match map.place(map.current()) {
-            Some(_) => self.followed == Some((map.current(), map.generation())),
+            Some(_) => self.followed == Some((map.current(), map.arrival())),
             None => self.followed.is_none(),
         }
     }
@@ -288,13 +292,19 @@ impl Lighting {
             || self.composed_with != self.ambient
     }
 
-    /// Matches the fields to the window. Returns whether they were remade.
-    fn fit(&mut self, map: &WorldMap) -> bool {
+    /// Matches the fields to the window, and says how it changed.
+    fn fit(&mut self, map: &WorldMap) -> Refit {
         if self.generation == Some(map.generation()) {
-            return false;
+            return Refit::Same;
         }
         let tiles = map.window_tiles();
+        let refit = if self.generation.is_some() && self.arrival == Some(map.arrival()) {
+            Refit::Moved { origin: self.origin, light: self.combined.clone() }
+        } else {
+            Refit::Arrived
+        };
         self.generation = Some(map.generation());
+        self.arrival = Some(map.arrival());
         self.origin = tiles.origin();
         if self.combined.width() != tiles.width || self.combined.height() != tiles.height {
             self.statics = LightField::new(tiles.width, tiles.height);
@@ -303,8 +313,19 @@ impl Lighting {
             self.scratch = BitGrid::new(tiles.width, tiles.height);
         }
         self.static_dirty = true;
-        true
+        refit
     }
+}
+
+/// How the window changed since the fields were last fitted to it.
+enum Refit {
+    /// Not at all.
+    Same,
+    /// It moved on the same place: the light it was, and the world tile
+    /// at the top-left of that.
+    Moved { origin: Point, light: LightField },
+    /// A place was arrived on, or the lighting never fitted.
+    Arrived,
 }
 
 /// A source and where it stands.
@@ -448,11 +469,16 @@ pub(crate) fn relight(map: Res<WorldMap>, lighting: Option<ResMut<Lighting>>, mu
 fn recast(map: &WorldMap, lighting: &mut Lighting, sources: &Sources, viewsheds: &mut Query<Lit>) {
     let here = map.current();
     let on_map = |on: Option<&OnMap>| on.map(|m| m.0).unwrap_or(MapId::ZERO) == here;
-    let mut recast_all = lighting.fit(map);
+    let refit = lighting.fit(map);
+    let mut recast_all = !matches!(refit, Refit::Same);
+    // Everyone's business, but for a window that only moved, which is
+    // judged by the light it leaves on each viewer's sight.
+    let mut everywhere = matches!(refit, Refit::Arrived);
     lighting.glow_moved = false;
     if lighting.epoch != map.opacity_epoch() {
         lighting.epoch = map.opacity_epoch();
         recast_all = true;
+        everywhere = true;
     }
     if lighting.combined.width() == 0 || lighting.combined.height() == 0 {
         return;
@@ -488,13 +514,13 @@ fn recast(map: &WorldMap, lighting: &mut Lighting, sources: &Sources, viewsheds:
     // field is being rebuilt anyway, which is every viewshed's business.
     let mut changed = false;
     let mut touched: Option<GridRect> = None;
-    let mut everywhere = recast_all;
     let view = map.view();
     if recast_all || lighting.static_dirty || statics != lighting.static_emitters {
         touched = union(touched, changed_area(&lighting.static_emitters, &statics));
         // A dirty flag says the map changed under the fixtures rather than
-        // that a fixture moved, so the area it touches is not knowable.
-        everywhere |= lighting.static_dirty;
+        // that a fixture moved, so the area it touches is not knowable;
+        // a window that only moved is judged cell by cell below.
+        everywhere |= lighting.static_dirty && !matches!(refit, Refit::Moved { .. });
         lighting.statics.clear();
         lighting.statics.cast_all(&view, &mut statics, &mut lighting.scratch);
         lighting.static_emitters = statics;
@@ -513,10 +539,36 @@ fn recast(map: &WorldMap, lighting: &mut Lighting, sources: &Sources, viewsheds:
         everywhere |= lighting.composed_with != lighting.ambient;
         lighting.combined.compose(&lighting.statics, &lighting.dynamics, lighting.ambient);
         lighting.composed_with = lighting.ambient;
-        for (pos, mut v) in viewsheds.iter_mut() {
-            v.dirty |= everywhere || reaches(touched, pos.map(|p| local(p.0)), v.range);
+        match refit {
+            // Every emitter's place in the field moved with the window, so
+            // what moved is told by the light itself: a viewer is marked
+            // whose sight takes in a tile lit before and not now, or the
+            // other way, or one the window did not hold before. Marking
+            // every viewer cast every one of them again on every move.
+            Refit::Moved { origin: was_at, light: was } if !everywhere => {
+                let was_window = GridRect::new(was_at.x, was_at.y, was.width(), was.height());
+                let lit_before = |p: Point| was_window.contains(p).then(|| was.at(p - was_at).intensity >= lighting.threshold);
+                for (pos, mut v) in viewsheds.iter_mut() {
+                    v.dirty |= pos.is_none_or(|p| light_moved_in_sight(lighting, p.0, v.range, &lit_before));
+                }
+            }
+            _ => {
+                for (pos, mut v) in viewsheds.iter_mut() {
+                    v.dirty |= everywhere || reaches(touched, pos.map(|p| local(p.0)), v.range);
+                }
+            }
         }
     }
+}
+
+/// Whether a viewer at `at` seeing `range` tiles has in its sight, on the
+/// window now, a tile whose light crossed the threshold since
+/// `lit_before` was cast, or one that window did not hold.
+fn light_moved_in_sight(lighting: &Lighting, at: Point, range: i32, lit_before: &impl Fn(Point) -> Option<bool>) -> bool {
+    let window = GridRect::new(lighting.origin.x, lighting.origin.y, lighting.combined.width(), lighting.combined.height());
+    let range = range.max(0);
+    let Some(sight) = GridRect::from_corners(at.offset(-range, -range), at.offset(range, range)).intersection(&window) else { return false };
+    sight.cells().any(|p| lit_before(p) != Some(lighting.is_lit(p)))
 }
 
 /// The smaller rectangle covering both, where there are two.
@@ -1045,6 +1097,69 @@ mod tests {
         app.update();
         assert!(app.world().resource::<WorldMap>().is_loaded(lamp_here));
         assert_eq!(lit_here(&mut app), 1, "back in the window, it is lit once still");
+    }
+
+    /// A window move keeps a viewshed whose sight lies in what the window
+    /// holds before and after, but not when the move lit some of it: a
+    /// lamp on a chunk that came in, shining back over the old edge, is
+    /// seen by a viewer that saw that floor dark.
+    #[test]
+    fn a_window_move_that_lights_a_viewers_sight_casts_it_again() {
+        use crate::testing::STREAMED_CHUNK;
+        let mut app = headless_app();
+        app.add_plugins((crate::fov::FovPlugin, crate::items::ItemsPlugin, LightingPlugin));
+        let mut tiles = TileRegistry::standard();
+        tiles.register(atglyph_grid::TileProps::wall("lamp").light(lamp())).unwrap();
+        app.insert_resource(WorldMap::new(tiles.tables()));
+        app.insert_resource(PlaceRulesRes(Box::new(LampGround(tiles)))).insert_resource(crate::seed::Seed(crate::testing::TEST_SEED));
+        let player = app.world_mut().spawn((Actor, Player, Blocks, Position(Point::ZERO), Viewshed::new(6), Inventory::default())).id();
+        app.world_mut().write_message(WarpRequest::into_place(player, MapId(1)));
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        app.update();
+        app.update();
+        let start = crate::testing::StreamedGround::layout().entry;
+        // The lamp of the chunk two east of the player's, a tile in from its
+        // corner, and a viewer whose sight ends a tile short of the window.
+        let lamp_at = Point::new(start.x + 2 * STREAMED_CHUNK + 1, start.y + 1);
+        let viewer_at = Point::new(lamp_at.x - 8, start.y);
+        let floor = Point::new(lamp_at.x - 3, start.y);
+        let viewer = app.world_mut().spawn((Position(viewer_at), Viewshed::new(6))).id();
+        app.update();
+        assert!(!app.world().resource::<WorldMap>().is_loaded(lamp_at), "the lamp's chunk is not loaded");
+        assert!(
+            app.world().get::<Viewshed>(viewer).unwrap().in_line(floor) && !app.world().get::<Viewshed>(viewer).unwrap().can_see(floor),
+            "the floor is dark"
+        );
+
+        let slack = crate::testing::StreamedGround::layout().slack;
+        app.world_mut().get_mut::<Position>(player).unwrap().0 = start.offset(STREAMED_CHUNK + slack + 1, 0);
+        app.update();
+        app.update();
+        assert!(app.world().resource::<WorldMap>().is_loaded(lamp_at), "the lamp's chunk came in");
+        assert!(app.world().resource::<Lighting>().is_lit(floor), "and lights the floor");
+        assert!(app.world().get::<Viewshed>(viewer).unwrap().can_see(floor), "which the viewer now sees");
+    }
+
+    /// An ambient a game writes in the middle of a streamed place stands
+    /// while the window moves round the player: moving it is no arrival.
+    #[test]
+    fn an_ambient_written_on_a_streamed_place_stands_through_a_window_move() {
+        let mut app = headless_app();
+        app.add_plugins((crate::fov::FovPlugin, LightingPlugin));
+        let start = crate::testing::streamed_ground(&mut app);
+        let player = app.world_mut().spawn((Actor, Player, Position(start), Viewshed::new(6))).id();
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        app.update();
+        app.update();
+        let night = Light::white(30);
+        app.world_mut().resource_mut::<Lighting>().ambient = night;
+        app.update();
+        let window = app.world().resource::<WorldMap>().window_tiles();
+        app.world_mut().get_mut::<Position>(player).unwrap().0 = start.offset(3 * crate::testing::STREAMED_CHUNK, 0);
+        app.update();
+        app.update();
+        assert_ne!(app.world().resource::<WorldMap>().window_tiles(), window, "the window moved");
+        assert_eq!(app.world().resource::<Lighting>().ambient, night);
     }
 
     /// A prop whose definition sheds light carries it however it came to
