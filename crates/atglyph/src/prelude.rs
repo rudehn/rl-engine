@@ -237,10 +237,10 @@ pub mod ui {
     pub use atglyph_ui::replay::ReplayPlugin;
     pub use atglyph_ui::tone::{Palette, ToneId, readable};
     pub use atglyph_ui::view::{
-        AbilityRow, AbilityView, AbilityViewPlugin, AimAt, AimFire, AimRange, AimThrow, AimUse, Asking, Bar, ContainerView, ContainerViewPlugin, EndingSection,
-        EndingView, GearLine, GearView, GearViewPlugin, GroundRow, GroundView, GroundViewPlugin, InspectView, InspectViewPlugin, InventoryView,
-        InventoryViewPlugin, ItemRow, LaunchLine, NearbyFollowers, NearbyStatuses, NearbyView, NearbyViewPlugin, OfferRow, OffersView, OffersViewPlugin,
-        OpenContainer, Replacing, Row, Seems, TakenOff, TargetView, TargetViewPlugin, VitalsViewPlugin, WorkRow, target_modal,
+        AbilityRow, AbilityView, AbilityViewPlugin, AimAt, AimFire, AimRange, AimThrow, AimUse, Asking, Bar, Bestowed, ContainerView, ContainerViewPlugin,
+        EndingSection, EndingView, GearLine, GearView, GearViewPlugin, GroundRow, GroundView, GroundViewPlugin, InspectView, InspectViewPlugin, InventoryView,
+        InventoryViewPlugin, ItemRow, Kit, LaunchLine, NearbyFollowers, NearbyStatuses, NearbyView, NearbyViewPlugin, OfferRow, OffersView, OffersViewPlugin,
+        OpenContainer, Replacing, Row, Seems, TakenOff, TargetView, TargetViewPlugin, VitalsViewPlugin, Wielding, WorkRow, target_modal,
     };
     pub use atglyph_ui::{UiPlugin, panel};
 }

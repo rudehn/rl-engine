@@ -99,6 +99,9 @@ pub struct TradeWords {
     /// one, since the confirm key deals one: without it `10 arrows  2`
     /// reads as the ten for two.
     pub each: String,
+    /// What the customer's own blow and shot are called where the pane
+    /// weighs gear, as the bag's [`own`](crate::panel::InventoryPanel::own).
+    pub own: String,
 }
 
 impl Default for TradeWords {
@@ -117,6 +120,7 @@ impl Default for TradeWords {
             no_worth: "no worth".into(),
             worn: "worn".into(),
             each: "each".into(),
+            own: "own".into(),
         }
     }
 }
@@ -301,14 +305,22 @@ pub(crate) fn trade_keys(keys: ControlInput, mut screen: Counter, mut buys: Mess
     if !whole && !one {
         return;
     }
-    let count = if whole { row.count } else { 1 };
-    let (customer, trader, item) = (parties.customer, parties.trader, row.row.entity);
-    match menu.side {
-        TradeSide::Wares => {
-            buys.write(Buy { customer, trader, item, count });
-        }
-        TradeSide::Pack => {
-            sells.write(Sell { customer, trader, item, count });
+    // One of the row, or all of it: the whole of a stack, or each of the
+    // things alike the row stands for, one deal apiece.
+    let deals: Vec<(Entity, u32)> = match (whole, row.items.len() > 1) {
+        (true, true) => row.items.iter().map(|item| (*item, 1)).collect(),
+        (true, false) => vec![(row.row.entity, row.count)],
+        (false, _) => vec![(row.row.entity, 1)],
+    };
+    let (customer, trader) = (parties.customer, parties.trader);
+    for (item, count) in deals {
+        match menu.side {
+            TradeSide::Wares => {
+                buys.write(Buy { customer, trader, item, count });
+            }
+            TradeSide::Pack => {
+                sells.write(Sell { customer, trader, item, count });
+            }
         }
     }
 }
@@ -365,10 +377,15 @@ pub(crate) fn draw_trade(mut terminal: ResMut<Terminal>, mut menu: ResMut<TradeM
 
     // The pane under the lists, its rule and a blank row parting it from
     // the purses, where the screen is tall enough to keep a useful list
-    // over it: at most a third or so of the height, and none at all below
-    // three rows, so a short screen keeps its lists whole.
-    let pane = ((inner.height - 10) / 2).min(10);
-    let pane = if pane >= 3 { pane } else { 0 };
+    // over it: as tall as the longest description of a row on either
+    // side, so it holds still as the cursor moves and spends no row on
+    // nothing, and at most a third or so of the height and ten rows; none
+    // at all where that leaves fewer than three, so a short screen keeps
+    // its lists whole.
+    let room = ((inner.height - 10) / 2).min(10);
+    let width = inner.width.max(0) as usize;
+    let longest = view.wares.iter().chain(&view.pack).filter_map(|r| r.described.as_ref()).map(|d| describe(d, width, &words.own).len()).max().unwrap_or(0);
+    let pane = if room >= 3 { (longest as i32).clamp(1, room) } else { 0 };
     let under = if pane > 0 { pane + 2 } else { 0 };
     let gap = 2;
     let half = (inner.width - gap) / 2;
@@ -390,14 +407,14 @@ pub(crate) fn draw_trade(mut terminal: ResMut<Terminal>, mut menu: ResMut<TradeM
             TradeSide::Wares => view.wares.get(menu.wares),
             TradeSide::Pack => view.pack.get(menu.pack),
         };
-        draw_pane(&mut terminal, GridRect::new(inner.x, inner.bottom() - pane - 1, inner.width, pane + 1), picked, palette);
+        draw_pane(&mut terminal, GridRect::new(inner.x, inner.bottom() - pane - 1, inner.width, pane + 1), picked, &words.own, palette);
     }
 }
 
 /// The row picked out, on whichever side, described as the bag describes
 /// it, under a rule that names it: what it is, and against what the
 /// customer wears, what putting it on would change.
-fn draw_pane(terminal: &mut Terminal, rect: GridRect, picked: Option<&TradeRow>, palette: &Palette) {
+fn draw_pane(terminal: &mut Terminal, rect: GridRect, picked: Option<&TradeRow>, own: &str, palette: &Palette) {
     for x in rect.x..rect.right() {
         terminal.put(x, rect.y, '\u{2500}', palette.get(Tones::FRAME));
     }
@@ -407,7 +424,7 @@ fn draw_pane(terminal: &mut Terminal, rect: GridRect, picked: Option<&TradeRow>,
     if !name.is_empty() {
         terminal.print_on(rect.x + 2, rect.y, &format!(" {name} "), palette.get(Tones::TITLE), palette.get(Tones::SURFACE));
     }
-    let lines = row.described.as_ref().map(|item| describe(item, width)).unwrap_or_default();
+    let lines = row.described.as_ref().map(|item| describe(item, width, own)).unwrap_or_default();
     print_lines(terminal, (rect.x, rect.y + 1, rect.bottom()), width, &lines, palette);
 }
 
@@ -665,8 +682,8 @@ mod tests {
         );
         assert_eq!(
             shown[1..],
-            ["armor +2".to_string(), "goes on the head".into(), "replaces: cap".into(), "  armor 1 -> 2 (+1)".into(), "".into(), "".into(),],
-            "{text}"
+            ["armor +2".to_string(), "goes on the head".into(), "replaces: cap".into(), "  armor 1 -> 2 (+1)".into()],
+            "the pane as tall as the longest description on the screen, and no taller:\n{text}"
         );
 
         stage.press(KeyCode::ArrowRight);
@@ -674,6 +691,45 @@ mod tests {
         let pane = pane(&rows);
         assert!(pane[0].contains(" cap "), "{}", rows.join("\n"));
         assert_eq!(pane[1..3], ["armor +1".to_string(), "worn on the head".to_string()], "{}", rows.join("\n"));
+        assert_eq!(pane.len(), 5, "the pane keeps its height across the sides:\n{}", rows.join("\n"));
+
+        // A game annotates what the pane describes, as it annotates a bag's
+        // row.
+        stage.app.add_systems(
+            Update,
+            (|mut view: ResMut<TradeView>| {
+                for item in view.described_mut() {
+                    item.facets.push(crate::Facet::new("note", "a fine cap"));
+                }
+            })
+            .in_set(crate::ViewSet::Annotate),
+        );
+        stage.tick();
+        let rows = stage.rows();
+        assert!(rows.iter().any(|r| r.contains("a fine cap")), "{}", rows.join("\n"));
+    }
+
+    /// Two things alike and not stacked are one counted row, priced for
+    /// one: confirm deals one of them and the whole-row key the rest.
+    #[test]
+    fn things_alike_are_one_counted_row_and_the_keys_deal_one_or_all_of_them() {
+        let (mut stage, trader) = stage();
+        let glyph = atglyph_render::Glyph::new('!', Color::WHITE);
+        let w = stage.app.world_mut();
+        let lamps: Vec<Entity> = (0..3).map(|_| w.spawn((Item, Name::new("lamp"), glyph, Worth(2))).id()).collect();
+        let dear = w.spawn((Item, Name::new("lamp"), glyph, Worth(5))).id();
+        w.get_mut::<Inventory>(trader).expect("a bag").items.extend(lamps.iter().copied().chain([dear]));
+        stage.tick();
+        let wares = |stage: &Stage| stage.app.world().resource::<TradeView>().wares.iter().map(|r| (r.row.label.clone(), r.count, r.each)).collect::<Vec<_>>();
+        assert_eq!(wares(&stage)[1..], [("3 lamps".to_string(), 3, Some(2)), ("lamp".to_string(), 1, Some(5))], "a dearer lamp is not alike");
+        assert!(stage.rows().iter().any(|r| r.contains("3 lamps") && r.contains("2 each")), "{}", stage.rows().join("\n"));
+        stage.press(KeyCode::ArrowDown);
+        stage.press(KeyCode::Enter);
+        stage.tick();
+        assert_eq!(wares(&stage)[1], ("2 lamps".to_string(), 2, Some(2)), "one bought");
+        stage.press(KeyCode::KeyA);
+        stage.tick();
+        assert_eq!(wares(&stage)[1..], [("lamp".to_string(), 1, Some(5))], "and the rest");
     }
 
     /// The labels of the customer's side, in order.

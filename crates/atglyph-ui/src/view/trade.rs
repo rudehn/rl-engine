@@ -12,6 +12,10 @@
 //! [`ViewSet::Annotate`](crate::ViewSet::Annotate): a greeting is a game's
 //! words, and the engine has none to offer.
 //!
+//! Things alike and not stacked, three daggers the same in every way a row
+//! and its description show, are one row counted, standing for each of
+//! them, so a counter reads `3 daggers` once rather than a row apiece.
+//!
 //! A row that a deal would be refused on says so, by the same rule the
 //! engine refuses it by, [`Trader::quote`], priced by [`Trader::each`] and
 //! with purses counted by [`Currency::count`], so the screen and the trade
@@ -29,10 +33,16 @@ use crate::view::inventory::{ItemRow, ItemRows};
 /// One thing on either side of a trade.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TradeRow {
-    /// The thing, named and counted as the bag and the container name it.
+    /// The thing, named and counted as the bag and the container name it:
+    /// the first of [`items`](Self::items).
     pub row: Row,
-    /// How many, for a stack; one otherwise.
+    /// How many: of a stack, or of the things alike the row stands for.
     pub count: u32,
+    /// Every thing the row stands for: the one, or a stack, or each of
+    /// several things alike and not stacked, which a screen lists once,
+    /// counted, rather than a row apiece. Alike is alike in all the row
+    /// and its description show: name, look, price, whether it could
+    /// change hands, and everything [`described`](Self::described) says.
     /// What one changes hands for: its [`Worth`] bought from the trader,
     /// the trader's share of it sold. `None` for a thing with no worth or
     /// of a kind the trader does not buy, which has no price to show.
@@ -45,6 +55,8 @@ pub struct TradeRow {
     /// what it would replace before it is bought. `None` for a thing that
     /// is not an [`Item`].
     pub described: Option<ItemRow>,
+    /// See [`count`](Self::count).
+    pub items: Vec<Entity>,
 }
 
 impl TradeRow {
@@ -91,6 +103,15 @@ impl TradeView {
     /// recognises.
     pub fn rows_mut(&mut self) -> impl Iterator<Item = &mut Row> {
         self.wares.iter_mut().chain(self.pack.iter_mut()).map(|r| &mut r.row)
+    }
+
+    /// Every thing described on both sides, wares first, for a game
+    /// annotating what it recognises in
+    /// [`ViewSet::Annotate`](crate::ViewSet::Annotate), as it annotates
+    /// the bag's rows: a facet pushed here reads in the pane under the
+    /// lists.
+    pub fn described_mut(&mut self) -> impl Iterator<Item = &mut ItemRow> {
+        self.wares.iter_mut().chain(self.pack.iter_mut()).filter_map(|r| r.described.as_mut())
     }
 }
 
@@ -186,11 +207,12 @@ pub(crate) fn collect_trade(
                     each,
                     refused: terms.quote(deal, ware, 1, payer_purse).err(),
                     described: described.row(parties.customer, customer.2, customer.3, *item),
+                    items: vec![*item],
                 };
                 Some((name.map(|n| n.as_str().to_string()).unwrap_or_default(), row))
             })
             .collect();
-        alike_together(listed)
+        counted(alike_together(listed))
     };
     view.wares = rows(trader.2, trader.3, Deal::Bought, customer_purse);
     view.pack = rows(customer.2, customer.3, Deal::Sold, trader_purse);
@@ -200,7 +222,7 @@ pub(crate) fn collect_trade(
 /// of that name stands, and otherwise in the order they came: a dagger
 /// sold to a trader who has two goes in beside them rather than to the
 /// foot of the list, while the order a bag keeps is kept.
-fn alike_together(mut listed: Vec<(String, TradeRow)>) -> Vec<TradeRow> {
+fn alike_together(mut listed: Vec<(String, TradeRow)>) -> Vec<(String, TradeRow)> {
     let mut names: Vec<String> = Vec::new();
     for (name, _) in &listed {
         if !names.contains(name) {
@@ -209,7 +231,38 @@ fn alike_together(mut listed: Vec<(String, TradeRow)>) -> Vec<TradeRow> {
     }
     // A stable sort, so rows of one name keep their own order.
     listed.sort_by_key(|(name, _)| names.iter().position(|n| n == name));
-    listed.into_iter().map(|(_, row)| row).collect()
+    listed
+}
+
+/// `listed`'s rows with each run of things alike, not stacked, made one
+/// row counting them, so a counter of three daggers reads `3 daggers`
+/// once rather than `dagger` three times.
+fn counted(listed: Vec<(String, TradeRow)>) -> Vec<TradeRow> {
+    let mut rows: Vec<(String, TradeRow)> = Vec::new();
+    for (name, row) in listed {
+        match rows.last_mut() {
+            Some((last_name, last)) if *last_name == name && alike(last, &row) => {
+                last.items.push(row.row.entity);
+                last.count += 1;
+                last.row.label = atglyph_core::noun::listed(&name, last.count);
+            }
+            _ => rows.push((name, row)),
+        }
+    }
+    rows.into_iter().map(|(_, row)| row).collect()
+}
+
+/// Whether `row`, one thing not stacked, is alike `group`, a row of such
+/// things: in look, price, whether it could change hands, and its
+/// description, the thing itself aside.
+fn alike(group: &TradeRow, row: &TradeRow) -> bool {
+    let unstacked = |r: &TradeRow| r.count as usize == r.items.len();
+    let described = |r: &TradeRow| r.described.clone().map(|d| ItemRow { entity: Entity::PLACEHOLDER, ..d });
+    unstacked(group)
+        && row.count == 1
+        && group.row.glyph == row.row.glyph
+        && (group.each, group.refused) == (row.each, row.refused)
+        && described(group) == described(row)
 }
 
 #[cfg(test)]
@@ -310,12 +363,30 @@ mod tests {
         let w = stage.app.world_mut();
         let first = w.spawn((Item, Name::new("awl"), Worth(6))).id();
         let comb = w.spawn((Item, Name::new("comb"), Worth(2))).id();
-        let sold = w.spawn((Item, Name::new("awl"), Worth(6))).id();
+        let sold = w.spawn((Item, Name::new("awl"), Worth(8))).id();
         w.get_mut::<Inventory>(trader).expect("a bag").items.extend([first, comb, sold]);
         open(&mut stage, trader);
         let view = stage.app.world().resource::<TradeView>();
         let wares: Vec<&str> = view.wares.iter().map(|r| r.row.label.as_str()).collect();
         assert_eq!(wares, vec!["2 files", "lamp", "awl", "awl", "comb"]);
+    }
+
+    /// Things alike in every way the row and its description show are one
+    /// row, counted, standing for each of them; a thing worn, of another
+    /// worth or a stack stays a row of its own.
+    #[test]
+    fn things_alike_are_one_row_standing_for_each_and_things_unlike_stay_apart() {
+        let (mut stage, trader) = stage();
+        let w = stage.app.world_mut();
+        let combs: Vec<Entity> = (0..2).map(|_| w.spawn((Item, Name::new("comb"), Worth(2))).id()).collect();
+        let dear = w.spawn((Item, Name::new("comb"), Worth(3))).id();
+        w.get_mut::<Inventory>(trader).expect("a bag").items.extend(combs.iter().copied().chain([dear]));
+        open(&mut stage, trader);
+        let view = stage.app.world().resource::<TradeView>();
+        let rows: Vec<(&str, u32, usize)> = view.wares.iter().map(|r| (r.row.label.as_str(), r.count, r.items.len())).collect();
+        assert_eq!(rows, vec![("2 files", 2, 1), ("lamp", 1, 1), ("2 combs", 2, 2), ("comb", 1, 1)]);
+        assert_eq!(view.wares[2].items, combs, "the row stands for both");
+        assert_eq!(view.wares[2].row.entity, combs[0], "and is the first of them");
     }
 
     /// The line under the trader's name is whatever the game pushes onto

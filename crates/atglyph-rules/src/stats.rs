@@ -24,12 +24,23 @@ pub struct StatDef {
     /// The highest final value, if any.
     #[serde(default)]
     pub max: Option<i32>,
+    /// Whether less of it is better for whoever has it, a load or a noise
+    /// made, so a screen weighing gear tells a fall as a gain. Off by
+    /// default, more being better for most stats.
+    #[serde(default)]
+    pub lower_is_better: bool,
 }
 
 impl StatDef {
     /// A stat with a base and no bounds.
     pub fn new(name: impl Into<String>, base: i32) -> Self {
-        Self { name: name.into(), base, min: None, max: None }
+        Self { name: name.into(), base, min: None, max: None, lower_is_better: false }
+    }
+
+    /// Makes less of it the better.
+    pub fn lower_is_better(mut self) -> Self {
+        self.lower_is_better = true;
+        self
     }
 
     /// Bounds the final value.

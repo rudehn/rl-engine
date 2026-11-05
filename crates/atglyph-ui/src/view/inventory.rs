@@ -110,7 +110,7 @@ pub struct ItemRow {
     /// Whether its charges come back only while it is worn.
     pub attuned: bool,
     /// What it does to registered stats while worn, by the stat's name.
-    pub bestows: Vec<(String, Op)>,
+    pub bestows: Vec<Bestowed>,
     /// What it counts as, by the tags' registered names.
     pub tags: Vec<String>,
     /// What the game added.
@@ -137,6 +137,19 @@ pub struct ItemRow {
     /// thing worn or that cannot be, and for a wearer with no
     /// [`Equipped`].
     pub replacing: Option<Replacing>,
+}
+
+/// What a thing does to one registered stat while worn, as a bag reads it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Bestowed {
+    /// The stat's registered name.
+    pub stat: String,
+    /// What it does to it.
+    pub op: Op,
+    /// Whether less of the stat is the better, its
+    /// [`StatDef::lower_is_better`](atglyph_rules::StatDef::lower_is_better),
+    /// so a screen weighing gear tones a fall as a gain.
+    pub lower_is_better: bool,
 }
 
 /// What a launcher adds to what it launches, as a bag reads it.
@@ -168,6 +181,44 @@ pub struct Replacing {
     /// their registered names, left bare: the hand a one-hander frees,
     /// put on in place of a two-hander.
     pub frees: Vec<String>,
+    /// What the wearer strikes, shoots, launches and sees with now.
+    pub before: Kit,
+    /// What it would strike, shoot, launch and see with once the thing is
+    /// on: decided by everything then worn, as a fight decides it, so a
+    /// dagger put on in place of a bow is weighed against the bare hand
+    /// the bow left, and a knife for the off hand against nothing, the
+    /// sword in the other still striking.
+    pub after: Kit,
+}
+
+/// What a wearer fights and sees with, by the rules a fight uses: the blow
+/// and the shot of the first worn thing, in slot order, that has one and
+/// a charge to use it, else the wearer's own; the first worn launcher for
+/// each thing launched; and the best sight in the dark of its own and of
+/// what it wears.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct Kit {
+    /// The blow struck, and what with.
+    pub blow: Option<Wielding>,
+    /// The shot fired, and what with.
+    pub shot: Option<Wielding>,
+    /// The launcher for each thing launched, the first worn for it.
+    pub launchers: Vec<LaunchLine>,
+    /// How far the wearer sees in the dark.
+    pub dark_sight: Option<i32>,
+    /// Whether any of it comes from a thing not yet known, whose numbers a
+    /// screen must not tell.
+    pub withheld: bool,
+}
+
+/// A blow or a shot and what it comes from.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Wielding {
+    /// The worn thing it comes from, by its name, or `None` for the
+    /// wearer's own.
+    pub from: Option<String>,
+    /// The blow or shot.
+    pub strike: Strike,
 }
 
 /// A worn thing that putting another on would take off.
@@ -409,7 +460,11 @@ pub(crate) struct ItemRows<'w, 's> {
     items: Query<'w, 's, (Looks, Arms, Does, Marks, Lends), With<Item>>,
     tags: Query<'w, 's, &'static Tagged>,
     throws: atglyph_bevy::Throws<'w, 's>,
+    wearers: Query<'w, 's, Own, Without<Item>>,
 }
+
+/// What a wearer fights and sees with of its own.
+type Own = (Option<&'static MeleeAttack>, Option<&'static RangedAttack>, Option<&'static atglyph_bevy::OwnDarkSight>, Has<atglyph_bevy::DarkSightSuppressed>);
 
 impl ItemRows<'_, '_> {
     /// `item` as `holder` reads it, carrying `bag` and wearing `worn`: how
@@ -429,7 +484,10 @@ impl ItemRows<'_, '_> {
         let stuck = |thing: Entity| self.items.get(thing).is_ok_and(|(.., (_, stuck), _)| stuck);
         let swap = worn.0.swap(item, &shape.0, stuck).or_else(|_| worn.0.swap(item, &shape.0, |_| false));
         let slot_name = |slot| self.registries.as_deref().map(|r| r.slots.name(slot).to_string()).unwrap_or_default();
+        let before = self.kit(holder, &worn.0);
         row.replacing = swap.ok().map(|swap| Replacing {
+            before,
+            after: self.kit(holder, &swap.after),
             slot: slot_name(swap.slot),
             off: swap
                 .off
@@ -441,6 +499,51 @@ impl ItemRows<'_, '_> {
             frees: swap.frees.iter().map(|s| slot_name(*s)).collect(),
         });
         Some(row)
+    }
+
+    /// What `wearer` fights and sees with, wearing `worn`: see [`Kit`].
+    fn kit(&self, wearer: Entity, worn: &atglyph_rules::Equipment<Entity>) -> Kit {
+        let (own_blow, own_shot, own_sight, blind) = self.wearers.get(wearer).unwrap_or((None, None, None, false));
+        let registries = self.registries.as_deref();
+        let kind_name = |kind| registries.map(|r| r.damage_kinds.name(kind).to_string()).unwrap_or_default();
+        let things: Vec<Entity> = worn.worn().map(|(_, thing)| thing).collect();
+        let of = |thing: Entity| self.items.get(thing).ok();
+        let charged = |thing: Entity| !of(thing).is_some_and(|(_, _, (_, consumable, ..), _, _)| consumable.is_some_and(|c| c.is_empty()));
+        let unknown = |thing: Option<Entity>| thing.and_then(of).is_some_and(|(_, _, _, (unknown, _), _)| unknown);
+        let name = |thing: Entity| of(thing).and_then(|((name, ..), ..)| name).map(|n| n.as_str().to_string()).unwrap_or_default();
+        let blow = atglyph_rules::arms::first_charged(
+            things.iter().map(|t| (*t, of(*t).and_then(|(_, (_, _, m, ..), ..)| m.copied()), charged(*t))),
+            own_blow.copied(),
+        );
+        let shot = atglyph_rules::arms::first_charged(
+            things.iter().map(|t| (*t, of(*t).and_then(|(_, (_, _, _, r, ..), ..)| r.copied()), charged(*t))),
+            own_shot.copied(),
+        );
+        let mut withheld = unknown(blow.and_then(|(from, _)| from)) || unknown(shot.and_then(|(from, _)| from));
+        let wielding =
+            |from: Option<Entity>, kind, dice, range| Wielding { from: from.map(name), strike: Strike { kind: kind_name(kind), dice, range, also: None } };
+        let mut launchers: Vec<LaunchLine> = Vec::new();
+        let mut seen = Vec::new();
+        for thing in &things {
+            if let Some((_, _, _, (unknown, _), (Some(launcher), _))) = of(*thing)
+                && !seen.contains(&launcher.ammo)
+            {
+                seen.push(launcher.ammo);
+                withheld |= unknown;
+                let ammo = registries.map(|r| r.tags.name(launcher.ammo).to_string()).unwrap_or_default();
+                launchers.push(LaunchLine { ammo, range: launcher.range, roll: launcher.damage });
+            }
+        }
+        let lent: Vec<(i32, bool)> =
+            things.iter().filter_map(|t| of(*t).and_then(|(_, _, _, (unknown, _), (_, sight))| sight.map(|s| (s.0, unknown)))).collect();
+        withheld |= lent.iter().any(|(_, unknown)| *unknown);
+        Kit {
+            blow: blow.map(|(from, m)| wielding(from, m.kind, m.dice, None)),
+            shot: shot.map(|(from, r)| wielding(from, r.kind, r.dice, Some(r.range))),
+            launchers,
+            dark_sight: atglyph_rules::equip::dark_sight(own_sight.map(|s| s.0), lent.iter().map(|(tiles, _)| *tiles), blind),
+            withheld,
+        }
     }
 
     /// `item` described with no word on what putting it on would change.
@@ -522,7 +625,15 @@ impl ItemRows<'_, '_> {
             launches: launcher.map(|l| LaunchLine { ammo: tag_name(l.ammo), range: l.range, roll: l.damage }),
             dark_sight: sight.map(|s| s.0),
             bestows: bestows
-                .map(|b| b.0.iter().map(|(stat, op)| (registries.map(|r| r.stats.name(*stat).to_string()).unwrap_or_default(), *op)).collect())
+                .map(|b| {
+                    b.0.iter()
+                        .map(|(stat, op)| Bestowed {
+                            stat: registries.map(|r| r.stats.name(*stat).to_string()).unwrap_or_default(),
+                            op: *op,
+                            lower_is_better: registries.is_some_and(|r| r.stats.get(*stat).lower_is_better),
+                        })
+                        .collect()
+                })
                 .unwrap_or_default(),
             tags: tagged.map(|t| t.0.iter().map(|tag| tag_name(*tag)).collect()).unwrap_or_default(),
             facets: Vec::new(),
@@ -638,7 +749,7 @@ mod tests {
         assert_eq!((blade.slot, blade.slot_name.as_str()), (Some(hand), "hand"), "worn, and where");
         assert_eq!(blade.blow.as_ref().map(|s| s.dice), Some(DiceRoll::new(1, 6)));
         assert_eq!(blade.strikes.len(), 1);
-        assert_eq!(blade.bestows, vec![("might".to_string(), Op::Add(2))], "by the stat's name");
+        assert_eq!(blade.bestows, vec![Bestowed { stat: "might".to_string(), op: Op::Add(2), lower_is_better: false }], "by the stat's name");
 
         let hat = &view.rows[2];
         assert!(!hat.worn() && hat.wearable());
