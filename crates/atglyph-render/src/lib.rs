@@ -27,8 +27,9 @@
 //!   blended in over a moment.
 //! - [`particles`]: what flies, bursts and fades over the map after a turn.
 //! - [`tileset`]: pictures drawn in place of glyphs.
-//! - [`fullscreen`] and [`capture`]: filling the screen, as a setting, and
-//!   a game photographing its own window.
+//! - [`fullscreen`], [`fit_screen`] and [`capture`]: filling the screen, as
+//!   a setting, opening the window as large as the screen allows, and a
+//!   game photographing its own window.
 
 #![deny(missing_docs)]
 #![forbid(unsafe_code)]
@@ -36,6 +37,7 @@
 pub mod capture;
 mod cell_art;
 pub mod fields;
+pub mod fit_screen;
 pub mod fullscreen;
 pub mod layout;
 pub mod looks;
@@ -47,6 +49,7 @@ pub mod terminal;
 pub mod tileset;
 
 pub use capture::CapturePlugin;
+pub use fit_screen::FitScreenPlugin;
 pub use fullscreen::FullscreenPlugin;
 pub use map_view::{CellBrightness, DrawnActors, Glyph, LightOverlay, MapView, MapViewPlugin, TileAppearance};
 pub use particles::{ParticleStyle, Particles, ParticlesPlugin};
@@ -57,6 +60,7 @@ pub use tileset::Tileset;
 /// The names most callers want in scope.
 pub mod prelude {
     pub use crate::capture::CapturePlugin;
+    pub use crate::fit_screen::FitScreenPlugin;
     pub use crate::fullscreen::FullscreenPlugin;
     pub use crate::map_view::{CellBrightness, DrawnActors, Glyph, LightOverlay, MapView, MapViewPlugin, TileAppearance};
 

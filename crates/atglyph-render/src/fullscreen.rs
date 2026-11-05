@@ -52,7 +52,7 @@ impl Plugin for FullscreenPlugin {
 }
 
 /// Whether the setting asks for fullscreen.
-fn on(settings: &Settings) -> bool {
+pub(crate) fn on(settings: &Settings) -> bool {
     settings.find(FULLSCREEN).is_some_and(|id| settings.chosen(id) == 1)
 }
 

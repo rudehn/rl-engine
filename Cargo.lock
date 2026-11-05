@@ -382,6 +382,8 @@ dependencies = [
  "atglyph-grid",
  "atglyph-rules",
  "bevy",
+ "objc2-app-kit",
+ "objc2-foundation 0.2.2",
  "ron 0.10.1",
  "serde",
 ]

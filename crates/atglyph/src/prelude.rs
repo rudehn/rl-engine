@@ -209,6 +209,7 @@ pub mod ui {
     pub use atglyph_bevy::settings::{Setting, SettingId, Settings};
     pub use atglyph_bevy::title::{AbandonRun, ContinueRun, HoldStart, LeaveRun, SavedRun, begin_run};
     pub use atglyph_render::capture::CapturePlugin;
+    pub use atglyph_render::fit_screen::FitScreenPlugin;
     pub use atglyph_render::fullscreen::FullscreenPlugin;
     pub use atglyph_render::map_view::{DrawnActors, LightOverlay, MapView, MapViewPlugin};
     pub use atglyph_render::particles::{ParticleStyle, Particles, ParticlesPlugin};

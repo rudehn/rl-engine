@@ -8,6 +8,7 @@ atglyph is not on crates.io yet, so a game depends on a release by its git tag, 
 
 ### Added
 
+- `RoguelikePlugins::fit_screen` and `FitScreenPlugin`: the window opens as large as the screen allows rather than at the cells' declared size, keeping the grid's shape, centred in what the system leaves to windows (on macOS the screen less its menu bar and dock), and is sized before it is shown; a window that opens fullscreen, a capture and the web are left as they were.
 - `Fields::descents_away_within` and `TacticCtx::step_away_within`: a field away from goals flooded only over the square a radius round the mind, any goal beyond it standing on its edge, for a flight; the whole field by default.
 - `Grounded(inner)` holds any tactic to the mind's ground, as `Idle` and `WalkRounds` keep to it: a step it would take from the ground off it becomes a wait, so a watchman whose hunt or search is wrapped holds the line facing a foe past its edge rather than chasing it or pacing in and out; a blow over the line goes through, a mind with no ground is unaffected, and one already off its ground is let back on.
 - `BumpRules::offers_first`: a bump into a neutral of a giving-way side that offers something is dealt with (taken up as an `Interact`, or a `Bumped` with `offers` when it offers several) before it gives way, so walking into a store keeper opens the trade; one offering nothing is still swapped with.

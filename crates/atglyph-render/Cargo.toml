@@ -26,6 +26,12 @@ bevy.workspace = true
 serde.workspace = true
 ron.workspace = true
 
+# What macOS keeps of a screen for its menu bar and dock, read to open the
+# window in the rest of it: the versions winit already builds.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2-app-kit = { version = "0.2.2", default-features = false, features = ["std", "NSScreen"] }
+objc2-foundation = { version = "0.2.2", default-features = false, features = ["std", "NSArray", "NSGeometry", "NSThread"] }
+
 # Tests and benches link Bevy as one shared library, so each test binary links
 # in seconds rather than copying all of Bevy in. A dev-dependency never reaches
 # a game built on this crate, which links Bevy however it chooses; wasm has no

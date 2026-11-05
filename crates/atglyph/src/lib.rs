@@ -123,6 +123,7 @@ pub struct RoguelikePlugins {
     map: Option<atglyph_core::GridRect>,
     across: i32,
     typeface: Option<Typeface>,
+    fit_screen: bool,
 }
 
 /// A typeface's bytes, which a derived `Debug` would print every one of:
@@ -140,7 +141,7 @@ impl RoguelikePlugins {
     /// A window titled `title`, `cols` by `rows` cells of ten by sixteen
     /// pixels, with the map filling it.
     pub fn new(title: impl Into<String>, cols: i32, rows: i32) -> Self {
-        Self { title: title.into(), cols, rows, cell: Vec2::new(10.0, 16.0), font: 14.0, map: None, across: 1, typeface: None }
+        Self { title: title.into(), cols, rows, cell: Vec2::new(10.0, 16.0), font: 14.0, map: None, across: 1, typeface: None, fit_screen: false }
     }
 
     /// Draws every glyph in `face`, the bytes of a TrueType or OpenType
@@ -179,6 +180,17 @@ impl RoguelikePlugins {
         self.across = cells.max(1);
         self
     }
+
+    /// Opens the window as large as the screen allows rather than at the
+    /// cells' declared size: the grid keeps its shape and is drawn larger,
+    /// the window centred in what the system leaves to windows, sized
+    /// before it is shown. Adds the
+    /// [`FitScreenPlugin`](atglyph_render::FitScreenPlugin), which leaves
+    /// alone a window that opens fullscreen and a capture.
+    pub fn fit_screen(mut self) -> Self {
+        self.fit_screen = true;
+        self
+    }
 }
 
 impl PluginGroup for RoguelikePlugins {
@@ -193,7 +205,8 @@ impl PluginGroup for RoguelikePlugins {
         if let Some(Typeface(face)) = self.typeface {
             terminal = terminal.typeface(face);
         }
-        PluginGroupBuilder::start::<Self>()
+        let fit = self.fit_screen.then(|| atglyph_render::FitScreenPlugin::new(self.cols, self.rows, self.cell));
+        let group = PluginGroupBuilder::start::<Self>()
             .add_group(
                 DefaultPlugins
                     .set(WindowPlugin { primary_window: Some(atglyph_render::capture::prepare(window)), ..default() })
@@ -201,7 +214,12 @@ impl PluginGroup for RoguelikePlugins {
             )
             .add(terminal)
             // Filling the screen, as a setting the renderer declares.
-            .add(atglyph_render::FullscreenPlugin)
+            .add(atglyph_render::FullscreenPlugin);
+        let group = match fit {
+            Some(fit) => group.add(fit),
+            None => group,
+        };
+        group
             .add(atglyph_bevy::CorePlugin)
             .add(atglyph_bevy::FovPlugin)
             .add(atglyph_render::MapViewPlugin::new(map).across(self.across))
