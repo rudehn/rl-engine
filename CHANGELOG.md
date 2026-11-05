@@ -24,6 +24,7 @@ atglyph is not on crates.io yet, so a game depends on a release by its git tag, 
 - `namegen::reads_well` holds a name put together outside a set to a set's rejections.
 - `CombatRules::spares(by, spared)` and `spares_side`: a side harms nobody of another, whatever the two are to each other; an attack by one of `by` on one of `spared` is refused before it is made, as a bump into a neutral is, a throw, a launch, a shot or a bolt of theirs flies past one as if nobody stood there, no area of theirs lands on one but what is aimed at allies, and a mind of `by` never makes one its target. `Bystanders::spares` answers it for two actors.
 - Rounds: an actor's `Rounds { route, next }` walks to each point of its route in turn and from the last back to the first, a route of one point a post it keeps, by the `WalkRounds` tactic named `walk_rounds` through the `OnRounds` sense; its steps keep to its `Ground`, a point somebody else stands on is passed once beside it, a brain that hunts above it breaks off and comes back to the point it was walking to, and a save keeps it with the actor.
+- `GearView::lines`: a game pushes `GearLine`s in `ViewSet::Annotate` and the gear panel draws them under the slots, in the slots' column, as something kept ready that no slot holds: a second weapon a turn away, or what a throw will take.
 
 ### Changed
 

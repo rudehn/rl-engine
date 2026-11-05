@@ -32,7 +32,7 @@ pub mod vitals;
 pub use ability::{AbilityRow, AbilityView, AbilityViewPlugin};
 pub use container::{ContainerView, ContainerViewPlugin, OpenContainer};
 pub use ending::{EndingSection, EndingView, EndingViewPlugin};
-pub use gear::{GearSlot, GearView, GearViewPlugin};
+pub use gear::{GearLine, GearSlot, GearView, GearViewPlugin};
 pub use ground::{GroundRow, GroundView, GroundViewPlugin};
 pub use inspect::{InspectView, InspectViewPlugin};
 pub use inventory::{Asking, InventoryView, InventoryViewPlugin, ItemRow};

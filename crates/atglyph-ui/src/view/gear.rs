@@ -45,11 +45,33 @@ pub struct GearSlot {
     pub primary: bool,
 }
 
-/// Every slot, in the order the game registered them.
+/// A line a game adds under the slots: something an actor keeps ready that
+/// no slot holds, as a second weapon a turn away or what a throw will take.
+#[derive(Debug, Clone, PartialEq)]
+pub struct GearLine {
+    /// What the line is called, read in the slot names' column.
+    pub name: String,
+    /// What it holds, if anything; nothing reads as an empty slot does.
+    pub item: Option<Row>,
+}
+
+impl GearLine {
+    /// A line called `name` holding `item`.
+    pub fn new(name: impl Into<String>, item: Option<Row>) -> Self {
+        Self { name: name.into(), item }
+    }
+}
+
+/// Every slot, in the order the game registered them, and the lines the
+/// game adds under them.
 #[derive(Resource, Debug, Default)]
 pub struct GearView {
     /// The slots.
     pub slots: Vec<GearSlot>,
+    /// The game's own lines, pushed in [`ViewSet::Annotate`](crate::ViewSet::Annotate)
+    /// and cleared with the slots each pass, drawn under the slots in the
+    /// order pushed.
+    pub lines: Vec<GearLine>,
 }
 
 impl GearView {
@@ -103,6 +125,7 @@ type Worn = (Option<&'static Name>, Option<&'static Glyph>, Option<&'static Stac
 /// rail never says what the bag keeps back.
 pub(crate) fn collect_gear(mut view: ResMut<GearView>, registries: Res<Registries>, player: Query<&Equipped, With<Player>>, items: Query<Worn>) {
     view.slots.clear();
+    view.lines.clear();
     let worn = player.single().ok();
     for (slot, def) in registries.slots.iter() {
         let entity = worn.and_then(|w| w.in_slot(slot));

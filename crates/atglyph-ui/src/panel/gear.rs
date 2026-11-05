@@ -8,7 +8,7 @@ use bevy::prelude::*;
 use crate::facet::Facet;
 use crate::panel::{Segment, clear, clip, clip_rich, frame, print_rich, section, wrap};
 use crate::tone::{Palette, Tones};
-use crate::view::{GearView, GearViewPlugin};
+use crate::view::{GearView, GearViewPlugin, Row};
 
 /// Where the gear list is drawn.
 #[derive(Resource, Debug, Clone)]
@@ -66,7 +66,16 @@ impl Plugin for GearPanel {
 /// tone: the bag's words for it, so one mark means one thing everywhere.
 pub(crate) const STUCK_WORDS: &str = "will not come off";
 
-/// Paints the gear list.
+/// One line of the list: a slot, or a line the game added under them.
+struct Entry<'a> {
+    name: &'a str,
+    item: Option<&'a Row>,
+    charges: Option<(u16, u16)>,
+    stuck: bool,
+    primary: bool,
+}
+
+/// Paints the gear list: the slots, then the game's lines under them.
 ///
 /// A slot whose name and words need more than one row takes the rows the
 /// panel has to spare, slot by slot from the top, and never so many that a
@@ -90,21 +99,27 @@ pub(crate) fn draw_gear(mut terminal: ResMut<Terminal>, layout: Res<GearLayout>,
         section(&mut terminal, inner, y, &layout.heading, None, &palette);
         y += 2;
     }
-    // A slot name column wide enough for the longest name, so the items
-    // line up and the eye reads down one edge.
-    let slot_width = view.slots.iter().map(|s| s.name.chars().count()).max().unwrap_or(0).min(inner.width as usize / 2);
-    for (i, slot) in view.slots.iter().enumerate() {
+    let entries: Vec<Entry> = view
+        .slots
+        .iter()
+        .map(|s| Entry { name: &s.name, item: s.item.as_ref(), charges: s.charges, stuck: s.stuck, primary: s.primary })
+        .chain(view.lines.iter().map(|l| Entry { name: &l.name, item: l.item.as_ref(), charges: None, stuck: false, primary: true }))
+        .collect();
+    // A name column wide enough for the longest name, so the items line
+    // up and the eye reads down one edge.
+    let slot_width = entries.iter().map(|e| e.name.chars().count()).max().unwrap_or(0).min(inner.width as usize / 2);
+    for (i, slot) in entries.iter().enumerate() {
         if y >= inner.bottom() {
             break;
         }
-        // The rows this slot may take: its own, and whatever the slots
+        // The rows this line may take: its own, and whatever the lines
         // after it leave spare.
-        let spare = (inner.bottom() - y) as usize - (view.slots.len() - i).min((inner.bottom() - y) as usize);
+        let spare = (inner.bottom() - y) as usize - (entries.len() - i).min((inner.bottom() - y) as usize);
         let room_for = 1 + spare;
-        terminal.print_on(inner.x, y, &clip(&slot.name, slot_width), palette.get(Tones::MUTED), bg);
+        terminal.print_on(inner.x, y, &clip(slot.name, slot_width), palette.get(Tones::MUTED), bg);
         let x = inner.x + slot_width as i32 + 1;
         let room = (inner.right() - x).max(0) as usize;
-        match &slot.item {
+        match slot.item {
             Some(item) => {
                 terminal.print_on(x, y, &item.glyph.ch.to_string(), item.glyph.fg, bg);
                 let label_x = x + 2;
@@ -199,6 +214,7 @@ fn labelled(label: &str, words: Vec<Segment>, width: usize, lines: usize) -> Vec
 mod tests {
     use super::*;
     use crate::harness::Stage;
+    use crate::view::GearLine;
     use atglyph_bevy::prelude::*;
     use atglyph_render::Glyph;
     use atglyph_rules::{EquipShape, SlotDef};
@@ -224,6 +240,31 @@ mod tests {
         assert!(rows[1].starts_with('\u{2500}'), "underlined: {:?}", rows[1]);
         assert_eq!(rows[2], "main hand / rusty blade", "the slot name, the glyph, the item");
         assert_eq!(rows[3], "body      \u{2014}", "and an empty slot is still a line");
+    }
+
+    /// A game's own lines read under the slots, lined up with them, an empty
+    /// one as an empty slot reads, and a line's facets after its item.
+    #[test]
+    fn a_games_lines_read_under_the_slots_in_their_column() {
+        fn ready(mut view: ResMut<GearView>, named: Query<(Entity, &Name)>) {
+            let Some(knife) = named.iter().find(|(_, n)| n.as_str() == "knife").map(|(e, _)| e) else { return };
+            let mut row = Row::new(knife, "knife", Glyph::new('|', Color::WHITE));
+            row.facets.push(Facet::new("ready", "a turn away"));
+            view.lines.push(GearLine::new("spare", Some(row)));
+            view.lines.push(GearLine::new("to throw", None));
+        }
+        let mut stage = Stage::new_with(GearPanel::new(GridRect::new(0, 0, 32, 6)), |app| {
+            app.world_mut().resource_mut::<Registries>().slots = atglyph_rules::Registry::from_defs(vec![SlotDef::new("hand")]).unwrap();
+            app.add_systems(Update, ready.in_set(crate::ViewSet::Annotate));
+        })
+        .screen(32, 6);
+        stage.app.world_mut().spawn((Item, Name::new("knife"), Glyph::new('|', Color::WHITE)));
+        stage.tick();
+
+        let rows = stage.rows();
+        assert_eq!(rows[2], "hand     \u{2014}", "the slot first");
+        assert_eq!(rows[3], "spare    | knife \u{00b7} a turn away", "then the game's line, in the slots' column");
+        assert_eq!(rows[4], "to throw \u{2014}", "and an empty one reads as an empty slot");
     }
 
     /// A wand's charges read on its row after its name, muted, the way a

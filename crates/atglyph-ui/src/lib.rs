@@ -173,10 +173,10 @@ pub use replay::ReplayPlugin;
 pub use tone::{Palette, Tone, ToneId, Tones, readable};
 pub use view::{
     AbilityRow, AbilityView, AbilityViewPlugin, AimAt, AimFire, AimRange, AimThrow, AimUse, Asking, Bar, ContainerView, ContainerViewPlugin, EndingSection,
-    EndingView, EndingViewPlugin, GearSlot, GearView, GearViewPlugin, GroundRow, GroundView, GroundViewPlugin, InspectView, InspectViewPlugin, InventoryView,
-    InventoryViewPlugin, ItemRow, NearbyFollowers, NearbyStatuses, NearbyView, NearbyViewPlugin, OfferRow, OffersView, OffersViewPlugin, OpenContainer,
-    PartyView, PartyViewPlugin, Row, Seems, SheetView, SheetViewPlugin, TargetView, TargetViewPlugin, TradeRow, TradeView, TradeViewPlugin, VitalsView,
-    VitalsViewPlugin, WorkRow, target_modal,
+    EndingView, EndingViewPlugin, GearLine, GearSlot, GearView, GearViewPlugin, GroundRow, GroundView, GroundViewPlugin, InspectView, InspectViewPlugin,
+    InventoryView, InventoryViewPlugin, ItemRow, NearbyFollowers, NearbyStatuses, NearbyView, NearbyViewPlugin, OfferRow, OffersView, OffersViewPlugin,
+    OpenContainer, PartyView, PartyViewPlugin, Row, Seems, SheetView, SheetViewPlugin, TargetView, TargetViewPlugin, TradeRow, TradeView, TradeViewPlugin,
+    VitalsView, VitalsViewPlugin, WorkRow, target_modal,
 };
 
 use atglyph_bevy::EngineApp;

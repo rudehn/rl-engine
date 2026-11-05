@@ -237,9 +237,9 @@ pub mod ui {
     pub use atglyph_ui::tone::{Palette, ToneId, readable};
     pub use atglyph_ui::view::{
         AbilityRow, AbilityView, AbilityViewPlugin, AimAt, AimFire, AimRange, AimThrow, AimUse, Asking, Bar, ContainerView, ContainerViewPlugin, EndingSection,
-        EndingView, GearView, GearViewPlugin, GroundRow, GroundView, GroundViewPlugin, InspectView, InspectViewPlugin, InventoryView, InventoryViewPlugin,
-        ItemRow, NearbyFollowers, NearbyStatuses, NearbyView, NearbyViewPlugin, OfferRow, OffersView, OffersViewPlugin, OpenContainer, Row, Seems, TargetView,
-        TargetViewPlugin, VitalsViewPlugin, WorkRow, target_modal,
+        EndingView, GearLine, GearView, GearViewPlugin, GroundRow, GroundView, GroundViewPlugin, InspectView, InspectViewPlugin, InventoryView,
+        InventoryViewPlugin, ItemRow, NearbyFollowers, NearbyStatuses, NearbyView, NearbyViewPlugin, OfferRow, OffersView, OffersViewPlugin, OpenContainer,
+        Row, Seems, TargetView, TargetViewPlugin, VitalsViewPlugin, WorkRow, target_modal,
     };
     pub use atglyph_ui::{UiPlugin, panel};
 }
