@@ -67,7 +67,7 @@ fn run(seed: u64, turns: usize) -> u64 {
             (Health::full(400), Armor(1), Faction(ours), MeleeAttack::new(kind, DiceRoll::new(1, 6)), Stealth(StealthStats { quiet: 1, subtlety: 10 })),
         ))
         .id();
-    let brain = Arc::new(Brain::new().then(MeleeAdjacent).then(FleeWhenHurt { at_pct: 30 }).then(Hunt).then(SearchLastKnown).then(Idle { chance_pct: 40 }));
+    let brain = Arc::new(Brain::new().then(MeleeAdjacent).then(FleeWhenHurt::at(30)).then(Hunt).then(SearchLastKnown).then(Idle { chance_pct: 40 }));
     for (i, (dx, dy)) in [(4, 0), (-5, 2), (0, 6), (7, -3), (-3, -6), (6, 6)].into_iter().enumerate() {
         app.world_mut().spawn((
             (Actor, Blocks, Position(start.offset(dx, dy)), Health::full(12 + i as i32), Armor(0), Faction(theirs)),

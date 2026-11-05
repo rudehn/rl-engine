@@ -8,6 +8,7 @@ atglyph is not on crates.io yet, so a game depends on a release by its git tag, 
 
 ### Added
 
+- `Fields::descents_away_within` and `TacticCtx::step_away_within`: a field away from goals flooded only over the square a radius round the mind, any goal beyond it standing on its edge, for a flight; the whole field by default.
 - `Grounded(inner)` holds any tactic to the mind's ground, as `Idle` and `WalkRounds` keep to it: a step it would take from the ground off it becomes a wait, so a watchman whose hunt or search is wrapped holds the line facing a foe past its edge rather than chasing it or pacing in and out; a blow over the line goes through, a mind with no ground is unaffected, and one already off its ground is let back on.
 - `BumpRules::offers_first`: a bump into a neutral of a giving-way side that offers something is dealt with (taken up as an `Interact`, or a `Bumped` with `offers` when it offers several) before it gives way, so walking into a store keeper opens the trade; one offering nothing is still swapped with.
 - `dress::dress_room` dresses one room's cells on a terrain with no chain, by the rules `Dress` keeps, for a game that lays its own buildings.
@@ -29,6 +30,7 @@ atglyph is not on crates.io yet, so a game depends on a release by its git tag, 
 
 ### Changed
 
+- **Breaking:** `FleeWhenHurt` has a public `within` field, how far round itself a mind looks for its way away, and runs down a field over that square alone rather than the whole loaded window, so a flight costs the same however much is loaded; `FleeWhenHurt::at(pct)` gives `FleeWhenHurt::WITHIN`, 20 cells, and a game that writes the struct literal adds `within: FleeWhenHurt::WITHIN`.
 - **Breaking:** `Streamed` has a public `slack` field; a game that writes one as a struct literal adds `slack: 0` to keep its window moving at every chunk's edge, and a save written before reads it as 0.
 - A streamed place keeps the chunks that left its window last whole, twice a window's worth, so walking back over ground just left builds nothing; `PlaceRules::build_chunk` is asked again only for a chunk left longer ago, and its edits are laid back on it as before.
 - A streamed place's window moving no longer moves the map's opacity and cost epochs: a viewshed whose sight lies in what the window holds before and after is kept as it was cast, the lighting marks only the viewers whose sight a move lit or darkened, and the rest are cast again as before, so a move no longer recasts every viewer in the window.

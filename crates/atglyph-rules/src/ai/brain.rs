@@ -142,9 +142,24 @@ pub trait Fields {
     /// [`descents_away`](Self::descents_away) on a field flooded only over
     /// the box round `from` and `goals`, `margin` cells wider on every side,
     /// as [`descents_toward_near`](Self::descents_toward_near) is: for a
-    /// step out of somebody's way, not a flight. The whole field by default.
+    /// step out of somebody's way. A flight runs within its own reach, by
+    /// [`descents_away_within`](Self::descents_away_within). The whole field
+    /// by default.
     fn descents_away_near(&mut self, goals: &[Point], from: Point, margin: i32) -> Vec<Point> {
         let _ = margin;
+        self.descents_away(goals, from)
+    }
+
+    /// [`descents_away`](Self::descents_away) on a field flooded only over
+    /// the square `radius` cells round `from`, any of `goals` beyond it
+    /// standing on its edge on their side: for a flight, which picks its
+    /// way a step at a time from what lies within its reach, so the field
+    /// is never wider than that however far off the foes stand, and is
+    /// the same wherever the loaded ground ends beyond it. Flooded afresh
+    /// for each flight, since the foes it runs from move every turn. The
+    /// whole field by default.
+    fn descents_away_within(&mut self, goals: &[Point], from: Point, radius: i32) -> Vec<Point> {
+        let _ = radius;
         self.descents_away(goals, from)
     }
 
@@ -234,6 +249,14 @@ impl<A: Copy> TacticCtx<'_, A> {
     pub fn step_away_from(&mut self, goals: &[Point]) -> Option<Point> {
         let me = self.snapshot.me.pos;
         self.fields.descents_away(goals, me).into_iter().find(|p| (self.can_step)(*p))
+    }
+
+    /// The first cell the actor can step onto that leads away from `goals`
+    /// down a field over the ground within `radius` of it, as
+    /// [`Fields::descents_away_within`] floods it.
+    pub fn step_away_within(&mut self, goals: &[Point], radius: i32) -> Option<Point> {
+        let me = self.snapshot.me.pos;
+        self.fields.descents_away_within(goals, me, radius).into_iter().find(|p| (self.can_step)(*p))
     }
 }
 

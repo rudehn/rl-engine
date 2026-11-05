@@ -61,6 +61,23 @@ pub struct Ways(pub Vec<Point>);
 pub struct FleeWhenHurt {
     /// Flee at or below this percentage of health.
     pub at_pct: i32,
+    /// How far round itself, in cells, a mind looks for its way away: the
+    /// field it runs down is flooded over that square alone, so a flight
+    /// costs the same however much ground is loaded, and leads the same
+    /// way wherever the loaded ground ends beyond it.
+    pub within: i32,
+}
+
+impl FleeWhenHurt {
+    /// How far round itself a mind looks for its way away unless told
+    /// otherwise: about as far as a creature sees well, and far past where
+    /// one step's choice is settled.
+    pub const WITHIN: i32 = 20;
+
+    /// Flee at or below `at_pct` percent of health, within [`WITHIN`](Self::WITHIN).
+    pub const fn at(at_pct: i32) -> Self {
+        Self { at_pct, within: Self::WITHIN }
+    }
 }
 
 impl<A: Copy> Tactic<A> for FleeWhenHurt {
@@ -82,7 +99,7 @@ impl<A: Copy> Tactic<A> for FleeWhenHurt {
                 return Some(Decision::Step(step));
             }
         }
-        if let Some(step) = ctx.step_away_from(&foes) {
+        if let Some(step) = ctx.step_away_within(&foes, self.within) {
             return Some(Decision::Step(step));
         }
         let enemy = ctx.snapshot.nearest_enemy()?.pos;
@@ -1466,7 +1483,7 @@ mod tests {
     }
 
     fn brain() -> Brain<u32> {
-        Brain::new().then(MeleeAdjacent).then(FleeWhenHurt { at_pct: 30 }).then(Hunt).then(Idle { chance_pct: 100 })
+        Brain::new().then(MeleeAdjacent).then(FleeWhenHurt::at(30)).then(Hunt).then(Idle { chance_pct: 100 })
     }
 
     fn open() -> (Terrain, TileRegistry) {
@@ -1577,7 +1594,7 @@ mod tests {
         let decide = |snapshot: &Snapshot<u32>| {
             let mut rng = StdRng::seed_from_u64(1);
             Brain::new()
-                .then(FleeWhenHurt { at_pct: 50 })
+                .then(FleeWhenHurt::at(50))
                 .decide(&mut TacticCtx {
                     snapshot,
                     fields: &mut Given::over(&view_t),
@@ -1619,7 +1636,7 @@ mod tests {
         assert_eq!(with(&Keep::allies(3, 1)), Some(Station::Allies));
         assert_eq!(with(&Keep::leader(3, 1)), Some(Station::Leader));
         assert!(Brain::<u32>::new().then(Keep::leader(3, 1)).keeps_with_allies(), "a follower keeps beside its allies too");
-        assert_eq!(with(&FleeWhenHurt { at_pct: 50 }), None);
+        assert_eq!(with(&FleeWhenHurt::at(50)), None);
         assert_eq!(with(&Idle { chance_pct: 50 }), None);
         assert!(Brain::<u32>::new().then(Keep::allies(3, 1)).then(Idle { chance_pct: 50 }).keeps_with_allies());
         assert!(!brain().keeps_with_allies());
@@ -1642,7 +1659,7 @@ mod tests {
 
         let mut fleeing = Snapshot::alone(view(1, me.x, me.y, 1));
         fleeing.enemies.push(view(2, 4, 4, 10));
-        cases.push(("flee_when_hurt", Brain::new().then(FleeWhenHurt { at_pct: 50 }), fleeing));
+        cases.push(("flee_when_hurt", Brain::new().then(FleeWhenHurt::at(50)), fleeing));
 
         let mut following = Snapshot::alone(view(1, me.x, me.y, 10));
         following.allies.push(view(3, 9, 9, 10));
@@ -1789,7 +1806,7 @@ mod tests {
         let view_t = t.view(&r);
         let can_step = |p: Point| view_t.is_walkable(p);
         let mut rng = StdRng::seed_from_u64(1);
-        let b: Brain<u32> = Brain::new().then(FleeWhenHurt { at_pct: 50 }).then(SearchLastKnown).then(Hunt);
+        let b: Brain<u32> = Brain::new().then(FleeWhenHurt::at(50)).then(SearchLastKnown).then(Hunt);
         let mut decide = |snapshot: &Snapshot<u32>| {
             b.decide(&mut TacticCtx {
                 snapshot,
@@ -2133,6 +2150,18 @@ mod tests {
         given: Given<'a>,
         whole: u32,
         near: Vec<Vec<Point>>,
+        within: Vec<Within>,
+    }
+
+    /// The goals of a field asked within a reach, and the reach.
+    type Within = (Vec<Point>, i32);
+
+    /// What a tactic decided, and the fields it asked for.
+    struct Asks {
+        decision: Option<Decision<u32>>,
+        whole: u32,
+        near: Vec<Vec<Point>>,
+        within: Vec<Within>,
     }
 
     impl Fields for Asked<'_> {
@@ -2157,16 +2186,27 @@ mod tests {
             self.near.push(goals.to_vec());
             self.given.descents_away(goals, from)
         }
+
+        fn descents_away_within(&mut self, goals: &[Point], from: Point, radius: i32) -> Vec<Point> {
+            self.within.push((goals.to_vec(), radius));
+            self.given.descents_away(goals, from)
+        }
     }
 
     /// What `tactic` decides for `snapshot` on open ground, with the fields
     /// it asked for: how many whole ones, and the goals of each near one.
     fn asking(tactic: &dyn Tactic<u32>, snapshot: &Snapshot<u32>) -> (Option<Decision<u32>>, u32, Vec<Vec<Point>>) {
+        let asks = asking_within(tactic, snapshot);
+        (asks.decision, asks.whole, asks.near)
+    }
+
+    /// As [`asking`], with the fields asked within a reach, and how far.
+    fn asking_within(tactic: &dyn Tactic<u32>, snapshot: &Snapshot<u32>) -> Asks {
         let r = TileRegistry::standard();
         let t = Terrain::filled(40, 40, r.expect("floor"));
         let view_t = t.view(&r);
         let can_step = |p: Point| view_t.is_walkable(p);
-        let mut fields = Asked { given: Given::over(&view_t), whole: 0, near: Vec::new() };
+        let mut fields = Asked { given: Given::over(&view_t), whole: 0, near: Vec::new(), within: Vec::new() };
         let mut rng = StdRng::seed_from_u64(1);
         let decision = tactic.evaluate(&mut TacticCtx {
             snapshot,
@@ -2177,7 +2217,24 @@ mod tests {
             bounds: arena(),
             rng: &mut rng,
         });
-        (decision, fields.whole, fields.near)
+        Asks { decision, whole: fields.whole, near: fields.near, within: fields.within }
+    }
+
+    /// A hurt mind runs from its foe down a field flooded only over the
+    /// ground within its flight's reach of it, never the whole one: the
+    /// cells of a flight are chosen a step at a time, and a flood of every
+    /// loaded cell each time the foe moved was most of a turn.
+    #[test]
+    fn a_fleer_runs_down_a_field_within_its_reach_and_never_the_whole_one() {
+        let mut fleeing = Snapshot::alone(view(1, 10, 10, 1));
+        fleeing.wits = Wits::ANIMAL;
+        fleeing.enemies.push(view(2, 8, 10, 10));
+        let flee = FleeWhenHurt::at(50);
+        assert_eq!(flee.within, FleeWhenHurt::WITHIN);
+        let Asks { decision: step, whole, near, within } = asking_within(&flee, &fleeing);
+        assert!(matches!(step, Some(Decision::Step(p)) if p.x > 10), "away from the foe: {step:?}");
+        assert_eq!((whole, near), (0, Vec::<Vec<Point>>::new()), "no whole field and no step-aside one");
+        assert_eq!(within, vec![(vec![Point::new(8, 10)], FleeWhenHurt::WITHIN)], "one within its reach of it");
     }
 
     /// A herd's middle is a cell nobody else walks toward, so a member

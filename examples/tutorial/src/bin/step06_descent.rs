@@ -207,12 +207,12 @@ fn start(mut commands: Commands, seed: Res<Seed>, effect_kinds: Res<EffectKinds>
     commands.insert_resource(Rats {
         // Asked in order, and the first that answers wins: bite what is
         // beside you, run when badly hurt, chase what you see, else idle about as its `Moves` say.
-        mind: Arc::new(Brain::new().then(MeleeAdjacent).then(FleeWhenHurt { at_pct: 30 }).then(Hunt).then(Idle { chance_pct: 40 })),
+        mind: Arc::new(Brain::new().then(MeleeAdjacent).then(FleeWhenHurt::at(30)).then(Hunt).then(Idle { chance_pct: 40 })),
         // A ratling has hands: it fetches rocks and throws them.
         ratling: Arc::new(
             Brain::new()
                 .then(MeleeAdjacent)
-                .then(FleeWhenHurt { at_pct: 25 })
+                .then(FleeWhenHurt::at(25))
                 // Uses a knack when it would help: a ratling gnaws its
                 // crust when hurt.
                 .then(UseAbility { chance_pct: 80 })

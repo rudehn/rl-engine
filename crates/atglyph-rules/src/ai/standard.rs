@@ -217,7 +217,7 @@ impl<A: Copy + 'static> StandardBrain<A> {
     pub fn build(self) -> Brain<A> {
         let StandardBrain { chain, can, first, before_attacks, before_hunt, instead_of_hunt, before_idle } = self;
         let mut brain = Brain::new().with_all(first);
-        let flee = (chain.flee && can.flee_at > 0).then_some(FleeWhenHurt { at_pct: can.flee_at });
+        let flee = (chain.flee && can.flee_at > 0).then_some(FleeWhenHurt::at(can.flee_at));
         if let Some(flee) = flee.filter(|_| !chain.flee_after_attacks) {
             brain = brain.then(flee);
         }

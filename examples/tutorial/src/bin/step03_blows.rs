@@ -140,7 +140,7 @@ fn start(mut commands: Commands, seed: Res<Seed>, mut log: Log) {
     commands.insert_resource(Rats {
         // Asked in order, and the first that answers wins: bite what is
         // beside you, run when badly hurt, chase what you see, else idle about as its `Moves` say.
-        mind: Arc::new(Brain::new().then(MeleeAdjacent).then(FleeWhenHurt { at_pct: 30 }).then(Hunt).then(Idle { chance_pct: 40 })),
+        mind: Arc::new(Brain::new().then(MeleeAdjacent).then(FleeWhenHurt::at(30)).then(Hunt).then(Idle { chance_pct: 40 })),
         bite: kinds.expect("bite"),
         faction: vermin,
     });

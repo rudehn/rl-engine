@@ -900,7 +900,7 @@ mod tests {
         let cave = MapId(3);
         let way = r.start.offset(4, 0);
         r.app.world_mut().spawn((Position(way), Transition { to: Destination::Place { map: cave, arrive: Arrive::Entry } }));
-        let brain = atglyph_rules::Brain::new().then(FleeWhenHurt { at_pct: 50 }).then(Hunt);
+        let brain = atglyph_rules::Brain::new().then(FleeWhenHurt::at(50)).then(Hunt);
         let from = r.start.offset(3, 0);
         let runner = mind(&mut r, from, sides.theirs, sides.kind, Wits::ANIMAL.with(Wits::TRAVELS), brain);
         r.app.world_mut().get_mut::<crate::combat::Health>(runner).unwrap().current = 2;

@@ -716,6 +716,30 @@ impl Walking<'_> {
     }
 }
 
+impl Walking<'_> {
+    /// The descents from `from` of a field away from `goals` over the
+    /// square `radius` cells round it, cut to the window, each goal beyond
+    /// it moved in to the square's edge on its side.
+    fn descents_within(&mut self, goals: &[Point], from: Point, radius: i32) -> Vec<Point> {
+        let window = self.map.window_tiles();
+        let Some(local) = self.map.to_local(from) else { return Vec::new() };
+        let radius = radius.max(1);
+        let square = GridRect::from_corners(local.offset(-radius, -radius), local.offset(radius, radius));
+        let Some(bound) = square.intersection(&GridRect::new(0, 0, window.width, window.height)) else { return Vec::new() };
+        let edge = |v: i32, lo: i32, size: i32| v.clamp(lo, lo + size - 1);
+        let mut goals: Vec<Point> =
+            goals.iter().map(|g| *g - window.origin()).map(|g| Point::new(edge(g.x, bound.x, bound.width), edge(g.y, bound.y, bound.height))).collect();
+        if goals.is_empty() {
+            return Vec::new();
+        }
+        goals.sort();
+        goals.dedup();
+        let priced = self.wary && !self.fields.traps.is_empty();
+        let field = self.fields.near(&goals, bound, self.opens_doors, priced, true, self.map);
+        field.descents(local).into_iter().map(|p| p + window.origin()).collect()
+    }
+}
+
 impl atglyph_rules::Fields for Walking<'_> {
     fn descents_toward(&mut self, goals: &[Point], from: Point) -> Vec<Point> {
         self.descents(goals, from, false)
@@ -731,6 +755,10 @@ impl atglyph_rules::Fields for Walking<'_> {
 
     fn descents_away_near(&mut self, goals: &[Point], from: Point, margin: i32) -> Vec<Point> {
         self.descents_near(goals, from, margin, true)
+    }
+
+    fn descents_away_within(&mut self, goals: &[Point], from: Point, radius: i32) -> Vec<Point> {
+        self.descents_within(goals, from, radius)
     }
 
     /// The field toward `goals` at `from`, unpriced: the walk itself, so a
@@ -3481,5 +3509,44 @@ mod tests {
         let led = walk(&mut kept, &map, below);
         assert_eq!(led, walk(&mut FlowFields::default(), &map, below));
         assert!(led.first().is_some_and(|step| step.x > below.x), "after it, to the far mouth: {led:?}");
+    }
+    /// A hurt mind runs from its foe and gets clear of it, and every field
+    /// it runs down is flooded over ground within its flight's reach of it,
+    /// never the whole window: no away field is kept, and the one flooded
+    /// for its last step reaches no cell further than that from it.
+    #[test]
+    fn a_hurt_mind_gets_clear_of_its_foe_down_fields_no_wider_than_its_reach() {
+        use atglyph_rules::ai::tactics::FleeWhenHurt;
+        let (mut app, start, _) = arena();
+        let (us, them) = (atglyph_rules::FactionId::from_raw(0), atglyph_rules::FactionId::from_raw(1));
+        let player = app.world_mut().spawn((Actor, Player, Blocks, Position(start), Viewshed::new(30), Health::full(30), Faction(us))).id();
+        let brain = Arc::new(Brain::new().then(FleeWhenHurt::at(50)));
+        let mut hurt = Health::full(10);
+        hurt.current = 2;
+        let runner = app
+            .world_mut()
+            .spawn((Actor, Blocks, Position(start.offset(2, 0)), hurt, Faction(them), Perception(30), Intelligence(Wits::ANIMAL), Mind(brain)))
+            .id();
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        let reach = FleeWhenHurt::WITHIN;
+        for _ in 0..30 {
+            if app.world().get::<MyTurn>(player).is_some() {
+                app.world_mut().write_message(Intent::new(player, Wait));
+            }
+            let from = app.world().get::<Position>(runner).unwrap().0;
+            app.update();
+            let fields = app.world().resource::<FlowFields>();
+            let map = app.world().resource::<WorldMap>();
+            let whole_away = (vec![start], MovementProfile::default(), false, false, true);
+            assert!(fields.fields.get(&whole_away).is_none(), "no away field over the window is kept");
+            let _ = map;
+            let reached: Vec<Point> = fields.near.iter().map(|(p, _)| p).collect();
+            let (xs, ys) = (reached.iter().map(|p| p.x), reached.iter().map(|p| p.y));
+            let span = |lo: Option<i32>, hi: Option<i32>| hi.zip(lo).map_or(0, |(h, l)| h - l + 1);
+            let (wide, tall) = (span(xs.clone().min(), xs.max()), span(ys.clone().min(), ys.max()));
+            assert!(wide <= 2 * reach + 1 && tall <= 2 * reach + 1, "the field run down is {wide} by {tall}, no wider than its reach each way of {from:?}");
+        }
+        let gap = atglyph_core::geometry::chebyshev(start, app.world().get::<Position>(runner).unwrap().0);
+        assert!(gap >= 10, "it got clear: {gap} cells off");
     }
 }
