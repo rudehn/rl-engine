@@ -363,13 +363,13 @@ pub(crate) fn draw_trade(mut terminal: ResMut<Terminal>, mut menu: ResMut<TradeM
         x += text.chars().count() as i32 + 1;
     }
 
-    // The pane under the lists, and its rule, where the screen is tall
-    // enough to keep a useful list over it: at most a third or so of the
-    // height, and none at all below three rows, so a short screen keeps
-    // its lists whole.
-    let pane = ((inner.height - 9) / 2).min(10);
+    // The pane under the lists, its rule and a blank row parting it from
+    // the purses, where the screen is tall enough to keep a useful list
+    // over it: at most a third or so of the height, and none at all below
+    // three rows, so a short screen keeps its lists whole.
+    let pane = ((inner.height - 10) / 2).min(10);
     let pane = if pane >= 3 { pane } else { 0 };
-    let under = if pane > 0 { pane + 1 } else { 0 };
+    let under = if pane > 0 { pane + 2 } else { 0 };
     let gap = 2;
     let half = (inner.width - gap) / 2;
     let lists = GridRect::new(inner.x, inner.y + 2, half, inner.height - 3 - under);
@@ -390,7 +390,7 @@ pub(crate) fn draw_trade(mut terminal: ResMut<Terminal>, mut menu: ResMut<TradeM
             TradeSide::Wares => view.wares.get(menu.wares),
             TradeSide::Pack => view.pack.get(menu.pack),
         };
-        draw_pane(&mut terminal, GridRect::new(inner.x, inner.bottom() - under, inner.width, under), picked, palette);
+        draw_pane(&mut terminal, GridRect::new(inner.x, inner.bottom() - pane - 1, inner.width, pane + 1), picked, palette);
     }
 }
 
@@ -657,6 +657,8 @@ mod tests {
             rows[rule..rows.len() - 1].iter().map(|r| r.trim_start_matches("\u{2502} ").trim_end_matches('\u{2502}').trim_end().to_string()).collect()
         };
         let shown = pane(&rows);
+        let rule = rows.iter().rposition(|r| r.starts_with("\u{2502} \u{2500}")).expect("a rule");
+        assert_eq!(rows[rule - 1].trim_matches(|c| c == '\u{2502}' || c == ' '), "", "a blank row parts the purses from the pane:\n{text}");
         assert!(
             shown[0].starts_with("\u{2500}\u{2500} helm \u{2500}") && shown[0].chars().count() == 56,
             "a rule the width of the screen naming the ware:\n{text}"

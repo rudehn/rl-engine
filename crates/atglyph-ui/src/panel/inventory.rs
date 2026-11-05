@@ -804,7 +804,13 @@ fn compare(row: &ItemRow, width: usize) -> Vec<(String, ToneId)> {
         return lines;
     }
     let off: Vec<&ItemRow> = replacing.off.iter().map(|t| &t.row).collect();
-    lines.extend(table(&changes(row, &off), width));
+    let changes = changes(row, &off);
+    // Something taken off for its like changes nothing, and says so
+    // rather than leaving a reader to wonder whether the numbers are cut.
+    if changes.is_empty() && !replacing.off.is_empty() {
+        lines.push(("  no change".to_string(), Tones::MUTED));
+    }
+    lines.extend(table(&changes, width));
     lines
 }
 
@@ -1292,6 +1298,21 @@ mod tests {
         stage.press(KeyCode::ArrowDown);
         let texts: Vec<String> = described(&stage).into_iter().map(|(t, _)| t).collect();
         assert!(texts.contains(&"replaces: bow".to_string()) && texts.contains(&"frees the right hand".to_string()), "{texts:?}");
+    }
+
+    /// A thing put on for its like says it changes nothing.
+    #[test]
+    fn a_thing_over_its_like_says_nothing_changes() {
+        let (mut stage, _, _) = wardrobe();
+        let player = stage.player;
+        let head = stage.app.world().resource::<Registries>().slots.expect("head");
+        let spare = stage.app.world_mut().spawn((Item, Name::new("cap"), Wearable(EquipShape::in_slot(head)), Armor(1))).id();
+        stage.app.world_mut().get_mut::<Inventory>(player).unwrap().items.push(spare);
+        stage.tick();
+        stage.press(KeyCode::KeyG);
+        stage.press(KeyCode::Escape);
+        let lines = described(&stage);
+        assert_eq!(lines[2..], [("replaces: cap".to_string(), Tones::TEXT), ("  no change".to_string(), Tones::MUTED)], "{lines:?}");
     }
 
     /// A thing that goes where nothing is worn says so, and all it gives is
