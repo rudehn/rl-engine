@@ -1185,8 +1185,9 @@ type Entry = Option<(String, ToneId)>;
 /// it, `your arrow` or `the goblin's knife`, for the thing thrown in a
 /// line whose `{what}` is something else; a thing with a proper name is
 /// said by it alone, `the Widow's Fang`, and a thing with no name is
-/// `something`; `{What}`, `{Your what}`, `{Whose what}` and `{Whose with}`
-/// are capitalised; `{n}` the amount;
+/// `something`; `{with}` is the same thing said as `{what}` is, `a knife`;
+/// `{What}`, `{Your what}`, `{Whose what}`, `{With}` and `{Whose with}` are
+/// capitalised; `{n}` the amount;
 /// `{named}` the registry's name for the status, kind or ability; and
 /// `{detail}` whatever more there is to say. A name other than the player's
 /// is coloured as the thing is drawn, an owner's name and the thing it
@@ -1234,9 +1235,11 @@ impl Default for Phrasebook {
             (YouBlockBlow, "{Whose what} turns aside {who}'s blow.", Tones::GOOD),
             (YouBlockShot, "{Whose what} catches {who}'s shot.", Tones::GOOD),
             (YouBlockThrow, "{Whose what} catches {whose with}.", Tones::GOOD),
-            (OthersBlockBlow, "{Whose what} turns aside {who}'s blow.", Tones::MUTED),
-            (OthersBlockShot, "{Whose what} catches {who}'s shot.", Tones::MUTED),
-            (OthersBlockThrow, "{Whose what} catches {whose with}.", Tones::MUTED),
+            // Between two others the struck one's shield is the news, and
+            // the attacker's name would carry the line off the strip.
+            (OthersBlockBlow, "{Whose what} turns aside a blow.", Tones::MUTED),
+            (OthersBlockShot, "{Whose what} catches a shot.", Tones::MUTED),
+            (OthersBlockThrow, "{Whose what} catches {with}.", Tones::MUTED),
             (ReflectsOntoYou, "{Who} turns it back on you.", Tones::BAD),
             (YouReflect, "You turn it back on {whom}.", Tones::HIT),
             (OthersReflect, "{Who} turns it back on {whom}.", Tones::TEXT),
@@ -1464,6 +1467,7 @@ pub(crate) fn render(template: &str, said: &Said, names: &Names<'_, '_>, speak_u
             "your what" => Some(one(names.thing(said.what, &said.called_thing, Called::yours))),
             "whose what" => Some(names.owned(said.whom, whom_unseen, &said.called[1], said.what, &said.called_thing)),
             "whose with" => Some(names.owned(said.who, !(said.who_seen || speak_unseen), &said.called[0], said.with, &said.called_with)),
+            "with" => Some(one(names.thing(said.with, &said.called_with, Called::counted))),
             "n" => Some(one(Named { text: said.amount.to_string(), color: None })),
             "named" => Some(one(Named { text: said.named.clone(), color: None })),
             "detail" => Some(one(Named { text: said.detail.clone(), color: None })),
@@ -2285,9 +2289,45 @@ mod tests {
                 "The bandit's kite shield catches your shot.",
                 "The bandit's kite shield turns aside your blow.",
                 "Your round shield catches the goblin's knife.",
-                "The goblin's round shield catches the bandit's shot.",
+                "The goblin's round shield catches a shot.",
             ]
         );
+    }
+
+    /// A block between two others names the struck one's shield and not
+    /// the attacker, so each line fits a 51-column log strip whole: a
+    /// blow, a shot, a thing thrown by its own name with `a`, and one with
+    /// no name as `something`.
+    #[test]
+    fn a_block_between_two_others_names_the_shield_and_fits_the_log_strip() {
+        let mut stage = Stage::new(NarratorPlugin::default());
+        let goblin = stage.actor("goblin", 'g', 1, 0);
+        let bandit = stage.actor("bandit", 'b', 2, 0);
+        let mut held = |name: Option<&str>| match name {
+            Some(name) => stage.app.world_mut().spawn((Item, Name::new(name.to_string()))).id(),
+            None => stage.app.world_mut().spawn(Item).id(),
+        };
+        let (round, knife, nameless) = (held(Some("round shield")), held(Some("knife")), held(None));
+        stage.tick();
+        let world = stage.app.world_mut();
+        world.write_message(AttackBlocked { attacker: bandit, target: goblin, shield: round, with: None, reach: DamageRoute::Melee });
+        world.write_message(AttackBlocked { attacker: bandit, target: goblin, shield: round, with: None, reach: DamageRoute::Shot });
+        world.write_message(AttackBlocked { attacker: bandit, target: goblin, shield: round, with: Some(knife), reach: DamageRoute::Thrown });
+        world.write_message(AttackBlocked { attacker: bandit, target: goblin, shield: round, with: Some(nameless), reach: DamageRoute::Thrown });
+        stage.tick();
+        let said = spoken(&stage, &["The goblin's"]);
+        assert_eq!(
+            said,
+            vec![
+                "The goblin's round shield turns aside a blow.",
+                "The goblin's round shield catches a shot.",
+                "The goblin's round shield catches a knife.",
+                "The goblin's round shield catches something.",
+            ]
+        );
+        for line in &said {
+            assert!(line.chars().count() <= 51, "{line:?} fits the 51-column log strip");
+        }
     }
 
     /// A block's owner keeps its own colour and the shield its own: the
