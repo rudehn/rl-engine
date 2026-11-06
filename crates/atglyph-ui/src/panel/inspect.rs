@@ -308,7 +308,9 @@ pub(crate) fn draw_inspect(
         .iter()
         .map(|blow| format!("blow {}", strike(blow)))
         .chain(view.shot.iter().map(|shot| format!("shoots {}", strike(shot))))
-        .chain((view.armor != 0).then(|| format!("armor {:+}", view.armor)));
+        .chain((view.armor != 0).then(|| format!("armor {:+}", view.armor)))
+        .chain(view.blocks.map(|shield| format!("blocks {} a turn at {}%", shield.blocks, shield.chance.min(100))))
+        .chain(view.attack_speed.map(|speed| format!("attack speed {speed}")));
     for line in numbers {
         if y >= inner.bottom() {
             break;
@@ -348,6 +350,14 @@ pub(crate) fn draw_inspect(
             terminal.print_on(inner.x, y, &clip(&reading, width), palette.get(Tones::MUTED), bg);
             y += 1;
         }
+    }
+    // The shield it holds raised, in the forecast's own plain words.
+    if let Some((name, shield)) = &view.shield
+        && y < inner.bottom()
+    {
+        let reading = format!("{name}: blocks {} a turn at {}%", shield.blocks, shield.chance.min(100));
+        terminal.print_on(inner.x, y, &clip(&reading, width), palette.get(Tones::MUTED), bg);
+        y += 1;
     }
     // The chance the player's own attack lands, and every line the model
     // gave for it, the same the targeting box prints.
@@ -587,6 +597,29 @@ mod tests {
         assert!(rows.iter().any(|r| r == "  -10 for range"), "{rows:#?}");
     }
 
+    /// A creature holding a shield says which, and how it guards, in the
+    /// forecast's plain voice.
+    #[test]
+    fn the_panel_names_a_creatures_shield() {
+        let mut stage = Stage::new_with(InspectPanel::new(GridRect::new(0, 21, 40, 12)), |app| {
+            app.add_plugins(atglyph_render::MapViewPlugin::new(GridRect::new(0, 0, 40, 20)));
+        })
+        .screen(40, 34);
+        let guard = stage.actor("guard", 'g', 2, 0);
+        let kite = stage
+            .app
+            .world_mut()
+            .spawn((atglyph_bevy::Item, Name::new("kite shield"), atglyph_bevy::Shield(atglyph_rules::parts::ShieldDef { chance: 50, blocks: 2 })))
+            .id();
+        let mut worn = atglyph_bevy::Equipped(atglyph_rules::Equipment::with_slot_count(1));
+        worn.equip(kite, &atglyph_rules::EquipShape::in_slot(atglyph_rules::SlotId::from_raw(0))).expect("the slot exists");
+        stage.app.world_mut().entity_mut(guard).insert(worn);
+        stage.tick();
+        stage.press(CursorKeys::default().look);
+        let rows: Vec<String> = stage.rows().iter().map(|r| r.trim_start_matches("\u{2502} ").trim_end_matches('\u{2502}').trim_end().to_string()).collect();
+        assert!(rows.iter().any(|r| r == "kite shield: blocks 2 a turn at 50%"), "{rows:#?}");
+    }
+
     #[test]
     fn the_panel_names_the_ground_under_the_cursor() {
         let mut stage = staged();
@@ -678,6 +711,26 @@ mod tests {
         let rows = looked_at_armed("Grimsby the Unwashed");
         assert_eq!(rows[0..2], ["o Grimsby the Unwashed".to_string(), "wielding an axe".into()]);
         assert!(rows[2].starts_with("health 10/10"), "{rows:#?}");
+    }
+
+    /// A shield lying on the floor says what it blocks and an attack speed
+    /// what it leaves, as the bag would say of it once carried.
+    #[test]
+    fn a_shield_on_the_floor_says_what_it_blocks_and_its_attack_speed() {
+        let mut stage = staged();
+        let round = stage.thing("round shield", ')', 2, 0);
+        stage
+            .app
+            .world_mut()
+            .entity_mut(round)
+            .insert((atglyph_bevy::Shield(atglyph_rules::parts::ShieldDef { chance: 50, blocks: 1 }), atglyph_bevy::AttackSpeed(95)));
+        stage.tick();
+        stage.press(CursorKeys::default().look);
+        let inner = |y: i32| stage.row(y).trim_start_matches("\u{2502} ").trim_end_matches('\u{2502}').trim_end().to_string();
+        assert_eq!(
+            [inner(22), inner(23), inner(24), inner(25)],
+            [") round shield".to_string(), "2 tiles away, on floor".into(), "blocks 1 a turn at 50%".into(), "attack speed 95".into()]
+        );
     }
 
     /// A stage looking at a crab the game says `facets` about, in a panel

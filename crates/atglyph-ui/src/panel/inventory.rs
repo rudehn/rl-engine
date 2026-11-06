@@ -745,6 +745,14 @@ fn about(row: &ItemRow, width: usize, whole: bool) -> Vec<(String, ToneId)> {
     if row.armor != 0 {
         say(format!("armor {:+}", row.armor), Tones::TEXT);
     }
+    // In the inspect panel's words for a shield a creature holds, so a
+    // shield reads one way wherever it is seen.
+    if let Some(shield) = row.shield {
+        say(format!("blocks {} a turn at {}%", shield.blocks, shield.chance.min(100)), Tones::TEXT);
+    }
+    if let Some(speed) = row.attack_speed {
+        say(format!("attack speed {speed}"), Tones::TEXT);
+    }
     for r in &row.resists {
         match r.pct {
             pct if pct < 0 => say(format!("weak to {} {}%", r.name, -pct), Tones::TEXT),
@@ -773,7 +781,10 @@ fn about(row: &ItemRow, width: usize, whole: bool) -> Vec<(String, ToneId)> {
         let also = if also.is_empty() { also } else { format!(" and {also}") };
         say(format!("worn on the {}{also}", row.slot_name), Tones::MUTED);
     } else if row.wearable() {
-        let also = if also.is_empty() { also } else { format!(", and takes {also}") };
+        // `goes on the right hand and the left hand`: the shorter way to
+        // say it, so a bow's line fits a narrow pack without leaving a
+        // word alone on a row of its own.
+        let also = if also.is_empty() { also } else { format!(" and {also}") };
         say(format!("goes on the {}{also}", row.goes_on.join(" or the ")), Tones::MUTED);
     }
     // Why the footer offers nothing that would take it off.
@@ -921,6 +932,20 @@ fn changes(row: &ItemRow, off: &[&ItemRow], replacing: &Replacing, own: &str) ->
     }
     let (before, after) = (&replacing.before, &replacing.after);
     let weighed = !before.withheld && !after.withheld;
+    // What the wearer would block and strike at afterwards, as the fights
+    // decide it: the first shield worn, and every attack speed multiplied.
+    // A chance only has its own line while the shield has any, so a shield
+    // swapped for one of the same chance says only its blocks.
+    if weighed {
+        let blocks = |kit: &Kit| kit.shield.map_or(0, |s| s.blocks);
+        let chance = |kit: &Kit| kit.shield.map_or(0, |s| s.chance.min(100));
+        let (old, new) = (blocks(before), blocks(after));
+        change(&mut changes, "blocks a turn", old.to_string(), new.to_string(), Some(2 * (new as i64 - old as i64)), "", true);
+        let (old, new) = (chance(before), chance(after));
+        change(&mut changes, "block", format!("{old}%"), format!("{new}%"), Some(2 * (new as i64 - old as i64)), "%", true);
+        let (old, new) = (before.attack_speed, after.attack_speed);
+        change(&mut changes, "attack speed", old.to_string(), new.to_string(), Some(2 * (new as i64 - old as i64)), "", true);
+    }
     // A blow or a shot is said with what it comes from, and its kind only
     // where the kinds differ.
     for (what, old, new) in [("blow", &before.blow, &after.blow), ("shot", &before.shot, &after.shot)].into_iter().filter(|_| weighed) {
@@ -1188,6 +1213,7 @@ mod tests {
     use atglyph_core::DiceRoll;
     use atglyph_rules::Names;
     use atglyph_rules::content::Registry;
+    use atglyph_rules::parts::ShieldDef;
     use atglyph_rules::{EquipShape, Equipment, SlotDef, SlotId};
 
     #[test]
@@ -1279,7 +1305,7 @@ mod tests {
         stage.app.world_mut().entity_mut(player).insert((Inventory { items: vec![axe] }, Equipped(Equipment::with_slot_count(2))));
         stage.tick();
         stage.press(KeyCode::KeyI);
-        assert_eq!(inside(&stage, 4), "goes on the main hand, and takes the off hand");
+        assert_eq!(inside(&stage, 4), "goes on the main hand and the off hand");
 
         stage.app.world_mut().get_mut::<Equipped>(player).unwrap().equip(axe, &shape).unwrap();
         stage.tick();
@@ -1378,7 +1404,7 @@ mod tests {
             texts,
             [
                 "launches arrow 1d4 kinetic to 4",
-                "goes on the right hand, and takes the left hand",
+                "goes on the right hand and the left hand",
                 "nothing worn on the right hand",
                 "takes the left hand from the dagger",
                 "  blow        dagger 1d4 -> own 1d6 (+1 avg)",
@@ -1497,6 +1523,122 @@ mod tests {
             Some(("  blow knife 1d4 -> sword 1d8 (+2 avg)".to_string(), Tones::GOOD)),
             "put on beside the knife, one"
         );
+    }
+
+    /// A round shield and a tower shield, the first blocking once and the
+    /// second three times a turn at the same chance, each slower to strike
+    /// with, and a bow that takes both hands; a dagger in the right hand.
+    fn shielded(stage: &mut Stage) -> [Entity; 4] {
+        let (right, left, kind) = (slot(stage, "right hand"), slot(stage, "left hand"), stage.kind);
+        let w = stage.app.world_mut();
+        let dagger = w.spawn((Item, Name::new("dagger"), Wearable(EquipShape::in_slot(right)), MeleeAttack::new(kind, DiceRoll::new(1, 4)))).id();
+        let round = w
+            .spawn((
+                Item,
+                Name::new("round shield"),
+                Wearable(EquipShape::in_slot(left)),
+                atglyph_bevy::Shield(ShieldDef { chance: 50, blocks: 1 }),
+                atglyph_bevy::AttackSpeed(95),
+            ))
+            .id();
+        let tower = w
+            .spawn((
+                Item,
+                Name::new("tower shield"),
+                Wearable(EquipShape::in_slot(left)),
+                atglyph_bevy::Shield(ShieldDef { chance: 50, blocks: 3 }),
+                atglyph_bevy::AttackSpeed(85),
+            ))
+            .id();
+        let bow =
+            w.spawn((Item, Name::new("shortbow"), Wearable(EquipShape::in_slot(right).and_claims(left)), RangedAttack::new(kind, DiceRoll::new(1, 6), 6))).id();
+        [dagger, round, tower, bow]
+    }
+
+    /// A shield picked out with nothing in the left hand says the blocks it
+    /// gives a turn and the chance of each, the gain in the good tone, and
+    /// the attack speed it costs, in the bad.
+    #[test]
+    fn a_round_shield_picked_out_says_what_it_blocks_and_the_speed_it_costs() {
+        let mut stage = closet(52, 22);
+        let [dagger, round, ..] = shielded(&mut stage);
+        let right = slot(&stage, "right hand");
+        dress(&mut stage, vec![dagger, round], &[(dagger, EquipShape::in_slot(right))], round);
+        let lines = squeezed(&described(&stage));
+        let said = |text: &str| lines.iter().find(|(t, _)| t.trim() == text).map(|(_, tone)| *tone);
+        assert_eq!(said("nothing worn on the left hand"), Some(Tones::MUTED), "{lines:?}");
+        assert_eq!(said("blocks a turn 0 -> 1 (+1)"), Some(Tones::GOOD), "{lines:?}");
+        assert_eq!(said("block 0% -> 50% (+50%)"), Some(Tones::GOOD), "{lines:?}");
+        assert_eq!(said("attack speed 100 -> 95 (-5)"), Some(Tones::BAD), "{lines:?}");
+    }
+
+    /// A shield says what it blocks and the speed it leaves its wearer at
+    /// before anything it would change, picked out to put on or worn: a
+    /// worn shield, which changes nothing, still says what it does.
+    #[test]
+    fn a_shield_says_what_it_blocks_and_its_attack_speed_whether_worn_or_not() {
+        let mut stage = closet(52, 22);
+        let [dagger, round, ..] = shielded(&mut stage);
+        let right = slot(&stage, "right hand");
+        dress(&mut stage, vec![dagger, round], &[(dagger, EquipShape::in_slot(right))], round);
+        let texts: Vec<String> = described(&stage).into_iter().map(|(t, _)| t).collect();
+        assert_eq!(texts[..3], ["blocks 1 a turn at 50%".to_string(), "attack speed 95".into(), "goes on the left hand".into()], "{texts:?}");
+        let mut stage = closet(52, 22);
+        let [dagger, round, ..] = shielded(&mut stage);
+        let (right, left) = (slot(&stage, "right hand"), slot(&stage, "left hand"));
+        dress(&mut stage, vec![dagger, round], &[(dagger, EquipShape::in_slot(right)), (round, EquipShape::in_slot(left))], round);
+        let lines = described(&stage);
+        let texts: Vec<&str> = lines.iter().map(|(t, _)| t.as_str()).collect();
+        assert_eq!(texts, ["blocks 1 a turn at 50%", "attack speed 95", "worn on the left hand"], "{lines:?}");
+        assert!(lines[..2].iter().all(|(_, tone)| *tone == Tones::TEXT), "in the plain tone the armor line reads in: {lines:?}");
+    }
+
+    /// A tower shield over a round one gains blocks and loses speed, and
+    /// says nothing of a chance that does not change.
+    #[test]
+    fn a_tower_shield_over_a_round_one_says_the_blocks_and_not_the_chance() {
+        let mut stage = closet(52, 22);
+        let [dagger, round, tower, _] = shielded(&mut stage);
+        let (right, left) = (slot(&stage, "right hand"), slot(&stage, "left hand"));
+        dress(&mut stage, vec![dagger, round, tower], &[(dagger, EquipShape::in_slot(right)), (round, EquipShape::in_slot(left))], tower);
+        let lines = squeezed(&described(&stage));
+        let said = |text: &str| lines.iter().find(|(t, _)| t.trim() == text).map(|(_, tone)| *tone);
+        assert_eq!(said("blocks a turn 1 -> 3 (+2)"), Some(Tones::GOOD), "{lines:?}");
+        assert_eq!(said("attack speed 95 -> 85 (-10)"), Some(Tones::BAD), "{lines:?}");
+        assert!(!lines.iter().any(|(t, _)| t.trim().starts_with("block ")), "the chance is the same: {lines:?}");
+    }
+
+    /// A bow that takes the hand a round shield holds names the shield it
+    /// replaces and gives up its blocks and chance, a loss in the bad tone,
+    /// and wins back the speed, in the good.
+    #[test]
+    fn a_bow_over_a_worn_shield_gives_up_the_blocks_and_wins_the_speed_back() {
+        let mut stage = closet(52, 22);
+        let [_, round, _, bow] = shielded(&mut stage);
+        let left = slot(&stage, "left hand");
+        dress(&mut stage, vec![round, bow], &[(round, EquipShape::in_slot(left))], bow);
+        let lines = squeezed(&described(&stage));
+        let said = |text: &str| lines.iter().find(|(t, _)| t.trim() == text).map(|(_, tone)| *tone);
+        assert!(lines.iter().any(|(t, _)| t == "takes the left hand from the round shield"), "{lines:?}");
+        assert_eq!(said("blocks a turn 1 -> 0 (-1)"), Some(Tones::BAD), "{lines:?}");
+        assert_eq!(said("block 50% -> 0% (-50%)"), Some(Tones::BAD), "{lines:?}");
+        assert_eq!(said("attack speed 95 -> 100 (+5)"), Some(Tones::GOOD), "{lines:?}");
+    }
+
+    /// In a bag 46 wide, the 42 columns a game's narrow pack leaves its
+    /// descriptions, a bow says the two hands it goes on in one row,
+    /// leaving no word alone on a row of its own.
+    #[test]
+    fn a_two_hander_says_both_hands_in_one_row_of_a_narrow_bag() {
+        let mut stage = closet(46, 22);
+        let [_, round, _, bow] = shielded(&mut stage);
+        let left = slot(&stage, "left hand");
+        dress(&mut stage, vec![round, bow], &[(round, EquipShape::in_slot(left))], bow);
+        let texts: Vec<String> = described(&stage).into_iter().map(|(t, _)| t.trim_end().to_string()).collect();
+        let line = "goes on the right hand and the left hand";
+        assert!(line.chars().count() <= 42, "{line:?} fits 42 columns");
+        assert!(texts.iter().any(|t| t == line), "{line:?} on one row: {texts:#?}");
+        assert!(!texts.iter().any(|t| t.trim() == "hand"), "no word alone on a row: {texts:#?}");
     }
 
     /// Where a stuck thing holds the slot, the row says it will not come

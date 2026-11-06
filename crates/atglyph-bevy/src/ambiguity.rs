@@ -31,6 +31,7 @@ fn engine(stealth: crate::stealth::StealthPlugin) -> App {
         crate::items::ItemsPlugin,
         crate::throwing::ThrowingPlugin,
         crate::lighting::LightingPlugin,
+        crate::shields::ShieldsPlugin,
         stealth,
     ))
     .add_plugins((
@@ -96,6 +97,8 @@ fn ids(world: &World) -> Vec<(&'static str, ComponentId)> {
         ("Messages<ApplyStatus>", c.component_id::<Messages<crate::status::ApplyStatus>>()),
         ("Messages<RemoveStatus>", c.component_id::<Messages<crate::status::RemoveStatus>>()),
         ("Messages<Missed>", c.component_id::<Messages<crate::accuracy::Missed>>()),
+        ("Messages<AttackBlocked>", c.component_id::<Messages<crate::shields::AttackBlocked>>()),
+        ("BlocksSpent", c.component_id::<crate::shields::BlocksSpent>()),
         ("Messages<Reflected>", c.component_id::<Messages<crate::ability::Reflected>>()),
         ("EffectRng", c.component_id::<crate::effects::EffectRng>()),
         ("CombatRng", c.component_id::<crate::combat::CombatRng>()),
@@ -146,7 +149,7 @@ fn allowed(world: &World) -> Vec<Allowed> {
         Allowed::pair(items, ability, claimed(&[&pack[1..], &["Occupancy", "Position", "Viewshed", "Messages<Reflected>", "ReflectRng"]].concat()), resolved),
         Allowed::pair(interact, take, claimed(&["Position", "Inventory"]), resolved),
         Allowed::pair(interact, attack, claimed(&["Occupancy", "Messages<Cued>", "Messages<DamageEvent>", "Position", "Viewshed"]), resolved),
-        Allowed::pair(interact, throw, claimed(&["Occupancy", "Messages<Cued>", "Messages<DamageEvent>", "Position", "Inventory"]), resolved),
+        Allowed::pair(interact, throw, claimed(&["Occupancy", "Messages<Cued>", "Messages<DamageEvent>", "Position", "Viewshed", "Inventory"]), resolved),
         Allowed::pair(interact, ability, claimed(&[&effects[..], &["Occupancy", "Position", "Viewshed"]].concat()), resolved),
         Allowed::pair(take, attack, claimed(&["Equipped"]), resolved),
         Allowed::pair(take, throw, claimed(&pack), resolved),
@@ -154,7 +157,17 @@ fn allowed(world: &World) -> Vec<Allowed> {
         Allowed::pair(
             attack,
             throw,
-            claimed(&["CueWait", "Messages<Cued>", "Messages<DamageEvent>", "Messages<Fired>", "Messages<Missed>", "Equipped", "CombatRng"]),
+            claimed(&[
+                "CueWait",
+                "Messages<Cued>",
+                "Messages<DamageEvent>",
+                "Messages<Fired>",
+                "Messages<Missed>",
+                "Messages<AttackBlocked>",
+                "BlocksSpent",
+                "Equipped",
+                "CombatRng",
+            ]),
             resolved,
         ),
         Allowed::pair(
@@ -166,7 +179,7 @@ fn allowed(world: &World) -> Vec<Allowed> {
         Allowed::pair(
             throw,
             ability,
-            claimed(&[&pack[1..], &["Occupancy", "CueWait", "Messages<Cued>", "Messages<DamageEvent>", "Position"]].concat()),
+            claimed(&[&pack[1..], &["Occupancy", "CueWait", "Messages<Cued>", "Messages<DamageEvent>", "Position", "Viewshed"]].concat()),
             resolved,
         ),
         // A resolver and what lands.
@@ -174,18 +187,18 @@ fn allowed(world: &World) -> Vec<Allowed> {
         Allowed::pair(items, thrown, on(&[&pack[..], &["Messages<Fired>"]].concat()), landed),
         Allowed::pair(items, shot, on(&["Messages<Fired>"]), landed),
         Allowed::pair(interact, cast, on(&[&effects[..], &["Occupancy", "Position", "Viewshed"]].concat()), landed),
-        Allowed::pair(interact, thrown, on(&["Occupancy", "Messages<Cued>", "Messages<DamageEvent>", "Position", "Inventory"]), landed),
+        Allowed::pair(interact, thrown, on(&["Occupancy", "Messages<Cued>", "Messages<DamageEvent>", "Position", "Viewshed", "Inventory"]), landed),
         Allowed::pair(interact, shot, on(&["Messages<DamageEvent>", "Position"]), landed),
         Allowed::pair(take, cast, on(&["Position"]), landed),
         Allowed::pair(take, thrown, on(&pack), landed),
         Allowed::pair(
             ability,
             thrown,
-            on(&[&pack[1..], &["Turns", "Occupancy", "CueWait", "Messages<Cued>", "Messages<DamageEvent>", "Position"]].concat()),
+            on(&[&pack[1..], &["Turns", "Occupancy", "CueWait", "Messages<Cued>", "Messages<DamageEvent>", "Position", "Viewshed"]].concat()),
             landed,
         ),
         Allowed::pair(ability, shot, on(&["Turns", "CueWait", "Messages<DamageEvent>", "Position"]), landed),
-        Allowed::pair(throw, shot, on(&["CueWait", "Messages<DamageEvent>", "Messages<Fired>", "Messages<Missed>"]), landed),
+        Allowed::pair(throw, shot, on(&["CueWait", "Messages<DamageEvent>", "Messages<Fired>", "Messages<Missed>", "Messages<AttackBlocked>"]), landed),
         // Two bags that are never the same bag.
         Allowed::pair(
             id(props::close_emptied_containers),

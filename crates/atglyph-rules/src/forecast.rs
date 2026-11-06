@@ -44,6 +44,7 @@ use atglyph_core::turn::{BASE_ACTION_COST, scaled_cost};
 
 use crate::content::Registry;
 use crate::damage::{DamageKind, DamageKindId, DamageStage, Defender, Hit, Resistances, resolve};
+use crate::parts::ShieldDef;
 
 /// One side of a duel, as the forecast reads it.
 ///
@@ -77,12 +78,16 @@ pub struct Combatant<'a> {
     /// 100 unless a hit model says otherwise, so a forecast built without
     /// one reads as it always did.
     pub chance_pct: u32,
+    /// The shield it holds raised against what is thrown at it, if any:
+    /// `None` for none, so a forecast built without one reads as it always
+    /// did. See [`Combatant::guarding`].
+    pub guard: Option<ShieldDef>,
 }
 
 impl Combatant<'_> {
     /// A combatant that neither strikes nor resists anything.
     pub fn unarmed(health: i32, armor: i32, speed: u32, resists: &Resistances) -> Combatant<'_> {
-        Combatant { health, armor, speed, blow_cost: None, resists, strikes: &[], also: None, chance_pct: 100 }
+        Combatant { health, armor, speed, blow_cost: None, resists, strikes: &[], also: None, chance_pct: 100, guard: None }
     }
 
     /// A combatant fighting whatever `arms` gives it at `distance`.
@@ -91,7 +96,7 @@ impl Combatant<'_> {
     /// panel cannot pick differently from the resolver.
     pub fn armed<'a>(health: i32, armor: i32, speed: u32, resists: &'a Resistances, arms: &Arms<'a>, distance: i32) -> Combatant<'a> {
         let (strikes, blow_cost, also) = arms.wielding(arms.reach(distance));
-        Combatant { health, armor, speed, blow_cost, resists, strikes, also, chance_pct: 100 }
+        Combatant { health, armor, speed, blow_cost, resists, strikes, also, chance_pct: 100, guard: None }
     }
 
     /// A combatant fighting what `arms` gives it at `distance`, or, when
@@ -102,13 +107,31 @@ impl Combatant<'_> {
     /// `Arms::closing`; `armed` is the fight as it stands.
     pub fn closing<'a>(health: i32, armor: i32, speed: u32, resists: &'a Resistances, arms: &Arms<'a>, distance: i32) -> Combatant<'a> {
         let (strikes, blow_cost, also) = arms.wielding(arms.closing(distance));
-        Combatant { health, armor, speed, blow_cost, resists, strikes, also, chance_pct: 100 }
+        Combatant { health, armor, speed, blow_cost, resists, strikes, also, chance_pct: 100, guard: None }
     }
 
     /// The same combatant landing `chance_pct` percent of its attacks, so a
     /// forecast counts the misses: half the hits is twice the blows.
     pub fn hitting(mut self, chance_pct: u32) -> Self {
         self.chance_pct = chance_pct.min(100);
+        self
+    }
+
+    /// The same combatant behind `shield`, so a forecast counts the attacks
+    /// it turns aside.
+    ///
+    /// A shield is raised against `blocks` attacks in its bearer's turn, so
+    /// a foe that attacks more often than that in one of them is met only
+    /// in part: the share met is `blocks` over the attacks the foe makes in
+    /// the bearer's turn, never more than all. Whatever it meets it turns
+    /// aside at its chance.
+    ///
+    /// The forecast ignores the two cases the resolver exempts: an attack
+    /// that is an effect (never blocked) and an attack by one the bearer is
+    /// unaware of (never blocked), so it reads a little kinder to the guard
+    /// than play.
+    pub fn guarding(mut self, shield: Option<ShieldDef>) -> Self {
+        self.guard = shield;
         self
     }
 }
@@ -214,6 +237,7 @@ pub(crate) fn expected_damage<A: Copy>(
     stages: &[&dyn DamageStage<A>],
 ) -> f32 {
     let shield = Defender { armor: defender.armor, blocked: false };
+    let getting_through = getting_through(attacker, defender);
     attacker
         .strikes
         .iter()
@@ -236,6 +260,22 @@ pub(crate) fn expected_damage<A: Copy>(
         .sum::<f32>()
         * attacker.chance_pct as f32
         / 100.0
+        * getting_through
+}
+
+/// The share of `attacker`'s attacks that `defender`'s shield does not
+/// turn aside: one with no shield lets all through.
+///
+/// The shield meets `blocks` attacks in its bearer's turn, and the attacker
+/// makes `guard turn / its blow` of them in that span, both lengths
+/// [`scaled_cost`] as the turn loop charges them, so an attacker twice as
+/// fast as the bearer makes two.
+fn getting_through(attacker: &Combatant<'_>, defender: &Combatant<'_>) -> f32 {
+    let Some(guard) = defender.guard else { return 1.0 };
+    let guard_turn = scaled_cost(BASE_ACTION_COST, defender.speed) as f32;
+    let blow = scaled_cost(attacker.blow_cost.unwrap_or(BASE_ACTION_COST), attacker.speed).max(1) as f32;
+    let met = (guard.blocks as f32 / (guard_turn / blow)).min(1.0);
+    1.0 - guard.chance.min(100) as f32 / 100.0 * met
 }
 
 /// How many blows `attacker` needs to fell `defender`, or `None` when it
@@ -375,7 +415,8 @@ mod tests {
         let stages = stage_refs(&boxed);
         let none = Resistances::new();
         let strikes = [(kinds.expect("kinetic"), DiceRoll::new(1, 4))];
-        let attacker = Combatant { health: 10, armor: 0, speed: 100, blow_cost: None, resists: &none, strikes: &strikes, also: None, chance_pct: 100 };
+        let attacker =
+            Combatant { health: 10, armor: 0, speed: 100, blow_cost: None, resists: &none, strikes: &strikes, also: None, chance_pct: 100, guard: None };
         let bare = Combatant::unarmed(10, 0, 100, &none);
         let armored = Combatant::unarmed(10, 1, 100, &none);
         let open = expected_damage::<u32>(&attacker, &bare, &kinds, &stages);
@@ -406,13 +447,15 @@ mod tests {
         let stages = stage_refs(&boxed);
         let none = Resistances::new();
         let strikes = [(kinds.expect("kinetic"), DiceRoll::new(1, 2))];
-        let biter = Combatant { health: 30, armor: 0, speed: 100, blow_cost: None, resists: &none, strikes: &strikes, also: None, chance_pct: 100 };
+        let biter =
+            Combatant { health: 30, armor: 0, speed: 100, blow_cost: None, resists: &none, strikes: &strikes, also: None, chance_pct: 100, guard: None };
         let plated = Combatant::unarmed(30, 10, 100, &none);
         assert_eq!(blows_to_fell::<u32>(&biter, &plated, &kinds, &stages), None);
         let stalemate = duel::<u32>(&plated, &biter, &kinds, &stages);
         assert_eq!(stalemate.turns_to_fall, None, "the plated one is never felled");
         assert_eq!(stalemate.outlook, Outlook::Even, "neither side can end it, which is even and not a win");
-        let armed = Combatant { health: 30, armor: 10, speed: 100, blow_cost: None, resists: &none, strikes: &strikes, also: None, chance_pct: 100 };
+        let armed =
+            Combatant { health: 30, armor: 10, speed: 100, blow_cost: None, resists: &none, strikes: &strikes, also: None, chance_pct: 100, guard: None };
         assert_eq!(duel::<u32>(&armed, &biter, &kinds, &stages).outlook, Outlook::Easy, "armor it cannot pierce and a blow that lands");
     }
 
@@ -468,8 +511,10 @@ mod tests {
         let none = Resistances::new();
         let strikes = [(kinds.expect("kinetic"), DiceRoll::new(1, 4))];
         let target = Combatant::unarmed(30, 0, 100, &none);
-        let quick = Combatant { health: 10, armor: 0, speed: 100, blow_cost: Some(70), resists: &none, strikes: &strikes, also: None, chance_pct: 100 };
-        let ordinary = Combatant { health: 10, armor: 0, speed: 100, blow_cost: None, resists: &none, strikes: &strikes, also: None, chance_pct: 100 };
+        let quick =
+            Combatant { health: 10, armor: 0, speed: 100, blow_cost: Some(70), resists: &none, strikes: &strikes, also: None, chance_pct: 100, guard: None };
+        let ordinary =
+            Combatant { health: 10, armor: 0, speed: 100, blow_cost: None, resists: &none, strikes: &strikes, also: None, chance_pct: 100, guard: None };
         let cheaper = duel::<u32>(&quick, &target, &kinds, &stages);
         let plain = duel::<u32>(&ordinary, &target, &kinds, &stages);
         assert!(cheaper.turns_to_fell.is_some() && plain.turns_to_fell.is_some(), "both land the same blows and fell the target");
@@ -484,8 +529,8 @@ mod tests {
         let none = Resistances::new();
         let hard = [(kinds.expect("kinetic"), DiceRoll { num: 1, sides: 8, bonus: 4 })];
         let soft = [(kinds.expect("kinetic"), DiceRoll::new(1, 2))];
-        let strong = Combatant { health: 40, armor: 0, speed: 100, blow_cost: None, resists: &none, strikes: &hard, also: None, chance_pct: 100 };
-        let weak = Combatant { health: 40, armor: 0, speed: 100, blow_cost: None, resists: &none, strikes: &soft, also: None, chance_pct: 100 };
+        let strong = Combatant { health: 40, armor: 0, speed: 100, blow_cost: None, resists: &none, strikes: &hard, also: None, chance_pct: 100, guard: None };
+        let weak = Combatant { health: 40, armor: 0, speed: 100, blow_cost: None, resists: &none, strikes: &soft, also: None, chance_pct: 100, guard: None };
         assert_eq!(duel::<u32>(&strong, &weak, &kinds, &stages).outlook, Outlook::Easy);
         assert_eq!(duel::<u32>(&weak, &strong, &kinds, &stages).outlook, Outlook::Deadly);
         assert_eq!(duel::<u32>(&strong, &strong, &kinds, &stages).outlook, Outlook::Even);
@@ -498,7 +543,17 @@ mod tests {
         let stages = stage_refs(&boxed);
         let none = Resistances::new();
         let strikes = [(kinds.expect("kinetic"), DiceRoll::flat(1))];
-        let at = |speed, blow_cost| Combatant { health: 1000, armor: 0, speed, blow_cost, resists: &none, strikes: &strikes, also: None, chance_pct: 100 };
+        let at = |speed, blow_cost| Combatant {
+            health: 1000,
+            armor: 0,
+            speed,
+            blow_cost,
+            resists: &none,
+            strikes: &strikes,
+            also: None,
+            chance_pct: 100,
+            guard: None,
+        };
         let stopped = duel::<u32>(&at(0, None), &at(100, None), &kinds, &stages);
         assert_eq!(stopped, duel::<u32>(&at(1, None), &at(100, None), &kinds, &stages));
         assert_eq!(stopped.turns_to_fell, Some(100_000), "a thousand blows at a hundred times the ordinary cost");
@@ -599,5 +654,40 @@ mod tests {
         assert!((per_blow(4) - 2.0).abs() < 0.01, "the shot's five less three, got {}", per_blow(4));
         let closing = Combatant::closing(20, 0, 100, &none, &Arms { ranged: &[], ..arms }, 5);
         assert_eq!(closing.also, Some(DiceRoll::flat(2)), "a brawler closing brings the added roll with it");
+    }
+
+    /// What `attacker_speed` lands per attack on a 100-health target behind
+    /// `guard`, a flat ten a blow.
+    fn landed_behind(guard: Option<ShieldDef>, attacker_speed: u32) -> (f32, Option<u32>) {
+        let kinds = kinds();
+        let none = Resistances::new();
+        let strikes = [(kinds.expect("kinetic"), DiceRoll::flat(10))];
+        let attacker = Combatant { strikes: &strikes, speed: attacker_speed, blow_cost: Some(100), ..Combatant::unarmed(10, 0, attacker_speed, &none) };
+        let target = Combatant::unarmed(100, 0, 100, &none).guarding(guard);
+        let stages: [&dyn DamageStage<u32>; 0] = [];
+        (expected_damage::<u32>(&attacker, &target, &kinds, &stages), blows_to_fell::<u32>(&attacker, &target, &kinds, &stages))
+    }
+
+    #[test]
+    fn a_round_shield_halves_what_an_equal_speed_foe_lands() {
+        let (open, blows) = landed_behind(None, 100);
+        assert_eq!((open, blows), (10.0, Some(10)));
+        let (guarded, blows) = landed_behind(Some(ShieldDef { chance: 50, blocks: 1 }), 100);
+        assert!((guarded - 5.0).abs() < 0.001, "half of ten, got {guarded}");
+        assert_eq!(blows, Some(20), "twice the blows it needed with no guard");
+    }
+
+    #[test]
+    fn a_round_shield_meets_half_of_a_twice_as_fast_foe() {
+        let (open, _) = landed_behind(None, 200);
+        let (guarded, _) = landed_behind(Some(ShieldDef { chance: 50, blocks: 1 }), 200);
+        assert!((guarded / open - 0.75).abs() < 0.001, "a quarter turned aside, got {}", guarded / open);
+    }
+
+    #[test]
+    fn a_tower_shield_meets_all_of_a_twice_as_fast_foe() {
+        let (open, _) = landed_behind(None, 200);
+        let (guarded, _) = landed_behind(Some(ShieldDef { chance: 50, blocks: 3 }), 200);
+        assert!((guarded / open - 0.5).abs() < 0.001, "all met, half turned aside, got {}", guarded / open);
     }
 }

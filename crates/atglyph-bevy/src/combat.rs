@@ -795,6 +795,28 @@ pub enum BenchedAttack {
     Ranged(RangedAttack),
 }
 
+/// How quickly a worn item, or an actor itself, strikes, shoots and throws,
+/// in percent with a hundred ordinary: below it every blow, shot and throw
+/// costs more by [`scaled_cost`](atglyph_core::turn::scaled_cost), so a
+/// heavy shield slows its wearer's attacks and nothing else, never a step.
+///
+/// [`Loadout::attack_speed`] multiplies every one worn with the actor's
+/// own. It is not [`Speed`](crate::components::Speed), which scales every
+/// turn the actor takes.
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AttackSpeed(pub u32);
+
+impl AttackSpeed {
+    /// The percent a set of them come to together: multiplied, each step
+    /// rounded down, so `95` and `90` make `85`. A hundred for none. The one
+    /// place the rule lives, for [`Loadout::attack_speed`] and for a throw,
+    /// which cannot hold a [`Loadout`] beside the equipment it takes from, and
+    /// for a screen weighing the speed a wearer would attack at.
+    pub fn combined(speeds: impl IntoIterator<Item = AttackSpeed>) -> u32 {
+        speeds.into_iter().fold(100, |total, speed| total * speed.0 / 100)
+    }
+}
+
 /// What an actor fights with, summed at the moment it matters.
 ///
 /// Three layers, added together: the actor's own [`Armor`], [`Resists`],
@@ -824,6 +846,8 @@ pub struct Loadout<'w, 's> {
     worn: Query<'w, 's, Gear, With<Item>>,
     equipped: Query<'w, 's, &'static Equipped>,
     resists: Query<'w, 's, &'static Resists>,
+    attack_speeds: Query<'w, 's, &'static AttackSpeed>,
+    shields: Query<'w, 's, &'static crate::shields::Shield>,
     held: Query<'w, 's, &'static crate::status::StatusResists>,
     spent: Query<'w, 's, &'static crate::consumable::Consumable>,
     dry: Query<'w, 's, (), With<crate::ammo::Dry>>,
@@ -878,6 +902,30 @@ impl Loadout<'_, '_> {
         let own = self.own.get(who).ok().and_then(|(armor, ..)| armor).map_or(0, |a| a.0);
         let worn = self.worn(who).filter_map(|(_, armor, ..)| armor).map(|a| a.0);
         atglyph_rules::arms::armor_total(own, worn, self.stat(who, |r| r.armor))
+    }
+
+    /// How quickly `who` attacks, in percent: every worn [`AttackSpeed`]
+    /// and its own multiplied, each step rounded down, so `95` and `90`
+    /// worn together make `85`. A hundred when none is held.
+    pub fn attack_speed(&self, who: Entity) -> u32 {
+        let own = self.attack_speeds.get(who).ok();
+        let worn = self.worn(who).filter_map(|(item, ..)| self.attack_speeds.get(item).ok());
+        AttackSpeed::combined(own.into_iter().chain(worn).copied())
+    }
+
+    /// What one blow, shot or throw by `who` costs: `base`, or an ordinary
+    /// turn when the weapon names none, scaled by [`attack_speed`](Self::attack_speed).
+    /// The resolvers charge it and the fight forecast reads it, so a panel
+    /// never drifts from play.
+    pub fn attack_cost(&self, who: Entity, base: Option<u32>) -> u32 {
+        atglyph_core::turn::scaled_cost(base.unwrap_or(atglyph_core::turn::BASE_ACTION_COST), self.attack_speed(who))
+    }
+
+    /// The shield `who` wears and what it blocks: the first worn item, in
+    /// slot order, with a [`Shield`](crate::shields::Shield). The one a
+    /// block is rolled for, so a panel shows the shield that turns a blow.
+    pub fn shield(&self, who: Entity) -> Option<(Entity, atglyph_rules::parts::ShieldDef)> {
+        crate::shields::worn_shield(self.equipped.get(who).ok().map(|e| &e.0), &self.shields)
     }
 
     /// How much of a [`Heal`] reaches `who`, in percent: a hundred and the
@@ -1020,8 +1068,8 @@ pub struct Arena<'w, 's> {
     carried: Query<'w, 's, &'static crate::effects::Triggers>,
     /// The odds of the attack landing, from the game's hit model.
     marks: crate::accuracy::Marksmanship<'w, 's>,
-    /// Where a rolled attack that missed is reported.
-    missed: MessageWriter<'w, crate::accuracy::Missed>,
+    /// Where an attack that landed nothing is reported.
+    foiled: Foiled<'w>,
     /// Whoever a shape could reach: alive, with health to lose.
     alive: Query<'w, 's, (), (With<Health>, Without<Dead>)>,
     /// How each stands to the attacker, by the rule an ability's footprint
@@ -1031,6 +1079,14 @@ pub struct Arena<'w, 's> {
     rules: Option<Res<'w, CombatRules>>,
     /// Who has noticed whom, for a blow on the unaware.
     watchers: crate::stealth::Watchers<'w, 's>,
+}
+
+/// Where an attack that landed nothing is reported: one the hit model
+/// rolled and missed, and one a shield turned aside.
+#[derive(bevy::ecs::system::SystemParam)]
+pub(crate) struct Foiled<'w> {
+    missed: MessageWriter<'w, crate::accuracy::Missed>,
+    blocked: MessageWriter<'w, crate::shields::AttackBlocked>,
 }
 
 /// What an attack is seen as, and the shots in the air while it is.
@@ -1081,6 +1137,16 @@ pub struct ShotLanding {
     hits: Vec<Hit<Entity>>,
     /// Whether it was rolled and missed: it still flies, and lands nothing.
     missed: bool,
+    /// The shield that turned it aside, rolled for before the miss: it
+    /// still flies, and lands nothing.
+    blocked: Option<Entity>,
+}
+
+impl ShotLanding {
+    /// Whether it lands nothing: missed, or turned aside.
+    fn lands_nothing(&self) -> bool {
+        self.missed || self.blocked.is_some()
+    }
 }
 
 impl crate::cue::Lands for ShotLanding {}
@@ -1132,6 +1198,11 @@ struct ChosenAttack {
 /// noticed its attacker lands at the percent [`CombatRules::unaware`] or
 /// the blow names, decided as it is rolled, before the blow wakes it.
 ///
+/// Each foe's shield is asked first, by [`Guarding`](crate::shields::Guarding),
+/// before the hit model's roll: a blow or a shot turned aside draws no hit
+/// and no damage, lands nothing and is reported as
+/// [`AttackBlocked`](crate::shields::AttackBlocked), as a shot's flight is still seen.
+///
 /// One turn, one strike: an attack by an actor that already acted this
 /// pass finds the turn spent, whatever spent it.
 pub(crate) fn resolve_attacks(
@@ -1141,8 +1212,9 @@ pub(crate) fn resolve_attacks(
     mut rng: ResMut<CombatRng>,
     mut arena: Arena,
     shown: Shown,
+    mut guarding: crate::shields::Guarding,
 ) {
-    let Arena { map, occupancy, attackers, targets, loadout, struck, fired, carried, marks, missed, alive, sides, rules, watchers } = &mut arena;
+    let Arena { map, occupancy, attackers, targets, loadout, struck, fired, carried, marks, foiled, alive, sides, rules, watchers } = &mut arena;
     let Shown { mut cues, mut cue_wait, mut airborne } = shown;
     let house = rules.as_deref().and_then(|r| r.unaware);
     for intent in intents.read() {
@@ -1198,7 +1270,7 @@ pub(crate) fn resolve_attacks(
             resolution.done(actor, atglyph_core::turn::BASE_ACTION_COST);
             continue;
         };
-        resolution.done(actor, cost.unwrap_or(atglyph_core::turn::BASE_ACTION_COST));
+        resolution.done(actor, loadout.attack_cost(actor, cost));
         struck.write(Struck { attacker: actor, target, with: from, ranged });
         // What the weapon does when it is used, whatever it strikes: a
         // wand's charge, a trigger on firing.
@@ -1226,14 +1298,17 @@ pub(crate) fn resolve_attacks(
         let reach = if ranged { DamageRoute::Shot } else { DamageRoute::Melee };
         let mut landings = Vec::with_capacity(struck_at.len());
         for &(foe, at) in &struck_at {
-            let wide = marks.odds(actor, foe, attempt, 0).is_some_and(|odds| !odds.roll(&mut **rng));
+            // The shield first, as the attack arrives: a blow turned aside
+            // is never rolled to land, so it draws no hit and no damage.
+            let blocked = guarding.block(foe, actor, reach, &mut rng);
+            let wide = blocked.is_none() && marks.odds(actor, foe, attempt, 0).is_some_and(|odds| !odds.roll(&mut **rng));
             // Read as the blow is rolled. The blow is what wakes the one it
             // lands on, and only once the turn's consequences are read, in
             // `TurnSet::React`, so every foe a sweep catches unaware is
             // struck as one.
             let worth = unaware.filter(|_| watchers.unaware(foe, actor)).unwrap_or(100);
             let mut hits = Vec::new();
-            if !wide {
+            if !wide && blocked.is_none() {
                 // Floored where it is rolled: a blow that rolls below zero
                 // has missed, and the pipeline would read a negative one as
                 // a heal. A roll beside it is summed in first, so the two
@@ -1248,8 +1323,18 @@ pub(crate) fn resolve_attacks(
                     hit.amount = atglyph_rules::arms::scale_unaware(hit.amount, worth);
                 }
             }
-            let shot =
-                ShotLanding { target: foe, attacker: actor, with: from, carried: carried.clone(), own: own.clone(), stand_in: None, reach, hits, missed: wide };
+            let shot = ShotLanding {
+                target: foe,
+                attacker: actor,
+                with: from,
+                carried: carried.clone(),
+                own: own.clone(),
+                stand_in: None,
+                reach,
+                hits,
+                missed: wide,
+                blocked,
+            };
             landings.push((shot, at));
         }
         match (look, ranged) {
@@ -1263,7 +1348,7 @@ pub(crate) fn resolve_attacks(
                 cues.write(Cued { actor, cue: Cue::Flight { from: Anchor::on(actor, pos.0), to: Anchor::on(to, to_at), look: LookOf::Given(look) } });
                 for (shot, at) in landings {
                     if let Some(shot) = airborne.launched(&mut cue_wait, shot) {
-                        land(shot, at, &mut damage, fired, missed);
+                        land(shot, at, &mut damage, fired, foiled);
                     }
                 }
                 continue;
@@ -1275,7 +1360,7 @@ pub(crate) fn resolve_attacks(
             (None, _) => {}
         }
         for (shot, at) in landings {
-            land(shot, at, &mut damage, fired, missed);
+            land(shot, at, &mut damage, fired, foiled);
         }
     }
 }
@@ -1329,7 +1414,7 @@ pub struct Arriving<'w, 's> {
     fired: MessageWriter<'w, crate::effects::Fired>,
     commands: Commands<'w, 's>,
     present: Query<'w, 's, (), With<crate::effects::Triggers>>,
-    missed: MessageWriter<'w, crate::accuracy::Missed>,
+    foiled: Foiled<'w>,
 }
 
 /// Takes a stand-in for the shooter of every shot that went up this pass
@@ -1352,7 +1437,7 @@ pub(crate) fn keep_shooters(
 ) {
     let Some(keeps) = keeps else { return };
     for shot in airborne.in_air_mut() {
-        if shot.stand_in.is_some() || shot.own.is_none() || shot.missed || !there.contains(shot.attacker) {
+        if shot.stand_in.is_some() || shot.own.is_none() || shot.lands_nothing() || !there.contains(shot.attacker) {
             continue;
         }
         let remnant = crate::effects::Remnant { moment: crate::effects::TriggerKinds::HIT, by: Some(shot.attacker), at: Point::ZERO };
@@ -1385,7 +1470,7 @@ pub(crate) fn land_shots(
         // carry lands from a remnant in its place, as the shooter's doing.
         if let Some(item) = shot.with
             && !arriving.present.contains(item)
-            && !shot.missed
+            && !shot.lands_nothing()
         {
             if let Some(triggers) = shot.carried.take() {
                 let remnant = crate::effects::Remnant { moment: crate::effects::TriggerKinds::HIT, by: Some(shot.attacker), at: at.0 };
@@ -1398,7 +1483,7 @@ pub(crate) fn land_shots(
         // remnant does, so the log names the shooter and a foe the bite
         // kills is the shooter's kill. From a bare remnant, its doing still,
         // when nothing was kept of it.
-        let gone = !arriving.present.contains(shot.attacker) && !shot.missed;
+        let gone = !arriving.present.contains(shot.attacker) && !shot.lands_nothing();
         match (gone.then(|| shot.own.take()).flatten(), stand_in) {
             (Some(triggers), Some(stand_in)) => {
                 let remnant = crate::effects::Remnant { moment: crate::effects::TriggerKinds::HIT, by: Some(shot.attacker), at: at.0 };
@@ -1413,7 +1498,7 @@ pub(crate) fn land_shots(
             }
             (None, None) => {}
         }
-        land(shot, at.0, &mut arriving.damage, &mut arriving.fired, &mut arriving.missed);
+        land(shot, at.0, &mut arriving.damage, &mut arriving.fired, &mut arriving.foiled);
     }
 }
 
@@ -1425,23 +1510,21 @@ pub(crate) fn land_shots(
 /// edge lands before the wielder's own venom and both before whatever the
 /// one struck answers with. A miss lands none of that and is reported as
 /// [`Missed`](crate::accuracy::Missed) instead, at the moment a hit would
-/// have landed.
+/// have landed, and a block as [`AttackBlocked`](crate::shields::AttackBlocked).
 ///
 /// `struck` is reported as the blow lands, before its damage is applied
 /// later in the pass, so a blow that kills still sets it off, and `died`
 /// follows a pass later: an aura that burns whoever struck it burns the
 /// one who killed it too. It is an attack's, a blow in reach or a shot;
 /// a thrown thing, an ability, a trap or a fire strikes nobody.
-fn land(
-    shot: ShotLanding,
-    at: Point,
-    damage: &mut MessageWriter<DamageEvent>,
-    fired: &mut MessageWriter<crate::effects::Fired>,
-    missed: &mut MessageWriter<crate::accuracy::Missed>,
-) {
+fn land(shot: ShotLanding, at: Point, damage: &mut MessageWriter<DamageEvent>, fired: &mut MessageWriter<crate::effects::Fired>, foiled: &mut Foiled) {
     let (target, reach) = (shot.target, shot.reach);
+    if let Some(shield) = shot.blocked {
+        foiled.blocked.write(crate::shields::AttackBlocked { attacker: shot.attacker, target, shield, with: shot.with, reach });
+        return;
+    }
     if shot.missed {
-        missed.write(crate::accuracy::Missed { attacker: shot.attacker, target, with: shot.with, reach });
+        foiled.missed.write(crate::accuracy::Missed { attacker: shot.attacker, target, with: shot.with, reach });
         return;
     }
     damage.write_batch(shot.hits.into_iter().map(|hit| DamageEvent::arriving(target, hit, reach)));
@@ -1666,6 +1749,9 @@ impl Plugin for CombatPlugin {
             .add_message::<crate::effects::Fired>()
             .add_message::<Struck>()
             .add_message::<crate::accuracy::Missed>()
+            // Written by the resolvers whether or not the game added
+            // shields, which then never turn anything aside.
+            .add_message::<crate::shields::AttackBlocked>()
             .init_resource::<DamageStages>()
             .init_resource::<crate::accuracy::HitRules>()
             .add_airborne::<ShotLanding>()
@@ -2510,6 +2596,102 @@ mod tests {
         assert_eq!(slow, 140);
         assert_eq!(fast, 80);
         assert_eq!(missed, atglyph_core::turn::BASE_ACTION_COST, "out of range is a spent turn, not a free one");
+    }
+
+    /// A player wearing one item per entry of `speeds`, each an
+    /// [`AttackSpeed`] of that percent, with a blow or, if `ranged`, a shot
+    /// costing 100, and a target three cells east; answers what the turn
+    /// queue is charged by one attack at it. As [`melee_turn_cost`], the
+    /// target's stranded wait leaves the clock at exactly the attacker's cost.
+    fn pace_cost(speeds: &[u32], ranged: bool) -> u32 {
+        use atglyph_rules::{EquipShape, Equipment, SlotId};
+        let mut app = headless_app();
+        app.add_plugins((crate::fov::FovPlugin, CombatPlugin));
+        let start = crate::testing::ground(&mut app);
+        let sides = crate::testing::two_sides(&mut app);
+        let mut worn = Equipment::with_slot_count(speeds.len().max(1));
+        for (slot, percent) in speeds.iter().enumerate() {
+            let shape = EquipShape::in_slot(SlotId::from_raw(slot as u32));
+            let item = app.world_mut().spawn((crate::items::Item, AttackSpeed(*percent), crate::items::Wearable(shape.clone()))).id();
+            worn.equip(item, &shape).unwrap();
+        }
+        let player = app
+            .world_mut()
+            .spawn((Actor, Player, Blocks, Position(start), Viewshed::new(8), Health::full(30), Faction(sides.ours), crate::items::Equipped(worn)))
+            .id();
+        let (offset, wield) =
+            if ranged { (3, Some(RangedAttack { cost: Some(100), ..RangedAttack::new(sides.kind, DiceRoll::flat(1), 6) })) } else { (1, None) };
+        match wield {
+            Some(gun) => drop(app.world_mut().entity_mut(player).insert(gun)),
+            None => drop(app.world_mut().entity_mut(player).insert(MeleeAttack::new(sides.kind, DiceRoll::flat(1)))),
+        }
+        let target = app.world_mut().spawn((Actor, Blocks, Position(start.offset(offset, 0)), Health::full(20), Faction(sides.theirs))).id();
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        app.update();
+        app.update();
+        app.world_mut().write_message(Intent::new(player, Attack(target)));
+        app.update();
+        app.world().resource::<Turns>().now()
+    }
+
+    #[test]
+    fn a_worn_attack_speed_slows_a_blow_by_scaled_cost() {
+        assert_eq!(pace_cost(&[], false), 100, "nothing worn is the ordinary cost");
+        assert_eq!(pace_cost(&[95], false), 106);
+        assert_eq!(pace_cost(&[85], false), 118);
+    }
+
+    #[test]
+    fn a_worn_attack_speed_slows_a_shot() {
+        assert_eq!(pace_cost(&[], true), 100);
+        assert_eq!(pace_cost(&[90], true), 112);
+    }
+
+    #[test]
+    fn attack_speed_never_slows_a_step() {
+        let step_cost = |speeds: &[u32]| {
+            use atglyph_rules::{EquipShape, Equipment, SlotId};
+            let mut app = headless_app();
+            app.add_plugins((crate::fov::FovPlugin, CombatPlugin));
+            let start = crate::testing::ground(&mut app);
+            let sides = crate::testing::two_sides(&mut app);
+            let mut worn = Equipment::with_slot_count(1);
+            for percent in speeds {
+                let shape = EquipShape::in_slot(SlotId::from_raw(0));
+                let item = app.world_mut().spawn((crate::items::Item, AttackSpeed(*percent), crate::items::Wearable(shape.clone()))).id();
+                worn.equip(item, &shape).unwrap();
+            }
+            let player = app
+                .world_mut()
+                .spawn((Actor, Player, Blocks, Position(start), Viewshed::new(8), Health::full(30), Faction(sides.ours), crate::items::Equipped(worn)))
+                .id();
+            app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+            app.update();
+            app.update();
+            app.world_mut().write_message(Intent::new(player, crate::turn::Step(atglyph_core::Direction::East)));
+            app.update();
+            app.world().resource::<Turns>().now()
+        };
+        assert_eq!(step_cost(&[85]), step_cost(&[]));
+        assert_eq!(step_cost(&[]), 100, "and a step is charged at all");
+    }
+
+    #[test]
+    fn two_attack_speeds_worn_multiply() {
+        use atglyph_rules::{EquipShape, Equipment, SlotId};
+        let mut app = headless_app();
+        let mut worn = Equipment::with_slot_count(2);
+        for (slot, percent) in [95, 90].into_iter().enumerate() {
+            let shape = EquipShape::in_slot(SlotId::from_raw(slot as u32));
+            let item = app.world_mut().spawn((crate::items::Item, AttackSpeed(percent), crate::items::Wearable(shape.clone()))).id();
+            worn.equip(item, &shape).unwrap();
+        }
+        let wearer = app.world_mut().spawn(crate::items::Equipped(worn)).id();
+        let bare = app.world_mut().spawn_empty().id();
+        let mut state: bevy::ecs::system::SystemState<Loadout> = bevy::ecs::system::SystemState::new(app.world_mut());
+        let loadout = state.get(app.world()).expect("every input is optional");
+        assert_eq!(loadout.attack_speed(wearer), 85, "95 and 90 make 85 rounded down");
+        assert_eq!(loadout.attack_speed(bare), 100);
     }
 
     #[derive(Resource, Default)]

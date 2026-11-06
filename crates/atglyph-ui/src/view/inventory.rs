@@ -32,6 +32,7 @@ use atglyph_bevy::TriggerKindId;
 use atglyph_bevy::prelude::*;
 use atglyph_render::Glyph;
 use atglyph_rules::SlotId;
+use atglyph_rules::parts::ShieldDef;
 use atglyph_rules::stats::Op;
 use bevy::prelude::*;
 
@@ -82,6 +83,11 @@ pub struct ItemRow {
     /// How far it lets its wearer see in the dark, for a thing that lends
     /// sight, [`WornDarkSight`].
     pub dark_sight: Option<i32>,
+    /// What it blocks while worn, for a [`Shield`].
+    pub shield: Option<ShieldDef>,
+    /// The percent it leaves its wearer's attacks at while worn, for a
+    /// thing with an [`AttackSpeed`]: below a hundred is slower.
+    pub attack_speed: Option<u32>,
     /// What it does, one line per effect that has something to say, each
     /// named by the moment that sets it off: `use: mends 5`, `on landing:
     /// 3 kinetic in a burst of 1`. Empty for most of a bag.
@@ -201,7 +207,7 @@ pub struct Replacing {
 /// wearer's own beside it for one marked [`AddsOwnBlow`]; the first worn
 /// launcher for each thing launched; and the best sight in the dark of its
 /// own and of what it wears.
-#[derive(Debug, Clone, PartialEq, Default)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Kit {
     /// The blow struck, and what with.
     pub blow: Option<Wielding>,
@@ -211,9 +217,23 @@ pub struct Kit {
     pub launchers: Vec<LaunchLine>,
     /// How far the wearer sees in the dark.
     pub dark_sight: Option<i32>,
+    /// What the wearer blocks with: the first worn shield, in slot order,
+    /// the one a block is rolled for.
+    pub shield: Option<ShieldDef>,
+    /// The percent every blow, shot and throw is struck at: the wearer's
+    /// own and every worn thing's, multiplied; a hundred for none.
+    pub attack_speed: u32,
     /// Whether any of it comes from a thing not yet known, whose numbers a
     /// screen must not tell.
     pub withheld: bool,
+}
+
+impl Default for Kit {
+    /// A wearer with nothing: no blow, shot, launcher, sight or shield, and
+    /// attacks at an ordinary hundred percent rather than none.
+    fn default() -> Self {
+        Self { blow: None, shot: None, launchers: Vec::new(), dark_sight: None, shield: None, attack_speed: 100, withheld: false }
+    }
 }
 
 /// A blow or a shot and what it comes from.
@@ -287,6 +307,8 @@ impl ItemRow {
             strikes: Vec::new(),
             launches: None,
             dark_sight: None,
+            shield: None,
+            attack_speed: None,
             used: Vec::new(),
             charges: None,
             ready_in: None,
@@ -361,8 +383,13 @@ type Does = (
 /// Whether an item is not yet known, and whether it will not come off.
 type Marks = (Has<atglyph_bevy::Unknown>, Has<atglyph_bevy::Stuck>);
 /// What an item lends its wearer beyond a blow: a launcher's roll and
-/// reach, and sight in the dark.
-type Lends = (Option<&'static atglyph_bevy::Launcher>, Option<&'static atglyph_bevy::WornDarkSight>);
+/// reach, sight in the dark, what it blocks and how it slows an attack.
+type Lends = (
+    Option<&'static atglyph_bevy::Launcher>,
+    Option<&'static atglyph_bevy::WornDarkSight>,
+    Option<&'static atglyph_bevy::Shield>,
+    Option<&'static atglyph_bevy::AttackSpeed>,
+);
 
 /// How a trigger's lines are introduced on a bag's row: by what the player
 /// does to set it off, in the engine's own moments, and by the moment's
@@ -476,6 +503,7 @@ type Own = (
     Option<&'static atglyph_bevy::OwnDarkSight>,
     Has<atglyph_bevy::DarkSightSuppressed>,
     Has<atglyph_bevy::AddsOwnBlow>,
+    Option<&'static atglyph_bevy::AttackSpeed>,
 );
 
 impl ItemRows<'_, '_> {
@@ -515,7 +543,7 @@ impl ItemRows<'_, '_> {
 
     /// What `wearer` fights and sees with, wearing `worn`: see [`Kit`].
     fn kit(&self, wearer: Entity, worn: &atglyph_rules::Equipment<Entity>) -> Kit {
-        let (own_blow, own_shot, own_sight, blind, adds) = self.wearers.get(wearer).unwrap_or((None, None, None, false, false));
+        let (own_blow, own_shot, own_sight, blind, adds, own_speed) = self.wearers.get(wearer).unwrap_or((None, None, None, false, false, None));
         let registries = self.registries.as_deref();
         let kind_name = |kind| registries.map(|r| r.damage_kinds.name(kind).to_string()).unwrap_or_default();
         let things: Vec<Entity> = worn.worn().map(|(_, thing)| thing).collect();
@@ -537,7 +565,7 @@ impl ItemRows<'_, '_> {
         let mut launchers: Vec<LaunchLine> = Vec::new();
         let mut seen = Vec::new();
         for thing in &things {
-            if let Some((_, _, _, (unknown, _), (Some(launcher), _))) = of(*thing)
+            if let Some((_, _, _, (unknown, _), (Some(launcher), ..))) = of(*thing)
                 && !seen.contains(&launcher.ammo)
             {
                 seen.push(launcher.ammo);
@@ -548,8 +576,15 @@ impl ItemRows<'_, '_> {
             }
         }
         let lent: Vec<(i32, bool)> =
-            things.iter().filter_map(|t| of(*t).and_then(|(_, _, _, (unknown, _), (_, sight))| sight.map(|s| (s.0, unknown)))).collect();
+            things.iter().filter_map(|t| of(*t).and_then(|(_, _, _, (unknown, _), (_, sight, ..))| sight.map(|s| (s.0, unknown)))).collect();
         withheld |= lent.iter().any(|(_, unknown)| *unknown);
+        // The first shield worn is the one a block is rolled for, and every
+        // attack speed worn is multiplied in, so a thing not yet known
+        // among either keeps the numbers back.
+        let shielded = things.iter().find_map(|t| of(*t).and_then(|(.., (unknown, _), (_, _, shield, _))| shield.map(|s| (s.0, unknown))));
+        let slowed: Vec<(atglyph_bevy::AttackSpeed, bool)> =
+            things.iter().filter_map(|t| of(*t).and_then(|(.., (unknown, _), (.., speed))| speed.map(|s| (*s, unknown)))).collect();
+        withheld |= shielded.is_some_and(|(_, unknown)| unknown) || slowed.iter().any(|(_, unknown)| *unknown);
         Kit {
             // A versatile roll by what `worn` leaves free, which for a thing
             // tried on is the copy it was tried on: a knife for the hand a
@@ -563,6 +598,8 @@ impl ItemRows<'_, '_> {
             shot: shot.map(|(from, r)| wielding(from, r.kind, r.dice, Some(r.range), None)),
             launchers,
             dark_sight: atglyph_rules::equip::dark_sight(own_sight.map(|s| s.0), lent.iter().map(|(tiles, _)| *tiles), blind),
+            shield: shielded.map(|(shield, _)| shield),
+            attack_speed: atglyph_bevy::AttackSpeed::combined(own_speed.copied().into_iter().chain(slowed.iter().map(|(s, _)| *s))),
             withheld,
         }
     }
@@ -574,7 +611,7 @@ impl ItemRows<'_, '_> {
             (armor, resists, melee, ranged, strikes, bestows),
             (triggers, consumable, pulse, attuned, bonus),
             (unknown, stuck),
-            (launcher, sight),
+            (launcher, sight, shield, speed),
         ) = self.items.get(item).ok()?;
         let registries = self.registries.as_deref();
         let moments = self.moments.as_deref();
@@ -645,6 +682,8 @@ impl ItemRows<'_, '_> {
             strikes: strikes.map(|s| s.0.iter().map(|hit| strike(*hit, None)).collect()).unwrap_or_default(),
             launches: launcher.map(|l| LaunchLine { ammo: tag_name(l.ammo), kind: kind_name(l.strike.0), range: l.range, roll: l.strike.1 }),
             dark_sight: sight.map(|s| s.0),
+            shield: shield.map(|s| s.0),
+            attack_speed: speed.map(|s| s.0),
             bestows: bestows
                 .map(|b| {
                     b.0.iter()
@@ -676,6 +715,31 @@ mod tests {
     use atglyph_core::DiceRoll;
     use atglyph_rules::content::Registry;
     use atglyph_rules::{EquipShape, Equipment, SlotDef, StatDef};
+
+    /// A kit of nothing attacks at an ordinary hundred percent.
+    #[test]
+    fn a_default_kit_attacks_at_an_ordinary_speed() {
+        assert_eq!(Kit::default().attack_speed, 100);
+    }
+
+    /// A shield is listed with what it blocks and a slowing thing with the
+    /// percent it leaves attacks at, and a thing not yet known with neither.
+    #[test]
+    fn a_shield_row_carries_what_it_blocks_and_the_speed_it_leaves() {
+        let mut stage = Stage::new(InventoryViewPlugin);
+        let player = stage.player;
+        let w = stage.app.world_mut();
+        let def = atglyph_rules::parts::ShieldDef { chance: 50, blocks: 2 };
+        let kite = w.spawn((Item, Name::new("kite"), atglyph_bevy::Shield(def), atglyph_bevy::AttackSpeed(90))).id();
+        let hidden = w.spawn((Item, Name::new("kite"), atglyph_bevy::Shield(def), atglyph_bevy::AttackSpeed(90), atglyph_bevy::Unknown)).id();
+        let plain = w.spawn((Item, Name::new("rag"))).id();
+        w.entity_mut(player).insert(Inventory { items: vec![kite, hidden, plain] });
+        stage.tick();
+        let rows = &stage.app.world().resource::<InventoryView>().rows;
+        assert_eq!((rows[0].shield, rows[0].attack_speed), (Some(def), Some(90)));
+        assert_eq!((rows[1].shield, rows[1].attack_speed), (None, None), "withheld while unknown");
+        assert_eq!((rows[2].shield, rows[2].attack_speed), (None, None));
+    }
 
     /// A thing with no range of its own is listed as flying as far as the
     /// player reaches.

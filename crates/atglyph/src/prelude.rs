@@ -35,7 +35,7 @@
 
 pub use crate::RoguelikePlugins;
 pub use atglyph_bevy::app::EngineApp;
-pub use atglyph_bevy::combat::{Armor, CombatPlugin, CombatRules, Faction, Health, MeleeAttack};
+pub use atglyph_bevy::combat::{Armor, AttackSpeed, CombatPlugin, CombatRules, Faction, Health, MeleeAttack};
 pub use atglyph_bevy::components::{Actor, Blocks, MyTurn, Player, Position, RevealsMap, Speed, Viewshed};
 pub use atglyph_bevy::knowledge::Knowledge;
 pub use atglyph_bevy::lighting::{DarkSight, LightSource, Lighting, LightingPlugin};
@@ -89,6 +89,7 @@ pub mod combat {
         Invulnerable, Loadout, RangedAttack, Resists, Struck, line_of_fire, shot,
     };
     pub use atglyph_bevy::effects::{Effect, EffectBonus, EffectKinds, EffectWorld, Effects, EffectsPlugin, Fired, FromArgs, Landing, TriggerKinds, Triggers};
+    pub use atglyph_bevy::shields::{AttackBlocked, BlocksSpent, Guarding, Shield, ShieldsPlugin};
     pub use atglyph_bevy::status::{ActiveStatuses, ApplyStatus, RemoveStatus, StatBlock, StatusEvent};
     pub use atglyph_bevy::throwing::{Launched, Launcher, Throw, ThrowAs, Throwable, ThrowingPlugin, Throws};
     pub use atglyph_rules::ability::{
@@ -105,8 +106,8 @@ pub mod combat {
 pub mod items {
     pub use atglyph_bevy::consumable::{Attuned, Consumable, WhenEmpty};
     pub use atglyph_bevy::items::{
-        Bestows, DropItem, Equip, EquipFromGround, Equipped, GearScore, Inventory, Item, ItemEvent, ItemRules, ItemsPlugin, LitWhenWorn, OwnBlowScore, PickUp,
-        PickUpItem, Stack, StackLimit, Stuck, Tagged, Unequip, Unknown, UseItem, UseItemAt, UseOn, Wearable, WornStatuses, WornTimer,
+        Bestows, DropItem, Equip, EquipBoth, EquipFromGround, Equipped, GearScore, Inventory, Item, ItemEvent, ItemRules, ItemsPlugin, LitWhenWorn,
+        OwnBlowScore, PickUp, PickUpItem, Stack, StackLimit, Stuck, Tagged, Unequip, Unknown, UseItem, UseItemAt, UseOn, Wearable, WornStatuses, WornTimer,
     };
     pub use atglyph_bevy::loot::{Drops, Found, ItemMaker, LootArea, LootPlugin, LootSet, Provenance};
     pub use atglyph_bevy::parts::{ActorParts, Attacks, ItemLevel, ItemParts, LightWhen, innate_statuses, insert_parts};

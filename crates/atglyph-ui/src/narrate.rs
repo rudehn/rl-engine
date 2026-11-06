@@ -121,6 +121,24 @@ pub enum Phrase {
     MissesYou,
     /// Someone attacked someone else and missed.
     OthersMiss,
+    /// Your blow was turned aside by someone's shield.
+    YourBlowIsBlocked,
+    /// Your shot was caught on someone's shield.
+    YourShotIsBlocked,
+    /// What you threw was caught on someone's shield.
+    YourThrowIsBlocked,
+    /// Your shield turned aside someone's blow.
+    YouBlockBlow,
+    /// Your shield caught someone's shot.
+    YouBlockShot,
+    /// Your shield caught what someone threw.
+    YouBlockThrow,
+    /// Someone's shield turned aside someone else's blow.
+    OthersBlockBlow,
+    /// Someone's shield caught someone else's shot.
+    OthersBlockShot,
+    /// Someone's shield caught what someone else threw.
+    OthersBlockThrow,
     /// A reflecting body turned your own aim back onto you.
     ReflectsOntoYou,
     /// You turned someone else's aim back onto them.
@@ -283,6 +301,10 @@ pub struct Said {
     pub whom: Option<Entity>,
     /// With what, if anything: `{what}`, named as the thing is named.
     pub what: Option<Entity>,
+    /// What `who` did it with, when a line names that as well as `what`:
+    /// `{whose with}`, the thing thrown in a block's line, where `what` is
+    /// the shield it was caught on.
+    pub with: Option<Entity>,
     /// A registry's name for the status, kind or ability involved:
     /// `{named}`.
     pub named: String,
@@ -302,6 +324,8 @@ pub struct Said {
     /// What `what` was called when the row was made, and how many of it
     /// the row is about, read as [`called`](Self::called) is.
     pub called_thing: Option<Called>,
+    /// What `with` was called when the row was made, one of it.
+    pub called_with: Option<Called>,
     /// More words, where there are any: the reasons a use was refused.
     pub detail: String,
     /// How much: `{n}`.
@@ -364,9 +388,11 @@ impl Said {
             who: None,
             whom: None,
             what: None,
+            with: None,
             named: String::new(),
             called: [None, None],
             called_thing: None,
+            called_with: None,
             detail: String::new(),
             amount: 0,
             at: None,
@@ -408,7 +434,12 @@ impl Called {
 
     /// As the player's own: `your sword`, `your 5 arrows`.
     pub(crate) fn yours(&self) -> String {
-        atglyph_core::noun::owned("your", &self.name, self.count, self.countability)
+        self.owned("your")
+    }
+
+    /// As `owner`'s own: `the bandit's kite shield`.
+    pub(crate) fn owned(&self, owner: &str) -> String {
+        atglyph_core::noun::owned(owner, &self.name, self.count, self.countability)
     }
 }
 
@@ -505,6 +536,7 @@ impl Plugin for NarrationViewPlugin {
             .add_message::<DamageDealt>()
             .add_message::<Healed>()
             .add_message::<Missed>()
+            .add_message::<AttackBlocked>()
             .add_message::<DeathEvent>()
             .add_message::<ItemEvent>()
             .add_message::<Launched>()
@@ -545,6 +577,7 @@ pub struct NarratedEvents<'w, 's> {
     dealt: MessageReader<'w, 's, DamageDealt>,
     healed: MessageReader<'w, 's, Healed>,
     missed: MessageReader<'w, 's, Missed>,
+    blocked: MessageReader<'w, 's, AttackBlocked>,
     statuses: MessageReader<'w, 's, StatusEvent>,
     deaths: MessageReader<'w, 's, DeathEvent>,
     noticed: MessageReader<'w, 's, Noticed>,
@@ -913,6 +946,29 @@ pub(crate) fn collect_narration(mut view: ResMut<NarrationView>, mut heard: Narr
         };
         rows.push(say(phrase, Some(m.attacker), Some(m.target)));
     }
+    // A block is said where the hit would have been, as a miss is, naming
+    // the shield as its bearer's and, for a throw, the thing thrown.
+    for b in heard.blocked.read() {
+        use Phrase::*;
+        let (you_struck, you_bear) = (witness.is_you(b.attacker), witness.is_you(b.target));
+        let phrase = match (b.reach, you_struck, you_bear) {
+            (DamageRoute::Shot, true, _) => YourShotIsBlocked,
+            (DamageRoute::Shot, _, true) => YouBlockShot,
+            (DamageRoute::Shot, ..) => OthersBlockShot,
+            (DamageRoute::Thrown, true, _) => YourThrowIsBlocked,
+            (DamageRoute::Thrown, _, true) => YouBlockThrow,
+            (DamageRoute::Thrown, ..) => OthersBlockThrow,
+            (_, true, _) => YourBlowIsBlocked,
+            (_, _, true) => YouBlockBlow,
+            _ => OthersBlockBlow,
+        };
+        let mut said = say(phrase, Some(b.attacker), Some(b.target));
+        said.what = Some(b.shield);
+        if b.reach == DamageRoute::Thrown {
+            said.with = b.with;
+        }
+        rows.push(said);
+    }
     // Said before the harm it caused, so a line that reads the caster hurt
     // is never met with no reason: the row the reflection explains.
     for r in heard.reflected.read() {
@@ -1105,6 +1161,8 @@ pub(crate) fn collect_narration(mut view: ResMut<NarrationView>, mut heard: Narr
         said.called = [witness.called_actor(said.who), witness.called_actor(said.whom)];
         // A row that already said how many of its thing keeps it.
         said.called_thing = said.called_thing.take().or(thing);
+        // One thing thrown, whatever stack it has landed in since.
+        said.called_with = witness.called_one(said.with);
     }
     view.rows.extend(first);
     view.rows.extend(rows);
@@ -1120,11 +1178,20 @@ type Entry = Option<(String, ToneId)>;
 /// [`Name`] said with its count, `a pebble` or `5 pebbles`, and with no
 /// `a` for a [`MassNoun`], `chain mail` (see [`atglyph_core::noun`]);
 /// `{your what}` is the same thing as the player's own, `your pebble`, for
-/// a line about something the player held; `{What}` and `{Your what}` are
+/// a line about something the player held; `{whose what}` is the same
+/// thing as `{whom}`'s own, `your round shield` or `the bandit's kite
+/// shield`, for a line about something the one it was done to held;
+/// `{whose with}` is the thing `{who}` did it with as `{who}`'s own, one of
+/// it, `your arrow` or `the goblin's knife`, for the thing thrown in a
+/// line whose `{what}` is something else; a thing with a proper name is
+/// said by it alone, `the Widow's Fang`, and a thing with no name is
+/// `something`; `{with}` is the same thing said as `{what}` is, `a knife`;
+/// `{What}`, `{Your what}`, `{Whose what}`, `{With}` and `{Whose with}` are
 /// capitalised; `{n}` the amount;
 /// `{named}` the registry's name for the status, kind or ability; and
 /// `{detail}` whatever more there is to say. A name other than the player's
-/// is coloured as the thing is drawn.
+/// is coloured as the thing is drawn, an owner's name and the thing it
+/// owns each in its own colour.
 ///
 /// The default is the English the games spoke before the narrator existed.
 /// A game changes a phrase, silences one, or speaks the unseen too.
@@ -1139,7 +1206,7 @@ pub struct Phrasebook {
 impl Default for Phrasebook {
     fn default() -> Self {
         use Phrase::*;
-        let table: [(Phrase, &str, ToneId); 81] = [
+        let table: [(Phrase, &str, ToneId); 90] = [
             (YouHit, "You hit {whom} for {n}.", Tones::HIT),
             (YouHitNothing, "You hit {whom}, to no effect.", Tones::MUTED),
             (HitsYou, "{Who} hits you for {n}.", Tones::BAD),
@@ -1159,6 +1226,20 @@ impl Default for Phrasebook {
             (YouMiss, "You miss {whom}.", Tones::MUTED),
             (MissesYou, "{Who} misses you.", Tones::MUTED),
             (OthersMiss, "{Who} misses {whom}.", Tones::MUTED),
+            // The shield first and the verb active, so a block reads whole
+            // on a narrow log strip: `Your round shield turns aside the
+            // goblin's blow.` is shorter than the passive way round.
+            (YourBlowIsBlocked, "{Whose what} turns aside your blow.", Tones::MUTED),
+            (YourShotIsBlocked, "{Whose what} catches your shot.", Tones::MUTED),
+            (YourThrowIsBlocked, "{Whose what} catches {whose with}.", Tones::MUTED),
+            (YouBlockBlow, "{Whose what} turns aside {who}'s blow.", Tones::GOOD),
+            (YouBlockShot, "{Whose what} catches {who}'s shot.", Tones::GOOD),
+            (YouBlockThrow, "{Whose what} catches {whose with}.", Tones::GOOD),
+            // Between two others the struck one's shield is the news, and
+            // the attacker's name would carry the line off the strip.
+            (OthersBlockBlow, "{Whose what} turns aside a blow.", Tones::MUTED),
+            (OthersBlockShot, "{Whose what} catches a shot.", Tones::MUTED),
+            (OthersBlockThrow, "{Whose what} catches {with}.", Tones::MUTED),
             (ReflectsOntoYou, "{Who} turns it back on you.", Tones::BAD),
             (YouReflect, "You turn it back on {whom}.", Tones::HIT),
             (OthersReflect, "{Who} turns it back on {whom}.", Tones::TEXT),
@@ -1304,7 +1385,7 @@ impl Names<'_, '_> {
     /// The thing as a sentence says it, by `say`: under the name the row
     /// was made with, `called`, or else its [`Name`] now, counted by its
     /// [`Stack`]; in its colour, or `something` when it has no name.
-    fn thing(&self, e: Option<Entity>, called: &Option<Called>, say: fn(&Called) -> String) -> Named {
+    fn thing(&self, e: Option<Entity>, called: &Option<Called>, say: impl Fn(&Called) -> String) -> Named {
         let glyph = e.and_then(|e| self.names.get(e).ok());
         let color = glyph.and_then(|(_, g)| g).map(|g| g.fg);
         let now = || {
@@ -1316,6 +1397,29 @@ impl Names<'_, '_> {
             Some(called) => Named { text: say(&called), color },
             None => self.unseen(),
         }
+    }
+
+    /// `thing` as `owner`'s own, `your round shield` or `the bandit's kite
+    /// shield`, in pieces so the owner's name keeps its colour and the
+    /// thing its own: an owner not seen is `something's`, the player
+    /// `your`, and a thing with a proper name is said by it alone, as
+    /// [`owned`](atglyph_core::noun::owned) has it.
+    fn owned(&self, owner: Option<Entity>, unseen: bool, called_owner: &Option<String>, thing: Option<Entity>, called: &Option<Called>) -> Vec<Named> {
+        let (name, possessive) = match owner {
+            Some(owner) if !unseen && self.player.contains(owner) => (Named { text: "your".into(), color: None }, "your".to_string()),
+            _ => {
+                let name = if unseen { self.unseen() } else { self.actor(owner).or_called(called_owner) };
+                let possessive = format!("{}'s", name.text);
+                (name, possessive)
+            }
+        };
+        let whole = self.thing(thing, called, |c| c.owned(&possessive));
+        // The owner is left out of a proper name, and of a thing with no
+        // name, which is `something` whoever held it.
+        let Some(rest) = whole.text.strip_prefix(&possessive) else { return vec![whole] };
+        let rest = Named { text: rest.to_string(), color: whole.color };
+        let ending = possessive[name.text.len()..].to_string();
+        vec![name, Named { text: ending, color: None }, rest]
     }
 }
 
@@ -1349,34 +1453,43 @@ pub(crate) fn render(template: &str, said: &Said, names: &Names<'_, '_>, speak_u
         let key = &rest[open + 1..open + close];
         rest = &rest[open + close + 1..];
         let capital = key.chars().next().is_some_and(|c| c.is_uppercase());
-        let named = match key.to_ascii_lowercase().as_str() {
+        let whom_unseen = !(said.whom_seen || speak_unseen);
+        let one = |named: Named| vec![named];
+        let pieces = match key.to_ascii_lowercase().as_str() {
             // An unseen doer, or an unseen one it was done to, is
             // `something`, whatever it is called: the same word a nameless
             // thing gets, so one template serves both.
-            "who" if !(said.who_seen || speak_unseen) => Some(names.unseen()),
-            "whom" if !(said.whom_seen || speak_unseen) => Some(names.unseen()),
-            "who" => Some(names.actor(said.who).or_called(&said.called[0])),
-            "whom" => Some(names.actor(said.whom).or_called(&said.called[1])),
-            "what" => Some(names.thing(said.what, &said.called_thing, Called::counted)),
-            "your what" => Some(names.thing(said.what, &said.called_thing, Called::yours)),
-            "n" => Some(Named { text: said.amount.to_string(), color: None }),
-            "named" => Some(Named { text: said.named.clone(), color: None }),
-            "detail" => Some(Named { text: said.detail.clone(), color: None }),
+            "who" if !(said.who_seen || speak_unseen) => Some(one(names.unseen())),
+            "whom" if whom_unseen => Some(one(names.unseen())),
+            "who" => Some(one(names.actor(said.who).or_called(&said.called[0]))),
+            "whom" => Some(one(names.actor(said.whom).or_called(&said.called[1]))),
+            "what" => Some(one(names.thing(said.what, &said.called_thing, Called::counted))),
+            "your what" => Some(one(names.thing(said.what, &said.called_thing, Called::yours))),
+            "whose what" => Some(names.owned(said.whom, whom_unseen, &said.called[1], said.what, &said.called_thing)),
+            "whose with" => Some(names.owned(said.who, !(said.who_seen || speak_unseen), &said.called[0], said.with, &said.called_with)),
+            "with" => Some(one(names.thing(said.with, &said.called_with, Called::counted))),
+            "n" => Some(one(Named { text: said.amount.to_string(), color: None })),
+            "named" => Some(one(Named { text: said.named.clone(), color: None })),
+            "detail" => Some(one(Named { text: said.detail.clone(), color: None })),
             _ => None,
         };
-        let Some(Named { mut text, color }) = named else {
+        let Some(pieces) = pieces else {
             out.push('{');
             out.push_str(key);
             out.push('}');
             continue;
         };
-        if capital {
-            text = capitalised(&text);
+        for (i, Named { mut text, color }) in pieces.into_iter().enumerate() {
+            if capital && i == 0 {
+                text = capitalised(&text);
+            }
+            if let Some(color) = color
+                && !text.is_empty()
+            {
+                spans.push(Span { start: out.chars().count(), len: text.chars().count(), color });
+            }
+            out.push_str(&text);
         }
-        if let Some(color) = color {
-            spans.push(Span { start: out.chars().count(), len: text.chars().count(), color });
-        }
-        out.push_str(&text);
     }
     out.push_str(rest);
     (out, spans)
@@ -2145,6 +2258,132 @@ mod tests {
         stage.tick();
         assert_eq!(spoken(&stage, &["You miss"]), vec!["You miss the line droid."]);
         assert_eq!(spoken(&stage, &["The line droid"]), vec!["The line droid misses you."]);
+    }
+
+    /// A block names the shield as its bearer's own: a blow is turned
+    /// aside, and a shot or a thing thrown is caught, whichever side of it
+    /// the player is on.
+    #[test]
+    fn a_block_is_narrated_naming_the_shield() {
+        let mut stage = Stage::new(NarratorPlugin::default());
+        let player = stage.player;
+        let goblin = stage.actor("goblin", 'g', 1, 0);
+        let bandit = stage.actor("bandit", 'b', 3, 0);
+        let mut held = |name: &str| stage.app.world_mut().spawn((Item, Name::new(name.to_string()))).id();
+        let (round, kite, arrow, knife) = (held("round shield"), held("kite shield"), held("arrow"), held("knife"));
+        stage.tick();
+        let (melee, shot, thrown) = (DamageRoute::Melee, DamageRoute::Shot, DamageRoute::Thrown);
+        let world = stage.app.world_mut();
+        world.write_message(AttackBlocked { attacker: goblin, target: player, shield: round, with: None, reach: melee });
+        world.write_message(AttackBlocked { attacker: player, target: bandit, shield: kite, with: Some(arrow), reach: thrown });
+        world.write_message(AttackBlocked { attacker: player, target: bandit, shield: kite, with: None, reach: shot });
+        world.write_message(AttackBlocked { attacker: player, target: bandit, shield: kite, with: None, reach: melee });
+        world.write_message(AttackBlocked { attacker: goblin, target: player, shield: round, with: Some(knife), reach: thrown });
+        world.write_message(AttackBlocked { attacker: bandit, target: goblin, shield: round, with: None, reach: shot });
+        stage.tick();
+        assert_eq!(
+            spoken(&stage, &["Your", "The bandit's", "The goblin's"]),
+            vec![
+                "Your round shield turns aside the goblin's blow.",
+                "The bandit's kite shield catches your arrow.",
+                "The bandit's kite shield catches your shot.",
+                "The bandit's kite shield turns aside your blow.",
+                "Your round shield catches the goblin's knife.",
+                "The goblin's round shield catches a shot.",
+            ]
+        );
+    }
+
+    /// A block between two others names the struck one's shield and not
+    /// the attacker, so each line fits a 51-column log strip whole: a
+    /// blow, a shot, a thing thrown by its own name with `a`, and one with
+    /// no name as `something`.
+    #[test]
+    fn a_block_between_two_others_names_the_shield_and_fits_the_log_strip() {
+        let mut stage = Stage::new(NarratorPlugin::default());
+        let goblin = stage.actor("goblin", 'g', 1, 0);
+        let bandit = stage.actor("bandit", 'b', 2, 0);
+        let mut held = |name: Option<&str>| match name {
+            Some(name) => stage.app.world_mut().spawn((Item, Name::new(name.to_string()))).id(),
+            None => stage.app.world_mut().spawn(Item).id(),
+        };
+        let (round, knife, nameless) = (held(Some("round shield")), held(Some("knife")), held(None));
+        stage.tick();
+        let world = stage.app.world_mut();
+        world.write_message(AttackBlocked { attacker: bandit, target: goblin, shield: round, with: None, reach: DamageRoute::Melee });
+        world.write_message(AttackBlocked { attacker: bandit, target: goblin, shield: round, with: None, reach: DamageRoute::Shot });
+        world.write_message(AttackBlocked { attacker: bandit, target: goblin, shield: round, with: Some(knife), reach: DamageRoute::Thrown });
+        world.write_message(AttackBlocked { attacker: bandit, target: goblin, shield: round, with: Some(nameless), reach: DamageRoute::Thrown });
+        stage.tick();
+        let said = spoken(&stage, &["The goblin's"]);
+        assert_eq!(
+            said,
+            vec![
+                "The goblin's round shield turns aside a blow.",
+                "The goblin's round shield catches a shot.",
+                "The goblin's round shield catches a knife.",
+                "The goblin's round shield catches something.",
+            ]
+        );
+        for line in &said {
+            assert!(line.chars().count() <= 51, "{line:?} fits the 51-column log strip");
+        }
+    }
+
+    /// A block's owner keeps its own colour and the shield its own: the
+    /// bandit's name is the bandit's, the kite shield the shield's, and
+    /// the `'s` between them is neither.
+    #[test]
+    fn a_shields_owner_and_the_shield_are_each_in_their_own_colour() {
+        let mut stage = Stage::new(NarratorPlugin::default());
+        let player = stage.player;
+        let red = Color::srgb(0.8, 0.2, 0.2);
+        let grey = Color::srgb(0.7, 0.7, 0.75);
+        let bandit = stage.actor("bandit", 'b', 1, 0);
+        stage.app.world_mut().entity_mut(bandit).insert(atglyph_render::Glyph::new('b', red).on_layer(5));
+        let kite = stage.app.world_mut().spawn((Item, Name::new("kite shield"), atglyph_render::Glyph::new('[', grey))).id();
+        stage.tick();
+        stage.app.world_mut().write_message(AttackBlocked { attacker: player, target: bandit, shield: kite, with: None, reach: DamageRoute::Melee });
+        stage.tick();
+        let entry = stage.app.world().resource::<MessageLog>().iter().find(|e| e.text.starts_with("The bandit's")).expect("the block is told").clone();
+        assert_eq!(entry.text, "The bandit's kite shield turns aside your blow.");
+        let coloured: Vec<(String, Color)> = entry.spans.iter().map(|s| (entry.text.chars().skip(s.start).take(s.len).collect::<String>(), s.color)).collect();
+        assert_eq!(coloured, [("The bandit".to_string(), red), (" kite shield".to_string(), grey)], "{entry:?}");
+    }
+
+    /// A thing thrown and caught on a shield is named as its thrower's
+    /// own by the narrator's nouns: a proper name by itself, a thing with
+    /// no name `something`, and a thrower out of sight `something's`.
+    #[test]
+    fn a_thrown_thing_caught_on_a_shield_is_named_as_its_throwers_own() {
+        let mut stage = Stage::new(NarratorPlugin::default());
+        let player = stage.player;
+        let goblin = stage.actor("goblin", 'g', 1, 0);
+        let bandit = stage.actor("bandit", 'b', 3, 0);
+        let lurker = stage.actor("lurker", 'l', 30, 0);
+        let mut held = |name: Option<&str>| match name {
+            Some(name) => stage.app.world_mut().spawn((Item, Name::new(name.to_string()))).id(),
+            None => stage.app.world_mut().spawn(Item).id(),
+        };
+        let (round, kite, fang, nameless, knife) =
+            (held(Some("round shield")), held(Some("kite shield")), held(Some("the Widow's Fang")), held(None), held(Some("knife")));
+        stage.tick();
+        let thrown = DamageRoute::Thrown;
+        let world = stage.app.world_mut();
+        world.write_message(AttackBlocked { attacker: player, target: bandit, shield: kite, with: Some(fang), reach: thrown });
+        world.write_message(AttackBlocked { attacker: player, target: bandit, shield: kite, with: Some(nameless), reach: thrown });
+        world.write_message(AttackBlocked { attacker: goblin, target: player, shield: round, with: Some(fang), reach: thrown });
+        world.write_message(AttackBlocked { attacker: lurker, target: player, shield: round, with: Some(knife), reach: thrown });
+        stage.tick();
+        assert_eq!(
+            spoken(&stage, &["The bandit's", "Your round"]),
+            vec![
+                "The bandit's kite shield catches the Widow's Fang.",
+                "The bandit's kite shield catches something.",
+                "Your round shield catches the Widow's Fang.",
+                "Your round shield catches something's knife.",
+            ]
+        );
     }
 
     /// Something that did not travel as a weapon, and names nothing that

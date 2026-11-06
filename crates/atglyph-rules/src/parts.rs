@@ -12,7 +12,8 @@
 //!
 //! The Bevy layer turns each into the component it describes: a
 //! [`Melee`] into a `MeleeAttack`, a [`Ranged`] into a `RangedAttack`, a
-//! [`ThrowDef`] into a `Throwable`, a [`LaunchDef`] into a `Launcher`, a [`Wear`] into a `Wearable`, a
+//! [`ThrowDef`] into a `Throwable`, a [`LaunchDef`] into a `Launcher`, a [`ShieldDef`] into a
+//! `Shield`, a [`Wear`] into a `Wearable`, a
 //! [`Charges`] into a `Consumable`, and a [`Level`] into what each level of
 //! a thing adds to all of those. The rest of what an item's line writes
 //! for the engine is a plain list, its armor, its tags, its effects and
@@ -182,6 +183,41 @@ pub struct LaunchDef {
     pub damage: DiceRoll,
     /// The damage kind its shot strikes with.
     pub kind: NameRef<DamageKind>,
+}
+
+/// A shield, as content writes it: `(chance: 50, blocks: 1)`, the whole
+/// percent of a blow, a shot or a throw it turns aside, and how many it is
+/// raised against in a turn.
+///
+/// A block turns the attack aside whole rather than taking some off it,
+/// which is what armor is for, so the two answer different fights: armor
+/// is worth most against many small blows and a shield against a few big
+/// ones. Raised against a fixed number a turn, so a bigger shield buys
+/// cover against more attackers at once rather than a better chance
+/// against one, unless a game writes the chances apart.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ShieldDef {
+    /// The whole percent of the attacks it is raised against that it turns
+    /// aside; a hundred or more turns every one.
+    pub chance: u32,
+    /// How many attacks it is raised against in its bearer's turn,
+    /// whether it turns them or not.
+    pub blocks: u32,
+}
+
+impl ShieldDef {
+    /// Whether it is raised again, `spent` blocks already tried this turn.
+    pub fn raised(&self, spent: u32) -> bool {
+        spent < self.blocks
+    }
+
+    /// One draw: whether the attack it was raised against is turned aside.
+    /// Always one, at nothing and at a hundred too, so whether a shield
+    /// was raised and not what it is decides how the stream goes on.
+    pub fn turns_aside(&self, rng: &mut impl rand::Rng) -> bool {
+        rng.random_range(0..100) < self.chance
+    }
 }
 
 /// What happens to a thing when its last charge is spent.
@@ -481,6 +517,32 @@ mod tests {
         let names = Names::new().with("item", &things);
         let list: Vec<(NameRef<DamageKind>, u32)> = names.load_list(r#"[("bone", 40), ("coin", 100)]"#).unwrap();
         assert_eq!(drops(&list), DropTable(vec![DropRow::new(things.expect("bone"), 40), DropRow::new(things.expect("coin"), 100)]));
+    }
+
+    #[test]
+    fn a_shield_reads_its_chance_and_its_blocks_and_both_are_needed() {
+        let shield: ShieldDef = one(&Names::new(), "(chance: 50, blocks: 1)").unwrap();
+        assert_eq!(shield, ShieldDef { chance: 50, blocks: 1 });
+        assert!(one::<ShieldDef>(&Names::new(), "(chance: 50)").is_err(), "a shield that never says how often it blocks");
+        assert!(one::<ShieldDef>(&Names::new(), "(chance: 50, blocks: 1, armor: 2)").is_err(), "an unknown field");
+    }
+
+    /// Raised as often as it blocks a turn, and each time one draw decides
+    /// it, at nothing never and at a hundred always.
+    #[test]
+    fn a_shield_is_raised_as_often_as_it_blocks_and_turns_a_blow_aside_at_its_chance() {
+        use rand::{Rng, SeedableRng};
+        let kite = ShieldDef { chance: 50, blocks: 2 };
+        assert_eq!([0, 1, 2, 3].map(|spent| kite.raised(spent)), [true, true, false, false]);
+        assert!(!ShieldDef { chance: 50, blocks: 0 }.raised(0), "a shield of no blocks is never raised");
+        let mut rng = rand::rngs::StdRng::seed_from_u64(1);
+        let mut twin = rng.clone();
+        assert!((0..200).all(|_| ShieldDef { chance: 100, blocks: 1 }.turns_aside(&mut rng)));
+        assert!((0..200).all(|_| !ShieldDef { chance: 0, blocks: 1 }.turns_aside(&mut rng)));
+        for _ in 0..400 {
+            twin.random_range(0..100u32);
+        }
+        assert_eq!(rng.random::<u64>(), twin.random::<u64>(), "one draw a block");
     }
 
     #[test]

@@ -467,6 +467,16 @@ pub(crate) fn split_off(commands: &mut Commands, item: Entity, stack: Stack, cou
 pub struct Equip(pub Entity);
 impl Action for Equip {}
 
+/// Put two carried items on in one action, all or nothing.
+///
+/// The first and then the second, as two [`Equip`]s would, but for one
+/// equip's cost: taking up a sword and a shield together is one turn. If
+/// either is refused, or the second would push the first off again, the
+/// wearer is left as it was.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EquipBoth(pub Entity, pub Entity);
+impl Action for EquipBoth {}
+
 /// Take an item lying on the actor's cell and put it on, in one action.
 ///
 /// It costs what [`ItemRules::equip_from_ground`] says, by default half as
@@ -624,6 +634,12 @@ impl ItemWorld<'_, '_> {
             }
             ItemAsk::Drop(item) | ItemAsk::Unequip(item) => facts.carried = bag.contains(item),
             ItemAsk::PickUpItem(item) => facts.underfoot = self.lies_at(item, pos),
+            ItemAsk::EquipBoth(first, second) => {
+                facts.carried = bag.contains(first);
+                facts.second_carried = bag.contains(second);
+                facts.shape = self.wearables.get(first).ok().map(|w| &w.0);
+                facts.second_shape = self.wearables.get(second).ok().map(|w| &w.0);
+            }
             ItemAsk::Equip(item) | ItemAsk::EquipFromGround(item) => {
                 facts.carried = bag.contains(item);
                 facts.underfoot = self.lies_at(item, pos);
@@ -675,6 +691,7 @@ pub struct ItemIntents<'w, 's> {
     pick_ones: MessageReader<'w, 's, Intent<PickUpItem>>,
     drops: MessageReader<'w, 's, Intent<DropItem>>,
     equips: MessageReader<'w, 's, Intent<Equip>>,
+    equip_boths: MessageReader<'w, 's, Intent<EquipBoth>>,
     from_ground: MessageReader<'w, 's, Intent<EquipFromGround>>,
     unequips: MessageReader<'w, 's, Intent<Unequip>>,
     uses: MessageReader<'w, 's, Intent<UseItem>>,
@@ -689,6 +706,7 @@ impl ItemIntents<'_, '_> {
         out.extend(self.pick_ones.read().map(|i| (i.actor, Which::PickUpItem(i.action.item), i.action.count)));
         out.extend(self.drops.read().map(|i| (i.actor, Which::Drop(i.action.item), i.action.count)));
         out.extend(self.equips.read().map(|i| (i.actor, Which::Equip(i.action.0), None)));
+        out.extend(self.equip_boths.read().map(|i| (i.actor, Which::EquipBoth(i.action.0, i.action.1), None)));
         out.extend(self.from_ground.read().map(|i| (i.actor, Which::EquipFromGround(i.action.0), None)));
         out.extend(self.unequips.read().map(|i| (i.actor, Which::Unequip(i.action.0), None)));
         out.extend(self.uses.read().map(|i| (i.actor, Which::Use(i.action.0), None)));
@@ -811,6 +829,7 @@ fn resolve_one(commands: &mut Commands, world: &ItemWorld, carrier: Holding, act
             match ask {
                 ItemAsk::EquipFromGround(item) => warn!("{actor:?} could not equip {item:?} from the ground: {e}"),
                 ItemAsk::Equip(item) => warn!("{actor:?} could not equip {item:?}: {e}"),
+                ItemAsk::EquipBoth(first, second) => warn!("{actor:?} could not equip {first:?} and {second:?}: {e}"),
                 _ => {}
             }
             return false;
@@ -1338,6 +1357,7 @@ impl Plugin for ItemsPlugin {
             .add_action::<DropItem>()
             .add_action::<PickUpItem>()
             .add_action::<Equip>()
+            .add_action::<EquipBoth>()
             .add_action::<EquipFromGround>()
             .add_action::<Unequip>()
             .add_action::<UseItem>()
@@ -1773,6 +1793,66 @@ mod tests {
         assert_eq!(r.app.world().resource::<Turns>().now(), before, "for nothing");
         r.app.world_mut().entity_mut(ring).remove::<Stuck>();
         assert_eq!(act(&mut r, Unequip(ring)), vec![ItemEvent::Unequipped { actor: r.player, item: ring }], "freed, it comes off");
+    }
+
+    /// A bow in both hands, a sword for the main hand and a shield for the
+    /// off hand, all carried, the bow worn.
+    fn bow_sword_shield(r: &mut Rig) -> (Entity, Entity, Entity) {
+        let bow = r.app.world_mut().spawn((Item, Position(r.start), Wearable(EquipShape::in_slot(r.main).and_claims(r.off)))).id();
+        let sword = r.app.world_mut().spawn((Item, Position(r.start), Wearable(EquipShape::in_slot(r.main)))).id();
+        let shield = r.app.world_mut().spawn((Item, Position(r.start), Wearable(EquipShape::in_slot(r.off)))).id();
+        act(r, PickUp);
+        act(r, Equip(bow));
+        (bow, sword, shield)
+    }
+
+    #[test]
+    fn equip_both_puts_a_sword_and_a_shield_on_for_one_equip() {
+        let mut r = rig();
+        let (bow, sword, shield) = bow_sword_shield(&mut r);
+        let before = r.app.world().resource::<Turns>().now();
+        let events = act(&mut r, EquipBoth(sword, shield));
+        let spent = r.app.world().resource::<Turns>().now() - before;
+        assert_eq!(
+            events,
+            vec![
+                ItemEvent::Unequipped { actor: r.player, item: bow },
+                ItemEvent::Equipped { actor: r.player, item: sword },
+                ItemEvent::Equipped { actor: r.player, item: shield },
+            ]
+        );
+        let worn = r.app.world().get::<Equipped>(r.player).unwrap();
+        assert_eq!((worn.in_slot(r.main), worn.in_slot(r.off)), (Some(sword), Some(shield)));
+        // The same one equip costs when asked of the bow alone.
+        let before = r.app.world().resource::<Turns>().now();
+        act(&mut r, Equip(bow));
+        assert_eq!(spent, r.app.world().resource::<Turns>().now() - before, "one equip's cost");
+    }
+
+    #[test]
+    fn equip_both_refuses_two_things_for_one_hand() {
+        let mut r = rig();
+        let (bow, sword, _) = bow_sword_shield(&mut r);
+        let other = r.app.world_mut().spawn((Item, Position(r.start), Wearable(EquipShape::in_slot(r.main)))).id();
+        act(&mut r, PickUp);
+        assert!(act(&mut r, EquipBoth(sword, other)).is_empty());
+        let worn = r.app.world().get::<Equipped>(r.player).unwrap();
+        assert_eq!((worn.in_slot(r.main), worn.in_slot(r.off)), (Some(bow), Some(bow)), "the bow stays on");
+    }
+
+    #[test]
+    fn equip_both_refuses_whole_when_one_is_stuck_out() {
+        let mut r = rig();
+        let (_, sword, shield) = bow_sword_shield(&mut r);
+        let ring = r.app.world_mut().spawn((Item, Position(r.start), Wearable(EquipShape::in_slot(r.off)), Stuck)).id();
+        act(&mut r, PickUp);
+        act(&mut r, Unequip(ring));
+        act(&mut r, Equip(ring));
+        // The bow came off for the ring, which will not come off for a shield.
+        let events = act(&mut r, EquipBoth(sword, shield));
+        assert_eq!(events, vec![ItemEvent::WouldNotComeOff { actor: r.player, item: ring }]);
+        let worn = r.app.world().get::<Equipped>(r.player).unwrap();
+        assert_eq!((worn.in_slot(r.main), worn.in_slot(r.off)), (None, Some(ring)), "the sword was not put on");
     }
 
     /// Waits one turn for the rig's player, so a pass runs.

@@ -391,6 +391,36 @@ mod tests {
         assert_eq!(view.pack.iter().map(|r| r.row.label.as_str()).collect::<Vec<_>>(), vec!["awl", "pebble"], "the pack is listed whole");
     }
 
+    /// A trader wearing a jerkin and holding another in its bag lists the
+    /// one for sale, not the one on its back, while the customer's worn
+    /// jerkin is still listed and refused as worn.
+    #[test]
+    fn a_traders_worn_gear_is_not_listed() {
+        let (mut stage, trader) = stage();
+        let slots = atglyph_rules::Registry::from_defs(vec![atglyph_rules::SlotDef::new("body")]).expect("one slot");
+        let body = atglyph_rules::EquipShape::in_slot(slots.expect("body"));
+        stage.app.world_mut().resource_mut::<Registries>().slots = slots.clone();
+        let w = stage.app.world_mut();
+        let jerkins: Vec<Entity> = (0..4).map(|_| w.spawn((Item, Name::new("jerkin"), Worth(40))).id()).collect();
+        let (worn_by_trader, spare, worn_by_customer) = (jerkins[0], jerkins[1], jerkins[2]);
+        let mut theirs = atglyph_rules::Equipment::for_slots(&slots);
+        theirs.equip(worn_by_trader, &body).expect("it fits");
+        w.get_mut::<Inventory>(trader).expect("a bag").items.extend([worn_by_trader, spare]);
+        w.entity_mut(trader).insert(Equipped(theirs));
+        let mut mine = atglyph_rules::Equipment::for_slots(&slots);
+        mine.equip(worn_by_customer, &body).expect("it fits");
+        let player = stage.player;
+        stage.app.world_mut().get_mut::<Inventory>(player).expect("a bag").items.push(worn_by_customer);
+        stage.app.world_mut().entity_mut(player).insert(Equipped(mine));
+        open(&mut stage, trader);
+        let view = stage.app.world().resource::<TradeView>();
+        let jerkins: Vec<&TradeRow> = view.wares.iter().filter(|r| r.row.label.contains("jerkin")).collect();
+        assert_eq!(jerkins.len(), 1, "one jerkin for sale: {:?}", view.wares.iter().map(|r| &r.row.label).collect::<Vec<_>>());
+        assert_eq!((jerkins[0].count, jerkins[0].items.as_slice()), (1, [spare].as_slice()), "the spare, not the one worn");
+        let mine = view.pack.iter().find(|r| r.row.label == "jerkin").expect("the customer's worn jerkin is still listed");
+        assert_eq!(mine.refused, Some(TradeRefusal::Worn), "and refused");
+    }
+
     /// A thing sold to a trader who already has one of its name is listed
     /// beside it, not at the foot of the list, and the rest keep the order
     /// the bag keeps.
