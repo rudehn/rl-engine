@@ -122,7 +122,8 @@ pub struct BumpRules {
     /// Whether a mind steps past one that gives way too, rather than being
     /// held behind it in a corridor one cell wide: its step into the cell
     /// is a `Swap`. One that gives way never pushes past another that
-    /// does, so two of them do not shuffle round each other. A swap sets
+    /// does, so two of them do not shuffle round each other, unless it has
+    /// a [`Rounds`](crate::minds::Rounds) route to walk. A swap sets
     /// off what each of the two is put onto, as a step would, so stepping
     /// past one is no way over the plate it stood on.
     pub minds_too: bool,
@@ -793,6 +794,61 @@ mod tests {
         let (trace, start) = past_a_critter(|small, theirs| BumpRules::new().give_way(small).give_way(theirs).minds_too(), false, false, true);
         assert!(trace.iter().all(|(_, critter)| *critter == Some(start.offset(2, 0))), "the critter was never moved");
         assert_eq!(trace.last().unwrap().0, start.offset(3, 0), "and the hunter waits behind it");
+    }
+
+    /// Where a walker, on `rounds` along the corridor `past_a_critter`
+    /// builds, stands after forty frames, with the critter between it and
+    /// the round's point: both of one side, which gives way, so allied.
+    fn walker_past_a_critter(rounds: bool) -> (Point, Point, Point) {
+        let mut rig = Rig::built(true);
+        let small = small_side_hunted(&mut rig, false);
+        rig.app.insert_resource(BumpRules::new().give_way(small).minds_too());
+        let start = rig.start;
+        let wall = rig.tiles.expect("wall");
+        for dx in -1..=7 {
+            let mut map = rig.app.world_mut().resource_mut::<WorldMap>();
+            map.set_tile(start.offset(dx, -1), wall);
+            map.set_tile(start.offset(dx, 1), wall);
+        }
+        rig.app.world_mut().resource_mut::<WorldMap>().set_tile(start.offset(7, 0), wall);
+        let critter = rig.app.world_mut().spawn((Actor, Blocks, Position(start.offset(2, 0)), Health::full(5), Faction(small))).id();
+        let brain = atglyph_rules::Brain::new().then(atglyph_rules::ai::tactics::WalkRounds);
+        let walker = rig
+            .app
+            .world_mut()
+            .spawn((
+                Actor,
+                Blocks,
+                Position(start.offset(4, 0)),
+                Health::full(20),
+                Faction(small),
+                crate::minds::Perception(8),
+                crate::minds::Mind(std::sync::Arc::new(brain)),
+            ))
+            .id();
+        if rounds {
+            rig.app.world_mut().entity_mut(walker).insert(crate::minds::Rounds { route: vec![start.offset(1, 0)], next: 0 });
+        }
+        for _ in 0..40 {
+            if rig.app.world().get::<MyTurn>(rig.player).is_some() {
+                rig.app.world_mut().write_message(Intent::new(rig.player, crate::turn::Wait));
+            }
+            rig.app.update();
+        }
+        let at = |e: Entity| rig.app.world().get::<Position>(e).map(|p| p.0).expect("it stands");
+        (at(walker), at(critter), start)
+    }
+
+    /// A mind on rounds steps past one that gives way even when its own
+    /// side gives way too, since a lane shut by a boxed-in villager would
+    /// keep its round from ever being walked; one with no rounds still
+    /// does not.
+    #[test]
+    fn a_mind_on_rounds_steps_past_one_that_gives_way_though_its_own_side_does() {
+        let (walker, _, start) = walker_past_a_critter(true);
+        assert_eq!(walker, start.offset(1, 0), "the round was walked past the critter");
+        let (walker, critter, start) = walker_past_a_critter(false);
+        assert_eq!((walker, critter), (start.offset(4, 0), start.offset(2, 0)), "a mind with no round does not push past");
     }
 
     /// A mind hostile to a side that gives way strikes one of it rather than

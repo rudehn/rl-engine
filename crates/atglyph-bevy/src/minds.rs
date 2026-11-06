@@ -1271,6 +1271,7 @@ pub(crate) fn decide_minds(
     mut acting: ResMut<Acting>,
     mut world: MindWorld,
     mut minds: Query<Deciding, With<MyTurn>>,
+    walkers: Query<&Rounds>,
 ) {
     // Before anything returns early: a change is seen once, by the run of
     // this system that comes after it, whether or not a mind decides then.
@@ -1297,11 +1298,22 @@ pub(crate) fn decide_minds(
     let (fields, rng, map, occupancy) = (&mut **fields, &mut **rng, &**map, &**occupancy);
     // Who gives way to this mind: one neutral to it of a side the bump
     // rules name, when they say minds step past too, and never to a mind
-    // of such a side itself, so two of them do not shuffle round each other.
+    // of such a side itself, so two of them do not shuffle round each other;
+    // but one with a round to walk steps past all the same, since it has
+    // somewhere to be and a boxed-in bystander in a one-wide lane would
+    // otherwise keep it from it for good.
     let side_of = |e: Entity| sides.get(e).ok().map(|f| f.0);
     let mine = side_of(thinker);
-    let passing = bumps.as_deref().filter(|r| r.minds_too && !r.gives_way(mine));
-    let neutral = |e: Entity| crate::combat::regard(rules.as_deref(), mine, side_of(e)) == Some(atglyph_rules::Relation::Neutral);
+    let walking = walkers.get(thinker).is_ok_and(|r| !r.route.is_empty());
+    let passing = bumps.as_deref().filter(|r| r.minds_too && (walking || !r.gives_way(mine)));
+    // One of its own side, allied to it, is passed too by a mind on its
+    // round: the folk are one side, and a guard on rounds must get by a
+    // villager as the player does.
+    let neutral = |e: Entity| match crate::combat::regard(rules.as_deref(), mine, side_of(e)) {
+        Some(atglyph_rules::Relation::Neutral) => true,
+        Some(atglyph_rules::Relation::Allied) => walking,
+        _ => false,
+    };
     let gives_way = |p: Point| {
         let here = occupancy.at(p);
         passing.is_some_and(|r| !here.is_empty() && here.iter().all(|e| r.gives_way(side_of(*e)) && neutral(*e)))
