@@ -245,7 +245,10 @@ pub struct Launch<'w, 's> {
     map: Res<'w, WorldMap>,
     occupancy: Res<'w, Occupancy>,
     rng: ResMut<'w, CombatRng>,
-    throwers: Query<'w, 's, (&'static Position, &'static mut Inventory, Option<&'static mut Equipped>), With<MyTurn>>,
+    throwers: Query<'w, 's, (&'static Position, &'static mut Inventory), With<MyTurn>>,
+    /// What everyone wears: the thrower's, which a thing thrown comes off,
+    /// and whoever it lands on, whose shield may turn it aside.
+    equipped: Query<'w, 's, &'static mut Equipped>,
     missiles: Query<'w, 's, (&'static Throwable, Option<&'static mut Stack>), With<Item>>,
     alive: Query<'w, 's, (), (With<Health>, Without<Dead>)>,
     cues: MessageWriter<'w, Cued>,
@@ -262,6 +265,10 @@ pub struct Launch<'w, 's> {
     sides: Query<'w, 's, &'static crate::combat::Faction>,
     /// What slows a throw: the thrower's own and its worn attack speeds.
     paces: Query<'w, 's, &'static crate::combat::AttackSpeed>,
+    /// Whether a shield turns it aside where it lands. Not a
+    /// [`Guarding`](crate::shields::Guarding), whose read of what is worn
+    /// would stand beside `equipped`, which takes the thing thrown off.
+    guard: crate::shields::Guard<'w, 's>,
 }
 
 /// A throw that has left the hand and not yet come down: what it will do
@@ -296,14 +303,31 @@ pub(crate) fn resolve_throws(
     mut reports: ThrowReports,
     stuck: Query<(), With<crate::items::Stuck>>,
 ) {
-    let Launch { map, occupancy, mut rng, mut throwers, mut missiles, alive, mut cues, mut cue_wait, mut airborne, marks, throws, sides, paces } = launch;
+    let Launch {
+        map,
+        occupancy,
+        mut rng,
+        mut throwers,
+        mut equipped,
+        mut missiles,
+        alive,
+        mut cues,
+        mut cue_wait,
+        mut airborne,
+        marks,
+        throws,
+        sides,
+        paces,
+        mut guard,
+    } = launch;
     for intent in intents.read() {
         let (actor, Throw { item, at }) = (intent.actor, intent.action);
         if !resolution.claim(actor) {
             continue;
         }
-        let thrown_as = throwers.get(actor).ok().and_then(|(_, _, worn)| throws.by(actor, item, worn.map(|w| &w.0)));
-        let (Ok((pos, mut bag, worn)), Ok((_, stack)), Some(thrown_as)) = (throwers.get_mut(actor), missiles.get_mut(item), thrown_as) else {
+        let thrown_as = throws.by(actor, item, equipped.get(actor).ok().map(|w| &w.0));
+        let worn = equipped.get_mut(actor).ok();
+        let (Ok((pos, mut bag)), Ok((_, stack)), Some(thrown_as)) = (throwers.get_mut(actor), missiles.get_mut(item), thrown_as) else {
             resolution.failed(actor, BASE_ACTION_COST);
             continue;
         };
@@ -351,7 +375,8 @@ pub(crate) fn resolve_throws(
         // knife is in the air until its flight has been seen, and lies
         // nowhere until it comes down.
         let Some(landing) = airborne.launched(&mut cue_wait, landing) else { continue };
-        land(landing, map.current(), &mut commands, &mut rng, &alive, &mut reports);
+        let mut on = Defenders { alive: &alive, worn: &equipped, guard: &mut guard };
+        land(landing, map.current(), &mut commands, &mut rng, &mut on, &mut reports);
     }
 }
 
@@ -363,6 +388,7 @@ pub struct ThrowReports<'w> {
     events: MessageWriter<'w, ItemEvent>,
     fired: MessageWriter<'w, Fired>,
     missed: MessageWriter<'w, crate::accuracy::Missed>,
+    blocked: MessageWriter<'w, crate::shields::AttackBlocked>,
     launched: MessageWriter<'w, Launched>,
 }
 
@@ -370,9 +396,27 @@ pub struct ThrowReports<'w> {
 /// been seen. Landing counts as progress, so the loop goes on to deal the
 /// next turn.
 pub(crate) fn land_throws(mut commands: Commands, launch: Launch, mut reports: ThrowReports, mut turns: ResMut<crate::turn::Turns>) {
-    let Launch { map, mut rng, alive, mut cue_wait, mut airborne, .. } = launch;
+    let Launch { map, mut rng, alive, equipped, mut cue_wait, mut airborne, mut guard, .. } = launch;
+    let mut on = Defenders { alive: &alive, worn: &equipped, guard: &mut guard };
     for landing in airborne.landing(&mut cue_wait, &mut turns) {
-        land(landing, map.current(), &mut commands, &mut rng, &alive, &mut reports);
+        land(landing, map.current(), &mut commands, &mut rng, &mut on, &mut reports);
+    }
+}
+
+/// Whoever a throw may come down on, as it lands: whether they still stand,
+/// and whether their shield turns it aside.
+struct Defenders<'a, 'w, 's> {
+    alive: &'a Query<'w, 's, (), (With<Health>, Without<Dead>)>,
+    worn: &'a Query<'w, 's, &'static mut Equipped>,
+    guard: &'a mut crate::shields::Guard<'w, 's>,
+}
+
+impl Defenders<'_, '_, '_> {
+    /// The shield of `target` that turns aside what `thrower` threw, if
+    /// one does.
+    fn block(&mut self, target: Entity, thrower: Entity, rng: &mut CombatRng) -> Option<Entity> {
+        let worn = self.worn.get(target).ok().map(|w| &w.0);
+        self.guard.block_wearing(target, worn, thrower, crate::combat::DamageRoute::Thrown, rng)
     }
 }
 
@@ -380,25 +424,25 @@ pub(crate) fn land_throws(mut commands: Commands, launch: Launch, mut reports: T
 /// whoever it struck, and as the `land` moment. A consumable one is spent
 /// by that moment and gone before anyone could pick it up; anything else
 /// lies where it came to rest.
-fn land(
-    landing: ThrowLanding,
-    map: MapId,
-    commands: &mut Commands,
-    rng: &mut CombatRng,
-    alive: &Query<(), (With<Health>, Without<Dead>)>,
-    reports: &mut ThrowReports,
-) {
+fn land(landing: ThrowLanding, map: MapId, commands: &mut Commands, rng: &mut CombatRng, on: &mut Defenders, reports: &mut ThrowReports) {
     let ThrowLanding { actor, item, rests, struck, strike, launched, odds } = landing;
     commands.entity(item).insert((Position(rests), OnMap(map)));
-    let target = struck.filter(|who| alive.contains(*who));
+    let target = struck.filter(|who| on.alive.contains(*who));
     // Rolled where the damage is rolled, as it lands, so a watched throw
-    // and an unwatched one draw in the same order. A miss reports whom it
-    // missed and then lands as a throw that struck nobody.
-    let missed = target.is_some() && odds.is_some_and(|o| !o.roll(&mut **rng));
-    if let (true, Some(target)) = (missed, target) {
-        reports.missed.write(crate::accuracy::Missed { attacker: actor, target, with: Some(item), reach: crate::combat::DamageRoute::Thrown });
+    // and an unwatched one draw in the same order, and a shield is raised
+    // from the blocks its bearer has then. The shield first, so a throw
+    // turned aside is never rolled to land. A block or a miss reports whom
+    // it was at and then lands as a throw that struck nobody, at their feet.
+    let thrown = crate::combat::DamageRoute::Thrown;
+    let blocked = target.and_then(|target| Some((target, on.block(target, actor, rng)?)));
+    if let Some((target, shield)) = blocked {
+        reports.blocked.write(crate::shields::AttackBlocked { attacker: actor, target, shield, with: Some(item), reach: thrown });
     }
-    let struck = if missed { None } else { target };
+    let missed = blocked.is_none() && target.is_some() && odds.is_some_and(|o| !o.roll(&mut **rng));
+    if let (true, Some(target)) = (missed, target) {
+        reports.missed.write(crate::accuracy::Missed { attacker: actor, target, with: Some(item), reach: thrown });
+    }
+    let struck = if missed || blocked.is_some() { None } else { target };
     if let (Some(target), Some((kind, dice))) = (struck, strike) {
         // Floored where it is rolled, as a blow is: a throw that rolls
         // below nothing has missed, not healed.

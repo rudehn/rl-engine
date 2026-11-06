@@ -89,6 +89,7 @@ pub mod combat {
         Loadout, RangedAttack, Resists, Struck, line_of_fire, shot,
     };
     pub use atglyph_bevy::effects::{Effect, EffectBonus, EffectKinds, EffectWorld, Effects, EffectsPlugin, Fired, FromArgs, Landing, TriggerKinds, Triggers};
+    pub use atglyph_bevy::shields::{AttackBlocked, BlocksSpent, Guarding, Shield, ShieldsPlugin};
     pub use atglyph_bevy::status::{ActiveStatuses, ApplyStatus, RemoveStatus, StatBlock, StatusEvent};
     pub use atglyph_bevy::throwing::{Launched, Launcher, Throw, ThrowAs, Throwable, ThrowingPlugin, Throws};
     pub use atglyph_rules::ability::{

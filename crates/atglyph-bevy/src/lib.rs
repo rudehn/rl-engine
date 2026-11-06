@@ -30,9 +30,10 @@
 //!   across many turns.
 //! - [`fields`], [`fire`] and [`gas`]: what spreads over the map, stepped
 //!   by the rules in `atglyph-rules`.
-//! - [`combat`], [`accuracy`], [`bump`], [`status`], [`ability`],
-//!   [`effects`], [`throwing`] and [`ammo`]: fighting, from a blow to an
-//!   ability's effects landing where it was aimed.
+//! - [`combat`], [`accuracy`], [`shields`], [`bump`], [`status`],
+//!   [`ability`], [`effects`], [`throwing`] and [`ammo`]: fighting, from a
+//!   blow, or the shield that turns it aside, to an ability's effects
+//!   landing where it was aimed.
 //! - [`items`], [`consumable`], [`loot`], [`parts`], [`prefabs`] and
 //!   [`registries`]: things, what a use costs them, where they turn up,
 //!   the authored parts an actor or an item is made from, and the
@@ -85,6 +86,7 @@ pub mod replay;
 pub mod secrets;
 pub mod seed;
 pub mod settings;
+pub mod shields;
 pub mod state;
 pub mod status;
 pub mod stealth;
@@ -159,6 +161,7 @@ pub use replay::{Pressed, Recording};
 pub use secrets::Secret;
 pub use seed::{ENGINE_DOMAINS, LaunchArgs, RunRng, Seed, Stream, StreamDomain};
 pub use settings::{Setting, SettingId, Settings};
+pub use shields::{AttackBlocked, BlocksSpent, Guarding, Shield, ShieldsPlugin};
 pub use state::{Ending, EngineState, Outcome, Restart, RunOver, world_is_shown};
 pub use status::{ActiveStatuses, ApplyStatus, RemoveStatus, SideWas, StatBlock, StatusEvent};
 pub use stealth::{Aware, Deed, Hides, LastDeed, Notice, Noticed, Stealth, StealthPlugin, StealthRange, Unseen, Watchers};
@@ -237,6 +240,7 @@ pub mod prelude {
 
     pub use crate::seed::{LaunchArgs, Seed};
     pub use crate::settings::{Setting, SettingId, Settings};
+    pub use crate::shields::{AttackBlocked, BlocksSpent, Guarding, Shield, ShieldsPlugin};
     pub use crate::state::{Ending, EngineState, Outcome, Restart, RunOver};
     pub use crate::status::{ActiveStatuses, ApplyStatus, RemoveStatus, SideWas, StatBlock, StatusEvent};
 

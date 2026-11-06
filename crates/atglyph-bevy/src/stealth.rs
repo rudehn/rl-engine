@@ -514,6 +514,7 @@ impl Plugin for StealthPlugin {
             .add_message::<Noticed>()
             .add_message::<DamageDealt>()
             .add_message::<crate::accuracy::Missed>()
+            .add_message::<crate::shields::AttackBlocked>()
             // What ending the unseen reads and writes, registered here so a
             // game with stealth and no items, abilities or statuses has
             // nothing to reveal on rather than a panic.
@@ -550,7 +551,8 @@ pub(crate) fn give_range(add: On<Add, Actor>, rule: Res<NoticeRule>, mut command
 ///
 /// In [`TurnSet::React`](crate::plugin::TurnSet::React), once the action's
 /// blows have landed. An actor that waited has stood still; one that struck
-/// or missed someone, or threw something at an actor, has attacked,
+/// or missed someone, had its attack turned aside by a shield, or threw
+/// something at an actor, has attacked,
 /// whatever else its action was; any other that finished an action has
 /// acted.
 pub(crate) fn record_deeds(
@@ -558,6 +560,7 @@ pub(crate) fn record_deeds(
     mut waits: MessageReader<Intent<Wait>>,
     mut struck: MessageReader<Struck>,
     mut missed: MessageReader<crate::accuracy::Missed>,
+    mut blocked: MessageReader<crate::shields::AttackBlocked>,
     mut items: MessageReader<ItemEvent>,
     mut deeds: Query<&mut LastDeed>,
 ) {
@@ -570,7 +573,7 @@ pub(crate) fn record_deeds(
     for ActionDone { actor, .. } in done.read() {
         note(*actor, if waited.contains(actor) { Deed::Waited } else { Deed::Acted });
     }
-    let attackers = struck.read().map(|s| s.attacker).chain(missed.read().map(|m| m.attacker));
+    let attackers = struck.read().map(|s| s.attacker).chain(missed.read().map(|m| m.attacker)).chain(blocked.read().map(|b| b.attacker));
     let throwers = items.read().filter_map(|e| match e {
         ItemEvent::Thrown { actor, struck: Some(_), .. } => Some(*actor),
         _ => None,
@@ -887,6 +890,7 @@ pub(crate) fn wake_on_damage(
     mut dealt: MessageReader<DamageDealt>,
     mut deaths: MessageReader<crate::combat::DeathEvent>,
     mut missed: MessageReader<crate::accuracy::Missed>,
+    mut blocked: MessageReader<crate::shields::AttackBlocked>,
     mut observers: Query<&mut Aware>,
     attackers: Query<&Position, (With<Hides>, Without<Unseen>)>,
     mut noticed: MessageWriter<Noticed>,
@@ -912,9 +916,12 @@ pub(crate) fn wake_on_damage(
     }
     // A blow or a shot that went wide was still aimed at it, and is at
     // least as plain as one armor stopped: otherwise a hider could fire at
-    // a sleeper until one landed.
+    // a sleeper until one landed. One a shield turned aside the same.
     for m in missed.read() {
         wake(m.target, m.attacker);
+    }
+    for b in blocked.read() {
+        wake(b.target, b.attacker);
     }
 }
 
@@ -1553,6 +1560,21 @@ mod tests {
         field.app.world_mut().write_message(crate::accuracy::Missed { attacker: player, target: watcher, with: None, reach: crate::combat::DamageRoute::Shot });
         field.wait();
         assert!(field.aware().knows(player), "shot at and missed, so it knows where from");
+    }
+
+    /// A blow turned aside by a shield was aimed at it as surely as one
+    /// that went wide, so it wakes the one it was aimed at the same way.
+    #[test]
+    fn a_blocked_attack_alerts_its_target_as_a_miss_does() {
+        let mut field = Field::new(blind(), 5, 10, true, None);
+        field.wait();
+        assert!(!field.aware().knows(field.player));
+        let (watcher, player) = (field.watcher, field.player);
+        let shield = field.app.world_mut().spawn(crate::items::Item).id();
+        let blocked = crate::shields::AttackBlocked { attacker: player, target: watcher, shield, with: None, reach: crate::combat::DamageRoute::Melee };
+        field.app.world_mut().write_message(blocked);
+        field.wait();
+        assert!(field.aware().knows(player), "struck at and turned aside, so it knows where from");
     }
 
     #[test]

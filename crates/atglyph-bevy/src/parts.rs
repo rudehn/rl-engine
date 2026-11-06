@@ -31,7 +31,7 @@ use std::sync::Arc;
 
 use atglyph_core::{DiceRoll, Id};
 use atglyph_grid::Glow;
-use atglyph_rules::parts::{Charges, KeepAway, LaunchDef, Level, Melee, Ranged, ThrowDef};
+use atglyph_rules::parts::{Charges, KeepAway, LaunchDef, Level, Melee, Ranged, ShieldDef, ThrowDef};
 use atglyph_rules::stats::Op;
 use atglyph_rules::{
     AbilityId, Brain, DropTable, EquipShape, FactionId, HearingStats, NoticeStats, Registry, Repertoire, Resistances, StatId, Stats, StatusDef, StatusId,
@@ -52,6 +52,7 @@ use crate::minds::{Intelligence, Mind, Perception};
 use crate::noise::Hearing;
 use crate::registries::Registries;
 use crate::remains::LeavesRemains;
+use crate::shields::Shield;
 use crate::status::{ActiveStatuses, StatBlock, WhileHolding};
 use crate::stealth::Notice;
 use crate::throwing::{Launcher, Throwable};
@@ -133,6 +134,9 @@ pub struct ItemParts {
     /// How quickly its wearer strikes, shoots and throws while it is worn, in
     /// percent with a hundred ordinary. `None` changes nothing.
     pub attack_speed: Option<u32>,
+    /// The attacks it turns aside while worn, and how many a turn. `None`
+    /// blocks nothing.
+    pub shield: Option<ShieldDef>,
     /// The tag of what one shot spends from its wielder's bag.
     pub ammo: Option<TagId>,
     /// The key copies merge under, for a thing that stacks; the game's,
@@ -220,6 +224,9 @@ impl ItemParts {
         }
         if self.attacks.launch.is_some() && self.wear.is_none() {
             wrong.push("a launcher, on a thing that is never worn".to_string());
+        }
+        if self.shield.is_some() && self.wear.is_none() {
+            wrong.push("a shield, on a thing that is never worn".to_string());
         }
         if self.ammo.is_some() && self.attacks.ranged.is_none() {
             wrong.push("spends ammunition, on a thing that shoots nothing".to_string());
@@ -336,6 +343,7 @@ pub struct ItemLevel(pub i32);
 /// [`Item`], `MadeOf`, and where the parts say so, [`ItemLevel`],
 /// [`Tagged`], [`Triggers`], [`WornTimer`], [`Consumable`] and [`Attuned`],
 /// [`Wearable`], [`Ammo`], [`Armor`], [`Resists`], the attacks,
+/// [`AttackSpeed`], [`Shield`],
 /// [`Bestows`], [`EffectBonus`], [`LightSource`], or [`LitWhenWorn`] for a
 /// light that shines only while worn, [`WornStatuses`], [`WornDarkSight`]
 /// and a [`Stack`] of one.
@@ -378,6 +386,9 @@ pub fn insert_parts(e: &mut EntityCommands, parts: &Arc<ItemParts>, level: i32) 
     }
     if let Some(percent) = parts.attack_speed {
         e.insert(AttackSpeed(percent));
+    }
+    if let Some(shield) = parts.shield {
+        e.insert(Shield(shield));
     }
     match (parts.light, parts.light_when) {
         (Some(light), LightWhen::Carried) => drop(e.insert(LightSource(light))),
@@ -996,6 +1007,20 @@ mod tests {
         let mut world = World::new();
         let (e, _) = spawned(&mut world, &worn, 0);
         assert_eq!(world.get::<Launcher>(e), Some(&Launcher { ammo, range: 4, damage: DiceRoll::new(1, 4) }));
+    }
+
+    #[test]
+    fn a_shield_is_spawned_where_worn_and_refused_on_a_thing_never_worn() {
+        let round = ShieldDef { chance: 50, blocks: 1 };
+        let loose = ItemParts { shield: Some(round), ..ItemParts::default() };
+        assert_eq!(loose.check(), vec!["a shield, on a thing that is never worn".to_string()]);
+        let worn = Arc::new(ItemParts { wear: Some(EquipShape::in_slot(atglyph_rules::SlotId::from_raw(1))), ..loose });
+        assert!(worn.check().is_empty(), "{:?}", worn.check());
+        let mut world = World::new();
+        let (e, _) = spawned(&mut world, &worn, 0);
+        assert_eq!(world.get::<Shield>(e), Some(&Shield(round)));
+        let (plain, _) = spawned(&mut world, &blade(), 0);
+        assert!(world.get::<Shield>(plain).is_none(), "no part, no shield");
     }
 
     #[test]
