@@ -2274,6 +2274,59 @@ mod tests {
         assert_eq!(app.world().get::<Position>(knife).map(|p| p.0), Some(start.offset(5, 0)), "which lies where it lay");
     }
 
+    /// A thrower wielding a knife it could throw, and carrying `spares`
+    /// more, with the player four off, run for a dozen turns of the player
+    /// waiting: the player, and the knife in its hand.
+    fn wielding_a_knife(spares: usize) -> (App, Entity, Entity) {
+        use atglyph_rules::ai::tactics::ThrowAtRange;
+        use atglyph_rules::{EquipShape, Equipment, SlotId};
+        let (mut app, start, _) = arena();
+        app.add_plugins((crate::items::ItemsPlugin, crate::throwing::ThrowingPlugin));
+        let sides = crate::testing::two_sides(&mut app);
+        let player = app.world_mut().spawn((Actor, Player, Blocks, Position(start), Viewshed::new(8), Health::full(30), Faction(sides.ours))).id();
+        let hand = EquipShape::in_slot(SlotId::from_raw(0));
+        let knife = || (Item, Throwable::new(Some(6), Some((sides.kind, DiceRoll::flat(4)))));
+        let held = app.world_mut().spawn((knife(), Wearable(hand.clone()))).id();
+        let mut bag = vec![held];
+        bag.extend((0..spares).map(|_| app.world_mut().spawn(knife()).id()));
+        let mut worn = Equipment::with_slot_count(1);
+        worn.equip(held, &hand).unwrap();
+        app.world_mut().spawn((
+            Actor,
+            Blocks,
+            Position(start.offset(4, 0)),
+            Health::full(10),
+            Faction(sides.theirs),
+            Perception(8),
+            Inventory { items: bag },
+            Equipped(worn),
+            Mind(Arc::new(Brain::new().then(ThrowAtRange::default()))),
+            Intelligence(Wits::SAPIENT),
+        ));
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        for _ in 0..12 {
+            if app.world().get::<MyTurn>(player).is_some() {
+                app.world_mut().write_message(Intent::new(player, Wait));
+            }
+            app.update();
+        }
+        (app, player, held)
+    }
+
+    /// What a mind wields is what it fights with, not a thing to throw: it
+    /// throws only the spares it carries, as a DCSS monster throws only
+    /// its missiles, and never the blade in its hand.
+    #[test]
+    fn a_mind_throws_the_spare_knives_it_carries_and_never_the_one_in_its_hand() {
+        let (app, player, held) = wielding_a_knife(0);
+        assert_eq!(app.world().get::<Health>(player).unwrap().current, 30, "nothing was thrown");
+        assert!(app.world().get::<Position>(held).is_none(), "the knife it holds never left its hand");
+
+        let (app, player, held) = wielding_a_knife(1);
+        assert_eq!(app.world().get::<Health>(player).unwrap().current, 26, "it threw its spare");
+        assert!(app.world().get::<Position>(held).is_none(), "and kept the one it holds");
+    }
+
     #[test]
     fn a_mind_counts_a_rangeless_missile_by_its_own_reach() {
         let (app, player, _) = knife_scene(Wits::SAPIENT, None, Some(6));

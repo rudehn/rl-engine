@@ -174,7 +174,8 @@ pub struct Snapshot<A: Copy> {
     /// What the actor is able to do. A tactic that needs a capability asks
     /// here before it decides, whatever the brain it sits in would like.
     pub wits: Wits,
-    /// What it carries that it could throw. Empty for an actor with no bag,
+    /// What it carries that it could throw, less what it wears, which it
+    /// fights with rather than throws. Empty for an actor with no bag,
     /// which is most of them.
     pub missiles: Vec<Missile<A>>,
     /// What it carries that it could use this turn, in the order it was

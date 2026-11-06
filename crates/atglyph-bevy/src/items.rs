@@ -1206,10 +1206,17 @@ pub struct Belongings<'w, 's> {
 }
 
 impl Belongings<'_, '_> {
-    /// What `thinker` carries that it could throw.
+    /// What `thinker` carries that it could throw, and does not wear: what
+    /// it wields it fights with, so a blade in its hand that would fly is
+    /// never thrown, as a DCSS monster throws only its spare missiles.
     fn missiles(&self, thinker: Entity) -> Vec<atglyph_rules::Missile<Entity>> {
-        let Ok((Some(bag), _)) = self.bags.get(thinker) else { return Vec::new() };
-        bag.items.iter().filter_map(|item| self.throws.of(thinker, *item).map(|t| atglyph_rules::Missile { item: *item, range: t.range })).collect()
+        let Ok((Some(bag), worn)) = self.bags.get(thinker) else { return Vec::new() };
+        let spare = |item: &&Entity| worn.is_none_or(|w| !w.contains(**item));
+        bag.items
+            .iter()
+            .filter(spare)
+            .filter_map(|item| self.throws.of(thinker, *item).map(|t| atglyph_rules::Missile { item: *item, range: t.range }))
+            .collect()
     }
 
     /// What `thinker` carries that it could use, by [`may_use`], the rule
