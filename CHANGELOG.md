@@ -75,6 +75,7 @@ atglyph is not on crates.io yet, so a game depends on a release by its git tag, 
 
 ### Fixed
 
+- A mind that is a `Trader` no longer throws or uses its stock: what it carries and does not wear is for sale, so its `Snapshot::missiles` are empty and its `Snapshot::carried` only what it wears, and a store keeper that sees a foe across its floor no longer throws its wares there for anyone to pick up, nor eats the bread it sells when hurt.
 - A mind no longer throws what it wears: its `Snapshot::missiles` are the throwable things it carries and does not have on, so a goblin wielding a dagger strikes with it rather than throwing it away, and still throws a spare one it carries.
 - A mind with `Rounds` to walk steps past one that gives way, neutral or of its own side, even when its own side gives way too, under `BumpRules::minds_too`, so a villager boxed into a one-wide lane beside a post no longer shuts a round out for good; it passes only one off duty, never another walking a round or holding a cell (`Moves` `Hold`), so two on rounds do not swap back and forth for ever and a post is not traded out of, and two minds with no rounds still never push past each other.
 - A mind that opens doors no longer panics reading a flow field kept through a move of a streamed place's window, and a fleer whose foe is beyond its reach flees from the nearest open cell of its reach's edge toward it rather than from one that may be a wall or under a prop.

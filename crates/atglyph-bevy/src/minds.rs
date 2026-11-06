@@ -2275,9 +2275,10 @@ mod tests {
     }
 
     /// A thrower wielding a knife it could throw, and carrying `spares`
-    /// more, with the player four off, run for a dozen turns of the player
-    /// waiting: the player, and the knife in its hand.
-    fn wielding_a_knife(spares: usize) -> (App, Entity, Entity) {
+    /// more, a [`Trader`](crate::trade::Trader) when it `trades`, with the
+    /// player four off, run for a dozen turns of the player waiting: the
+    /// player, and the knife in its hand.
+    fn wielding_a_knife(spares: usize, trades: bool) -> (App, Entity, Entity) {
         use atglyph_rules::ai::tactics::ThrowAtRange;
         use atglyph_rules::{EquipShape, Equipment, SlotId};
         let (mut app, start, _) = arena();
@@ -2291,18 +2292,24 @@ mod tests {
         bag.extend((0..spares).map(|_| app.world_mut().spawn(knife()).id()));
         let mut worn = Equipment::with_slot_count(1);
         worn.equip(held, &hand).unwrap();
-        app.world_mut().spawn((
-            Actor,
-            Blocks,
-            Position(start.offset(4, 0)),
-            Health::full(10),
-            Faction(sides.theirs),
-            Perception(8),
-            Inventory { items: bag },
-            Equipped(worn),
-            Mind(Arc::new(Brain::new().then(ThrowAtRange::default()))),
-            Intelligence(Wits::SAPIENT),
-        ));
+        let thrower = app
+            .world_mut()
+            .spawn((
+                Actor,
+                Blocks,
+                Position(start.offset(4, 0)),
+                Health::full(10),
+                Faction(sides.theirs),
+                Perception(8),
+                Inventory { items: bag },
+                Equipped(worn),
+                Mind(Arc::new(Brain::new().then(ThrowAtRange::default()))),
+                Intelligence(Wits::SAPIENT),
+            ))
+            .id();
+        if trades {
+            app.world_mut().entity_mut(thrower).insert(crate::trade::Trader::default());
+        }
         app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
         for _ in 0..12 {
             if app.world().get::<MyTurn>(player).is_some() {
@@ -2318,13 +2325,28 @@ mod tests {
     /// its missiles, and never the blade in its hand.
     #[test]
     fn a_mind_throws_the_spare_knives_it_carries_and_never_the_one_in_its_hand() {
-        let (app, player, held) = wielding_a_knife(0);
+        let (app, player, held) = wielding_a_knife(0, false);
         assert_eq!(app.world().get::<Health>(player).unwrap().current, 30, "nothing was thrown");
         assert!(app.world().get::<Position>(held).is_none(), "the knife it holds never left its hand");
 
-        let (app, player, held) = wielding_a_knife(1);
+        let (app, player, held) = wielding_a_knife(1, false);
         assert_eq!(app.world().get::<Health>(player).unwrap().current, 26, "it threw its spare");
         assert!(app.world().get::<Position>(held).is_none(), "and kept the one it holds");
+    }
+
+    /// What a trader carries and does not wear is its stock, for sale and
+    /// not its own: it throws none of it, however many spare knives it has
+    /// on its shelves, and still fights with the one in its hand.
+    #[test]
+    fn a_trader_never_throws_its_stock() {
+        let (mut app, player, held) = wielding_a_knife(3, true);
+        let trader = {
+            let mut q = app.world_mut().query_filtered::<Entity, With<crate::trade::Trader>>();
+            q.single(app.world()).expect("one trader")
+        };
+        assert_eq!(app.world().get::<Health>(player).unwrap().current, 30, "it threw nothing of its stock");
+        assert!(app.world().get::<Position>(held).is_none(), "nor the knife it holds");
+        assert_eq!(app.world().get::<Inventory>(trader).unwrap().items.len(), 4, "its stock is all there");
     }
 
     #[test]
@@ -2571,6 +2593,30 @@ mod tests {
         assert_eq!(mended(10, Wits::SAPIENT), (1, 16, 2), "at half it mends, once, and at sixteen of twenty it keeps the rest");
         assert_eq!(mended(11, Wits::SAPIENT), (0, 11, 3), "above half it keeps all of it");
         assert_eq!(mended(10, Wits::SAPIENT.without(Wits::USES)), (0, 10, 3), "as it does without the wits to use things, however hurt");
+    }
+
+    /// A trader's stock is for sale, not for its own use: hurt past its
+    /// share, it keeps a draught it carries to sell, and mends with one it
+    /// wears, which is its own.
+    #[test]
+    fn a_trader_never_uses_its_stock_but_uses_what_it_wears() {
+        let mended = |worn: bool| {
+            let (mut app, player, start, sides) = stocked();
+            let draught = thing(&mut app, MENDS);
+            let mind = carrier(&mut app, start.offset(4, 0), sides.theirs, 10, Wits::SAPIENT, vec![draught], UseCarried::default());
+            app.world_mut().entity_mut(mind).insert(crate::trade::Trader::default());
+            if worn {
+                let neck = atglyph_rules::EquipShape::in_slot(atglyph_rules::SlotId::from_raw(0));
+                let mut on = atglyph_rules::Equipment::with_slot_count(1);
+                on.equip(draught, &neck).unwrap();
+                app.world_mut().entity_mut(draught).insert(Wearable(neck));
+                app.world_mut().entity_mut(mind).insert(Equipped(on));
+            }
+            let used = wait_out(&mut app, player, 6).into_iter().filter(|e| *e == ItemEvent::Used { actor: mind, item: draught }).count();
+            (used, app.world().get::<Health>(mind).unwrap().current)
+        };
+        assert_eq!(mended(false), (0, 10), "it keeps the draught it sells");
+        assert_eq!(mended(true), (1, 16), "and mends with the one it wears");
     }
 
     /// A mind points what it carries at a foe in its reach, through the

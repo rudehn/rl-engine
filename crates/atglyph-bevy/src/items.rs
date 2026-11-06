@@ -1203,14 +1203,23 @@ pub struct Belongings<'w, 's> {
     uses: Query<'w, 's, &'static Triggers>,
     charges: Query<'w, 's, &'static crate::consumable::Consumable>,
     wearables: Query<'w, 's, (), With<Wearable>>,
+    /// Who trades, and so carries a stock that is not its own to spend.
+    traders: Query<'w, 's, (), With<crate::trade::Trader>>,
 }
 
 impl Belongings<'_, '_> {
     /// What `thinker` carries that it could throw, and does not wear: what
     /// it wields it fights with, so a blade in its hand that would fly is
     /// never thrown, as a DCSS monster throws only its spare missiles.
+    ///
+    /// Nothing, for a [`Trader`](crate::trade::Trader): what it carries and
+    /// does not wear is its stock, for sale, and a keeper that threw its
+    /// shelves at a foe would hand them out free on its own floor.
     fn missiles(&self, thinker: Entity) -> Vec<atglyph_rules::Missile<Entity>> {
         let Ok((Some(bag), worn)) = self.bags.get(thinker) else { return Vec::new() };
+        if self.traders.contains(thinker) {
+            return Vec::new();
+        }
         let spare = |item: &&Entity| worn.is_none_or(|w| !w.contains(**item));
         bag.items
             .iter()
@@ -1224,9 +1233,13 @@ impl Belongings<'_, '_> {
     /// carries: a thing the player has not learnt is empty is empty to the
     /// mind that carries it. A thing with no `use` trigger is the game's to
     /// answer and one whose use asks for another thing has nothing to
-    /// choose that thing for a mind, so neither is told of.
+    /// choose that thing for a mind, so neither is told of. A
+    /// [`Trader`](crate::trade::Trader) is told only of what it wears,
+    /// since the rest is its stock, for sale and not its own to use.
     fn carried(&self, thinker: Entity) -> Vec<atglyph_rules::Carried<Entity>> {
         let Ok((Some(bag), worn)) = self.bags.get(thinker) else { return Vec::new() };
+        let trades = self.traders.contains(thinker);
+        let own = |item: &&Entity| !trades || worn.is_some_and(|w| w.contains(**item));
         let usable = |item: Entity| may_use(item, bag, worn, self.charges.get(item).ok(), self.wearables.contains(item), false);
         let told = |item: Entity| {
             let does = self.uses.get(item).ok()?;
@@ -1237,7 +1250,7 @@ impl Belongings<'_, '_> {
                 mends: uses().any(|t| t.effects.mends()),
             })
         };
-        bag.items.iter().filter_map(|item| told(*item)).collect()
+        bag.items.iter().filter(own).filter_map(|item| told(*item)).collect()
     }
 
     /// How much better `thinker` would be for wearing `item` in `shape`,

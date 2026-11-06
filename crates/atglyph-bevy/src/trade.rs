@@ -56,6 +56,11 @@ pub struct Worth(pub u32);
 /// An actor that trades: it sells whatever it carries that has a
 /// [`Worth`], and buys what carries one of the tags it names.
 ///
+/// What it carries and does not wear is its stock, not its own: a mind
+/// that trades is told of none of it to throw or to use, so a keeper
+/// fights with what it wields and mends with what it wears, and never
+/// spends what it sells.
+///
 /// Not saved by the engine, as [`Offers`](crate::props::Offers) is not:
 /// the game puts it back on with whatever it saves the actor as.
 #[derive(Component, Debug, Clone, Default, PartialEq, Eq)]
