@@ -29,6 +29,9 @@ pub enum ItemAsk<I> {
     Drop(I),
     /// Put a carried thing on.
     Equip(I),
+    /// Put two carried things on, in one action, all or nothing: the first
+    /// and then the second, as two [`ItemAsk::Equip`]s would.
+    EquipBoth(I, I),
     /// Take a thing lying on the actor's cell and put it on, in one action.
     EquipFromGround(I),
     /// Take a worn thing off.
@@ -54,12 +57,18 @@ pub struct ItemFacts<'a, I> {
     /// Whether the actor carries the thing asked about. Read by
     /// [`ItemAsk::Drop`] and [`ItemAsk::Equip`].
     pub carried: bool,
+    /// Whether the second thing of an [`ItemAsk::EquipBoth`] is carried.
+    /// Read by it alone.
+    pub second_carried: bool,
     /// Whether the thing asked about lies on the actor's cell, on the map
     /// it stands on. Read by [`ItemAsk::PickUpItem`] and [`ItemAsk::EquipFromGround`].
     pub underfoot: bool,
     /// Where the thing asked about goes when worn, `None` for a thing that
     /// cannot be. Read by both equips.
     pub shape: Option<&'a EquipShape>,
+    /// Where the second thing of an [`ItemAsk::EquipBoth`] goes when worn.
+    /// Read by it alone.
+    pub second_shape: Option<&'a EquipShape>,
     /// The worn things that will not come off. Read by every ask that takes
     /// something off: a drop, an unequip, and an equip that would push
     /// something off.
@@ -87,8 +96,10 @@ impl<I> Default for ItemFacts<'_, I> {
         Self {
             here: Vec::new(),
             carried: false,
+            second_carried: false,
             underfoot: false,
             shape: None,
+            second_shape: None,
             stuck: Vec::new(),
             usable: false,
             pointed: false,
@@ -134,6 +145,9 @@ pub enum ItemRefusal<I> {
     /// The ask would take off a worn thing that will not come off: this
     /// one.
     WouldNotComeOff(I),
+    /// An [`ItemAsk::EquipBoth`] of two things that cannot be worn
+    /// together: the second would push the first off.
+    NotTogether,
     /// An equip the equipment refused for its shape: a shape naming no
     /// slot, or a slot the wearer does not have.
     CannotGoOn(EquipError),
@@ -190,6 +204,29 @@ pub fn resolve_item<I: Copy + Eq>(ask: ItemAsk<I>, facts: &ItemFacts<'_, I>, wor
                 return Err(No::NotCarried);
             }
             put_on(worn, item, shape, &facts.stuck, Vec::new())
+        }
+        ItemAsk::EquipBoth(first, second) => {
+            let (Some(worn), Some(one), Some(two)) = (worn, facts.shape, facts.second_shape) else {
+                return Err(if facts.shape.is_some() && facts.second_shape.is_some() { No::NoSlots } else { No::NotWearable });
+            };
+            if !facts.carried || !facts.second_carried {
+                return Err(No::NotCarried);
+            }
+            // Put on one after the other, and put back as it was if either
+            // is refused, so the pair is never half on.
+            let before = worn.clone();
+            let done = put_on(worn, first, one, &facts.stuck, Vec::new()).and_then(|mut out| {
+                let next = put_on(worn, second, two, &facts.stuck, Vec::new())?;
+                if next.contains(&Out::Unequipped(first)) {
+                    return Err(No::NotTogether);
+                }
+                out.extend(next);
+                Ok(out)
+            });
+            if done.is_err() {
+                *worn = before;
+            }
+            done
         }
         ItemAsk::PickUpItem(item) if facts.underfoot => Ok(vec![Out::PickedUp(item)]),
         ItemAsk::PickUpItem(_) => Err(No::NotUnderfoot),
@@ -536,5 +573,38 @@ mod tests {
         let here = ItemFacts { underfoot: true, ..ItemFacts::default() };
         assert_eq!(resolve_item(ItemAsk::PickUpItem(7), &here, None), Ok(vec![PickedUp(7)]));
         assert_eq!(resolve_item(ItemAsk::PickUpItem(7), &ItemFacts::default(), None), Err(No::NotUnderfoot));
+    }
+
+    #[test]
+    fn equip_both_puts_two_things_on_and_reports_what_came_off_once() {
+        let (main, off) = (EquipShape::in_slot(MAIN), EquipShape::in_slot(OFF));
+        let bow = EquipShape::in_slot(MAIN).and_claims(OFF);
+        let mut worn = hands();
+        worn.equip(9, &bow).unwrap();
+        let facts = ItemFacts { shape: Some(&main), second_shape: Some(&off), carried: true, second_carried: true, ..ItemFacts::default() };
+        assert_eq!(resolve_item(ItemAsk::EquipBoth(7, 8), &facts, Some(&mut worn)), Ok(vec![Unequipped(9), Equipped(7), Equipped(8)]));
+        assert_eq!((worn.in_slot(MAIN), worn.in_slot(OFF)), (Some(7), Some(8)));
+    }
+
+    #[test]
+    fn equip_both_refuses_two_things_for_one_slot_and_leaves_the_wearer_as_it_was() {
+        let main = EquipShape::in_slot(MAIN);
+        let mut worn = full_hands();
+        let facts = ItemFacts { shape: Some(&main), second_shape: Some(&main), carried: true, second_carried: true, ..ItemFacts::default() };
+        assert_eq!(resolve_item(ItemAsk::EquipBoth(7, 8), &facts, Some(&mut worn)), Err(No::NotTogether));
+        assert_eq!(worn, full_hands());
+    }
+
+    #[test]
+    fn equip_both_refuses_whole_for_the_first_refusal() {
+        let (main, off) = (EquipShape::in_slot(MAIN), EquipShape::in_slot(OFF));
+        let mut worn = full_hands();
+        let stuck = ItemFacts { shape: Some(&main), second_shape: Some(&off), carried: true, second_carried: true, stuck: vec![2], ..ItemFacts::default() };
+        assert_eq!(resolve_item(ItemAsk::EquipBoth(7, 8), &stuck, Some(&mut worn)), Err(No::WouldNotComeOff(2)));
+        assert_eq!(worn, full_hands(), "the first was not left on");
+        let not_second = ItemFacts { second_carried: false, ..stuck.clone() };
+        assert_eq!(resolve_item(ItemAsk::EquipBoth(7, 8), &not_second, Some(&mut hands())), Err(No::NotCarried));
+        let unwearable = ItemFacts { second_shape: None, ..not_second };
+        assert_eq!(resolve_item(ItemAsk::EquipBoth(7, 8), &unwearable, Some(&mut hands())), Err(No::NotWearable));
     }
 }
