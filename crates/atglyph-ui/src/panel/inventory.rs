@@ -770,7 +770,10 @@ fn about(row: &ItemRow, width: usize, whole: bool) -> Vec<(String, ToneId)> {
         let also = if also.is_empty() { also } else { format!(" and {also}") };
         say(format!("worn on the {}{also}", row.slot_name), Tones::MUTED);
     } else if row.wearable() {
-        let also = if also.is_empty() { also } else { format!(", and takes {also}") };
+        // `goes on the right hand and the left hand`: the shorter way to
+        // say it, so a bow's line fits a narrow pack without leaving a
+        // word alone on a row of its own.
+        let also = if also.is_empty() { also } else { format!(" and {also}") };
         say(format!("goes on the {}{also}", row.goes_on.join(" or the ")), Tones::MUTED);
     }
     // Why the footer offers nothing that would take it off.
@@ -1261,7 +1264,7 @@ mod tests {
         stage.app.world_mut().entity_mut(player).insert((Inventory { items: vec![axe] }, Equipped(Equipment::with_slot_count(2))));
         stage.tick();
         stage.press(KeyCode::KeyI);
-        assert_eq!(inside(&stage, 4), "goes on the main hand, and takes the off hand");
+        assert_eq!(inside(&stage, 4), "goes on the main hand and the off hand");
 
         stage.app.world_mut().get_mut::<Equipped>(player).unwrap().equip(axe, &shape).unwrap();
         stage.tick();
@@ -1360,7 +1363,7 @@ mod tests {
             texts,
             [
                 "launches arrow +1d4, range +4",
-                "goes on the right hand, and takes the left hand",
+                "goes on the right hand and the left hand",
                 "nothing worn on the right hand",
                 "takes the left hand from the dagger",
                 "  blow        dagger 1d4 -> own 1d6 (+1 avg)",
@@ -1543,6 +1546,22 @@ mod tests {
         assert_eq!(said("blocks a turn 1 -> 0 (-1)"), Some(Tones::BAD), "{lines:?}");
         assert_eq!(said("block 50% -> 0% (-50%)"), Some(Tones::BAD), "{lines:?}");
         assert_eq!(said("attack speed 95 -> 100 (+5)"), Some(Tones::GOOD), "{lines:?}");
+    }
+
+    /// In a bag 46 wide, the 42 columns a game's narrow pack leaves its
+    /// descriptions, a bow says the two hands it goes on in one row,
+    /// leaving no word alone on a row of its own.
+    #[test]
+    fn a_two_hander_says_both_hands_in_one_row_of_a_narrow_bag() {
+        let mut stage = closet(46, 22);
+        let [_, round, _, bow] = shielded(&mut stage);
+        let left = slot(&stage, "left hand");
+        dress(&mut stage, vec![round, bow], &[(round, EquipShape::in_slot(left))], bow);
+        let texts: Vec<String> = described(&stage).into_iter().map(|(t, _)| t.trim_end().to_string()).collect();
+        let line = "goes on the right hand and the left hand";
+        assert!(line.chars().count() <= 42, "{line:?} fits 42 columns");
+        assert!(texts.iter().any(|t| t == line), "{line:?} on one row: {texts:#?}");
+        assert!(!texts.iter().any(|t| t.trim() == "hand"), "no word alone on a row: {texts:#?}");
     }
 
     /// Where a stuck thing holds the slot, the row says it will not come

@@ -40,6 +40,7 @@ atglyph is not on crates.io yet, so a game depends on a release by its git tag, 
 
 ### Changed
 
+- A thing picked out in the bag or across the trade counter that takes two hands says it `goes on the right hand and the left hand`, as a worn one already said, rather than `goes on the right hand, and takes the left hand`, so the line fits a narrow pane whole.
 - **Breaking:** `ItemRow` has public `shield` and `attack_speed` fields, and `Kit` has `shield` and `attack_speed`, so a game that builds either by hand names them.
 - **Breaking:** `Said` has public `with` and `called_with` fields; a game that writes one as a struct literal adds `with: None, called_with: None`.
 - **Breaking:** `ItemRow` has public `launches`, `dark_sight` and `replacing` fields and its `bestows` is a `Vec<Bestowed>` rather than `(name, op)` pairs; `TradeRow` has public `described` and `items` fields; `TradeWords` a public `own` field; `StatDef` a public `lower_is_better` field. A game that writes one as a struct literal adds `launches: None, dark_sight: None, replacing: None`, `described: None, items: vec![entity]`, `own: "own".into()` or `lower_is_better: false`, and one that reads `bestows` reads `stat` and `op` off each.
