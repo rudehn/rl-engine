@@ -60,7 +60,6 @@ Everything in the first band is either a bug, or cheap enough that the reasoning
 | 38 | An arriving stack of none joins the bag | 3 | low | low |
 | 39 | The count prompt's keys are half fixed | 3 | low | low |
 | 40 | A launcher on an actor is taken without a word | 3 | low | low |
-| 41 | A launcher's roll is tested flat | 3 | low | low |
 | 42 | Reach has no floor | 3 | low | low |
 | 43 | The count prompt and the ground screen write their own English | 3 | low | medium |
 | - | Everything in 5 and 6 | 5, 6 | gated | gated |
@@ -179,9 +178,6 @@ The five items that opened this section were built in the six stages of `docs/de
 
 - **A launcher on an actor is taken without a word.**
   `ActorParts` accepts `attacks.launch`, which puts an inert `Launcher` on a monster, as it already does `throw`; `ActorParts::check` should refuse both on an actor, the way `ItemParts::check` refuses a launcher on a thing never worn.
-
-- **A launcher's roll is tested flat.**
-  The launcher tests in `throwing.rs` use flat dice, so nothing shows the strike rolls the missile's dice and the launcher's apart and sums them; a span-of-rolls test over a fixed seed would.
 
 - **Reach has no floor.**
   `resolve` adds the reach rule's base and stat with nothing under it, so a stat below minus the base gives a range of none or less; floor the reach at one cell, or refuse the throw, and say which in `CombatRules::reach`.

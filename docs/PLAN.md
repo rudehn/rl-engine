@@ -422,6 +422,8 @@ Status: adopted, revised 2026-09-09 after Nate's review; being built.
   `PlaceRules::streamed` and `build_chunk` describe a place built a chunk at a time; `WorldMap` keeps the chunks within reach of the player, keeps a chunk's changes when it leaves and lays them back when it returns, freezes actors on chunks not loaded, writes `ChunkLoaded`, and saves only the changes.
   Unlike the surface removed on 2026-10-19 it is not a second kind of map: every place call answers it as it answers any place, which is `docs/design/places.md` section 6.
   `TileLook::glyph` is a `TileGlyphs`, one glyph or several, each cell drawing the one its world position picks.
+- 2026-11-05: a worn launcher's range, effective range and roll are the shot's, in place of being added to the launched thing's own, for [Greywold](https://github.com/rudehn/greywold)'s weapons, whose bow shoots an arrow as far and as hard as the bow says and never as the arrow thrown by hand.
+  `docs/TODO.md` item 41, a launcher's roll tested flat, is closed: nothing sums a launcher's roll with the thing's own any more, so there is nothing to tell apart.
 - Next: the rest of the deferred pieces (nights on Corsair's surface, scripted encounters, and phase H of `docs/design/ui.md`: Bevy UI presenters over the panel views, deferred until a game wants wrapping, hover or sub-cell bars), then the living-world-rogue conversion once the engine is done (Nate, 2026-09-10).
   That conversion keeps its overworld token movement, so `rl-overworld` regains travel on the map alongside the portal picker, and its maps stream as chunks.
   The work found by the 2026-09-15 architecture review and not yet started is listed in `docs/TODO.md`.

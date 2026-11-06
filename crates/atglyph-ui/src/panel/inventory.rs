@@ -668,18 +668,13 @@ fn hints(view: &InventoryView, menu: &InventoryMenu, binds: &InventoryKeys, conf
     keys.join(" \u{2022} ")
 }
 
-/// A strike in words: `1d6 cutlass`, or `1d8 pistol to 6` with a reach,
-/// and `1d2 + 1d4 kinetic to 9` with a launcher's roll beside its own.
+/// A strike in words: `1d6 cutlass`, or `1d8 pistol to 6` with a reach.
 /// Shared with the look panel, so a thing reads the same on the floor as
 /// in the bag.
 pub(crate) fn strike(s: &Strike) -> String {
-    let rolls = match s.also {
-        Some(also) => format!("{} + {also}", s.dice),
-        None => s.dice.to_string(),
-    };
     match s.range {
-        Some(range) => format!("{rolls} {} to {range}", s.kind),
-        None => format!("{rolls} {}", s.kind),
+        Some(range) => format!("{} {} to {range}", s.dice, s.kind),
+        None => format!("{} {}", s.dice, s.kind),
     }
 }
 
@@ -726,7 +721,7 @@ fn about(row: &ItemRow, width: usize, whole: bool) -> Vec<(String, ToneId)> {
         say(format!("+{}", strike(extra)), Tones::TEXT);
     }
     if let Some(launch) = &row.launches {
-        say(format!("launches {} +{}, range +{}", launch.ammo, launch.roll, launch.range), Tones::TEXT);
+        say(format!("launches {} {} {} to {}", launch.ammo, launch.roll, launch.kind, launch.range), Tones::TEXT);
     }
     if let Some(tiles) = row.dark_sight {
         say(format!("sees {tiles} in the dark"), Tones::TEXT);
@@ -880,7 +875,7 @@ fn signed_halves(halves: i64) -> String {
 
 /// Every number that putting `row` on in place of `off` would change, in
 /// the order the bag describes them: armor, the blow, the shot, the extra
-/// rolls, what each launcher adds, what is resisted, sight in the dark,
+/// rolls, what each launcher shoots, what is resisted, sight in the dark,
 /// and the stats. What stays the same is left out.
 ///
 /// What adds up is weighed thing against thing: armor, extra rolls,
@@ -947,11 +942,11 @@ fn changes(row: &ItemRow, off: &[&ItemRow], replacing: &Replacing, own: &str) ->
             (None, Some(_)) => !other(before, ammo),
             _ => true,
         };
-        let roll = |l: Option<&LaunchLine>| l.map_or_else(none, |l| format!("+{}", l.roll));
+        let roll = |l: Option<&LaunchLine>| l.map_or_else(none, |l| l.roll.to_string());
         let mean = |l: Option<&LaunchLine>| l.map_or(0, |l| halves(l.roll));
         change(&mut changes, &format!("{ammo} roll"), roll(old), roll(new), Some(mean(new) - mean(old)), AVERAGE, toned);
-        let range = |l: Option<&LaunchLine>| l.map_or_else(none, |l| format!("+{}", l.range));
-        let cells = |l: Option<&LaunchLine>| l.map_or(0, |l| l.range as i64);
+        let range = |l: Option<&LaunchLine>| l.map_or_else(none, |l| l.range.to_string());
+        let cells = |l: Option<&LaunchLine>| l.map_or(0, |l| i64::from(l.range));
         change(&mut changes, &format!("{ammo} range"), range(old), range(new), Some(2 * (cells(new) - cells(old))), "", toned);
     }
     // Each kind resisted on either side, in the order they are first met.
@@ -1174,11 +1169,10 @@ mod tests {
     use atglyph_rules::{EquipShape, Equipment, SlotDef, SlotId};
 
     #[test]
-    fn a_strike_with_a_launchers_roll_reads_both_rolls() {
-        let plain = Strike { kind: "kinetic".into(), dice: atglyph_core::DiceRoll::new(1, 2), range: Some(9), also: None };
-        assert_eq!(strike(&plain), "1d2 kinetic to 9");
-        let launched = Strike { also: Some(atglyph_core::DiceRoll::new(1, 4)), ..plain };
-        assert_eq!(strike(&launched), "1d2 + 1d4 kinetic to 9");
+    fn a_strike_reads_its_roll_kind_and_reach() {
+        let shot = Strike { kind: "kinetic".into(), dice: atglyph_core::DiceRoll::new(1, 2), range: Some(9) };
+        assert_eq!(strike(&shot), "1d2 kinetic to 9");
+        assert_eq!(strike(&Strike { range: None, ..shot }), "1d2 kinetic", "a blow reaches nowhere");
     }
 
     /// A player with a worn blade, a hat in the bag and a stack of knives,
@@ -1266,7 +1260,7 @@ mod tests {
         let cap = w.spawn((Item, Name::new("cap"), Wearable(EquipShape::in_slot(head)), Armor(1))).id();
         let dagger = w.spawn((Item, Name::new("dagger"), Wearable(EquipShape::in_slot(left)), MeleeAttack::new(kind, DiceRoll::new(1, 4)))).id();
         let helm = w.spawn((Item, Name::new("helm"), Wearable(EquipShape::in_slot(head)), Armor(2))).id();
-        let launcher = atglyph_bevy::Launcher { ammo: arrow, range: 4, damage: DiceRoll::new(1, 4) };
+        let launcher = atglyph_bevy::Launcher { ammo: arrow, effective: 2, range: 4, strike: (kind, DiceRoll::new(1, 4)) };
         let bow = w.spawn((Item, Name::new("bow"), Wearable(EquipShape::in_slot(right).and_claims(left)), launcher)).id();
         let scarf = w.spawn((Item, Name::new("scarf"), Wearable(EquipShape::in_slot(neck)), Armor(1))).id();
         let pebble = w.spawn((Item, Name::new("pebble"))).id();
@@ -1336,13 +1330,13 @@ mod tests {
         assert_eq!(
             texts,
             [
-                "launches arrow +1d4, range +4",
+                "launches arrow 1d4 kinetic to 4",
                 "goes on the right hand, and takes the left hand",
                 "nothing worn on the right hand",
                 "takes the left hand from the dagger",
                 "  blow        dagger 1d4 -> own 1d6 (+1 avg)",
-                "  arrow roll  none       -> +1d4    (+2.5 avg)",
-                "  arrow range none       -> +4      (+4)",
+                "  arrow roll  none       -> 1d4     (+2.5 avg)",
+                "  arrow range none       -> 4       (+4)",
             ],
             "the wearer strikes with its own blow once the dagger is off: {lines:?}"
         );
@@ -1501,7 +1495,7 @@ mod tests {
     #[test]
     fn a_launcher_for_other_ammunition_is_weighed_by_its_ammunition_in_the_plain_tone() {
         let mut stage = closet(64, 24);
-        let (right, left) = (slot(&stage, "right hand"), slot(&stage, "left hand"));
+        let (right, left, kind) = (slot(&stage, "right hand"), slot(&stage, "left hand"), stage.kind);
         let (arrow, stone) = {
             let r = stage.app.world().resource::<Registries>();
             (r.tags.expect("arrow"), r.tags.expect("stone"))
@@ -1512,7 +1506,7 @@ mod tests {
                 Item,
                 Name::new("sling"),
                 Wearable(EquipShape::in_slot(right)),
-                atglyph_bevy::Launcher { ammo: stone, range: 2, damage: DiceRoll::new(1, 2) },
+                atglyph_bevy::Launcher { ammo: stone, effective: 1, range: 2, strike: (kind, DiceRoll::new(1, 2)) },
             ))
             .id();
         let bow = w
@@ -1520,7 +1514,7 @@ mod tests {
                 Item,
                 Name::new("bow"),
                 Wearable(EquipShape::in_slot(right).and_claims(left)),
-                atglyph_bevy::Launcher { ammo: arrow, range: 4, damage: DiceRoll::new(1, 4) },
+                atglyph_bevy::Launcher { ammo: arrow, effective: 2, range: 4, strike: (kind, DiceRoll::new(1, 4)) },
             ))
             .id();
         dress(&mut stage, vec![sling, bow], &[(sling, EquipShape::in_slot(right))], bow);
@@ -1529,10 +1523,10 @@ mod tests {
         assert_eq!(
             weighed,
             [
-                ("  stone roll +1d2 -> none (-1.5 avg)".to_string(), Tones::TEXT),
-                ("  stone range +2 -> none (-2)".to_string(), Tones::TEXT),
-                ("  arrow roll none -> +1d4 (+2.5 avg)".to_string(), Tones::TEXT),
-                ("  arrow range none -> +4 (+4)".to_string(), Tones::TEXT),
+                ("  stone roll 1d2 -> none (-1.5 avg)".to_string(), Tones::TEXT),
+                ("  stone range 2 -> none (-2)".to_string(), Tones::TEXT),
+                ("  arrow roll none -> 1d4 (+2.5 avg)".to_string(), Tones::TEXT),
+                ("  arrow range none -> 4 (+4)".to_string(), Tones::TEXT),
             ]
         );
     }

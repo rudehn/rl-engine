@@ -140,21 +140,27 @@ pub struct ThrowDef {
     pub strike: Option<(DiceRoll, NameRef<DamageKind>)>,
 }
 
-/// A launcher, as content writes it: `(ammo: "pellet", range: 4, damage:
-/// "1d4")`, the tag of what it launches, the cells it adds to how far that
-/// flies, and the roll it adds to what that strikes for.
+/// A launcher, as content writes it: `(ammo: "pellet", effective: 3,
+/// range: 10, damage: "1d4", kind: "pierce")`, the tag of what it
+/// launches and the shot it makes of that: how far it flies with no range
+/// penalty and at all, and the roll and kind it strikes with.
 ///
 /// Worn, it launches what its wearer throws that carries the tag; the
-/// thing launched flies and lands as any throw does.
+/// thing launched flies and lands as any throw does, but as far and as
+/// hard as the launcher says, whatever it would do thrown by hand.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct LaunchDef {
     /// The tag of what it launches.
     pub ammo: NameRef<TagDef>,
-    /// The cells it adds to the reach, or to a thing's own range.
-    pub range: u32,
-    /// The roll it adds to the strike of what it launches.
+    /// The furthest cell its shot reaches with no range penalty.
+    pub effective: i32,
+    /// The furthest cell its shot reaches.
+    pub range: i32,
+    /// The roll its shot strikes for, as `"NdS+B"`.
     pub damage: DiceRoll,
+    /// The damage kind its shot strikes with.
+    pub kind: NameRef<DamageKind>,
 }
 
 /// What happens to a thing when its last charge is spent.

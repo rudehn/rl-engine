@@ -740,7 +740,7 @@ pub(crate) fn collect_target(mut view: ResMut<TargetView>, modals: Res<Modals>, 
     if let Some(item) = view.throwing {
         let (Ok((_, name)), Some(throwable)) = (reach.missiles.get(item), reach.throws.of(user, item)) else { return };
         view.what = name.map(|n| n.as_str().to_string()).unwrap_or_default();
-        view.launcher = throwable.launched.and_then(|(e, _)| reach.names.get(e).ok()).map(|n| n.as_str().to_string()).unwrap_or_default();
+        view.launcher = throwable.launched.and_then(|e| reach.names.get(e).ok()).map(|n| n.as_str().to_string()).unwrap_or_default();
         let thrown = flight(&reach.map, &reach.occupancy, from, view.cursor, throwable.range, |who| reach.bystanders.spares(user, who));
         // Rolled against whoever living the flight strikes first, as the
         // resolver rolls, which need not be who the cursor is on; the range
@@ -1158,7 +1158,7 @@ mod tests {
     }
 
     /// The aim at a thing a worn launcher launches names the launcher and
-    /// spans the reach and the launcher's range together.
+    /// spans the launcher's range, not the thrower's reach.
     #[test]
     fn the_aim_names_the_launcher_and_its_range() {
         let mut stage = staged();
@@ -1166,7 +1166,7 @@ mod tests {
         stage.app.world_mut().resource_mut::<atglyph_bevy::CombatRules>().reach = Some(atglyph_bevy::ThrowReach { base: 4, stat: None });
         let ammo = atglyph_rules::TagId::from_raw(0);
         let shape = atglyph_rules::EquipShape::in_slot(atglyph_rules::SlotId::from_raw(0));
-        let launcher = atglyph_bevy::Launcher { ammo, range: 3, damage: atglyph_core::DiceRoll::flat(1) };
+        let launcher = atglyph_bevy::Launcher { ammo, effective: 2, range: 7, strike: (kind, atglyph_core::DiceRoll::flat(1)) };
         let launcher_item = stage.app.world_mut().spawn((Item, Name::new("launcher"), launcher, Wearable(shape.clone()))).id();
         let pellet = stage
             .app

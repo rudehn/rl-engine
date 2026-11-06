@@ -72,28 +72,33 @@ impl Throwable {
     }
 }
 
-/// What a worn thing launches: the things tagged `ammo`, flown `range`
-/// cells further than their thrower reaches and striking for `damage`
-/// more, rolled beside their own roll.
+/// What a worn thing launches, the things tagged `ammo`, and the shot it
+/// makes of them: out to `range`, with no range penalty to `effective`,
+/// striking with `strike`.
 ///
-/// On a wearable thing, and only worn does it launch anything, so a
-/// launcher in the pack is a thing carried. A thrown thing it launches
-/// flies, strikes and lands as any throw does, and can be picked up
-/// where it comes down.
+/// The shot is the launcher's alone. What a thing launched would do thrown
+/// by hand, its own range, effective range and strike, and how far its
+/// thrower reaches, play no part, so an arrow from a bow flies and hurts
+/// as the bow says and not as the arrow thrown would. On a wearable thing,
+/// and only worn does it launch anything, so a launcher in the pack is a
+/// thing carried. A thrown thing it launches flies, strikes and lands as
+/// any throw does, and can be picked up where it comes down.
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Launcher {
     /// What it launches.
     pub ammo: TagId,
-    /// The cells it adds to the thrower's reach, or to a thing's own range.
-    pub range: u32,
-    /// The roll it adds to whatever the thing launched strikes for.
-    pub damage: DiceRoll,
+    /// The furthest cell its shot reaches with no range penalty.
+    pub effective: i32,
+    /// The furthest cell its shot reaches.
+    pub range: i32,
+    /// The kind of damage and the roll its shot deals whoever it strikes.
+    pub strike: (DamageKindId, DiceRoll),
 }
 
 impl Launcher {
     /// The launcher `part` describes: the authored launcher made a component.
     pub fn from_part(part: &atglyph_rules::parts::LaunchDef) -> Self {
-        Self { ammo: part.ammo.id(), range: part.range, damage: part.damage }
+        Self { ammo: part.ammo.id(), effective: part.effective, range: part.range, strike: (part.kind.id(), part.damage) }
     }
 }
 
@@ -123,20 +128,26 @@ pub struct ThrowAs {
     pub effective: i32,
     /// The kind of damage and the roll it deals whoever it strikes, if any.
     pub strike: Option<(DamageKindId, DiceRoll)>,
-    /// The worn [`Launcher`] that launches it and the roll it adds to the
-    /// strike, when one does.
-    pub launched: Option<(Entity, DiceRoll)>,
+    /// The worn [`Launcher`] that launches it, when one does, whose shot
+    /// the range, effective range and strike are.
+    pub launched: Option<Entity>,
 }
 
 /// How `own` flies from a thrower who reaches `reach`, launched by
-/// `launcher` when one is worn for it, if it can be thrown: its own range,
-/// or the reach for a thing with none, plus the launcher's; its effective
-/// range its own, or a third of how far it flies. `None` for a thing with
-/// no range thrown by someone with no reach, which nobody can throw.
+/// `launcher` when one is worn for it, if it can be thrown.
+///
+/// Launched, it flies and strikes as the launcher's shot, and its own
+/// range, effective range and strike and the reach are not read. Thrown by
+/// hand, its own range, or the reach for a thing with none; its effective
+/// range its own, or a third of how far it flies; and its own strike.
+/// `None` for a thing with no range thrown by hand by someone with no
+/// reach, which nobody can throw.
 pub fn resolve(own: &Throwable, reach: Option<i32>, launcher: Option<(Entity, &Launcher)>) -> Option<ThrowAs> {
-    let range = own.range.or(reach)? + launcher.map_or(0, |(_, l)| l.range as i32);
-    let launched = launcher.map(|(e, l)| (e, l.damage));
-    Some(ThrowAs { range, effective: own.effective.unwrap_or(range / 3), strike: own.strike, launched })
+    if let Some((e, l)) = launcher {
+        return Some(ThrowAs { range: l.range, effective: l.effective, strike: Some(l.strike), launched: Some(e) });
+    }
+    let range = own.range.or(reach)?;
+    Some(ThrowAs { range, effective: own.effective.unwrap_or(range / 3), strike: own.strike, launched: None })
 }
 
 /// How a thrower throws a thing, given what it wears: the rules
@@ -174,8 +185,8 @@ impl ThrowRules<'_, '_> {
 ///
 /// A parameter rather than a function of the item, because the answer
 /// depends on who throws: its reach, by [`CombatRules::reach`](crate::combat::CombatRules::reach),
-/// is a base plus one of its stats, and a [`Launcher`] it wears adds to
-/// what it launches.
+/// is a base plus one of its stats, and a [`Launcher`] it wears shoots
+/// what it launches as far and as hard as the launcher says.
 #[derive(bevy::ecs::system::SystemParam)]
 pub struct Throws<'w, 's> {
     rules: ThrowRules<'w, 's>,
@@ -271,8 +282,8 @@ pub(crate) struct ThrowLanding {
     rests: Point,
     struck: Option<Entity>,
     strike: Option<(DamageKindId, DiceRoll)>,
-    /// What launched it and the roll that adds, when something did.
-    launched: Option<(Entity, DiceRoll)>,
+    /// What launched it, when something did: its shot is `strike`.
+    launched: Option<Entity>,
     /// The odds against whoever it struck, read as it left the hand and
     /// rolled as it lands, where the damage is rolled.
     odds: Option<atglyph_rules::Odds>,
@@ -395,12 +406,11 @@ fn land(
     if let (Some(target), Some((kind, dice))) = (struck, strike) {
         // Floored where it is rolled, as a blow is: a throw that rolls
         // below nothing has missed, not healed.
-        let extra = launched.map_or(0, |(_, roll)| roll.roll(&mut **rng));
-        let amount = (dice.roll(&mut **rng) + extra).max(0);
+        let amount = dice.roll(&mut **rng).max(0);
         reports.damage.write(DamageEvent::arriving(target, Hit::by(actor, kind, amount), crate::combat::DamageRoute::Thrown));
     }
     reports.events.write(ItemEvent::Thrown { actor, item, at: Position(rests), struck });
-    if let Some((launcher, _)) = launched {
+    if let Some(launcher) = launched {
         reports.launched.write(Launched { actor, item, launcher });
     }
     reports.fired.write(Fired { on: item, moment: TriggerKinds::LAND, by: Some(actor), at: rests });
@@ -530,11 +540,11 @@ mod tests {
             e
         }
 
-        /// A launcher for things tagged `tag`, adding 4 to the reach and 3
-        /// to the roll, worn by the player, or only carried.
+        /// A launcher for things tagged `tag`, shooting them 9 and striking
+        /// for 3, worn by the player, or only carried.
         fn launcher(&mut self, tag: u32, worn: bool) -> Entity {
             let shape = atglyph_rules::EquipShape::in_slot(atglyph_rules::SlotId::from_raw(0));
-            let launcher = Launcher { ammo: atglyph_rules::TagId::from_raw(tag), range: 4, damage: DiceRoll::flat(3) };
+            let launcher = Launcher { ammo: atglyph_rules::TagId::from_raw(tag), effective: 3, range: 9, strike: (self.sides.kind, DiceRoll::flat(3)) };
             let e = self.app.world_mut().spawn((Item, launcher, crate::items::Wearable(shape.clone()), Name::new("launcher"))).id();
             self.app.world_mut().get_mut::<Inventory>(self.player).unwrap().items.push(e);
             let mut equipment = atglyph_rules::Equipment::with_slot_count(1);
@@ -643,15 +653,36 @@ mod tests {
     }
 
     #[test]
-    fn a_launcher_adds_its_range_and_roll_and_its_effective_range_is_a_third_of_the_sum() {
+    fn a_launched_thing_flies_and_strikes_as_its_launcher_says_not_as_it_would_by_hand() {
         let kind = atglyph_rules::damage::DamageKindId::from_raw(0);
-        let strike = Some((kind, DiceRoll::flat(2)));
-        let launcher = Launcher { ammo: atglyph_rules::TagId::from_raw(0), range: 4, damage: DiceRoll::new(1, 4) };
+        let arrow = Throwable::new(Some(6), Some((kind, DiceRoll::new(1, 2)))).effective_to(2);
+        let launcher = Launcher { ammo: atglyph_rules::TagId::from_raw(0), effective: 4, range: 10, strike: (kind, DiceRoll::new(1, 6)) };
+        let bow = Entity::from_bits(7);
+        assert_eq!(
+            resolve(&arrow, None, Some((bow, &launcher))),
+            Some(ThrowAs { range: 10, effective: 4, strike: Some((kind, DiceRoll::new(1, 6))), launched: Some(bow) })
+        );
+        assert_eq!(resolve(&arrow, None, None), Some(ThrowAs { range: 6, effective: 2, strike: Some((kind, DiceRoll::new(1, 2))), launched: None }));
+    }
+
+    /// Whatever the thing launched is, and whoever launches it, the
+    /// launcher's numbers are the shot's: a thing with no range of its own
+    /// shot by a thrower with no reach still flies, and one with no strike
+    /// strikes for the launcher's roll.
+    #[test]
+    fn a_launcher_gives_its_range_and_roll_whatever_the_thing_launched_and_the_throwers_reach() {
+        let kind = atglyph_rules::damage::DamageKindId::from_raw(0);
+        let launcher = Launcher { ammo: atglyph_rules::TagId::from_raw(0), effective: 4, range: 10, strike: (kind, DiceRoll::new(1, 4)) };
         let e = Entity::from_bits(7);
-        let thrown = resolve(&Throwable::new(None, strike), Some(5), Some((e, &launcher)));
-        assert_eq!(thrown, Some(ThrowAs { range: 9, effective: 3, strike, launched: Some((e, DiceRoll::new(1, 4))) }));
-        let own = resolve(&Throwable::new(Some(6), strike).effective_to(5), None, Some((e, &launcher)));
-        assert_eq!(own.map(|t| (t.range, t.effective)), Some((10, 5)), "its own range and its own effective range");
+        let shot = Some(ThrowAs { range: 10, effective: 4, strike: Some((kind, DiceRoll::new(1, 4))), launched: Some(e) });
+        let rangeless = Throwable::new(None, Some((kind, DiceRoll::flat(2))));
+        assert_eq!(resolve(&rangeless, Some(5), Some((e, &launcher))), shot, "not the reach added to");
+        assert_eq!(resolve(&rangeless, None, Some((e, &launcher))), shot, "nor wanting one");
+        assert_eq!(
+            resolve(&Throwable::new(Some(6), None).effective_to(5), Some(5), Some((e, &launcher))),
+            shot,
+            "nor its own range, effective range or lack of a strike"
+        );
     }
 
     #[test]
@@ -665,17 +696,34 @@ mod tests {
     }
 
     #[test]
-    fn a_missile_thrown_with_its_launcher_worn_adds_the_launchers_range_and_roll() {
+    fn a_missile_thrown_with_its_launcher_worn_flies_the_launchers_range_for_its_roll() {
         let mut rig = Rig::new();
         rig.reach(5, 0);
         rig.launcher(0, true);
         let far = rig.mark(9);
         let missile = rig.missile(0);
         rig.throw(missile, 9);
-        assert_eq!(rig.hp(far), 15, "nine away, struck for 2 and the launcher's 3");
+        assert_eq!(rig.hp(far), 17, "nine away, struck for the launcher's 3 and not the missile's 2");
         assert_eq!(rig.lying_at(rig.start.offset(9, 0)), vec![missile], "and it lies where it struck, to be picked up");
         let launched: Vec<Launched> = rig.app.world_mut().resource_mut::<Messages<Launched>>().drain().collect();
         assert_eq!(launched.len(), 1, "a launch is said as one");
+    }
+
+    /// A launched thing strikes for the launcher's roll alone: its own,
+    /// however large, is only for throwing it by hand.
+    #[test]
+    fn a_launched_missiles_hit_deals_only_the_launchers_roll() {
+        let mut rig = Rig::new();
+        let bow = rig.launcher(0, true);
+        let kind = rig.sides.kind;
+        let five = Launcher { ammo: atglyph_rules::TagId::from_raw(0), effective: 3, range: 9, strike: (kind, DiceRoll { num: 0, sides: 0, bonus: 5 }) };
+        rig.app.world_mut().entity_mut(bow).insert(five);
+        let target = rig.mark(4);
+        let arrow = Throwable::new(Some(6), Some((kind, DiceRoll { num: 0, sides: 0, bonus: 100 })));
+        let missile = rig.app.world_mut().spawn((Item, arrow, crate::items::Tagged(vec![atglyph_rules::TagId::from_raw(0)]), Name::new("arrow"))).id();
+        rig.app.world_mut().get_mut::<Inventory>(rig.player).unwrap().items.push(missile);
+        rig.throw(missile, 4);
+        assert_eq!(rig.hp(target), 15, "it lost exactly the launcher's 5");
     }
 
     #[test]
@@ -699,7 +747,7 @@ mod tests {
         let far = rig.mark(9);
         let missile = rig.missile(0);
         rig.throw(missile, 9);
-        assert_eq!(rig.hp(far), 20, "a launcher for something else adds nothing");
+        assert_eq!(rig.hp(far), 20, "a launcher for something else launches nothing");
 
         let mut rig = Rig::new();
         rig.reach(5, 0);
@@ -858,7 +906,7 @@ mod tests {
         let events = rig.throw(arrow, 4);
         let [ItemEvent::Thrown { struck, .. }] = events.as_slice() else { panic!("one launch: {events:?}") };
         assert_eq!(*struck, Some(far), "a launched one too");
-        assert_eq!((rig.hp(near), rig.hp(far)), (20, 12));
+        assert_eq!((rig.hp(near), rig.hp(far)), (20, 14));
 
         let events = rig.throw(knives, 2);
         let [ItemEvent::Thrown { at, struck, .. }] = events.as_slice() else { panic!("one throw: {events:?}") };

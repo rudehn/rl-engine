@@ -77,7 +77,7 @@ pub struct ItemRow {
     pub shot: Option<Strike>,
     /// The extra rolls every hit carries while it is worn.
     pub strikes: Vec<Strike>,
-    /// What it adds to what it launches while worn, for a launcher.
+    /// The shot it makes of what it launches while worn, for a launcher.
     pub launches: Option<LaunchLine>,
     /// How far it lets its wearer see in the dark, for a thing that lends
     /// sight, [`WornDarkSight`](atglyph_bevy::WornDarkSight).
@@ -152,14 +152,17 @@ pub struct Bestowed {
     pub lower_is_better: bool,
 }
 
-/// What a launcher adds to what it launches, as a bag reads it.
+/// What a launcher shoots, as a bag reads it: the shot it makes of what
+/// it launches, whatever that would do thrown by hand.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LaunchLine {
     /// What it launches, by the tag's registered name.
     pub ammo: String,
-    /// The cells it adds to how far a thing launched flies.
-    pub range: u32,
-    /// The roll it adds to what a thing launched strikes for.
+    /// The damage kind its shot strikes with, by its registered name.
+    pub kind: String,
+    /// How far its shot flies.
+    pub range: i32,
+    /// The roll its shot strikes for.
     pub roll: atglyph_core::DiceRoll,
 }
 
@@ -520,8 +523,7 @@ impl ItemRows<'_, '_> {
             own_shot.copied(),
         );
         let mut withheld = unknown(blow.and_then(|(from, _)| from)) || unknown(shot.and_then(|(from, _)| from));
-        let wielding =
-            |from: Option<Entity>, kind, dice, range| Wielding { from: from.map(name), strike: Strike { kind: kind_name(kind), dice, range, also: None } };
+        let wielding = |from: Option<Entity>, kind, dice, range| Wielding { from: from.map(name), strike: Strike { kind: kind_name(kind), dice, range } };
         let mut launchers: Vec<LaunchLine> = Vec::new();
         let mut seen = Vec::new();
         for thing in &things {
@@ -531,7 +533,8 @@ impl ItemRows<'_, '_> {
                 seen.push(launcher.ammo);
                 withheld |= unknown;
                 let ammo = registries.map(|r| r.tags.name(launcher.ammo).to_string()).unwrap_or_default();
-                launchers.push(LaunchLine { ammo, range: launcher.range, roll: launcher.damage });
+                let (kind, roll) = launcher.strike;
+                launchers.push(LaunchLine { ammo, kind: kind_name(kind), range: launcher.range, roll });
             }
         }
         let lent: Vec<(i32, bool)> =
@@ -560,12 +563,8 @@ impl ItemRows<'_, '_> {
         let kind_name = |kind| registries.map(|r| r.damage_kinds.name(kind).to_string()).unwrap_or_default();
         let slot_name = |slot| registries.map(|r| r.slots.name(slot).to_string()).unwrap_or_default();
         let tag_name = |tag| registries.map(|r| r.tags.name(tag).to_string()).unwrap_or_default();
-        let strike = |(kind, dice): (atglyph_rules::damage::DamageKindId, atglyph_core::DiceRoll), range: Option<i32>| Strike {
-            kind: kind_name(kind),
-            dice,
-            range,
-            also: None,
-        };
+        let strike =
+            |(kind, dice): (atglyph_rules::damage::DamageKindId, atglyph_core::DiceRoll), range: Option<i32>| Strike { kind: kind_name(kind), dice, range };
         let slot = worn.and_then(|w| w.slot_of(item));
         // How it flies from its holder, its own range or the holder's reach.
         let thrown = self.throws.of(holder, item);
@@ -608,7 +607,7 @@ impl ItemRows<'_, '_> {
             goes_on: wearable.map(|w| w.0.any_of.iter().map(|s| slot_name(*s)).collect()).unwrap_or_default(),
             also_takes: wearable.map(|w| w.0.also.iter().map(|s| slot_name(*s)).collect()).unwrap_or_default(),
             throw_range: thrown.map(|t| t.range),
-            thrown: thrown.and_then(|t| t.strike.map(|s| Strike { also: t.launched.map(|(_, roll)| roll), ..strike(s, Some(t.range)) })),
+            thrown: thrown.and_then(|t| t.strike.map(|s| strike(s, Some(t.range)))),
             armor: armor.map_or(0, |a| a.0),
             resists: match (resists, registries) {
                 (Some(r), Some(registries)) => registries
@@ -622,7 +621,7 @@ impl ItemRows<'_, '_> {
             blow: melee.map(|m| strike((m.kind, m.dice), None)),
             shot: ranged.map(|r| strike((r.kind, r.dice), Some(r.range))),
             strikes: strikes.map(|s| s.0.iter().map(|hit| strike(*hit, None)).collect()).unwrap_or_default(),
-            launches: launcher.map(|l| LaunchLine { ammo: tag_name(l.ammo), range: l.range, roll: l.damage }),
+            launches: launcher.map(|l| LaunchLine { ammo: tag_name(l.ammo), kind: kind_name(l.strike.0), range: l.range, roll: l.strike.1 }),
             dark_sight: sight.map(|s| s.0),
             bestows: bestows
                 .map(|b| {
@@ -671,8 +670,8 @@ mod tests {
         assert_eq!(row.thrown.as_ref().map(|s| s.range), Some(Some(4)));
     }
 
-    /// A thing a worn launcher launches is listed at the reach and the
-    /// launcher's range together, its strike with the launcher's roll.
+    /// A thing a worn launcher launches is listed at the launcher's range
+    /// and striking for the launcher's roll, not at the reach and its own.
     #[test]
     fn a_launched_throw_is_listed_with_the_launchers_range_and_roll() {
         let mut stage = Stage::new_with(InventoryViewPlugin, |app| {
@@ -684,7 +683,7 @@ mod tests {
         stage.app.world_mut().resource_mut::<atglyph_bevy::CombatRules>().reach = Some(atglyph_bevy::ThrowReach { base: 4, stat: None });
         let ammo = atglyph_rules::TagId::from_raw(0);
         let shape = EquipShape::in_slot(atglyph_rules::SlotId::from_raw(0));
-        let launcher = atglyph_bevy::Launcher { ammo, range: 3, damage: DiceRoll::new(1, 4) };
+        let launcher = atglyph_bevy::Launcher { ammo, effective: 2, range: 7, strike: (kind, DiceRoll::new(1, 4)) };
         let launcher_item = stage.app.world_mut().spawn((Item, Name::new("launcher"), launcher, Wearable(shape.clone()))).id();
         let pellet = stage.app.world_mut().spawn((Item, Name::new("pellet"), Tagged(vec![ammo]), Throwable::new(None, Some((kind, DiceRoll::new(1, 2)))))).id();
         let mut worn = Equipment::with_slot_count(1);
@@ -693,7 +692,7 @@ mod tests {
         stage.tick();
         let row = &stage.app.world().resource::<InventoryView>().rows[1];
         assert_eq!(row.throw_range, Some(7));
-        assert_eq!(row.thrown.as_ref().map(|s| (s.dice, s.also)), Some((DiceRoll::new(1, 2), Some(DiceRoll::new(1, 4)))));
+        assert_eq!(row.thrown.as_ref().map(|s| (s.dice, s.range)), Some((DiceRoll::new(1, 4), Some(7))));
     }
 
     /// A row carries the item's own numbers in the registries' names, and

@@ -932,14 +932,15 @@ mod tests {
 
     #[test]
     fn levelling_up_a_launcher_fits_its_roll_as_spawning_at_that_level_does() {
-        let launch = LaunchDef { ammo: atglyph_rules::TagId::from_raw(0).into(), range: 4, damage: DiceRoll::new(1, 4) };
+        let kind = atglyph_rules::damage::DamageKindId::from_raw(0);
+        let launch = LaunchDef { ammo: atglyph_rules::TagId::from_raw(0).into(), effective: 3, range: 10, damage: DiceRoll::new(1, 4), kind: kind.into() };
         let parts = Arc::new(ItemParts { attacks: Attacks { launch: Some(launch), ..blade().attacks }, ..(*blade()).clone() });
         let mut world = World::new();
         let (stepped, _) = spawned(&mut world, &parts, 0);
         let (jumped, _) = spawned(&mut world, &parts, 1);
         level_up(&mut world, stepped, 1);
         assert_eq!(world.get::<Launcher>(stepped), world.get::<Launcher>(jumped));
-        assert_eq!(world.get::<Launcher>(stepped).map(|l| l.damage.bonus), Some(1), "a level's damage on its roll");
+        assert_eq!(world.get::<Launcher>(stepped).map(|l| l.strike.1.bonus), Some(1), "a level's damage on its roll");
     }
 
     #[test]
@@ -982,14 +983,15 @@ mod tests {
     #[test]
     fn a_launcher_is_spawned_where_worn_and_refused_on_a_thing_never_worn() {
         let ammo = atglyph_rules::TagId::from_raw(2);
-        let launch = LaunchDef { ammo: ammo.into(), range: 4, damage: DiceRoll::new(1, 4) };
+        let kind = atglyph_rules::damage::DamageKindId::from_raw(1);
+        let launch = LaunchDef { ammo: ammo.into(), effective: 3, range: 10, damage: DiceRoll::new(1, 4), kind: kind.into() };
         let loose = ItemParts { attacks: Attacks { launch: Some(launch), ..Attacks::default() }, ..ItemParts::default() };
         assert_eq!(loose.check(), vec!["a launcher, on a thing that is never worn".to_string()]);
         let worn = Arc::new(ItemParts { wear: Some(EquipShape::in_slot(atglyph_rules::SlotId::from_raw(0))), ..loose });
         assert!(worn.check().is_empty(), "{:?}", worn.check());
         let mut world = World::new();
         let (e, _) = spawned(&mut world, &worn, 0);
-        assert_eq!(world.get::<Launcher>(e), Some(&Launcher { ammo, range: 4, damage: DiceRoll::new(1, 4) }));
+        assert_eq!(world.get::<Launcher>(e), Some(&Launcher { ammo, effective: 3, range: 10, strike: (kind, DiceRoll::new(1, 4)) }));
     }
 
     #[test]

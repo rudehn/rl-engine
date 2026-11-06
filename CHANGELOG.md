@@ -35,6 +35,8 @@ atglyph is not on crates.io yet, so a game depends on a release by its git tag, 
 
 ### Changed
 
+- **Breaking:** A launcher's range, effective range and roll are the shot's, in place of the launched thing's own; `LaunchDef` takes `effective`, `range` and `kind`, and `ThrowAs::launched` names only the launcher.
+- **Breaking:** `Strike` has no `also`, since a launched thing's strike is the launcher's alone, and `LaunchLine` holds the launcher's shot, its `kind` and an `i32` `range`; the bag says a launcher as `launches arrow 1d4 pierce to 10` and weighs one against another as roll and range, with no `+`.
 - **Breaking:** `ItemRow` has public `launches`, `dark_sight` and `replacing` fields and its `bestows` is a `Vec<Bestowed>` rather than `(name, op)` pairs; `TradeRow` has public `described` and `items` fields; `TradeWords` a public `own` field; `StatDef` a public `lower_is_better` field. A game that writes one as a struct literal adds `launches: None, dark_sight: None, replacing: None`, `described: None, items: vec![entity]`, `own: "own".into()` or `lower_is_better: false`, and one that reads `bestows` reads `stat` and `op` off each.
 - `WorldMap::view` and `opening_view` find the window and the current place once, when made, rather than for every cell a shadowcast or a flood reads, which was most of what reading a cell cost.
 - **Breaking:** `FleeWhenHurt` has a public `within` field, how far round itself a mind looks for its way away, and runs down a field over that square alone rather than the whole loaded window, so a flight costs the same however much is loaded; `FleeWhenHurt::at(pct)` gives `FleeWhenHurt::WITHIN`, 20 cells, and a game that writes the struct literal adds `within: FleeWhenHurt::WITHIN`.

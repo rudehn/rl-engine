@@ -72,9 +72,6 @@ pub struct Strike {
     pub dice: DiceRoll,
     /// How far it reaches, for a shot; `None` for a blow.
     pub range: Option<i32>,
-    /// A second roll added to it: a worn launcher's, for a thing it
-    /// launches. `None` for anything else.
-    pub also: Option<DiceRoll>,
 }
 
 /// One status on the player.
@@ -236,10 +233,10 @@ pub(crate) fn collect_sheet(
     }
     let kind_name = |kind: DamageKindId| registries.damage_kinds.name(kind).to_string();
     for (kind, dice) in loadout.blows(entity) {
-        view.strikes.push(Strike { kind: kind_name(kind), dice, range: None, also: None });
+        view.strikes.push(Strike { kind: kind_name(kind), dice, range: None });
     }
     if let Some(ranged) = loadout.ranged(entity) {
-        view.strikes.push(Strike { kind: kind_name(ranged.kind), dice: ranged.dice, range: Some(ranged.range), also: None });
+        view.strikes.push(Strike { kind: kind_name(ranged.kind), dice: ranged.dice, range: Some(ranged.range) });
     }
     if let Some(afflicted) = afflicted {
         for active in afflicted.iter() {

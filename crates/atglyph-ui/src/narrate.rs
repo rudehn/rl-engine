@@ -1886,7 +1886,7 @@ mod tests {
         let (player, kind) = (stage.player, stage.kind);
         let ammo = atglyph_rules::TagId::from_raw(0);
         let shape = atglyph_rules::EquipShape::in_slot(atglyph_rules::SlotId::from_raw(0));
-        let launcher = Launcher { ammo, range: 4, damage: atglyph_core::DiceRoll::flat(1) };
+        let launcher = Launcher { ammo, effective: 3, range: 10, strike: (kind, atglyph_core::DiceRoll::flat(1)) };
         let launcher_item = stage.app.world_mut().spawn((Item, Name::new("launcher"), launcher, Wearable(shape.clone()))).id();
         let pellet = stage
             .app
