@@ -773,8 +773,9 @@ impl AttackSpeed {
     /// The percent a set of them come to together: multiplied, each step
     /// rounded down, so `95` and `90` make `85`. A hundred for none. The one
     /// place the rule lives, for [`Loadout::attack_speed`] and for a throw,
-    /// which cannot hold a [`Loadout`] beside the equipment it takes from.
-    pub(crate) fn combined(speeds: impl IntoIterator<Item = AttackSpeed>) -> u32 {
+    /// which cannot hold a [`Loadout`] beside the equipment it takes from, and
+    /// for a screen weighing the speed a wearer would attack at.
+    pub fn combined(speeds: impl IntoIterator<Item = AttackSpeed>) -> u32 {
         speeds.into_iter().fold(100, |total, speed| total * speed.0 / 100)
     }
 }

@@ -8,6 +8,7 @@ atglyph is not on crates.io yet, so a game depends on a release by its git tag, 
 
 ### Added
 
+- The pack and the trade screen weigh a shield's blocks and block chance and an attack speed before it goes on.
 - The fight forecast counts a guard's shield (`Combatant::guarding`), and the inspect panel names it.
 - A worn `Shield` (`ItemParts::shield`, `ShieldDef { chance, blocks }`) turns a blow, a shot or a throw aside whole at its chance, up to `blocks` a turn, never an effect and never for a defender unaware of its attacker; written as `AttackBlocked`, narrated, and read by stealth as a miss.
 - A worn `AttackSpeed` slows every blow, shot and throw its wearer makes by `scaled_cost`, never a step; `ItemParts::attack_speed` authors it and the fight forecast counts it.
@@ -38,6 +39,8 @@ atglyph is not on crates.io yet, so a game depends on a release by its git tag, 
 
 ### Changed
 
+- A trader's worn gear is no longer listed among its wares.
+- **Breaking:** `ItemRow` has public `shield` and `attack_speed` fields, and `Kit` has `shield` and `attack_speed`, so a game that builds either by hand names them.
 - **Breaking:** `ItemRow` has public `launches`, `dark_sight` and `replacing` fields and its `bestows` is a `Vec<Bestowed>` rather than `(name, op)` pairs; `TradeRow` has public `described` and `items` fields; `TradeWords` a public `own` field; `StatDef` a public `lower_is_better` field. A game that writes one as a struct literal adds `launches: None, dark_sight: None, replacing: None`, `described: None, items: vec![entity]`, `own: "own".into()` or `lower_is_better: false`, and one that reads `bestows` reads `stat` and `op` off each.
 - `WorldMap::view` and `opening_view` find the window and the current place once, when made, rather than for every cell a shadowcast or a flood reads, which was most of what reading a cell cost.
 - **Breaking:** `FleeWhenHurt` has a public `within` field, how far round itself a mind looks for its way away, and runs down a field over that square alone rather than the whole loaded window, so a flight costs the same however much is loaded; `FleeWhenHurt::at(pct)` gives `FleeWhenHurt::WITHIN`, 20 cells, and a game that writes the struct literal adds `within: FleeWhenHurt::WITHIN`.

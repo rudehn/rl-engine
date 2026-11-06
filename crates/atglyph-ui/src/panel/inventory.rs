@@ -904,6 +904,20 @@ fn changes(row: &ItemRow, off: &[&ItemRow], replacing: &Replacing, own: &str) ->
     }
     let (before, after) = (&replacing.before, &replacing.after);
     let weighed = !before.withheld && !after.withheld;
+    // What the wearer would block and strike at afterwards, as the fights
+    // decide it: the first shield worn, and every attack speed multiplied.
+    // A chance only has its own line while the shield has any, so a shield
+    // swapped for one of the same chance says only its blocks.
+    if weighed {
+        let blocks = |kit: &Kit| kit.shield.map_or(0, |s| s.blocks);
+        let chance = |kit: &Kit| kit.shield.map_or(0, |s| s.chance.min(100));
+        let (old, new) = (blocks(before), blocks(after));
+        change(&mut changes, "blocks a turn", old.to_string(), new.to_string(), Some(2 * (new as i64 - old as i64)), "", true);
+        let (old, new) = (chance(before), chance(after));
+        change(&mut changes, "block", format!("{old}%"), format!("{new}%"), Some(2 * (new as i64 - old as i64)), "%", true);
+        let (old, new) = (before.attack_speed, after.attack_speed);
+        change(&mut changes, "attack speed", old.to_string(), new.to_string(), Some(2 * (new as i64 - old as i64)), "", true);
+    }
     // A blow or a shot is said with what it comes from, and its kind only
     // where the kinds differ.
     for (what, old, new) in [("blow", &before.blow, &after.blow), ("shot", &before.shot, &after.shot)].into_iter().filter(|_| weighed) {
@@ -1171,6 +1185,7 @@ mod tests {
     use atglyph_core::DiceRoll;
     use atglyph_rules::Names;
     use atglyph_rules::content::Registry;
+    use atglyph_rules::parts::ShieldDef;
     use atglyph_rules::{EquipShape, Equipment, SlotDef, SlotId};
 
     #[test]
@@ -1420,6 +1435,85 @@ mod tests {
         dress(&mut stage, vec![sword, knife], &[(sword, EquipShape::in_slot(right))], knife);
         let texts: Vec<String> = described(&stage).into_iter().map(|(t, _)| t).collect();
         assert_eq!(texts, ["1d4 kinetic", "goes on the left hand", "nothing worn on the left hand"], "{texts:?}");
+    }
+
+    /// A round shield and a tower shield, the first blocking once and the
+    /// second three times a turn at the same chance, each slower to strike
+    /// with, and a bow that takes both hands; a dagger in the right hand.
+    fn shielded(stage: &mut Stage) -> [Entity; 4] {
+        let (right, left, kind) = (slot(stage, "right hand"), slot(stage, "left hand"), stage.kind);
+        let w = stage.app.world_mut();
+        let dagger = w.spawn((Item, Name::new("dagger"), Wearable(EquipShape::in_slot(right)), MeleeAttack::new(kind, DiceRoll::new(1, 4)))).id();
+        let round = w
+            .spawn((
+                Item,
+                Name::new("round shield"),
+                Wearable(EquipShape::in_slot(left)),
+                atglyph_bevy::Shield(ShieldDef { chance: 50, blocks: 1 }),
+                atglyph_bevy::AttackSpeed(95),
+            ))
+            .id();
+        let tower = w
+            .spawn((
+                Item,
+                Name::new("tower shield"),
+                Wearable(EquipShape::in_slot(left)),
+                atglyph_bevy::Shield(ShieldDef { chance: 50, blocks: 3 }),
+                atglyph_bevy::AttackSpeed(85),
+            ))
+            .id();
+        let bow =
+            w.spawn((Item, Name::new("shortbow"), Wearable(EquipShape::in_slot(right).and_claims(left)), RangedAttack::new(kind, DiceRoll::new(1, 6), 6))).id();
+        [dagger, round, tower, bow]
+    }
+
+    /// A shield picked out with nothing in the left hand says the blocks it
+    /// gives a turn and the chance of each, the gain in the good tone, and
+    /// the attack speed it costs, in the bad.
+    #[test]
+    fn a_round_shield_picked_out_says_what_it_blocks_and_the_speed_it_costs() {
+        let mut stage = closet(52, 22);
+        let [dagger, round, ..] = shielded(&mut stage);
+        let right = slot(&stage, "right hand");
+        dress(&mut stage, vec![dagger, round], &[(dagger, EquipShape::in_slot(right))], round);
+        let lines = squeezed(&described(&stage));
+        let said = |text: &str| lines.iter().find(|(t, _)| t.trim() == text).map(|(_, tone)| *tone);
+        assert_eq!(said("nothing worn on the left hand"), Some(Tones::MUTED), "{lines:?}");
+        assert_eq!(said("blocks a turn 0 -> 1 (+1)"), Some(Tones::GOOD), "{lines:?}");
+        assert_eq!(said("block 0% -> 50% (+50%)"), Some(Tones::GOOD), "{lines:?}");
+        assert_eq!(said("attack speed 100 -> 95 (-5)"), Some(Tones::BAD), "{lines:?}");
+    }
+
+    /// A tower shield over a round one gains blocks and loses speed, and
+    /// says nothing of a chance that does not change.
+    #[test]
+    fn a_tower_shield_over_a_round_one_says_the_blocks_and_not_the_chance() {
+        let mut stage = closet(52, 22);
+        let [dagger, round, tower, _] = shielded(&mut stage);
+        let (right, left) = (slot(&stage, "right hand"), slot(&stage, "left hand"));
+        dress(&mut stage, vec![dagger, round, tower], &[(dagger, EquipShape::in_slot(right)), (round, EquipShape::in_slot(left))], tower);
+        let lines = squeezed(&described(&stage));
+        let said = |text: &str| lines.iter().find(|(t, _)| t.trim() == text).map(|(_, tone)| *tone);
+        assert_eq!(said("blocks a turn 1 -> 3 (+2)"), Some(Tones::GOOD), "{lines:?}");
+        assert_eq!(said("attack speed 95 -> 85 (-10)"), Some(Tones::BAD), "{lines:?}");
+        assert!(!lines.iter().any(|(t, _)| t.trim().starts_with("block ")), "the chance is the same: {lines:?}");
+    }
+
+    /// A bow that takes the hand a round shield holds names the shield it
+    /// replaces and gives up its blocks and chance, a loss in the bad tone,
+    /// and wins back the speed, in the good.
+    #[test]
+    fn a_bow_over_a_worn_shield_gives_up_the_blocks_and_wins_the_speed_back() {
+        let mut stage = closet(52, 22);
+        let [_, round, _, bow] = shielded(&mut stage);
+        let left = slot(&stage, "left hand");
+        dress(&mut stage, vec![round, bow], &[(round, EquipShape::in_slot(left))], bow);
+        let lines = squeezed(&described(&stage));
+        let said = |text: &str| lines.iter().find(|(t, _)| t.trim() == text).map(|(_, tone)| *tone);
+        assert!(lines.iter().any(|(t, _)| t == "takes the left hand from the round shield"), "{lines:?}");
+        assert_eq!(said("blocks a turn 1 -> 0 (-1)"), Some(Tones::BAD), "{lines:?}");
+        assert_eq!(said("block 50% -> 0% (-50%)"), Some(Tones::BAD), "{lines:?}");
+        assert_eq!(said("attack speed 95 -> 100 (+5)"), Some(Tones::GOOD), "{lines:?}");
     }
 
     /// Where a stuck thing holds the slot, the row says it will not come
