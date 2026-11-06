@@ -9,7 +9,7 @@ atglyph is not on crates.io yet, so a game depends on a release by its git tag, 
 ### Added
 
 - `EquipBoth` puts two carried things on in one action, all or nothing.
-- The pack and the trade screen weigh a shield's blocks and block chance and an attack speed before it goes on.
+- The pack and the trade screen say what a shield blocks and an attack speed, `blocks 1 a turn at 50%` and `attack speed 95`, and weigh both before it goes on.
 - The fight forecast counts a guard's shield (`Combatant::guarding`), and the inspect panel names it.
 - A worn `Shield` (`ItemParts::shield`, `ShieldDef { chance, blocks }`) turns a blow, a shot or a throw aside whole at its chance, up to `blocks` a turn, never an effect and never for a defender unaware of its attacker; written as `AttackBlocked`, narrated, and read by stealth as a miss. The narrator's `{whose what}` names a thing as `{whom}`'s own and `{whose with}` the thing `{who}` did it with (`Said::with`) as `{who}`'s own, the owner's name and the thing each in its own colour.
 - A worn `AttackSpeed` slows every blow, shot and throw its wearer makes by `scaled_cost`, never a step; `ItemParts::attack_speed` authors it and the fight forecast counts it.

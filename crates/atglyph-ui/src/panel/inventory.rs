@@ -734,6 +734,14 @@ fn about(row: &ItemRow, width: usize, whole: bool) -> Vec<(String, ToneId)> {
     if row.armor != 0 {
         say(format!("armor {:+}", row.armor), Tones::TEXT);
     }
+    // In the inspect panel's words for a shield a creature holds, so a
+    // shield reads one way wherever it is seen.
+    if let Some(shield) = row.shield {
+        say(format!("blocks {} a turn at {}%", shield.blocks, shield.chance.min(100)), Tones::TEXT);
+    }
+    if let Some(speed) = row.attack_speed {
+        say(format!("attack speed {speed}"), Tones::TEXT);
+    }
     for r in &row.resists {
         match r.pct {
             pct if pct < 0 => say(format!("weak to {} {}%", r.name, -pct), Tones::TEXT),
@@ -1482,6 +1490,27 @@ mod tests {
         assert_eq!(said("blocks a turn 0 -> 1 (+1)"), Some(Tones::GOOD), "{lines:?}");
         assert_eq!(said("block 0% -> 50% (+50%)"), Some(Tones::GOOD), "{lines:?}");
         assert_eq!(said("attack speed 100 -> 95 (-5)"), Some(Tones::BAD), "{lines:?}");
+    }
+
+    /// A shield says what it blocks and the speed it leaves its wearer at
+    /// before anything it would change, picked out to put on or worn: a
+    /// worn shield, which changes nothing, still says what it does.
+    #[test]
+    fn a_shield_says_what_it_blocks_and_its_attack_speed_whether_worn_or_not() {
+        let mut stage = closet(52, 22);
+        let [dagger, round, ..] = shielded(&mut stage);
+        let right = slot(&stage, "right hand");
+        dress(&mut stage, vec![dagger, round], &[(dagger, EquipShape::in_slot(right))], round);
+        let texts: Vec<String> = described(&stage).into_iter().map(|(t, _)| t).collect();
+        assert_eq!(texts[..3], ["blocks 1 a turn at 50%".to_string(), "attack speed 95".into(), "goes on the left hand".into()], "{texts:?}");
+        let mut stage = closet(52, 22);
+        let [dagger, round, ..] = shielded(&mut stage);
+        let (right, left) = (slot(&stage, "right hand"), slot(&stage, "left hand"));
+        dress(&mut stage, vec![dagger, round], &[(dagger, EquipShape::in_slot(right)), (round, EquipShape::in_slot(left))], round);
+        let lines = described(&stage);
+        let texts: Vec<&str> = lines.iter().map(|(t, _)| t.as_str()).collect();
+        assert_eq!(texts, ["blocks 1 a turn at 50%", "attack speed 95", "worn on the left hand"], "{lines:?}");
+        assert!(lines[..2].iter().all(|(_, tone)| *tone == Tones::TEXT), "in the plain tone the armor line reads in: {lines:?}");
     }
 
     /// A tower shield over a round one gains blocks and loses speed, and
