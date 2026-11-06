@@ -35,7 +35,7 @@
 
 pub use crate::RoguelikePlugins;
 pub use atglyph_bevy::app::EngineApp;
-pub use atglyph_bevy::combat::{Armor, CombatPlugin, CombatRules, Faction, Health, MeleeAttack};
+pub use atglyph_bevy::combat::{Armor, AttackSpeed, CombatPlugin, CombatRules, Faction, Health, MeleeAttack};
 pub use atglyph_bevy::components::{Actor, Blocks, MyTurn, Player, Position, RevealsMap, Speed, Viewshed};
 pub use atglyph_bevy::knowledge::Knowledge;
 pub use atglyph_bevy::lighting::{DarkSight, LightSource, Lighting, LightingPlugin};

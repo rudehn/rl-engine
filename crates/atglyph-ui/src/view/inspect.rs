@@ -272,10 +272,14 @@ impl Duelists<'_, '_> {
         // with no attack at all reads never. The chance to hit stays what it
         // is from here, which is why it is shown only while something
         // reaches.
-        let asker = Combatant::closing(mine, self.loadout.armor(me) - my_seems.armor, self.speeds.of(me), &my_resists, &my_arms, apart)
+        let mut asker = Combatant::closing(mine, self.loadout.armor(me) - my_seems.armor, self.speeds.of(me), &my_resists, &my_arms, apart)
             .hitting(my_odds.as_ref().map_or(100, Odds::percent));
-        let other = Combatant::closing(theirs, self.loadout.armor(them) - their_seems.armor, self.speeds.of(them), &their_resists, &their_arms, apart)
+        let mut other = Combatant::closing(theirs, self.loadout.armor(them) - their_seems.armor, self.speeds.of(them), &their_resists, &their_arms, apart)
             .hitting(their_odds.as_ref().map_or(100, Odds::percent));
+        // A worn attack speed slows the blow the forecast counts, as it
+        // slows the one that lands.
+        asker.blow_cost = Some(self.loadout.attack_cost(me, asker.blow_cost));
+        other.blow_cost = Some(self.loadout.attack_cost(them, other.blow_cost));
         let stages: Vec<&dyn atglyph_rules::DamageStage<Entity>> =
             self.stages.0.iter().map(|s| s.as_ref() as &dyn atglyph_rules::DamageStage<Entity>).collect();
         let forecast = duel(&asker, &other, &self.registries.damage_kinds, &stages);

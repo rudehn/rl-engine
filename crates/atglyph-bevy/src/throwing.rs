@@ -260,6 +260,8 @@ pub struct Launch<'w, 's> {
     /// reflection writes and would tie the throw to every resolver that
     /// lands a use.
     sides: Query<'w, 's, &'static crate::combat::Faction>,
+    /// What slows a throw: the thrower's own and its worn attack speeds.
+    paces: Query<'w, 's, &'static crate::combat::AttackSpeed>,
 }
 
 /// A throw that has left the hand and not yet come down: what it will do
@@ -294,7 +296,7 @@ pub(crate) fn resolve_throws(
     mut reports: ThrowReports,
     stuck: Query<(), With<crate::items::Stuck>>,
 ) {
-    let Launch { map, occupancy, mut rng, mut throwers, mut missiles, alive, mut cues, mut cue_wait, mut airborne, marks, throws, sides } = launch;
+    let Launch { map, occupancy, mut rng, mut throwers, mut missiles, alive, mut cues, mut cue_wait, mut airborne, marks, throws, sides, paces } = launch;
     for intent in intents.read() {
         let (actor, Throw { item, at }) = (intent.actor, intent.action);
         if !resolution.claim(actor) {
@@ -314,6 +316,11 @@ pub(crate) fn resolve_throws(
             resolution.failed(actor, BASE_ACTION_COST);
             continue;
         }
+        // Read before the thing thrown comes off, since a thrown shield is
+        // still on the arm that throws it.
+        let pace = crate::combat::AttackSpeed::combined(
+            paces.get(actor).into_iter().chain(worn.iter().flat_map(|w| w.worn()).filter_map(|(_, e)| paces.get(e).ok())).copied(),
+        );
         let ThrowAs { range, strike, launched, .. } = thrown_as;
         let spares = |who: Entity| crate::combat::spared(throws.combat.as_deref(), &sides, actor, who);
         let Flight { struck, rests, .. } = flight(&map, &occupancy, pos.0, at, range, spares);
@@ -339,7 +346,7 @@ pub(crate) fn resolve_throws(
         let to = struck.map(|who| Anchor::on(who, rests)).unwrap_or(Anchor::cell(rests));
         cues.write(Cued { actor, cue: Cue::Flight { from: Anchor::on(actor, pos.0), to, look: LookOf::Item(thrown) } });
         let landing = ThrowLanding { actor, item: thrown, rests, struck, strike, launched, odds };
-        resolution.done(actor, BASE_ACTION_COST);
+        resolution.done(actor, atglyph_core::turn::scaled_cost(BASE_ACTION_COST, pace));
         // The turn is spent on the throw. With something watching, the
         // knife is in the air until its flight has been seen, and lies
         // nowhere until it comes down.
@@ -591,6 +598,27 @@ mod tests {
         fn odds(&self, shot: &atglyph_rules::accuracy::Shot) -> Option<atglyph_rules::Odds> {
             Some(atglyph_rules::Odds::new(u32::from(shot.distance == self.0), 1, Vec::new()))
         }
+    }
+
+    #[test]
+    fn a_worn_attack_speed_slows_a_throw() {
+        let cost = |worn: Option<u32>| {
+            let mut rig = Rig::new();
+            if let Some(percent) = worn {
+                let shape = atglyph_rules::EquipShape::in_slot(atglyph_rules::SlotId::from_raw(0));
+                let item = rig.app.world_mut().spawn((Item, crate::combat::AttackSpeed(percent), crate::items::Wearable(shape.clone()))).id();
+                let mut equipment = atglyph_rules::Equipment::with_slot_count(1);
+                equipment.equip(item, &shape).unwrap();
+                rig.app.world_mut().entity_mut(rig.player).insert(Equipped(equipment));
+            }
+            rig.reach(5, 0);
+            let stone = rig.stone();
+            let before = rig.now();
+            rig.throw(stone, 3);
+            rig.now() - before
+        };
+        assert_eq!(cost(None), 100);
+        assert_eq!(cost(Some(90)), 112);
     }
 
     #[test]

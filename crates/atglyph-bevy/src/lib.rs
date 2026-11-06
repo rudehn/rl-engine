@@ -106,8 +106,9 @@ pub use app::EngineApp;
 pub use atglyph_grid::LightBand;
 pub use bump::{Bump, BumpRules, Bumped, OnAlly, Swapped};
 pub use combat::{
-    Armor, Attack, AttackShape, BenchedAttack, BonusDamage, CombatPlugin, CombatRng, CombatRules, DamageDealt, DamageEvent, DamageRoute, DamageStages, Dead,
-    DeathEvent, Faction, Heal, Healed, Health, Invulnerable, Loadout, MeleeAttack, RangedAttack, Resists, Struck, ThrowReach, line_of_fire, shot,
+    Armor, Attack, AttackShape, AttackSpeed, BenchedAttack, BonusDamage, CombatPlugin, CombatRng, CombatRules, DamageDealt, DamageEvent, DamageRoute,
+    DamageStages, Dead, DeathEvent, Faction, Heal, Healed, Health, Invulnerable, Loadout, MeleeAttack, RangedAttack, Resists, Struck, ThrowReach, line_of_fire,
+    shot,
 };
 pub use components::{Actor, Blocks, MyTurn, Player, Position, RevealsMap, Speed, Viewshed};
 pub use consumable::{Attuned, Consumable, Recharge, SpendingMoments, Spent, WhenEmpty};
@@ -183,8 +184,8 @@ pub mod prelude {
     pub use crate::bump::{Bump, BumpRules, Bumped, OnAlly, Swapped};
 
     pub use crate::combat::{
-        Armor, Attack, AttackShape, BenchedAttack, BonusDamage, CombatPlugin, CombatRules, DamageDealt, DamageEvent, DamageRoute, DamageStages, Dead,
-        DeathEvent, Faction, Heal, Healed, Health, Invulnerable, Loadout, MeleeAttack, RangedAttack, Resists, Struck, line_of_fire, shot,
+        Armor, Attack, AttackShape, AttackSpeed, BenchedAttack, BonusDamage, CombatPlugin, CombatRules, DamageDealt, DamageEvent, DamageRoute, DamageStages,
+        Dead, DeathEvent, Faction, Heal, Healed, Health, Invulnerable, Loadout, MeleeAttack, RangedAttack, Resists, Struck, line_of_fire, shot,
     };
     pub use crate::components::{Actor, Blocks, MyTurn, Player, Position, RevealsMap, Speed, Viewshed};
     pub use crate::consumable::{Attuned, Consumable, WhenEmpty};

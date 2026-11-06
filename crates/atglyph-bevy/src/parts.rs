@@ -41,7 +41,7 @@ use bevy::prelude::*;
 
 use crate::ability::Grants;
 use crate::ammo::Ammo;
-use crate::combat::{Armor, BenchedAttack, Faction, Health, MeleeAttack, RangedAttack, Resists};
+use crate::combat::{Armor, AttackSpeed, BenchedAttack, Faction, Health, MeleeAttack, RangedAttack, Resists};
 use crate::components::Speed;
 use crate::consumable::{Attuned, Consumable};
 use crate::effects::{EffectBonus, TriggerKindId, TriggerKinds, Triggers};
@@ -130,6 +130,9 @@ pub struct ItemParts {
     /// Its blow, its shot, its throw and what a blow or a shot costs, at
     /// level nought.
     pub attacks: Attacks,
+    /// How quickly its wearer strikes, shoots and throws while it is worn, in
+    /// percent with a hundred ordinary. `None` changes nothing.
+    pub attack_speed: Option<u32>,
     /// The tag of what one shot spends from its wielder's bag.
     pub ammo: Option<TagId>,
     /// The key copies merge under, for a thing that stacks; the game's,
@@ -372,6 +375,9 @@ pub fn insert_parts(e: &mut EntityCommands, parts: &Arc<ItemParts>, level: i32) 
     }
     if parts.resists != Resistances::new() {
         e.insert(Resists(parts.resists.clone()));
+    }
+    if let Some(percent) = parts.attack_speed {
+        e.insert(AttackSpeed(percent));
     }
     match (parts.light, parts.light_when) {
         (Some(light), LightWhen::Carried) => drop(e.insert(LightSource(light))),

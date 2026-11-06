@@ -758,6 +758,27 @@ pub enum BenchedAttack {
     Ranged(RangedAttack),
 }
 
+/// How quickly a worn item, or an actor itself, strikes, shoots and throws,
+/// in percent with a hundred ordinary: below it every blow, shot and throw
+/// costs more by [`scaled_cost`](atglyph_core::turn::scaled_cost), so a
+/// heavy shield slows its wearer's attacks and nothing else, never a step.
+///
+/// [`Loadout::attack_speed`] multiplies every one worn with the actor's
+/// own. It is not [`Speed`](crate::components::Speed), which scales every
+/// turn the actor takes.
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AttackSpeed(pub u32);
+
+impl AttackSpeed {
+    /// The percent a set of them come to together: multiplied, each step
+    /// rounded down, so `95` and `90` make `85`. A hundred for none. The one
+    /// place the rule lives, for [`Loadout::attack_speed`] and for a throw,
+    /// which cannot hold a [`Loadout`] beside the equipment it takes from.
+    pub(crate) fn combined(speeds: impl IntoIterator<Item = AttackSpeed>) -> u32 {
+        speeds.into_iter().fold(100, |total, speed| total * speed.0 / 100)
+    }
+}
+
 /// What an actor fights with, summed at the moment it matters.
 ///
 /// Three layers, added together: the actor's own [`Armor`], [`Resists`],
@@ -783,6 +804,7 @@ pub struct Loadout<'w, 's> {
     worn: Query<'w, 's, Gear, With<Item>>,
     equipped: Query<'w, 's, &'static Equipped>,
     resists: Query<'w, 's, &'static Resists>,
+    attack_speeds: Query<'w, 's, &'static AttackSpeed>,
     held: Query<'w, 's, &'static crate::status::StatusResists>,
     spent: Query<'w, 's, &'static crate::consumable::Consumable>,
     dry: Query<'w, 's, (), With<crate::ammo::Dry>>,
@@ -837,6 +859,23 @@ impl Loadout<'_, '_> {
         let own = self.own.get(who).ok().and_then(|(armor, ..)| armor).map_or(0, |a| a.0);
         let worn = self.worn(who).filter_map(|(_, armor, ..)| armor).map(|a| a.0);
         atglyph_rules::arms::armor_total(own, worn, self.stat(who, |r| r.armor))
+    }
+
+    /// How quickly `who` attacks, in percent: every worn [`AttackSpeed`]
+    /// and its own multiplied, each step rounded down, so `95` and `90`
+    /// worn together make `85`. A hundred when none is held.
+    pub fn attack_speed(&self, who: Entity) -> u32 {
+        let own = self.attack_speeds.get(who).ok();
+        let worn = self.worn(who).filter_map(|(item, ..)| self.attack_speeds.get(item).ok());
+        AttackSpeed::combined(own.into_iter().chain(worn).copied())
+    }
+
+    /// What one blow, shot or throw by `who` costs: `base`, or an ordinary
+    /// turn when the weapon names none, scaled by [`attack_speed`](Self::attack_speed).
+    /// The resolvers charge it and the fight forecast reads it, so a panel
+    /// never drifts from play.
+    pub fn attack_cost(&self, who: Entity, base: Option<u32>) -> u32 {
+        atglyph_core::turn::scaled_cost(base.unwrap_or(atglyph_core::turn::BASE_ACTION_COST), self.attack_speed(who))
     }
 
     /// How much of a [`Heal`] reaches `who`, in percent: a hundred and the
@@ -1134,7 +1173,7 @@ pub(crate) fn resolve_attacks(
             resolution.done(actor, atglyph_core::turn::BASE_ACTION_COST);
             continue;
         };
-        resolution.done(actor, cost.unwrap_or(atglyph_core::turn::BASE_ACTION_COST));
+        resolution.done(actor, loadout.attack_cost(actor, cost));
         struck.write(Struck { attacker: actor, target, with: from, ranged });
         // What the weapon does when it is used, whatever it strikes: a
         // wand's charge, a trigger on firing.
@@ -2274,6 +2313,102 @@ mod tests {
         assert_eq!(slow, 140);
         assert_eq!(fast, 80);
         assert_eq!(missed, atglyph_core::turn::BASE_ACTION_COST, "out of range is a spent turn, not a free one");
+    }
+
+    /// A player wearing one item per entry of `speeds`, each an
+    /// [`AttackSpeed`] of that percent, with a blow or, if `ranged`, a shot
+    /// costing 100, and a target three cells east; answers what the turn
+    /// queue is charged by one attack at it. As [`melee_turn_cost`], the
+    /// target's stranded wait leaves the clock at exactly the attacker's cost.
+    fn pace_cost(speeds: &[u32], ranged: bool) -> u32 {
+        use atglyph_rules::{EquipShape, Equipment, SlotId};
+        let mut app = headless_app();
+        app.add_plugins((crate::fov::FovPlugin, CombatPlugin));
+        let start = crate::testing::ground(&mut app);
+        let sides = crate::testing::two_sides(&mut app);
+        let mut worn = Equipment::with_slot_count(speeds.len().max(1));
+        for (slot, percent) in speeds.iter().enumerate() {
+            let shape = EquipShape::in_slot(SlotId::from_raw(slot as u32));
+            let item = app.world_mut().spawn((crate::items::Item, AttackSpeed(*percent), crate::items::Wearable(shape.clone()))).id();
+            worn.equip(item, &shape).unwrap();
+        }
+        let player = app
+            .world_mut()
+            .spawn((Actor, Player, Blocks, Position(start), Viewshed::new(8), Health::full(30), Faction(sides.ours), crate::items::Equipped(worn)))
+            .id();
+        let (offset, wield) =
+            if ranged { (3, Some(RangedAttack { cost: Some(100), ..RangedAttack::new(sides.kind, DiceRoll::flat(1), 6) })) } else { (1, None) };
+        match wield {
+            Some(gun) => drop(app.world_mut().entity_mut(player).insert(gun)),
+            None => drop(app.world_mut().entity_mut(player).insert(MeleeAttack::new(sides.kind, DiceRoll::flat(1)))),
+        }
+        let target = app.world_mut().spawn((Actor, Blocks, Position(start.offset(offset, 0)), Health::full(20), Faction(sides.theirs))).id();
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        app.update();
+        app.update();
+        app.world_mut().write_message(Intent::new(player, Attack(target)));
+        app.update();
+        app.world().resource::<Turns>().now()
+    }
+
+    #[test]
+    fn a_worn_attack_speed_slows_a_blow_by_scaled_cost() {
+        assert_eq!(pace_cost(&[], false), 100, "nothing worn is the ordinary cost");
+        assert_eq!(pace_cost(&[95], false), 106);
+        assert_eq!(pace_cost(&[85], false), 118);
+    }
+
+    #[test]
+    fn a_worn_attack_speed_slows_a_shot() {
+        assert_eq!(pace_cost(&[], true), 100);
+        assert_eq!(pace_cost(&[90], true), 112);
+    }
+
+    #[test]
+    fn attack_speed_never_slows_a_step() {
+        let step_cost = |speeds: &[u32]| {
+            use atglyph_rules::{EquipShape, Equipment, SlotId};
+            let mut app = headless_app();
+            app.add_plugins((crate::fov::FovPlugin, CombatPlugin));
+            let start = crate::testing::ground(&mut app);
+            let sides = crate::testing::two_sides(&mut app);
+            let mut worn = Equipment::with_slot_count(1);
+            for percent in speeds {
+                let shape = EquipShape::in_slot(SlotId::from_raw(0));
+                let item = app.world_mut().spawn((crate::items::Item, AttackSpeed(*percent), crate::items::Wearable(shape.clone()))).id();
+                worn.equip(item, &shape).unwrap();
+            }
+            let player = app
+                .world_mut()
+                .spawn((Actor, Player, Blocks, Position(start), Viewshed::new(8), Health::full(30), Faction(sides.ours), crate::items::Equipped(worn)))
+                .id();
+            app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+            app.update();
+            app.update();
+            app.world_mut().write_message(Intent::new(player, crate::turn::Step(atglyph_core::Direction::East)));
+            app.update();
+            app.world().resource::<Turns>().now()
+        };
+        assert_eq!(step_cost(&[85]), step_cost(&[]));
+        assert_eq!(step_cost(&[]), 100, "and a step is charged at all");
+    }
+
+    #[test]
+    fn two_attack_speeds_worn_multiply() {
+        use atglyph_rules::{EquipShape, Equipment, SlotId};
+        let mut app = headless_app();
+        let mut worn = Equipment::with_slot_count(2);
+        for (slot, percent) in [95, 90].into_iter().enumerate() {
+            let shape = EquipShape::in_slot(SlotId::from_raw(slot as u32));
+            let item = app.world_mut().spawn((crate::items::Item, AttackSpeed(percent), crate::items::Wearable(shape.clone()))).id();
+            worn.equip(item, &shape).unwrap();
+        }
+        let wearer = app.world_mut().spawn(crate::items::Equipped(worn)).id();
+        let bare = app.world_mut().spawn_empty().id();
+        let mut state: bevy::ecs::system::SystemState<Loadout> = bevy::ecs::system::SystemState::new(app.world_mut());
+        let loadout = state.get(app.world()).expect("every input is optional");
+        assert_eq!(loadout.attack_speed(wearer), 85, "95 and 90 make 85 rounded down");
+        assert_eq!(loadout.attack_speed(bare), 100);
     }
 
     #[derive(Resource, Default)]
