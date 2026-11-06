@@ -851,6 +851,89 @@ mod tests {
         assert_eq!((walker, critter), (start.offset(4, 0), start.offset(2, 0)), "a mind with no round does not push past");
     }
 
+    /// The corridor `past_a_critter` builds, shut at both ends, with the
+    /// rules that make one side give way to minds, and that side.
+    fn lane() -> (Rig, atglyph_rules::FactionId) {
+        let mut rig = Rig::built(true);
+        let small = small_side_hunted(&mut rig, false);
+        rig.app.insert_resource(BumpRules::new().give_way(small).minds_too());
+        let start = rig.start;
+        let wall = rig.tiles.expect("wall");
+        for dx in -1..=7 {
+            let mut map = rig.app.world_mut().resource_mut::<WorldMap>();
+            map.set_tile(start.offset(dx, -1), wall);
+            map.set_tile(start.offset(dx, 1), wall);
+        }
+        rig.app.world_mut().resource_mut::<WorldMap>().set_tile(start.offset(7, 0), wall);
+        (rig, small)
+    }
+
+    /// A mind of `side` standing `dx` along the lane that walks `WalkRounds`
+    /// over `route`, given as offsets along it.
+    fn round_walker(rig: &mut Rig, side: atglyph_rules::FactionId, dx: i32, route: &[i32]) -> Entity {
+        let start = rig.start;
+        let brain = atglyph_rules::Brain::new().then(atglyph_rules::ai::tactics::WalkRounds);
+        rig.app
+            .world_mut()
+            .spawn((
+                Actor,
+                Blocks,
+                Position(start.offset(dx, 0)),
+                Health::full(20),
+                Faction(side),
+                crate::minds::Perception(8),
+                crate::minds::Mind(std::sync::Arc::new(brain)),
+                crate::minds::Rounds { route: route.iter().map(|d| start.offset(*d, 0)).collect(), next: 0 },
+            ))
+            .id()
+    }
+
+    /// Forty frames, the player waiting, and where each of `who` stood after
+    /// each.
+    fn watch(rig: &mut Rig, who: &[Entity]) -> Vec<Vec<Point>> {
+        let mut trace = Vec::new();
+        for _ in 0..40 {
+            if rig.app.world().get::<MyTurn>(rig.player).is_some() {
+                rig.app.world_mut().write_message(Intent::new(rig.player, crate::turn::Wait));
+            }
+            rig.app.update();
+            trace.push(who.iter().map(|e| rig.app.world().get::<Position>(*e).expect("it stands").0).collect());
+        }
+        trace
+    }
+
+    /// Two minds walking rounds, one directly behind the other and bound the
+    /// same way, never trade places: the one in front gets to its point and
+    /// the one behind waits for it, rather than the two swapping back and
+    /// forth for ever with neither getting anywhere.
+    #[test]
+    fn two_minds_on_rounds_in_tandem_do_not_swap_places_for_ever() {
+        let (mut rig, small) = lane();
+        let (front, behind) = (round_walker(&mut rig, small, 3, &[1]), round_walker(&mut rig, small, 4, &[1]));
+        let trace = watch(&mut rig, &[front, behind]);
+        let start = rig.start;
+        assert_eq!(trace.last().unwrap()[0], start.offset(1, 0), "the one in front reached its point: {trace:?}");
+        assert!(trace.iter().all(|at| at[0].x < at[1].x), "they never changed places: {trace:?}");
+    }
+
+    /// A mind walking rounds never moves one holding a post out of its cell,
+    /// though the post is in its way and the post-holder's side gives way.
+    #[test]
+    fn a_mind_on_rounds_does_not_swap_a_post_holder_out_of_its_post() {
+        let (mut rig, small) = lane();
+        let start = rig.start;
+        let post = start.offset(2, 0);
+        let holder = rig
+            .app
+            .world_mut()
+            .spawn((Actor, Blocks, Position(post), Health::full(5), Faction(small), crate::minds::Moves(atglyph_rules::ai::tactics::Movement::Hold(post))))
+            .id();
+        let walker = round_walker(&mut rig, small, 4, &[1]);
+        let trace = watch(&mut rig, &[holder, walker]);
+        assert!(trace.iter().all(|at| at[0] == post), "the post-holder was moved: {trace:?}");
+        assert!(trace.iter().all(|at| at[1].x > post.x), "the walker got past the post: {trace:?}");
+    }
+
     /// A mind hostile to a side that gives way strikes one of it rather than
     /// changing places with it: the critter is never swapped, and dies where
     /// it stood before the hunter walks on.

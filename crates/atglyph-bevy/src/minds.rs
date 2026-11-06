@@ -1271,7 +1271,7 @@ pub(crate) fn decide_minds(
     mut acting: ResMut<Acting>,
     mut world: MindWorld,
     mut minds: Query<Deciding, With<MyTurn>>,
-    walkers: Query<&Rounds>,
+    duties: Query<(Option<&Rounds>, Option<&Moves>)>,
 ) {
     // Before anything returns early: a change is seen once, by the run of
     // this system that comes after it, whether or not a mind decides then.
@@ -1301,10 +1301,17 @@ pub(crate) fn decide_minds(
     // of such a side itself, so two of them do not shuffle round each other;
     // but one with a round to walk steps past all the same, since it has
     // somewhere to be and a boxed-in bystander in a one-wide lane would
-    // otherwise keep it from it for good.
+    // otherwise keep it from it for good. It passes only one off duty,
+    // never another walking a round or holding a post or a counter: two on
+    // duty would swap back and forth for ever, and a post is not to be
+    // traded out of.
     let side_of = |e: Entity| sides.get(e).ok().map(|f| f.0);
     let mine = side_of(thinker);
-    let walking = walkers.get(thinker).is_ok_and(|r| !r.route.is_empty());
+    // On duty is walking a round or holding a cell: a post, a counter.
+    let on_duty = |e: Entity| {
+        duties.get(e).is_ok_and(|(rounds, moves)| rounds.is_some_and(|r| !r.route.is_empty()) || moves.is_some_and(|m| matches!(m.0, Movement::Hold(_))))
+    };
+    let walking = duties.get(thinker).is_ok_and(|(rounds, _)| rounds.is_some_and(|r| !r.route.is_empty()));
     let passing = bumps.as_deref().filter(|r| r.minds_too && (walking || !r.gives_way(mine)));
     // One of its own side, allied to it, is passed too by a mind on its
     // round: the folk are one side, and a guard on rounds must get by a
@@ -1316,7 +1323,7 @@ pub(crate) fn decide_minds(
     };
     let gives_way = |p: Point| {
         let here = occupancy.at(p);
-        passing.is_some_and(|r| !here.is_empty() && here.iter().all(|e| r.gives_way(side_of(*e)) && neutral(*e)))
+        passing.is_some_and(|r| !here.is_empty() && here.iter().all(|e| r.gives_way(side_of(*e)) && neutral(*e) && !(walking && on_duty(*e))))
     };
     let wits = intelligence.map(|i| i.0).unwrap_or_default();
     let opens_doors = wits.has(Wits::OPENS_DOORS);
