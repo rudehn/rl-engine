@@ -196,7 +196,8 @@ pub struct Replacing {
 
 /// What a wearer fights and sees with, by the rules a fight uses: the blow
 /// and the shot of the first worn thing, in slot order, that has one and
-/// a charge to use it, else the wearer's own; the first worn launcher for
+/// a charge to use it, else the wearer's own, a versatile blow at its
+/// bigger roll while the slot it names is free; the first worn launcher for
 /// each thing launched; and the best sight in the dark of its own and of
 /// what it wears.
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -541,7 +542,10 @@ impl ItemRows<'_, '_> {
             things.iter().filter_map(|t| of(*t).and_then(|(_, _, _, (unknown, _), (_, sight))| sight.map(|s| (s.0, unknown)))).collect();
         withheld |= lent.iter().any(|(_, unknown)| *unknown);
         Kit {
-            blow: blow.map(|(from, m)| wielding(from, m.kind, m.dice, None)),
+            // A versatile roll by what `worn` leaves free, which for a thing
+            // tried on is the copy it was tried on: a knife for the hand a
+            // sword wants empty is weighed as the sword to one hand.
+            blow: blow.map(|(from, m)| wielding(from, m.kind, atglyph_rules::arms::versatile_roll(m.dice, m.versatile.as_ref(), |s| worn.is_free(s)), None)),
             shot: shot.map(|(from, r)| wielding(from, r.kind, r.dice, Some(r.range))),
             launchers,
             dark_sight: atglyph_rules::equip::dark_sight(own_sight.map(|s| s.0), lent.iter().map(|(tiles, _)| *tiles), blind),

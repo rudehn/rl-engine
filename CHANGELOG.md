@@ -32,10 +32,13 @@ atglyph is not on crates.io yet, so a game depends on a release by its git tag, 
 - `StatDef::lower_is_better`: a stat less of which is better, so a screen weighing gear tones its rise as a loss.
 - `TradeView::described_mut`: a game annotates what the trade screen's pane describes in `ViewSet::Annotate`, as it annotates the bag's rows.
 - The trade screen lists things alike and not stacked as one counted row, `3 daggers`, priced for one: confirm deals one of them and the whole-row key each of them; a thing with `MassNoun` is counted as written, `2 leather leggings`. Things are counted in the new `ViewSet::Settle`, after the game annotates, so a thing it notes (the other weapon among daggers) stays a row of its own; a counted row's price always says `each`, giving up the refusal and then the end of its name for room, never the word.
+- A blow can be versatile: `Melee::versatile` rolls a bigger die while a named slot is free, in the fight, the pack and the inspect panel alike.
+- `ItemParts::check` refuses a versatile blow on a thing that takes the slot it needs free, a two-hander or a thing held only in that slot, since it could never strike its bigger roll.
 
 ### Changed
 
 - **Breaking:** A launcher's range, effective range and roll are the shot's, in place of the launched thing's own; `LaunchDef` takes `effective`, `range` and `kind`, and `ThrowAs::launched` names only the launcher.
+- **Breaking:** `Melee` has a public `versatile` field, a `VersatileDef`, and `MeleeAttack` a public `versatile` field, an `arms::Versatile`; a game that writes either as a struct literal adds `versatile: None`.
 - **Breaking:** `Strike` has no `also`, since a launched thing's strike is the launcher's alone, and `LaunchLine` holds the launcher's shot, its `kind` and an `i32` `range`; the bag says a launcher as `launches arrow 1d4 pierce to 10` and weighs one against another as roll and range, with no `+`.
 - **Breaking:** `ItemRow` has public `launches`, `dark_sight` and `replacing` fields and its `bestows` is a `Vec<Bestowed>` rather than `(name, op)` pairs; `TradeRow` has public `described` and `items` fields; `TradeWords` a public `own` field; `StatDef` a public `lower_is_better` field. A game that writes one as a struct literal adds `launches: None, dark_sight: None, replacing: None`, `described: None, items: vec![entity]`, `own: "own".into()` or `lower_is_better: false`, and one that reads `bestows` reads `stat` and `op` off each.
 - `WorldMap::view` and `opening_view` find the window and the current place once, when made, rather than for every cell a shadowcast or a flood reads, which was most of what reading a cell cost.

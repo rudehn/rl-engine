@@ -34,6 +34,7 @@
 use crate::app::EngineApp;
 use atglyph_core::{DiceRoll, Point, geometry};
 use atglyph_rules::ability::ParticleLook;
+use atglyph_rules::arms::Versatile;
 use atglyph_rules::damage::{DamageKindId, Defender, SubtractArmor};
 use atglyph_rules::parts::{Melee, Ranged};
 use atglyph_rules::{DamageStage, FactionId, Factions, Hit, Relation, Resistances, StatId, StatusId};
@@ -122,6 +123,12 @@ pub struct MeleeAttack {
     /// quick blade's five times over the house's three. `None` is the
     /// house's.
     pub unaware: Option<u32>,
+    /// The bigger roll it strikes for while a slot of its wearer's is
+    /// empty, in place of `dice`: a longsword's both hands. `None` strikes
+    /// `dice` however its wearer is dressed. [`Loadout`] makes the choice,
+    /// by [`versatile_roll`](atglyph_rules::arms::versatile_roll), so read
+    /// a wearer's blow there rather than off this.
+    pub versatile: Option<Versatile>,
 }
 
 impl MeleeAttack {
@@ -132,13 +139,14 @@ impl MeleeAttack {
     /// A constructor rather than a literal, so a field that is only ever
     /// wanted by some games is added without touching every call site.
     pub const fn new(kind: DamageKindId, dice: DiceRoll) -> Self {
-        Self { kind, dice, cost: None, look: None, shape: None, unaware: None }
+        Self { kind, dice, cost: None, look: None, shape: None, unaware: None, versatile: None }
     }
 
     /// The blow `part` describes, costing `cost` hundredths of a step, or
     /// an ordinary turn for `None`: the authored blow made a component.
     pub(crate) fn from_part(part: &Melee, cost: Option<u32>) -> Self {
-        Self { cost, look: part.look, shape: part.shape, unaware: part.unaware, ..Self::new(part.kind.id(), part.roll) }
+        let versatile = part.versatile.map(|v| Versatile { roll: v.roll, while_free: v.while_free.id() });
+        Self { cost, look: part.look, shape: part.shape, unaware: part.unaware, versatile, ..Self::new(part.kind.id(), part.roll) }
     }
 
     /// One blow costs `cost` hundredths of a step.
@@ -164,6 +172,13 @@ impl MeleeAttack {
     /// hundred too, for a blow that gains nothing by surprise.
     pub const fn unaware(mut self, percent: u32) -> Self {
         self.unaware = Some(percent);
+        self
+    }
+
+    /// A blow strikes for `versatile`'s roll while the slot it names is
+    /// free.
+    pub const fn versatile(mut self, versatile: Versatile) -> Self {
+        self.versatile = Some(versatile);
         self
     }
 }
@@ -870,11 +885,14 @@ impl Loadout<'_, '_> {
         let own = self.own.get(who).ok().and_then(|(_, melee, ..)| melee.copied());
         let (from, base) = atglyph_rules::arms::first_charged(worn, own)?;
         let bonus = self.stat(who, |r| r.attack);
-        Some((from, MeleeAttack { dice: DiceRoll { bonus: base.dice.bonus + bonus, ..base.dice }, ..base }))
+        let equipped = self.equipped.get(who).ok();
+        let dice = atglyph_rules::arms::versatile_roll(base.dice, base.versatile.as_ref(), |slot| equipped.is_none_or(|e| e.0.is_free(slot)));
+        Some((from, MeleeAttack { dice: DiceRoll { bonus: dice.bonus + bonus, ..dice }, ..base }))
     }
 
     /// The blow `who` strikes with: the first worn item's in slot order,
-    /// or its own, with the attack stat added to the roll. `None` for
+    /// or its own, at its versatile roll while the slot the versatile part
+    /// names is free on `who`, with the attack stat added to the roll. `None` for
     /// something that cannot strike at all.
     pub fn melee(&self, who: Entity) -> Option<MeleeAttack> {
         self.melee_with(who).map(|(_, m)| m)
@@ -2147,6 +2165,78 @@ mod tests {
         let (_, blow, strikes) = loadout(&mut app, player);
         assert_eq!(blow, Some(DiceRoll { num: 1, sides: 3, bonus: 2 }), "the fist again, still with the stat");
         assert_eq!(strikes.len(), 2, "the blade's strike went with it");
+    }
+
+    /// A versatile blade in the right hand is swung in both while the left
+    /// is empty, at its bigger roll, and in one once something fills the
+    /// left, at its own; it stays on all the while, and the left hand it
+    /// would take stays free to fill.
+    #[test]
+    fn a_versatile_blade_goes_to_one_hand_when_the_other_is_filled_and_stays_on() {
+        use atglyph_rules::arms::Versatile;
+        use atglyph_rules::{EquipShape, Equipment, SlotId};
+        let mut app = headless_app();
+        app.add_plugins((crate::fov::FovPlugin, CombatPlugin, crate::items::ItemsPlugin));
+        let start = crate::testing::ground(&mut app);
+        let sides = crate::testing::two_sides(&mut app);
+        let (right, left) = (SlotId::from_raw(0), SlotId::from_raw(1));
+        let blow = MeleeAttack::new(sides.kind, DiceRoll::new(1, 8)).versatile(Versatile { roll: DiceRoll::new(1, 10), while_free: left });
+        let blade = app.world_mut().spawn((crate::items::Item, blow, crate::items::Wearable(EquipShape::in_slot(right)))).id();
+        let buckler = app.world_mut().spawn((crate::items::Item, Armor(1), crate::items::Wearable(EquipShape::in_slot(left)))).id();
+        let mut worn = Equipment::with_slot_count(2);
+        worn.equip(blade, &EquipShape::in_slot(right)).unwrap();
+        let player = app
+            .world_mut()
+            .spawn((
+                Actor,
+                Player,
+                Blocks,
+                Position(start),
+                Health::full(30),
+                Faction(sides.ours),
+                MeleeAttack::new(sides.kind, DiceRoll::new(1, 2)),
+                crate::items::Inventory { items: vec![blade, buckler] },
+                crate::items::Equipped(worn),
+            ))
+            .id();
+        app.update();
+        assert_eq!(loadout(&mut app, player).1, Some(DiceRoll::new(1, 10)), "both hands, with the left empty");
+        assert!(app.world().get::<crate::items::Equipped>(player).unwrap().is_free(left), "and the left hand is still free to fill");
+
+        let displaced = app.world_mut().get_mut::<crate::items::Equipped>(player).unwrap().equip(buckler, &EquipShape::in_slot(left)).unwrap();
+        assert!(displaced.is_empty(), "the buckler takes nothing off");
+        assert_eq!(loadout(&mut app, player).1, Some(DiceRoll::new(1, 8)), "one hand, with the left filled");
+        assert!(app.world().get::<crate::items::Equipped>(player).unwrap().contains(blade), "the blade still worn");
+
+        app.world_mut().get_mut::<crate::items::Equipped>(player).unwrap().unequip(buckler);
+        assert_eq!(loadout(&mut app, player).1, Some(DiceRoll::new(1, 10)), "and both again once the left is empty");
+    }
+
+    /// The fight strikes what the loadout says: a versatile blade lands its
+    /// bigger roll while the left hand is empty and its own once it is
+    /// filled.
+    #[test]
+    fn a_versatile_blade_strikes_its_bigger_roll_only_while_the_left_hand_is_empty() {
+        use atglyph_rules::arms::Versatile;
+        use atglyph_rules::{EquipShape, Equipment, SlotId};
+        let (mut app, _, player, target) = duel(1, false, |kind| MeleeAttack::new(kind, DiceRoll::flat(1)));
+        let kind = app.world().resource::<Registries>().damage_kinds.expect("kinetic");
+        let (right, left) = (SlotId::from_raw(0), SlotId::from_raw(1));
+        let blow = MeleeAttack::new(kind, DiceRoll::flat(3)).versatile(Versatile { roll: DiceRoll::flat(5), while_free: left });
+        let blade = app.world_mut().spawn((crate::items::Item, blow, crate::items::Wearable(EquipShape::in_slot(right)))).id();
+        let buckler = app.world_mut().spawn((crate::items::Item, crate::items::Wearable(EquipShape::in_slot(left)))).id();
+        let mut worn = Equipment::with_slot_count(2);
+        worn.equip(blade, &EquipShape::in_slot(right)).unwrap();
+        app.world_mut().entity_mut(player).insert((crate::items::Inventory { items: vec![blade, buckler] }, Equipped(worn)));
+        app.world_mut().write_message(Intent::new(player, Attack(target)));
+        app.update();
+        assert_eq!(hp(&app, target), 20 - 5, "both hands");
+
+        app.world_mut().get_mut::<Equipped>(player).unwrap().equip(buckler, &EquipShape::in_slot(left)).unwrap();
+        app.update();
+        app.world_mut().write_message(Intent::new(player, Attack(target)));
+        app.update();
+        assert_eq!(hp(&app, target), 20 - 5 - 3, "one hand");
     }
 
     /// Charges one melee blow with `cost` and answers what the turn cost.

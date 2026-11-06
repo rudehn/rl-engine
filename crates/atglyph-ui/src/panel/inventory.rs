@@ -1416,6 +1416,42 @@ mod tests {
         assert_eq!(texts, ["1d4 kinetic", "goes on the left hand", "nothing worn on the left hand"], "{texts:?}");
     }
 
+    /// A versatile sword is weighed by the roll it would strike with on
+    /// the wearer as it would then be dressed: its bigger roll while the
+    /// left hand would be empty, and its own once a knife would fill it.
+    #[test]
+    fn a_versatile_blow_is_weighed_by_whether_the_left_hand_would_be_free() {
+        use atglyph_rules::arms::Versatile;
+        let blow_line = |stage: &Stage| squeezed(&described(stage)).into_iter().find(|(t, _)| t.trim_start().starts_with("blow "));
+        let staged = |worn: &[&str], picked: &str| {
+            let mut stage = closet(52, 22);
+            let (right, left, kind) = (slot(&stage, "right hand"), slot(&stage, "left hand"), stage.kind);
+            let blow = MeleeAttack::new(kind, DiceRoll::new(1, 8)).versatile(Versatile { roll: DiceRoll::new(1, 10), while_free: left });
+            let w = stage.app.world_mut();
+            let sword = w.spawn((Item, Name::new("sword"), Wearable(EquipShape::in_slot(right)), blow)).id();
+            let knife = w.spawn((Item, Name::new("knife"), Wearable(EquipShape::in_slot(left)), MeleeAttack::new(kind, DiceRoll::new(1, 4)))).id();
+            let by_name = |name: &str| if name == "sword" { (sword, EquipShape::in_slot(right)) } else { (knife, EquipShape::in_slot(left)) };
+            let worn: Vec<(Entity, EquipShape)> = worn.iter().map(|n| by_name(n)).collect();
+            dress(&mut stage, vec![sword, knife], &worn, by_name(picked).0);
+            stage
+        };
+        assert_eq!(
+            blow_line(&staged(&["sword"], "knife")),
+            Some(("  blow sword 1d10 -> sword 1d8 (-1 avg)".to_string(), Tones::BAD)),
+            "the knife would fill the hand the sword strikes harder for"
+        );
+        assert_eq!(
+            blow_line(&staged(&[], "sword")),
+            Some(("  blow own 1d6 -> sword 1d10 (+2 avg)".to_string(), Tones::GOOD)),
+            "put on with the left hand empty, both hands"
+        );
+        assert_eq!(
+            blow_line(&staged(&["knife"], "sword")),
+            Some(("  blow knife 1d4 -> sword 1d8 (+2 avg)".to_string(), Tones::GOOD)),
+            "put on beside the knife, one"
+        );
+    }
+
     /// Where a stuck thing holds the slot, the row says it will not come
     /// off, in the bad tone, and weighs no numbers, since it cannot go on.
     #[test]

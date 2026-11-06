@@ -70,7 +70,7 @@ pub enum AttackShape {
 }
 
 /// A blow, as content writes it: `(roll: "1d6", kind: "slash")`, with an
-/// optional `look`, `shape` and `unaware`.
+/// optional `look`, `shape`, `unaware` and `versatile`.
 ///
 /// The same part on a weapon and on a monster, since a blow is one thing
 /// whoever strikes it. What one costs is not here: it is the carrier's, a
@@ -95,6 +95,27 @@ pub struct Melee {
     /// for every blow.
     #[serde(default)]
     pub unaware: Option<u32>,
+    /// The bigger roll it strikes for while a slot of its wearer's is
+    /// empty, as `(roll: "1d10", while_free: "left hand")`; absent, it
+    /// strikes for `roll` however its wearer is dressed.
+    #[serde(default)]
+    pub versatile: Option<VersatileDef>,
+}
+
+/// A blow struck harder while a slot is empty, as content writes it:
+/// `(roll: "1d10", while_free: "left hand")`, a longsword swung in both
+/// hands.
+///
+/// The slot is named through the slot registry when the file is read, so
+/// one nobody has is refused there. The Bevy layer makes it the blow's
+/// `Versatile`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct VersatileDef {
+    /// The roll struck while the slot is free, as `"NdS+B"`.
+    pub roll: DiceRoll,
+    /// The slot that must be empty for it.
+    pub while_free: NameRef<SlotDef>,
 }
 
 /// A shot, as content writes it: `(range: 8, roll: "1d6", kind:
@@ -394,6 +415,21 @@ mod tests {
         assert_eq!((blow.look, blow.shape, blow.unaware), (None, None, None));
         let thrust: Melee = one(&names, r#"(roll: "1d8", kind: "pierce", shape: Pierce(1), unaware: 500)"#).unwrap();
         assert_eq!((thrust.shape, thrust.unaware), (Some(AttackShape::Pierce(1)), Some(500)));
+    }
+
+    #[test]
+    fn a_versatile_blow_names_its_bigger_roll_and_a_slot_that_exists() {
+        let (kinds, slots) = (kinds(), slots());
+        let names = Names::new().damage_kinds(&kinds).slots(&slots);
+        let blade: Melee = one(&names, r#"(roll: "1d8", kind: "slash", versatile: (roll: "1d10", while_free: "off hand"))"#).unwrap();
+        let versatile = blade.versatile.expect("a versatile part");
+        assert_eq!((versatile.roll, versatile.while_free.id()), (DiceRoll::new(1, 10), slots.expect("off hand")));
+        let plain: Melee = one(&names, r#"(roll: "1d8", kind: "slash")"#).unwrap();
+        assert_eq!(plain.versatile, None);
+        let Err(e) = one::<Melee>(&names, r#"(roll: "1d8", kind: "slash", versatile: (roll: "1d10", while_free: "tail"))"#) else {
+            panic!("a slot nobody has is refused")
+        };
+        assert!(e.to_string().contains("tail"), "{e}");
     }
 
     #[test]

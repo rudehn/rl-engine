@@ -424,6 +424,8 @@ Status: adopted, revised 2026-09-09 after Nate's review; being built.
   `TileLook::glyph` is a `TileGlyphs`, one glyph or several, each cell drawing the one its world position picks.
 - 2026-11-05: a worn launcher's range, effective range and roll are the shot's, in place of being added to the launched thing's own, for [Greywold](https://github.com/rudehn/greywold)'s weapons, whose bow shoots an arrow as far and as hard as the bow says and never as the arrow thrown by hand.
   `docs/TODO.md` item 41, a launcher's roll tested flat, is closed: nothing sums a launcher's roll with the thing's own any more, so there is nothing to tell apart.
+- 2026-11-05: a versatile blow, for Greywold's longsword, battleaxe and warhammer, which strike 1d10 in both hands and 1d8 in one: `Melee::versatile` names the bigger roll and the slot that must be free for it, and `arms::versatile_roll` makes the choice from the wearer's equipment, the real one in a fight and the one tried on a copy in the bag and the trade screen.
+  The slot it names is not claimed, so anything put in the other hand moves the blade to one hand rather than taking it off.
 - Next: the rest of the deferred pieces (nights on Corsair's surface, scripted encounters, and phase H of `docs/design/ui.md`: Bevy UI presenters over the panel views, deferred until a game wants wrapping, hover or sub-cell bars), then the living-world-rogue conversion once the engine is done (Nate, 2026-09-10).
   That conversion keeps its overworld token movement, so `rl-overworld` regains travel on the map alongside the portal picker, and its maps stream as chunks.
   The work found by the 2026-09-15 architecture review and not yet started is listed in `docs/TODO.md`.

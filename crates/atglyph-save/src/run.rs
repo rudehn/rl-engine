@@ -1475,8 +1475,14 @@ mod tests {
 
     impl Blades {
         fn new() -> Self {
-            let blow =
-                atglyph_rules::parts::Melee { roll: atglyph_core::DiceRoll::new(1, 6), kind: Id::from_raw(0).into(), look: None, shape: None, unaware: None };
+            let blow = atglyph_rules::parts::Melee {
+                roll: atglyph_core::DiceRoll::new(1, 6),
+                kind: Id::from_raw(0).into(),
+                look: None,
+                shape: None,
+                unaware: None,
+                versatile: None,
+            };
             let parts = atglyph_bevy::ItemParts {
                 attacks: atglyph_bevy::Attacks { melee: Some(blow), ..Default::default() },
                 level: Some(atglyph_rules::parts::Level { damage: Some(1), ..Default::default() }),

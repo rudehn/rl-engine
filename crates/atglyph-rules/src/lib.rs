@@ -98,7 +98,8 @@
 //!   mitigation a real blow goes through, for an inspect panel to print.
 //! - [`arms`]: which weapon an attack is made with, the first worn weapon
 //!   that has a charge, the armor a blow meets, how much of a heal
-//!   arrives and what a blow on the unaware is worth.
+//!   arrives, what a blow on the unaware is worth and the roll a
+//!   versatile blow strikes for.
 //! - [`bump`]: what walking into a cell comes to, a step, a door, a blow, a
 //!   swap, a thing taken up or a question, chosen on plain values.
 //! - [`charges`]: what spending a charge and counting a refill period come

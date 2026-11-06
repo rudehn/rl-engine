@@ -31,7 +31,7 @@ use std::sync::Arc;
 
 use atglyph_core::{DiceRoll, Id};
 use atglyph_grid::Glow;
-use atglyph_rules::parts::{Charges, KeepAway, LaunchDef, Level, Melee, Ranged, ThrowDef};
+use atglyph_rules::parts::{Charges, KeepAway, LaunchDef, Level, Melee, Ranged, ThrowDef, VersatileDef};
 use atglyph_rules::stats::Op;
 use atglyph_rules::{
     AbilityId, Brain, DropTable, EquipShape, FactionId, HearingStats, NoticeStats, Registry, Repertoire, Resistances, StatId, Stats, StatusDef, StatusId,
@@ -221,6 +221,12 @@ impl ItemParts {
         if self.ammo.is_some() && self.attacks.ranged.is_none() {
             wrong.push("spends ammunition, on a thing that shoots nothing".to_string());
         }
+        // Taken by the thing itself wherever it goes: claimed beside its
+        // slot, or the only slot it may go in.
+        let takes = |slot| self.wear.as_ref().is_some_and(|w| w.also.contains(&slot) || (!w.any_of.is_empty() && w.any_of.iter().all(|s| *s == slot)));
+        if self.attacks.melee.and_then(|m| m.versatile).is_some_and(|v| takes(v.while_free.id())) {
+            wrong.push("a versatile blow that needs free a slot the thing itself takes".to_string());
+        }
         if let Some(level) = &self.level {
             if level.min.unwrap_or(0) > level.max.unwrap_or(i32::MAX) {
                 wrong.push("a level whose lowest is above its highest".to_string());
@@ -257,12 +263,13 @@ impl ItemParts {
     }
 
     /// Its blow, its shot, its throw and its launch at `level`, each
-    /// damage roll a level's damage stronger.
+    /// damage roll a level's damage stronger, a versatile blow's bigger
+    /// roll too.
     pub fn attacks_at(&self, level: i32) -> Attacks {
         let damage = self.per(level, |l| l.damage);
         let plus = |roll: DiceRoll| DiceRoll { bonus: roll.bonus + damage, ..roll };
         Attacks {
-            melee: self.attacks.melee.map(|m| Melee { roll: plus(m.roll), ..m }),
+            melee: self.attacks.melee.map(|m| Melee { roll: plus(m.roll), versatile: m.versatile.map(|v| VersatileDef { roll: plus(v.roll), ..v }), ..m }),
             ranged: self.attacks.ranged.map(|r| Ranged { roll: plus(r.roll), ..r }),
             throw: self.attacks.throw.map(|t| ThrowDef { strike: t.strike.map(|(roll, kind)| (plus(roll), kind)), ..t }),
             launch: self.attacks.launch.map(|l| LaunchDef { damage: plus(l.damage), ..l }),
@@ -843,7 +850,9 @@ mod tests {
     #[test]
     fn each_written_attack_part_becomes_its_component_at_the_cost_given_and_nothing_else_appears() {
         let kind = atglyph_rules::damage::DamageKindId::from_raw(0);
-        let melee = Melee { roll: DiceRoll::new(1, 6), kind: kind.into(), look: None, shape: Some(AttackShape::Sweep), unaware: Some(500) };
+        let left = atglyph_rules::SlotId::from_raw(1);
+        let versatile = Some(VersatileDef { roll: DiceRoll::new(1, 10), while_free: left.into() });
+        let melee = Melee { roll: DiceRoll::new(1, 6), kind: kind.into(), look: None, shape: Some(AttackShape::Sweep), unaware: Some(500), versatile };
         let mut world = World::new();
         let mut queue = CommandQueue::default();
         let e = {
@@ -854,7 +863,8 @@ mod tests {
         };
         queue.apply(&mut world);
         let blow = world.get::<MeleeAttack>(e).copied().expect("a blow");
-        assert_eq!(blow, MeleeAttack::new(kind, DiceRoll::new(1, 6)).costing(200).shaped(AttackShape::Sweep).unaware(500));
+        let both_hands = atglyph_rules::arms::Versatile { roll: DiceRoll::new(1, 10), while_free: left };
+        assert_eq!(blow, MeleeAttack::new(kind, DiceRoll::new(1, 6)).costing(200).shaped(AttackShape::Sweep).unaware(500).versatile(both_hands));
         assert!(world.get::<RangedAttack>(e).is_none() && world.get::<Throwable>(e).is_none(), "no part, no component");
     }
 
@@ -864,7 +874,7 @@ mod tests {
     fn blade() -> Arc<ItemParts> {
         let kind = atglyph_rules::damage::DamageKindId::from_raw(0);
         let stat = StatId::from_raw(0);
-        let melee = Melee { roll: DiceRoll::new(1, 6), kind: kind.into(), look: None, shape: None, unaware: None };
+        let melee = Melee { roll: DiceRoll::new(1, 6), kind: kind.into(), look: None, shape: None, unaware: None, versatile: None };
         let throw = ThrowDef { range: Some(5), effective: None, strike: Some((DiceRoll::new(1, 4), kind.into())) };
         let level = Level { min: Some(-2), max: Some(5), damage: Some(1), charges: Some(1), stats: vec![(stat.into(), 5)], ..Level::default() };
         Arc::new(ItemParts {
@@ -919,6 +929,24 @@ mod tests {
         assert_eq!(read(&world, plain), (Some(0), 0, 1, Some(0), 1, vec![]), "a stat at nought is no stat");
         let (below, at) = spawned(&mut world, &blade(), -9);
         assert_eq!((at, read(&world, below).1), (-2, -2), "held at the lowest the line allows");
+    }
+
+    /// A level's damage is on a versatile blow's bigger roll as on its own,
+    /// so a blade at plus two is plus two in both hands.
+    #[test]
+    fn a_level_adds_its_damage_to_a_versatile_blows_bigger_roll_too() {
+        let mut parts = (*blade()).clone();
+        let left = atglyph_rules::SlotId::from_raw(1);
+        if let Some(melee) = parts.attacks.melee.as_mut() {
+            melee.versatile = Some(VersatileDef { roll: DiceRoll::new(1, 10), while_free: left.into() });
+        }
+        let mut world = World::new();
+        let (e, _) = spawned(&mut world, &Arc::new(parts), 2);
+        let blow = world.get::<MeleeAttack>(e).copied().expect("a blow");
+        assert_eq!(
+            (blow.dice, blow.versatile.map(|v| (v.roll, v.while_free))),
+            (DiceRoll { bonus: 2, ..DiceRoll::new(1, 6) }, Some((DiceRoll { bonus: 2, ..DiceRoll::new(1, 10) }, left)))
+        );
     }
 
     #[test]
@@ -994,6 +1022,23 @@ mod tests {
         assert_eq!(world.get::<Launcher>(e), Some(&Launcher { ammo, effective: 3, range: 10, strike: (kind, DiceRoll::new(1, 4)) }));
     }
 
+    /// A versatile blow that needs free a slot its own thing always takes
+    /// could never strike its bigger roll, so it is refused; one held in
+    /// the other hand, or by a thing that may go in either, is not.
+    #[test]
+    fn a_versatile_blow_is_refused_on_a_thing_that_takes_the_slot_it_needs_free() {
+        let (right, left) = (atglyph_rules::SlotId::from_raw(0), atglyph_rules::SlotId::from_raw(1));
+        let kind = atglyph_rules::damage::DamageKindId::from_raw(0);
+        let versatile = Some(VersatileDef { roll: DiceRoll::new(1, 10), while_free: left.into() });
+        let melee = Melee { roll: DiceRoll::new(1, 8), kind: kind.into(), look: None, shape: None, unaware: None, versatile };
+        let held = |wear: EquipShape| ItemParts { attacks: Attacks { melee: Some(melee), ..Attacks::default() }, wear: Some(wear), ..ItemParts::default() };
+        let refused = vec!["a versatile blow that needs free a slot the thing itself takes".to_string()];
+        assert!(held(EquipShape::in_slot(right)).check().is_empty(), "held in the right, it needs the left");
+        assert!(held(EquipShape::in_any([right, left])).check().is_empty(), "it may go in the right");
+        assert_eq!(held(EquipShape::in_slot(right).and_claims(left)).check(), refused, "a two-hander takes the left itself");
+        assert_eq!(held(EquipShape::in_slot(left)).check(), refused, "held in the left, the left is never free");
+    }
+
     #[test]
     fn a_stack_limit_is_spawned_on_the_thing() {
         let parts = Arc::new(ItemParts { stack: Some(3), stack_limit: Some(20), ..ItemParts::default() });
@@ -1063,7 +1108,14 @@ mod tests {
 
     #[test]
     fn what_a_kind_can_do_is_read_from_its_parts_and_unwritten_wits_are_the_ones_a_mind_is_given() {
-        let blow = Melee { roll: DiceRoll::new(1, 4), kind: atglyph_rules::damage::DamageKindId::from_raw(0).into(), look: None, shape: None, unaware: None };
+        let blow = Melee {
+            roll: DiceRoll::new(1, 4),
+            kind: atglyph_rules::damage::DamageKindId::from_raw(0).into(),
+            look: None,
+            shape: None,
+            unaware: None,
+            versatile: None,
+        };
         let parts: ActorParts<()> = ActorParts { flee_at: Some(25), attacks: Attacks { melee: Some(blow), ..Attacks::default() }, ..ActorParts::default() };
         let can = parts.repertoire();
         assert_eq!((can.flee_at, can.melee, can.ranged, can.abilities), (25, true, false, false));

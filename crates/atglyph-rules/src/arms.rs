@@ -5,6 +5,10 @@
 //! the three places that need the melee-or-ranged choice (the resolver, the
 //! hit odds and the forecast) cannot drift apart.
 
+use atglyph_core::DiceRoll;
+
+use crate::equip::SlotId;
+
 /// How an attack is delivered: with the blow or with the shot.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Reach {
@@ -36,6 +40,34 @@ pub fn choose_reach(adjacent: bool, line_of_fire: bool, has_melee: bool, has_ran
 /// when it is the actor's own.
 pub fn first_charged<I: Copy, W: Copy>(worn: impl IntoIterator<Item = (I, Option<W>, bool)>, own: Option<W>) -> Option<(Option<I>, W)> {
     worn.into_iter().find_map(|(item, weapon, charged)| weapon.filter(|_| charged).map(|w| (Some(item), w))).or_else(|| own.map(|w| (None, w)))
+}
+
+/// A blow struck harder in both hands: the bigger `roll` it is swung with
+/// while the slot `while_free` names is empty, a longsword's 1d10 while
+/// the off hand holds nothing.
+///
+/// It claims nothing: the slot stays free, so anything put in it moves the
+/// blow to one hand rather than coming off.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Versatile {
+    /// The roll struck while the slot is free, as `"NdS+B"`.
+    pub roll: DiceRoll,
+    /// The slot that must be empty for it.
+    pub while_free: SlotId,
+}
+
+/// The roll a blow of `dice` strikes for: `versatile`'s while the slot it
+/// names is free, as `is_free` answers for the wearer, else `dice`.
+///
+/// The one place the choice is made, so the fight, the forecast and a
+/// screen weighing gear on a wearer as it would be dressed strike the same
+/// roll; each passes its own equipment's
+/// [`is_free`](crate::Equipment::is_free), real or tried on a copy.
+pub fn versatile_roll(dice: DiceRoll, versatile: Option<&Versatile>, is_free: impl Fn(SlotId) -> bool) -> DiceRoll {
+    match versatile {
+        Some(v) if is_free(v.while_free) => v.roll,
+        _ => dice,
+    }
 }
 
 /// The flat armor a blow meets: the actor's `own`, every `worn` item's and
@@ -95,6 +127,16 @@ mod tests {
         );
         assert_eq!(first_charged([('a', Some(7), false)], Some(1)), Some((None, 1)), "and with nothing charged the actor's own is struck with");
         assert_eq!(first_charged([('a', None::<i32>, true)], None), None, "something with nothing to strike with cannot");
+    }
+
+    #[test]
+    fn a_versatile_blow_rolls_its_bigger_die_only_while_its_slot_is_free() {
+        let left = crate::SlotId::from_raw(1);
+        let v = Versatile { roll: DiceRoll::new(1, 10), while_free: left };
+        assert_eq!(versatile_roll(DiceRoll::new(1, 8), Some(&v), |_| true), DiceRoll::new(1, 10));
+        assert_eq!(versatile_roll(DiceRoll::new(1, 8), Some(&v), |_| false), DiceRoll::new(1, 8));
+        assert_eq!(versatile_roll(DiceRoll::new(1, 8), None, |_| true), DiceRoll::new(1, 8));
+        assert_eq!(versatile_roll(DiceRoll::new(1, 8), Some(&v), |slot| slot != left), DiceRoll::new(1, 8), "the slot it names is the one asked after");
     }
 
     #[test]
