@@ -60,6 +60,13 @@ pub(crate) struct InspectLayout {
     /// The line under the facets that counts those the rectangle has no
     /// room for, `{n}` standing for how many.
     pub more: String,
+    /// What someone is said to wield, beside its name when the two fit on
+    /// a row and on the row under it otherwise: `{what}` is each thing it
+    /// wields, as a sentence names it, joined by `and`.
+    pub wielding: String,
+    /// What else someone is said to wear, on a row of its own under where
+    /// it stands, `{what}` as for `wielding`.
+    pub wearing: String,
 }
 
 /// Draws [`InspectView`] and the cursor on the map.
@@ -80,7 +87,17 @@ impl InspectPanel {
             working: "{doing} the {target}, {left} left".into(),
             working_alone: "{doing}, {left} left".into(),
             more: "and {n} more".into(),
+            wielding: "wielding {what}".into(),
+            wearing: "wearing {what}".into(),
         })
+    }
+
+    /// Sets how what someone wields and what else it wears are said, each
+    /// with `{what}` for the things.
+    pub fn gear(mut self, wielding: impl Into<String>, wearing: impl Into<String>) -> Self {
+        self.0.wielding = wielding.into();
+        self.0.wearing = wearing.into();
+        self
     }
 
     /// Sets where the panel goes while the cursor is under its rectangle,
@@ -247,7 +264,25 @@ pub(crate) fn draw_inspect(
     let mut y = inner.y;
     terminal.print_on(inner.x, y, &subject.glyph.ch.to_string(), subject.glyph.fg, bg);
     terminal.print_on(inner.x + 2, y, &clip(&subject.label, width.saturating_sub(2)), palette.get(relation_tone(subject.relation)), bg);
-    y += 1;
+    // What it wields, beside its name when the two fit, and whole on the
+    // row under it otherwise, so neither is cut for the other.
+    let said = |template: &str, things: &[String]| template.replace("{what}", &things.join(" and "));
+    let wields = (!view.wields.is_empty()).then(|| said(&layout.wielding, &view.wields));
+    let beside = 2 + subject.label.chars().count();
+    match wields {
+        Some(wields) if beside + 2 + wields.chars().count() <= width => {
+            terminal.print_on(inner.x + beside as i32, y, &format!(", {wields}"), palette.get(Tones::MUTED), bg);
+            y += 1;
+        }
+        Some(wields) => {
+            y += 1;
+            if y < inner.bottom() {
+                terminal.print_on(inner.x, y, &clip(&wields, width), palette.get(Tones::MUTED), bg);
+                y += 1;
+            }
+        }
+        None => y += 1,
+    }
     if let Some((hp, max)) = subject.health
         && y < inner.bottom()
     {
@@ -261,6 +296,10 @@ pub(crate) fn draw_inspect(
     }
     if y < inner.bottom() {
         terminal.print_on(inner.x, y, &clip(&whereabouts(subject.distance, &ground), width), palette.get(Tones::MUTED), bg);
+        y += 1;
+    }
+    if !view.wears.is_empty() && y < inner.bottom() {
+        terminal.print_on(inner.x, y, &clip(&said(&layout.wearing, &view.wears), width), palette.get(Tones::MUTED), bg);
         y += 1;
     }
     // What an item is worth, in the bag's own words.
@@ -590,6 +629,55 @@ mod tests {
             [inner(22), inner(23), inner(24), inner(25)],
             [") axe".to_string(), "2 tiles away, on floor".into(), format!("blow 2d4 {kind}"), "armor +1".into()]
         );
+    }
+
+    /// A stage looking at someone called `name` wielding an axe and wearing
+    /// a cap, in a panel thirty wide, and the panel's first inner rows.
+    fn looked_at_armed(name: &str) -> Vec<String> {
+        let mut stage = Stage::new_with(InspectPanel::new(GridRect::new(0, 21, 30, 8)), |app| {
+            app.add_plugins(atglyph_render::MapViewPlugin::new(GridRect::new(0, 0, 40, 20)));
+        })
+        .screen(40, 30);
+        let kind = stage.kind;
+        let orc = stage.actor(name, 'o', 2, 0);
+        let slot = |i| atglyph_rules::EquipShape::in_slot(atglyph_rules::SlotId::from_raw(i));
+        let w = stage.app.world_mut();
+        let axe = w
+            .spawn((
+                atglyph_bevy::Item,
+                Name::new("axe"),
+                atglyph_bevy::Wearable(slot(0)),
+                atglyph_bevy::MeleeAttack::new(kind, atglyph_core::DiceRoll::new(1, 6)),
+            ))
+            .id();
+        let cap = w.spawn((atglyph_bevy::Item, Name::new("cap"), atglyph_bevy::Wearable(slot(1)), atglyph_bevy::Armor(1))).id();
+        let mut worn = atglyph_rules::Equipment::with_slot_count(2);
+        worn.equip(axe, &slot(0)).unwrap();
+        worn.equip(cap, &slot(1)).unwrap();
+        w.entity_mut(orc).insert(atglyph_bevy::Equipped(worn));
+        stage.tick();
+        stage.press(CursorKeys::default().look);
+        (22..26).map(|y| stage.row(y).trim_start_matches("\u{2502} ").trim_end_matches('\u{2502}').trim_end().to_string()).collect()
+    }
+
+    /// What someone wields is said beside its name, as a sentence would
+    /// say it, and what else it wears on a line of its own under where it
+    /// stands.
+    #[test]
+    fn the_panel_says_what_someone_wields_beside_its_name_and_what_it_wears_under_where_it_stands() {
+        let rows = looked_at_armed("orc");
+        assert_eq!(rows[0], "o orc, wielding an axe");
+        assert!(rows[1].starts_with("health 10/10"), "{rows:#?}");
+        assert_eq!(rows[2..4], ["2 tiles away, on floor".to_string(), "wearing a cap".into()]);
+    }
+
+    /// A name too long to share its row is never cut for what it wields:
+    /// the weapon goes on the row under it, whole.
+    #[test]
+    fn what_someone_with_a_long_name_wields_goes_whole_on_the_row_under_its_name() {
+        let rows = looked_at_armed("Grimsby the Unwashed");
+        assert_eq!(rows[0..2], ["o Grimsby the Unwashed".to_string(), "wielding an axe".into()]);
+        assert!(rows[2].starts_with("health 10/10"), "{rows:#?}");
     }
 
     /// A stage looking at a crab the game says `facets` about, in a panel

@@ -79,6 +79,14 @@ pub struct InspectView {
     /// own are in the forecast instead, and a thing not yet known keeps
     /// them to itself, as it does in the bag.
     pub armor: i32,
+    /// What the subject wields, each as a sentence names one, `an axe`:
+    /// every worn thing it strikes or shoots with, a launcher with nothing
+    /// to launch among them, in slot order and a thing in both hands once.
+    /// Empty for anyone who wears nothing and for a thing lying about.
+    pub wields: Vec<String>,
+    /// What else the subject wears, named the same way: `a cap`, `iron
+    /// greaves`.
+    pub wears: Vec<String>,
     /// What the game added about the subject.
     pub facets: Vec<Facet>,
     /// Whether the subject is a thing not yet known, [`Unknown`]: a panel
@@ -241,6 +249,37 @@ pub struct Duelists<'w, 's> {
     items: Query<'w, 's, Worth, With<Item>>,
     /// What either side's numbers seem to be, where a game says.
     seems: Query<'w, 's, &'static Seems>,
+    /// What the subject has on.
+    gear: Gear<'w, 's>,
+}
+
+/// What a worn thing is, as the look names it: what it is called, whether
+/// it is a stuff, and whether it strikes, shoots, launches or is put by
+/// for want of what it shoots.
+type Worn = (&'static Name, Has<crate::narrate::MassNoun>, Has<MeleeAttack>, Has<RangedAttack>, Has<Launcher>, Has<BenchedAttack>);
+
+/// What someone has on, as the look names it.
+#[derive(bevy::ecs::system::SystemParam)]
+pub struct Gear<'w, 's> {
+    equipped: Query<'w, 's, &'static Equipped>,
+    worn: Query<'w, 's, Worn, With<Item>>,
+}
+
+impl Gear<'_, '_> {
+    /// What `who` wields and what else it wears, in slot order, each named
+    /// as a sentence names one: a thing it strikes or shoots with is
+    /// wielded, a weapon dry or put by among them, and anything else worn.
+    fn of(&self, who: Entity) -> (Vec<String>, Vec<String>) {
+        let (mut wields, mut wears) = (Vec::new(), Vec::new());
+        let Ok(equipped) = self.equipped.get(who) else { return (wields, wears) };
+        for (_, item) in equipped.0.worn() {
+            let Ok((name, mass, blow, shot, launches, benched)) = self.worn.get(item) else { continue };
+            let countability = if mass { atglyph_core::noun::Countability::Mass } else { atglyph_core::noun::Countability::Count };
+            let said = atglyph_core::noun::counted_as(name.as_str(), 1, countability);
+            if blow || shot || launches || benched { wields.push(said) } else { wears.push(said) }
+        }
+        (wields, wears)
+    }
 }
 
 impl Duelists<'_, '_> {
@@ -330,6 +369,8 @@ pub(crate) fn collect_inspect(mut view: ResMut<InspectView>, duelists: Duelists)
     view.blow = None;
     view.shot = None;
     view.armor = 0;
+    view.wields.clear();
+    view.wears.clear();
     if !duelists.modals.is_open(inspect_modal(&duelists.modals)) {
         return;
     }
@@ -365,6 +406,7 @@ pub(crate) fn collect_inspect(mut view: ResMut<InspectView>, duelists: Duelists)
     row.work = duelists.work.row(entity);
     let relation = row.relation;
     view.subject = Some(row);
+    (view.wields, view.wears) = duelists.gear.of(entity);
     view.unknown = duelists.unknown.contains(entity);
     if let Ok((armor, melee, ranged)) = duelists.items.get(entity)
         && !view.unknown
@@ -843,6 +885,49 @@ mod tests {
         };
         assert_eq!(turns_to_fall(true), Some(4), "8.5 a blow");
         assert_eq!(turns_to_fall(false), Some(5), "the blade's six alone");
+    }
+
+    /// A look at someone says what it wields and what else it wears, each
+    /// as a sentence names it: a blade, a launcher that has nothing to
+    /// launch and a pair of greaves, worn in slot order, each once.
+    #[test]
+    fn the_look_names_what_its_subject_wields_and_what_else_it_wears() {
+        let mut stage = stage();
+        let kind = stage.kind;
+        let orc = stage.actor("orc", 'o', 1, 0);
+        let slot = |i| atglyph_rules::EquipShape::in_slot(atglyph_rules::SlotId::from_raw(i));
+        let w = stage.app.world_mut();
+        let axe = w.spawn((Item, Name::new("axe"), Wearable(slot(0)), MeleeAttack::new(kind, atglyph_core::DiceRoll::new(1, 6)))).id();
+        let bow = w
+            .spawn((Item, Name::new("bow"), Wearable(slot(1)), Dry, BenchedAttack::Ranged(RangedAttack::new(kind, atglyph_core::DiceRoll::new(1, 6), 8))))
+            .id();
+        let greaves = w.spawn((Item, Name::new("iron greaves"), crate::narrate::MassNoun, Wearable(slot(2)), Armor(1))).id();
+        let cap = w.spawn((Item, Name::new("cap"), Wearable(slot(3)), Armor(1))).id();
+        let mut worn = atglyph_rules::Equipment::with_slot_count(4);
+        for (thing, i) in [(axe, 0), (bow, 1), (greaves, 2), (cap, 3)] {
+            worn.equip(thing, &slot(i)).unwrap();
+        }
+        w.entity_mut(orc).insert(Equipped(worn));
+        stage.tick();
+        stage.press(CursorKeys::default().look);
+        let view = stage.app.world().resource::<InspectView>();
+        assert_eq!(view.wields, ["an axe", "a bow"]);
+        assert_eq!(view.wears, ["iron greaves", "a cap"]);
+    }
+
+    /// Someone who wears nothing, and a thing lying about, wield nothing.
+    #[test]
+    fn a_look_at_someone_who_wears_nothing_or_at_a_thing_names_nothing_wielded() {
+        let mut stage = stage();
+        stage.actor("rat", 'r', 1, 0);
+        stage.thing("axe", ')', 2, 0);
+        stage.tick();
+        stage.press(CursorKeys::default().look);
+        let view = stage.app.world().resource::<InspectView>();
+        assert!(view.subject.is_some() && view.wields.is_empty() && view.wears.is_empty());
+        stage.press(CursorKeys::default().next);
+        let view = stage.app.world().resource::<InspectView>();
+        assert!(view.subject.is_some() && view.wields.is_empty() && view.wears.is_empty());
     }
 
     /// The forecast's blow count comes from armor and dice alone, but a
