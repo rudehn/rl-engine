@@ -144,7 +144,7 @@ What moved is `atglyph_rules::parts`, a set of authored parts, each the type of 
 | `Melee` | `roll`, `kind`, `look`, `shape`, `unaware` | `MeleeAttack` |
 | `Ranged` | `range`, `effective`, `roll`, `kind`, `look` | `RangedAttack` |
 | `ThrowDef` | `range`, `effective`, `strike`, `range` left out to fly as far as the thrower reaches | `Throwable` |
-| `LaunchDef` | `ammo`, `range`, `damage` | `Launcher`, worn, adding its range and roll to what it launches |
+| `LaunchDef` | `ammo`, `effective`, `range`, `damage`, `kind` | `Launcher`, worn, its range and roll the shot of what it launches |
 | `Wear` | `slot`, `either`, `also` | `Wearable(EquipShape)`, the pair `either` reaches for read from the slot registry's `SlotDef::pair` |
 | `Charges` | `charges`, `when_empty`, `recharge`, `while_worn` | `Consumable`, its `Recharge` in hundredths of a step, and `Attuned` |
 | `Level` | `min`, `max`, `armor`, `damage`, `amount`, `turns`, `pulse`, `charges`, `dark_sight`, `stats` | what each level adds to all of the above, in section 7 |
