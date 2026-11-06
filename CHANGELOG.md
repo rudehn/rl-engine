@@ -39,7 +39,6 @@ atglyph is not on crates.io yet, so a game depends on a release by its git tag, 
 
 ### Changed
 
-- A trader's worn gear is no longer listed among its wares.
 - **Breaking:** `ItemRow` has public `shield` and `attack_speed` fields, and `Kit` has `shield` and `attack_speed`, so a game that builds either by hand names them.
 - **Breaking:** `ItemRow` has public `launches`, `dark_sight` and `replacing` fields and its `bestows` is a `Vec<Bestowed>` rather than `(name, op)` pairs; `TradeRow` has public `described` and `items` fields; `TradeWords` a public `own` field; `StatDef` a public `lower_is_better` field. A game that writes one as a struct literal adds `launches: None, dark_sight: None, replacing: None`, `described: None, items: vec![entity]`, `own: "own".into()` or `lower_is_better: false`, and one that reads `bestows` reads `stat` and `op` off each.
 - `WorldMap::view` and `opening_view` find the window and the current place once, when made, rather than for every cell a shadowcast or a flood reads, which was most of what reading a cell cost.

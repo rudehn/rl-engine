@@ -203,7 +203,7 @@ pub struct Replacing {
 /// a charge to use it, else the wearer's own; the first worn launcher for
 /// each thing launched; and the best sight in the dark of its own and of
 /// what it wears.
-#[derive(Debug, Clone, PartialEq, Default)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Kit {
     /// The blow struck, and what with.
     pub blow: Option<Wielding>,
@@ -222,6 +222,14 @@ pub struct Kit {
     /// Whether any of it comes from a thing not yet known, whose numbers a
     /// screen must not tell.
     pub withheld: bool,
+}
+
+impl Default for Kit {
+    /// A wearer with nothing: no blow, shot, launcher, sight or shield, and
+    /// attacks at an ordinary hundred percent rather than none.
+    fn default() -> Self {
+        Self { blow: None, shot: None, launchers: Vec::new(), dark_sight: None, shield: None, attack_speed: 100, withheld: false }
+    }
 }
 
 /// A blow or a shot and what it comes from.
@@ -692,6 +700,12 @@ mod tests {
     use atglyph_core::DiceRoll;
     use atglyph_rules::content::Registry;
     use atglyph_rules::{EquipShape, Equipment, SlotDef, StatDef};
+
+    /// A kit of nothing attacks at an ordinary hundred percent.
+    #[test]
+    fn a_default_kit_attacks_at_an_ordinary_speed() {
+        assert_eq!(Kit::default().attack_speed, 100);
+    }
 
     /// A shield is listed with what it blocks and a slowing thing with the
     /// percent it leaves attacks at, and a thing not yet known with neither.
