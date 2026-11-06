@@ -228,6 +228,15 @@ impl ItemParts {
         if self.shield.is_some() && self.wear.is_none() {
             wrong.push("a shield, on a thing that is never worn".to_string());
         }
+        if self.shield.is_some_and(|s| s.blocks == 0) {
+            wrong.push("a shield that blocks nothing a turn is never raised against anything".to_string());
+        }
+        if self.shield.is_some_and(|s| s.chance > 100) {
+            wrong.push("a shield whose chance is over a hundred percent, which is not a share".to_string());
+        }
+        if self.attack_speed == Some(0) {
+            wrong.push("an attack speed of nothing: every blow would cost a turn that never ends".to_string());
+        }
         if self.ammo.is_some() && self.attacks.ranged.is_none() {
             wrong.push("spends ammunition, on a thing that shoots nothing".to_string());
         }
@@ -1021,6 +1030,26 @@ mod tests {
         assert_eq!(world.get::<Shield>(e), Some(&Shield(round)));
         let (plain, _) = spawned(&mut world, &blade(), 0);
         assert!(world.get::<Shield>(plain).is_none(), "no part, no shield");
+    }
+
+    #[test]
+    fn a_shield_that_blocks_nothing_or_over_a_hundred_and_an_attack_speed_of_nothing_are_refused() {
+        let worn = |shield, attack_speed| ItemParts {
+            wear: Some(EquipShape::in_slot(atglyph_rules::SlotId::from_raw(1))),
+            shield,
+            attack_speed,
+            ..ItemParts::default()
+        };
+        assert_eq!(
+            worn(Some(ShieldDef { chance: 50, blocks: 0 }), None).check(),
+            vec!["a shield that blocks nothing a turn is never raised against anything".to_string()]
+        );
+        assert_eq!(
+            worn(Some(ShieldDef { chance: 101, blocks: 1 }), None).check(),
+            vec!["a shield whose chance is over a hundred percent, which is not a share".to_string()]
+        );
+        assert_eq!(worn(None, Some(0)).check(), vec!["an attack speed of nothing: every blow would cost a turn that never ends".to_string()]);
+        assert!(worn(Some(ShieldDef { chance: 100, blocks: 1 }), Some(95)).check().is_empty());
     }
 
     #[test]

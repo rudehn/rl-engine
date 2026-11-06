@@ -120,6 +120,11 @@ impl Combatant<'_> {
     /// in part: the share met is `blocks` over the attacks the foe makes in
     /// the bearer's turn, never more than all. Whatever it meets it turns
     /// aside at its chance.
+    ///
+    /// The forecast ignores the two cases the resolver exempts: an attack
+    /// that is an effect (never blocked) and an attack by one the bearer is
+    /// unaware of (never blocked), so it reads a little kinder to the guard
+    /// than play.
     pub fn guarding(mut self, shield: Option<ShieldDef>) -> Self {
         self.guard = shield;
         self
@@ -364,7 +369,6 @@ pub fn duel<A: Copy>(asker: &Combatant<'_>, subject: &Combatant<'_>, kinds: &Reg
 mod tests {
     use super::*;
     use crate::damage::SubtractArmor;
-    use crate::parts::ShieldDef;
     use atglyph_core::turn::TurnQueue;
 
     fn kinds() -> Registry<DamageKind> {

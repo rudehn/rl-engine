@@ -74,10 +74,17 @@ pub struct InspectView {
     /// the one [`Loadout::shield`] says a blow is rolled against, which is
     /// also the one the forecast counts. `None` for a subject with none.
     pub shield: Option<(String, atglyph_rules::parts::ShieldDef)>,
+    /// What an item under the cursor blocks while worn: its [`Shield`],
+    /// which the bag says as `blocks 1 a turn at 50%`. Distinct from
+    /// [`shield`](Self::shield), the one a creature holds raised.
+    pub blocks: Option<atglyph_rules::parts::ShieldDef>,
+    /// The percent an item under the cursor leaves of its wearer's attack
+    /// speed while worn, its [`AttackSpeed`], as the bag says it.
+    pub attack_speed: Option<u32>,
     /// The flat [`Armor`] an item under the cursor lends while worn, or
     /// nought.
     ///
-    /// These three are read for an [`Item`] alone, from the components
+    /// These are read for an [`Item`] alone, from the components
     /// [`Loadout`] reads when a blow is struck, so a look at a thing on the
     /// floor says what the bag would say of it once carried. A monster's
     /// own are in the forecast instead, and a thing not yet known keeps
@@ -308,9 +315,15 @@ fn seeming(
     rolls
 }
 
-/// What an item is worth: the armor it lends and what wielding it strikes
-/// and shoots with.
-type Worth = (Option<&'static Armor>, Option<&'static MeleeAttack>, Option<&'static RangedAttack>);
+/// What an item is worth: the armor it lends, what wielding it strikes and
+/// shoots with, what it blocks and the attack speed it leaves.
+type Worth = (
+    Option<&'static Armor>,
+    Option<&'static MeleeAttack>,
+    Option<&'static RangedAttack>,
+    Option<&'static atglyph_bevy::Shield>,
+    Option<&'static atglyph_bevy::AttackSpeed>,
+);
 
 /// What a side of a duel is made of, apart from what its [`Loadout`] says
 /// and how fast [`Speeds`] says it is.
@@ -344,6 +357,8 @@ pub(crate) fn collect_inspect(mut view: ResMut<InspectView>, duelists: Duelists)
     view.shot = None;
     view.armor = 0;
     view.shield = None;
+    view.blocks = None;
+    view.attack_speed = None;
     if !duelists.modals.is_open(inspect_modal(&duelists.modals)) {
         return;
     }
@@ -381,13 +396,15 @@ pub(crate) fn collect_inspect(mut view: ResMut<InspectView>, duelists: Duelists)
     view.subject = Some(row);
     view.unknown = duelists.unknown.contains(entity);
     view.shield = duelists.loadout.shield(entity).and_then(|(item, def)| Some((duelists.names.get(item).ok()?.as_str().to_string(), def)));
-    if let Ok((armor, melee, ranged)) = duelists.items.get(entity)
+    if let Ok((armor, melee, ranged, shield, speed)) = duelists.items.get(entity)
         && !view.unknown
     {
         let strike = |kind, dice, range| Strike { kind: duelists.registries.damage_kinds.name(kind).to_string(), dice, range, also: None };
         view.blow = melee.map(|m| strike(m.kind, m.dice, None));
         view.shot = ranged.map(|r| strike(r.kind, r.dice, Some(r.range)));
         view.armor = armor.map_or(0, |a| a.0);
+        view.blocks = shield.map(|s| s.0);
+        view.attack_speed = speed.map(|s| s.0);
     }
 
     // A prop is never duelled, whatever health it carries. A crate has
@@ -883,6 +900,37 @@ mod tests {
         assert_eq!(ordinary.turns_to_fell, Some(3), "three blows at the ordinary speed");
         assert_eq!(hasted.turns_to_fell, Some(2), "the same three at twice the speed, a turn and a half rounded up");
         assert_eq!(hasted.turns_to_fall, ordinary.turns_to_fall, "the weakling is as fast as it was");
+    }
+
+    /// The forecast the view hands `duel` counts the guard's shield and the
+    /// player's attack speed, each read off what is worn: the same weakling
+    /// is felled in more turns behind a kite shield, and in more again by a
+    /// player wearing a slow ring.
+    #[test]
+    fn the_forecast_counts_a_guards_worn_shield_and_the_players_worn_attack_speed() {
+        let mut stage = stage();
+        let guard = stage.actor("a guard", 'g', 1, 0);
+        stage.tick();
+        stage.press(CursorKeys::default().look);
+        let fell = |stage: &Stage| stage.app.world().resource::<InspectView>().duel.expect("a duel").turns_to_fell;
+        assert_eq!(fell(&stage), Some(3), "three blows into a bare guard");
+
+        let wear = |stage: &mut Stage, who: Entity, item: Entity| {
+            let mut worn = atglyph_bevy::Equipped(atglyph_rules::Equipment::with_slot_count(1));
+            worn.equip(item, &atglyph_rules::EquipShape::in_slot(atglyph_rules::SlotId::from_raw(0))).expect("the slot exists");
+            stage.app.world_mut().entity_mut(who).insert(worn);
+        };
+        let kite =
+            stage.app.world_mut().spawn((Item, Name::new("kite shield"), atglyph_bevy::Shield(atglyph_rules::parts::ShieldDef { chance: 50, blocks: 3 }))).id();
+        wear(&mut stage, guard, kite);
+        stage.tick();
+        assert_eq!(fell(&stage), Some(6), "half the blows turned aside takes twice the turns");
+
+        let slow = stage.app.world_mut().spawn((Item, Name::new("heavy ring"), atglyph_bevy::AttackSpeed(50))).id();
+        let player = stage.player;
+        wear(&mut stage, player, slow);
+        stage.tick();
+        assert_eq!(fell(&stage), Some(12), "and each blow costing twice as much takes twice again");
     }
 
     /// A droid that only shoots, inspected from across the room and then

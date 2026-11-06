@@ -269,7 +269,9 @@ pub(crate) fn draw_inspect(
         .iter()
         .map(|blow| format!("blow {}", strike(blow)))
         .chain(view.shot.iter().map(|shot| format!("shoots {}", strike(shot))))
-        .chain((view.armor != 0).then(|| format!("armor {:+}", view.armor)));
+        .chain((view.armor != 0).then(|| format!("armor {:+}", view.armor)))
+        .chain(view.blocks.map(|shield| format!("blocks {} a turn at {}%", shield.blocks, shield.chance.min(100))))
+        .chain(view.attack_speed.map(|speed| format!("attack speed {speed}")));
     for line in numbers {
         if y >= inner.bottom() {
             break;
@@ -620,6 +622,26 @@ mod tests {
         assert_eq!(
             [inner(22), inner(23), inner(24), inner(25)],
             [") axe".to_string(), "2 tiles away, on floor".into(), format!("blow 2d4 {kind}"), "armor +1".into()]
+        );
+    }
+
+    /// A shield lying on the floor says what it blocks and an attack speed
+    /// what it leaves, as the bag would say of it once carried.
+    #[test]
+    fn a_shield_on_the_floor_says_what_it_blocks_and_its_attack_speed() {
+        let mut stage = staged();
+        let round = stage.thing("round shield", ')', 2, 0);
+        stage
+            .app
+            .world_mut()
+            .entity_mut(round)
+            .insert((atglyph_bevy::Shield(atglyph_rules::parts::ShieldDef { chance: 50, blocks: 1 }), atglyph_bevy::AttackSpeed(95)));
+        stage.tick();
+        stage.press(CursorKeys::default().look);
+        let inner = |y: i32| stage.row(y).trim_start_matches("\u{2502} ").trim_end_matches('\u{2502}').trim_end().to_string();
+        assert_eq!(
+            [inner(22), inner(23), inner(24), inner(25)],
+            [") round shield".to_string(), "2 tiles away, on floor".into(), "blocks 1 a turn at 50%".into(), "attack speed 95".into()]
         );
     }
 
