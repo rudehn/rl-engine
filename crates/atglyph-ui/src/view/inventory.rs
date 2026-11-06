@@ -198,10 +198,9 @@ pub struct Replacing {
 /// and the shot of the first worn thing, in slot order, that has one and
 /// a charge to use it, else the wearer's own, a versatile blow at its
 /// bigger roll while the slot it names is free, and a worn blow with the
-/// wearer's own beside it for one marked
-/// [`AddsOwnBlow`](atglyph_bevy::AddsOwnBlow); the first worn launcher for
-/// each thing launched; and the best sight in the dark of its own and of
-/// what it wears.
+/// wearer's own beside it for one marked [`AddsOwnBlow`]; the first worn
+/// launcher for each thing launched; and the best sight in the dark of its
+/// own and of what it wears.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Kit {
     /// The blow struck, and what with.
