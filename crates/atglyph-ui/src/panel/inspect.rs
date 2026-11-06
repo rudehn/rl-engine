@@ -310,6 +310,14 @@ pub(crate) fn draw_inspect(
             y += 1;
         }
     }
+    // The shield it holds raised, in the forecast's own plain words.
+    if let Some((name, shield)) = &view.shield
+        && y < inner.bottom()
+    {
+        let reading = format!("{name}: blocks {} a turn at {}%", shield.blocks, shield.chance.min(100));
+        terminal.print_on(inner.x, y, &clip(&reading, width), palette.get(Tones::MUTED), bg);
+        y += 1;
+    }
     // The chance the player's own attack lands, and every line the model
     // gave for it, the same the targeting box prints.
     if let Some(odds) = &view.odds
@@ -546,6 +554,29 @@ mod tests {
         let rows: Vec<String> = stage.rows().iter().map(|r| r.trim_start_matches("\u{2502} ").trim_end_matches('\u{2502}').trim_end().to_string()).collect();
         assert!(rows.iter().any(|r| r == "Chance to hit: 90%"), "{rows:#?}");
         assert!(rows.iter().any(|r| r == "  -10 for range"), "{rows:#?}");
+    }
+
+    /// A creature holding a shield says which, and how it guards, in the
+    /// forecast's plain voice.
+    #[test]
+    fn the_panel_names_a_creatures_shield() {
+        let mut stage = Stage::new_with(InspectPanel::new(GridRect::new(0, 21, 40, 12)), |app| {
+            app.add_plugins(atglyph_render::MapViewPlugin::new(GridRect::new(0, 0, 40, 20)));
+        })
+        .screen(40, 34);
+        let guard = stage.actor("guard", 'g', 2, 0);
+        let kite = stage
+            .app
+            .world_mut()
+            .spawn((atglyph_bevy::Item, Name::new("kite shield"), atglyph_bevy::Shield(atglyph_rules::parts::ShieldDef { chance: 50, blocks: 2 })))
+            .id();
+        let mut worn = atglyph_bevy::Equipped(atglyph_rules::Equipment::with_slot_count(1));
+        worn.equip(kite, &atglyph_rules::EquipShape::in_slot(atglyph_rules::SlotId::from_raw(0))).expect("the slot exists");
+        stage.app.world_mut().entity_mut(guard).insert(worn);
+        stage.tick();
+        stage.press(CursorKeys::default().look);
+        let rows: Vec<String> = stage.rows().iter().map(|r| r.trim_start_matches("\u{2502} ").trim_end_matches('\u{2502}').trim_end().to_string()).collect();
+        assert!(rows.iter().any(|r| r == "kite shield: blocks 2 a turn at 50%"), "{rows:#?}");
     }
 
     #[test]

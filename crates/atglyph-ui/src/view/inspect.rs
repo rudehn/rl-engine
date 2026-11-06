@@ -70,6 +70,10 @@ pub struct InspectView {
     /// The shot an item under the cursor fires, when wielding it shoots:
     /// its [`RangedAttack`], with its reach.
     pub shot: Option<Strike>,
+    /// The shield the subject holds raised, by its name and what it blocks:
+    /// the one [`Loadout::shield`] says a blow is rolled against, which is
+    /// also the one the forecast counts. `None` for a subject with none.
+    pub shield: Option<(String, atglyph_rules::parts::ShieldDef)>,
     /// The flat [`Armor`] an item under the cursor lends while worn, or
     /// nought.
     ///
@@ -235,6 +239,8 @@ pub struct Duelists<'w, 's> {
     speeds: Speeds<'w, 's>,
     /// What the subject is working at.
     work: crate::view::Workings<'w, 's>,
+    /// What a shield is called.
+    names: Query<'w, 's, &'static Name>,
     /// What is not yet known.
     unknown: Query<'w, 's, (), With<Unknown>>,
     /// What an item is worth, for the lines that say so.
@@ -272,10 +278,13 @@ impl Duelists<'_, '_> {
         // with no attack at all reads never. The chance to hit stays what it
         // is from here, which is why it is shown only while something
         // reaches.
+        let (my_guard, their_guard) = (self.loadout.shield(me).map(|(_, s)| s), self.loadout.shield(them).map(|(_, s)| s));
         let mut asker = Combatant::closing(mine, self.loadout.armor(me) - my_seems.armor, self.speeds.of(me), &my_resists, &my_arms, apart)
-            .hitting(my_odds.as_ref().map_or(100, Odds::percent));
+            .hitting(my_odds.as_ref().map_or(100, Odds::percent))
+            .guarding(my_guard);
         let mut other = Combatant::closing(theirs, self.loadout.armor(them) - their_seems.armor, self.speeds.of(them), &their_resists, &their_arms, apart)
-            .hitting(their_odds.as_ref().map_or(100, Odds::percent));
+            .hitting(their_odds.as_ref().map_or(100, Odds::percent))
+            .guarding(their_guard);
         // A worn attack speed slows the blow the forecast counts, as it
         // slows the one that lands.
         asker.blow_cost = Some(self.loadout.attack_cost(me, asker.blow_cost));
@@ -334,6 +343,7 @@ pub(crate) fn collect_inspect(mut view: ResMut<InspectView>, duelists: Duelists)
     view.blow = None;
     view.shot = None;
     view.armor = 0;
+    view.shield = None;
     if !duelists.modals.is_open(inspect_modal(&duelists.modals)) {
         return;
     }
@@ -370,6 +380,7 @@ pub(crate) fn collect_inspect(mut view: ResMut<InspectView>, duelists: Duelists)
     let relation = row.relation;
     view.subject = Some(row);
     view.unknown = duelists.unknown.contains(entity);
+    view.shield = duelists.loadout.shield(entity).and_then(|(item, def)| Some((duelists.names.get(item).ok()?.as_str().to_string(), def)));
     if let Ok((armor, melee, ranged)) = duelists.items.get(entity)
         && !view.unknown
     {

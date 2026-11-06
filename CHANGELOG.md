@@ -8,6 +8,7 @@ atglyph is not on crates.io yet, so a game depends on a release by its git tag, 
 
 ### Added
 
+- The fight forecast counts a guard's shield (`Combatant::guarding`), and the inspect panel names it.
 - A worn `Shield` (`ItemParts::shield`, `ShieldDef { chance, blocks }`) turns a blow, a shot or a throw aside whole at its chance, up to `blocks` a turn, never an effect and never for a defender unaware of its attacker; written as `AttackBlocked`, narrated, and read by stealth as a miss.
 - A worn `AttackSpeed` slows every blow, shot and throw its wearer makes by `scaled_cost`, never a step; `ItemParts::attack_speed` authors it and the fight forecast counts it.
 - `RoguelikePlugins::fit_screen` and `FitScreenPlugin`: the window opens as large as the screen allows rather than at the cells' declared size, keeping the grid's shape, centred in what the system leaves to windows (on macOS the screen less its menu bar and dock), and is sized before it is shown; a window that opens fullscreen, a capture and the web are left as they were; under reactive updates it asks for each frame it needs, so a hidden window never waits on input, and a window made on a monitor of another scale than the primary's is placed in its own scale.
