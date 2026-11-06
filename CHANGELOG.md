@@ -40,6 +40,7 @@ atglyph is not on crates.io yet, so a game depends on a release by its git tag, 
 
 ### Changed
 
+- `Names::load` names an entry that does not parse by its position and the `name:` it writes, `entry 3 (rapier): ...`, rather than its position alone, so a misspelt variant deep in a long file says which definition it is in; an entry with no readable name is still named by position.
 - **Breaking:** A launcher's range, effective range and roll are the shot's, in place of the launched thing's own; `LaunchDef` takes `effective`, `range` and `kind`, and `ThrowAs::launched` names only the launcher.
 - **Breaking:** `Melee` has a public `versatile` field, a `VersatileDef`, and `MeleeAttack` a public `versatile` field, an `arms::Versatile`; a game that writes either as a struct literal adds `versatile: None`.
 - **Breaking:** `MeleeAttack` and the view's `Strike` have a public `also` field, the wielder's own roll landing in a worn blow's hit, `forecast::Combatant` an `also` and `forecast::Arms` a `melee_also` for the same; a game that writes one as a struct literal adds `also: None` or `melee_also: None`.

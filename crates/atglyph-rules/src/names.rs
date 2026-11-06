@@ -207,10 +207,16 @@ impl<'a> Names<'a> {
     /// [`NameRef`] in them through these names.
     ///
     /// Reports every unknown name in the file at once, each prefixed with the
-    /// name of the definition it is in, and every entry that does not parse.
-    /// RON's `implicit_some` is on, so an optional field is written bare.
+    /// name of the definition it is in, and every entry that does not parse,
+    /// prefixed with its position and the `name:` it writes, `entry 3
+    /// (rapier)`, or its position alone when even that cannot be read. RON's
+    /// `implicit_some` is on, so an optional field is written bare.
     pub fn load<T: DeserializeOwned + Named>(&self, text: &str) -> Result<Registry<T>, ContentError> {
-        Registry::from_defs(self.parse(text, |def: &T, _| def.name().to_string())?)
+        let unparsed = |entry: &RawValue, i| match options().from_str::<NameField>(entry.get_ron()) {
+            Ok(NameField { name }) => format!("entry {i} ({name})"),
+            Err(_) => format!("entry {i}"),
+        };
+        Registry::from_defs(self.parse(text, |def: &T, _| def.name().to_string(), unparsed)?)
     }
 
     /// Loads a plain list from RON, resolving every [`NameRef`] in it
@@ -239,15 +245,20 @@ impl<'a> Names<'a> {
     /// assert_eq!(rows[1].depth, (4, 9));
     /// ```
     pub fn load_list<T: DeserializeOwned>(&self, text: &str) -> Result<Vec<T>, ContentError> {
-        self.parse(text, |_: &T, i| format!("entry {i}"))
+        self.parse(text, |_: &T, i| format!("entry {i}"), |_, i| format!("entry {i}"))
     }
 
     /// Every entry of a RON list, parsed with these names in scope, or
     /// every problem with them, each prefixed with what `label` calls the
     /// entry it is in. An entry that does not parse has no value to label,
-    /// so it is named by its position.
-    fn parse<T: DeserializeOwned>(&self, text: &str, label: impl Fn(&T, usize) -> String) -> Result<Vec<T>, ContentError> {
-        let options = Options::default().with_default_extension(Extensions::IMPLICIT_SOME);
+    /// so it is named by what `unparsed` makes of its text and position.
+    fn parse<T: DeserializeOwned>(
+        &self,
+        text: &str,
+        label: impl Fn(&T, usize) -> String,
+        unparsed: impl Fn(&RawValue, usize) -> String,
+    ) -> Result<Vec<T>, ContentError> {
+        let options = options();
         let entries: Vec<Box<RawValue>> = options.from_str(text).map_err(|e| ContentError::Parse(e.to_string()))?;
         let _scope = Scope::enter(self);
         let mut defs = Vec::new();
@@ -261,7 +272,7 @@ impl<'a> Names<'a> {
                     errors.extend(unknown.into_iter().map(|e| format!("{at}: {e}")));
                     defs.push(def);
                 }
-                Err(e) => errors.push(format!("entry {}: {e}", i + 1)),
+                Err(e) => errors.push(format!("{}: {e}", unparsed(entry, i + 1))),
             }
         }
         if !errors.is_empty() {
@@ -276,6 +287,18 @@ impl<'a> Names<'a> {
             None => Err(format!("unknown {what} {name:?}: no {what} registry was given to look it up in")),
         }
     }
+}
+
+/// How every content file is read: RON with `implicit_some` on.
+fn options() -> Options {
+    Options::default().with_default_extension(Extensions::IMPLICIT_SOME)
+}
+
+/// A definition's `name:` field and nothing else, every other field passed
+/// over unread: what an entry that does not parse is still called.
+#[derive(Deserialize)]
+struct NameField {
+    name: String,
 }
 
 fn unknown(what: &str, name: &str) -> String {
@@ -508,7 +531,23 @@ mod tests {
         assert!(errs.contains(&"wolf: unknown damage kind \"claw\"".to_string()), "{errs:#?}");
         assert!(errs.contains(&"wolf: unknown item \"pelt\"".to_string()), "{errs:#?}");
         assert!(errs.contains(&"crab: unknown faction \"crabs\"".to_string()), "{errs:#?}");
-        assert!(errs.iter().any(|e| e.starts_with("entry 4: ")), "an entry that does not parse is named by position: {errs:#?}");
+        assert!(errs.iter().any(|e| e.starts_with("entry 4 (broken): ")), "an entry that does not parse is named by its position and its name: {errs:#?}");
+    }
+
+    #[test]
+    fn an_entry_that_does_not_parse_is_named_by_whatever_name_it_writes_or_else_its_position() {
+        let v = Vocabulary::new();
+        let bad = r#"#![enable(implicit_some)]
+        [
+            (name: "toad", bite: "bite", side: "beasts", drops: [("hide", 1)], fears: Loud(2, 6)),
+            (bite: "bite", side: "beasts", hops: true),
+            (name: 7, bite: "bite"),
+        ]"#;
+        let Err(ContentError::Invalid(errs)) = v.names().load::<Beast>(bad) else { panic!("a file of entries that do not parse loaded") };
+        assert_eq!(errs.len(), 3, "{errs:#?}");
+        assert!(errs[0].starts_with("entry 1 (toad): "), "named by its name, past whatever it writes: {errs:#?}");
+        assert!(errs[1].starts_with("entry 2: "), "with no name, by position: {errs:#?}");
+        assert!(errs[2].starts_with("entry 3: "), "with a name that is not one, by position: {errs:#?}");
     }
 
     /// A row of a table that names things, such as where one turns up.
