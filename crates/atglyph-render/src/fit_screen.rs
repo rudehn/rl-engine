@@ -4,7 +4,7 @@
 //! was declared, which on a large screen is a small window in the middle of
 //! it. [`FitScreenPlugin`] opens it instead at the largest size that keeps
 //! the grid's shape and fits the part of the monitor the system leaves to
-//! windows, centred there, and the renderer's [`layout`](crate::layout)
+//! windows, centred there, and the renderer's [`layout`]
 //! draws the grid larger to fill it.
 //!
 //! The window is sized before it is shown, never shown small and then

@@ -80,7 +80,7 @@ pub struct ItemRow {
     /// The shot it makes of what it launches while worn, for a launcher.
     pub launches: Option<LaunchLine>,
     /// How far it lets its wearer see in the dark, for a thing that lends
-    /// sight, [`WornDarkSight`](atglyph_bevy::WornDarkSight).
+    /// sight, [`WornDarkSight`].
     pub dark_sight: Option<i32>,
     /// What it does, one line per effect that has something to say, each
     /// named by the moment that sets it off: `use: mends 5`, `on landing:
@@ -172,7 +172,7 @@ pub struct LaunchLine {
 /// Worked out by [`Equipment::swap`](atglyph_rules::Equipment::swap), the
 /// rule the items resolver equips by, so a screen never names a slot or a
 /// thing that wearing it would not. Where it would push off a
-/// [`Stuck`](atglyph_bevy::Stuck) thing, wearing it is refused; the row then says what it would take off
+/// [`Stuck`] thing, wearing it is refused; the row then says what it would take off
 /// were that free, and the stuck thing's row says it is stuck.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Replacing {

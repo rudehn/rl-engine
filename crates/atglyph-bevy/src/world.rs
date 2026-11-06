@@ -745,7 +745,7 @@ impl CostSource for WindowView<'_> {
         walked.or_else(|| if self.opening { opened() } else { None })
     }
 
-    /// The map's own corner rule, [`WorldMap::lets_diagonal_past`], read
+    /// The map's own corner rule, `WorldMap::lets_diagonal_past`, read
     /// through the view.
     fn lets_diagonal_past(&self, p: Point) -> bool {
         self.checked_idx(p).is_some_and(|idx| self.is_walkable(self.world(idx)))

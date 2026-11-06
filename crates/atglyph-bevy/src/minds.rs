@@ -122,7 +122,7 @@ pub struct CameFrom(pub Option<Point>);
 /// How an actor moves when it has nothing better to do: wander anywhere,
 /// hold a cell, or roam an area. Read by the
 /// [`Idle`](atglyph_rules::ai::tactics::Idle) tactic through the
-/// [`Moving`](atglyph_rules::ai::tactics::Moving) sense `sense_moves` pushes,
+/// [`Moving`] sense `sense_moves` pushes,
 /// so a kind's shared brain moves only the ones given a way to. An actor with
 /// none has no idle move. Saved by `atglyph-save` with the actor.
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
@@ -143,7 +143,7 @@ pub struct GroundRule(pub Arc<dyn Fn(u16, MapId, Point) -> bool + Send + Sync>);
 /// The herd an actor belongs to. Actors sharing an id keep together with no
 /// leader, by [`Keep::herd`](atglyph_rules::ai::tactics::Keep::herd) on the
 /// middle of their living mates, through the
-/// [`Herded`](atglyph_rules::ai::tactics::Herded) sense `sense_herds` pushes.
+/// [`Herded`] sense `sense_herds` pushes.
 /// Saved by `atglyph-save` with the actor.
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Herd(pub u64);
@@ -151,7 +151,7 @@ pub struct Herd(pub u64);
 /// The rounds an actor walks: each point of `route` in turn, from the last
 /// back to the first, and a route of one point is a post it keeps. Read by
 /// the [`WalkRounds`](atglyph_rules::ai::tactics::WalkRounds) tactic through
-/// the [`OnRounds`](atglyph_rules::ai::tactics::OnRounds) sense
+/// the [`OnRounds`] sense
 /// `sense_rounds` pushes, which moves `next` on past a point the actor
 /// stands on, and past one somebody else stands on once the actor is beside
 /// it, so a loiterer on a point never stops a round. With a [`Ground`] and
