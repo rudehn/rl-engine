@@ -123,7 +123,12 @@ pub struct BumpRules {
     /// held behind it in a corridor one cell wide: its step into the cell
     /// is a `Swap`. One that gives way never pushes past another that
     /// does, so two of them do not shuffle round each other, unless it has
-    /// a [`Rounds`](crate::minds::Rounds) route to walk. A swap sets
+    /// a [`Rounds`](crate::minds::Rounds) route to walk, and then it passes
+    /// one of its own side too. A mind on its round passes only one off
+    /// duty, never another walking a round or holding a cell
+    /// ([`Movement::Hold`](atglyph_rules::ai::tactics::Movement::Hold) in its
+    /// [`Moves`](crate::minds::Moves)), so two on rounds do not swap back
+    /// and forth for ever and a post is not traded out of. A swap sets
     /// off what each of the two is put onto, as a step would, so stepping
     /// past one is no way over the plate it stood on.
     pub minds_too: bool,
@@ -796,10 +801,10 @@ mod tests {
         assert_eq!(trace.last().unwrap().0, start.offset(3, 0), "and the hunter waits behind it");
     }
 
-    /// Where a walker, on `rounds` along the corridor `past_a_critter`
+    /// Where a walker, on rounds along the corridor `past_a_critter`
     /// builds, stands after forty frames, with the critter between it and
     /// the round's point: both of one side, which gives way, so allied.
-    fn walker_past_a_critter(rounds: bool) -> (Point, Point, Point) {
+    fn walker_past_a_critter() -> (Point, Point) {
         let mut rig = Rig::built(true);
         let small = small_side_hunted(&mut rig, false);
         rig.app.insert_resource(BumpRules::new().give_way(small).minds_too());
@@ -811,7 +816,7 @@ mod tests {
             map.set_tile(start.offset(dx, 1), wall);
         }
         rig.app.world_mut().resource_mut::<WorldMap>().set_tile(start.offset(7, 0), wall);
-        let critter = rig.app.world_mut().spawn((Actor, Blocks, Position(start.offset(2, 0)), Health::full(5), Faction(small))).id();
+        rig.app.world_mut().spawn((Actor, Blocks, Position(start.offset(2, 0)), Health::full(5), Faction(small)));
         let brain = atglyph_rules::Brain::new().then(atglyph_rules::ai::tactics::WalkRounds);
         let walker = rig
             .app
@@ -824,11 +829,9 @@ mod tests {
                 Faction(small),
                 crate::minds::Perception(8),
                 crate::minds::Mind(std::sync::Arc::new(brain)),
+                crate::minds::Rounds { route: vec![start.offset(1, 0)], next: 0 },
             ))
             .id();
-        if rounds {
-            rig.app.world_mut().entity_mut(walker).insert(crate::minds::Rounds { route: vec![start.offset(1, 0)], next: 0 });
-        }
         for _ in 0..40 {
             if rig.app.world().get::<MyTurn>(rig.player).is_some() {
                 rig.app.world_mut().write_message(Intent::new(rig.player, crate::turn::Wait));
@@ -836,19 +839,18 @@ mod tests {
             rig.app.update();
         }
         let at = |e: Entity| rig.app.world().get::<Position>(e).map(|p| p.0).expect("it stands");
-        (at(walker), at(critter), start)
+        (at(walker), start)
     }
 
     /// A mind on rounds steps past one that gives way even when its own
     /// side gives way too, since a lane shut by a boxed-in villager would
-    /// keep its round from ever being walked; one with no rounds still
-    /// does not.
+    /// keep its round from ever being walked. That one with no round does
+    /// not push past is
+    /// `a_mind_of_a_side_that_gives_way_never_steps_past_another_that_does`'s.
     #[test]
     fn a_mind_on_rounds_steps_past_one_that_gives_way_though_its_own_side_does() {
-        let (walker, _, start) = walker_past_a_critter(true);
+        let (walker, start) = walker_past_a_critter();
         assert_eq!(walker, start.offset(1, 0), "the round was walked past the critter");
-        let (walker, critter, start) = walker_past_a_critter(false);
-        assert_eq!((walker, critter), (start.offset(4, 0), start.offset(2, 0)), "a mind with no round does not push past");
     }
 
     /// The corridor `past_a_critter` builds, shut at both ends, with the
