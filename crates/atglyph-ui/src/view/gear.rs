@@ -26,7 +26,8 @@ pub struct GearSlot {
     pub slot: SlotId,
     /// Its registered name.
     pub name: String,
-    /// What is worn in it, if anything.
+    /// What is worn in it, if anything, or the versatile blade swung in it
+    /// while it is free.
     pub item: Option<Row>,
     /// Charges left and the most it holds, for a worn thing that holds more
     /// than one: a wand. On the slot rather than the row because the row is
@@ -38,10 +39,13 @@ pub struct GearSlot {
     /// worn thing, and the bag says it of the same thing in its own words.
     pub stuck: bool,
     /// Whether this is the slot the item was equipped into, rather than one
-    /// it also claims: false only on a two-hander's off hand. A claimed
-    /// slot's [`Row`] is a second copy of the same item, so a game's
-    /// annotate system that notes something on every row (a gun's ammo, a
-    /// blaster's heat) notes it twice; a presenter reads this to say it once.
+    /// it also holds: false only on a two-hander's off hand and on the free
+    /// slot a worn versatile blow names, the hand a longsword is swung in
+    /// with its own. Such a slot's [`Row`] is a second copy of the same
+    /// item, so a game's annotate system that notes something on every row
+    /// (a gun's ammo, a blaster's heat) notes it twice; a presenter reads
+    /// this to say it once. A versatile blade's slot is still free in
+    /// [`Equipped`]: this is how it reads, not what it takes.
     pub primary: bool,
 }
 
@@ -123,12 +127,26 @@ type Worn = (Option<&'static Name>, Option<&'static Glyph>, Option<&'static Stac
 /// A thing not yet known shows its name, its look, how many and where it
 /// is worn, as its bag row does, and nothing of what it is worth, so the
 /// rail never says what the bag keeps back.
-pub(crate) fn collect_gear(mut view: ResMut<GearView>, registries: Res<Registries>, player: Query<&Equipped, With<Player>>, items: Query<Worn>) {
+///
+/// A free slot a worn versatile blow names, the hand a longsword is swung
+/// in beside its own, holds that blade as a two-hander's claimed hand
+/// does, not primary: it reads as both hands on the rail, though the slot
+/// stays free to fill and anything put there takes it back.
+pub(crate) fn collect_gear(
+    mut view: ResMut<GearView>,
+    registries: Res<Registries>,
+    player: Query<&Equipped, With<Player>>,
+    items: Query<Worn>,
+    blows: Query<&MeleeAttack>,
+) {
     view.slots.clear();
     view.lines.clear();
     let worn = player.single().ok();
+    // The worn thing swung in `slot` while it is free, if any.
+    let swung_in =
+        |slot| worn.and_then(|w| w.worn().map(|(_, e)| e).find(|e| blows.get(*e).ok().and_then(|b| b.versatile).is_some_and(|v| v.while_free == slot)));
     for (slot, def) in registries.slots.iter() {
-        let entity = worn.and_then(|w| w.in_slot(slot));
+        let entity = worn.and_then(|w| w.in_slot(slot)).or_else(|| swung_in(slot));
         let primary = match entity {
             Some(e) => worn.is_some_and(|w| w.slot_of(e) == Some(slot)),
             None => true,
@@ -285,6 +303,44 @@ mod tests {
         let view = stage.app.world().resource::<GearView>();
         assert!(view.by_name("main hand").unwrap().primary, "the slot it was equipped into");
         assert!(!view.by_name("body").unwrap().primary, "the slot it only claims");
+    }
+
+    /// A versatile blade's free other hand holds it as a two-hander's
+    /// claimed hand does, a second copy of its row that is not primary;
+    /// once something fills that hand the slot holds that instead, and the
+    /// blade is on its own slot alone.
+    #[test]
+    fn a_versatile_blades_free_other_hand_holds_it_and_a_filled_one_its_own() {
+        use atglyph_rules::arms::Versatile;
+        let hand = slots().expect("main hand");
+        let body = slots().expect("body");
+        let mut stage = Stage::new_with(GearViewPlugin, |app| {
+            app.world_mut().resource_mut::<Registries>().slots = slots();
+        });
+        let player = stage.player;
+        let kind = atglyph_rules::damage::DamageKindId::from_raw(0);
+        let blow =
+            MeleeAttack::new(kind, atglyph_core::DiceRoll::new(1, 8)).versatile(Versatile { roll: atglyph_core::DiceRoll::new(1, 10), while_free: body });
+        let sword = stage.app.world_mut().spawn((Item, Name::new("longsword"), Glyph::new(')', Color::WHITE), blow)).id();
+        let coat = stage.app.world_mut().spawn((Item, Name::new("coat"), Glyph::new('[', Color::WHITE))).id();
+        let mut worn = Equipped(atglyph_rules::Equipment::with_slot_count(2));
+        worn.equip(sword, &EquipShape::in_slot(hand)).expect("the slot exists");
+        stage.app.world_mut().entity_mut(player).insert(worn);
+        stage.tick();
+
+        let view = stage.app.world().resource::<GearView>();
+        let (own, free) = (view.by_name("main hand").unwrap(), view.by_name("body").unwrap());
+        assert_eq!((own.item.as_ref().map(|i| i.entity), own.primary), (Some(sword), true), "the slot it was equipped into");
+        assert_eq!((free.item.as_ref().map(|i| i.entity), free.primary), (Some(sword), false), "the free slot it is swung in");
+        assert_eq!(free.item.as_ref().map(|i| (i.label.as_str(), i.glyph.ch)), Some(("longsword", ')')), "the same row as its own");
+        assert!(stage.app.world().get::<Equipped>(player).unwrap().is_free(body), "and the slot is still free to fill");
+
+        stage.app.world_mut().get_mut::<Equipped>(player).unwrap().equip(coat, &EquipShape::in_slot(body)).expect("the slot is free");
+        stage.tick();
+        let view = stage.app.world().resource::<GearView>();
+        let filled = view.by_name("body").unwrap();
+        assert_eq!((filled.item.as_ref().map(|i| i.entity), filled.primary), (Some(coat), true), "the filled slot holds its own");
+        assert_eq!(view.by_name("main hand").unwrap().item.as_ref().map(|i| i.entity), Some(sword), "and the blade its own slot");
     }
 
     /// The facet under `key`'s text and tone, for a row on `view`.

@@ -21,6 +21,9 @@ pub(crate) struct GearLayout {
     pub heading: String,
     /// What an empty slot reads as.
     pub empty: String,
+    /// What a slot another slot's item holds reads as, in place of the
+    /// item a second time. `None` draws the item.
+    pub held: Option<String>,
 }
 
 /// Draws [`GearView`].
@@ -31,7 +34,7 @@ pub struct GearPanel(GearLayout);
 impl GearPanel {
     /// A gear list in `rect`.
     pub fn new(rect: GridRect) -> Self {
-        Self(GearLayout { rect, title: String::new(), heading: "Worn".into(), empty: "\u{2014}".into() })
+        Self(GearLayout { rect, title: String::new(), heading: "Worn".into(), empty: "\u{2014}".into(), held: None })
     }
 
     /// Sets the title in the top border, which also turns the frame on.
@@ -49,6 +52,17 @@ impl GearPanel {
     /// Sets what an empty slot reads as.
     pub fn empty(mut self, empty: impl Into<String>) -> Self {
         self.0.empty = empty.into();
+        self
+    }
+
+    /// Sets what a slot another slot's item holds reads as: a
+    /// two-hander's claimed hand, or the free hand a versatile blade is
+    /// swung in. `label` is drawn in the muted tone in the item column, in
+    /// place of the item's glyph and name a second time, so a game says
+    /// `╰ both hands` under the weapon rather than naming it twice.
+    /// Without it, such a slot names the item again, with nothing it notes.
+    pub fn held_as(mut self, label: impl Into<String>) -> Self {
+        self.0.held = Some(label.into());
         self
     }
 }
@@ -119,8 +133,11 @@ pub(crate) fn draw_gear(mut terminal: ResMut<Terminal>, layout: Res<GearLayout>,
         terminal.print_on(inner.x, y, &clip(slot.name, slot_width), palette.get(Tones::MUTED), bg);
         let x = inner.x + slot_width as i32 + 1;
         let room = (inner.right() - x).max(0) as usize;
-        match slot.item {
-            Some(item) => {
+        match (slot.item, layout.held.as_deref()) {
+            // A slot another slot's item holds reads as the game calls it,
+            // when it says, rather than as the same item a second time.
+            (Some(_), Some(held)) if !slot.primary => terminal.print_on(x, y, &clip(held, room), palette.get(Tones::MUTED), bg),
+            (Some(item), _) => {
                 terminal.print_on(x, y, &item.glyph.ch.to_string(), item.glyph.fg, bg);
                 let label_x = x + 2;
                 // A claimed slot (a two-hander's off hand) is the same
@@ -146,7 +163,7 @@ pub(crate) fn draw_gear(mut terminal: ResMut<Terminal>, layout: Res<GearLayout>,
                 y += lines.len() as i32;
                 continue;
             }
-            None => terminal.print_on(x, y, &clip(&layout.empty, room), palette.get(Tones::MUTED), bg),
+            (None, _) => terminal.print_on(x, y, &clip(&layout.empty, room), palette.get(Tones::MUTED), bg),
         }
         y += 1;
     }
@@ -216,8 +233,10 @@ mod tests {
     use crate::harness::Stage;
     use crate::view::GearLine;
     use atglyph_bevy::prelude::*;
+    use atglyph_core::DiceRoll;
     use atglyph_render::Glyph;
-    use atglyph_rules::{EquipShape, SlotDef};
+    use atglyph_rules::arms::Versatile;
+    use atglyph_rules::{EquipShape, SlotDef, SlotId};
 
     #[test]
     fn every_slot_gets_a_line_and_an_empty_one_reads_as_a_dash() {
@@ -470,5 +489,94 @@ mod tests {
 
         assert_eq!(stage.row(2), "main hand } slug rifle \u{00b7} dry", "the primary hand carries the facet");
         assert_eq!(stage.row(3), "off hand  } slug rifle", "the claimed hand names the gun and stops there");
+    }
+
+    /// How a weapon in the right hand takes the left.
+    enum Hold {
+        /// It claims the left, a two-hander.
+        BothHands,
+        /// It is swung in both while the left is free, a longsword's 1d8
+        /// in one hand and 1d10 in both.
+        Versatile,
+    }
+
+    /// A panel of `panel` over a right and a left hand, with a weapon
+    /// called `name` drawn as `glyph` worn in the right and holding the
+    /// left as `hold` says: the stage and the left hand.
+    fn armed(panel: GearPanel, name: &'static str, glyph: char, hold: Hold) -> (Stage, SlotId) {
+        let slots = || atglyph_rules::Registry::from_defs(vec![SlotDef::new("right hand"), SlotDef::new("left hand")]).unwrap();
+        let (right, left) = {
+            let s = slots();
+            (s.expect("right hand"), s.expect("left hand"))
+        };
+        let mut stage = Stage::new_with(panel, move |app| {
+            app.world_mut().resource_mut::<Registries>().slots = slots();
+        })
+        .screen(30, 6);
+        let item = stage.app.world_mut().spawn((Item, Name::new(name), Glyph::new(glyph, Color::WHITE))).id();
+        let shape = match hold {
+            Hold::BothHands => EquipShape::in_slot(right).and_claims(left),
+            Hold::Versatile => {
+                let kind = atglyph_rules::damage::DamageKindId::from_raw(0);
+                let blow = MeleeAttack::new(kind, DiceRoll::new(1, 8)).versatile(Versatile { roll: DiceRoll::new(1, 10), while_free: left });
+                stage.app.world_mut().entity_mut(item).insert(blow);
+                EquipShape::in_slot(right)
+            }
+        };
+        let mut worn = Equipped(atglyph_rules::Equipment::with_slot_count(2));
+        worn.equip(item, &shape).expect("the slots exist");
+        let player = stage.player;
+        stage.app.world_mut().entity_mut(player).insert(worn);
+        stage.tick();
+        (stage, left)
+    }
+
+    /// A two-hander's claimed hand reads the label a game gives a held slot,
+    /// in the muted tone, in the item column, in place of the item's glyph
+    /// and name a second time; the hand it was equipped into reads as ever.
+    #[test]
+    fn a_held_slot_reads_the_label_a_game_gives_it() {
+        let panel = GearPanel::new(GridRect::new(0, 0, 30, 6)).held_as("\u{2570} both hands");
+        let (stage, _) = armed(panel, "greataxe", '/', Hold::BothHands);
+
+        assert_eq!(stage.row(2), "right hand / greataxe", "the hand it was equipped into");
+        assert_eq!(stage.row(3), "left hand  \u{2570} both hands", "the hand it claims, by the game's word, with no glyph");
+        let muted = stage.app.world().resource::<Palette>().get(Tones::MUTED);
+        let terminal = stage.app.world().resource::<Terminal>();
+        assert!((11..23).all(|x| terminal.get(x, 3).unwrap().fg == muted), "the label muted, its arc too");
+
+        let narrow = GearPanel::new(GridRect::new(0, 0, 20, 6)).held_as("\u{2570} both hands");
+        let (stage, _) = armed(narrow, "maul", '/', Hold::BothHands);
+        assert_eq!(stage.row(3), "left hand  \u{2570} both h\u{2026}", "clipped to the nine cells left, the arc one of them");
+    }
+
+    /// A versatile blade's free left hand reads as held, as a two-hander's
+    /// does, and once something fills the left hand it reads as that thing,
+    /// the blade back to the right hand alone.
+    #[test]
+    fn a_versatile_blades_free_other_hand_reads_as_held_and_a_filled_one_as_its_own() {
+        let panel = GearPanel::new(GridRect::new(0, 0, 30, 6)).held_as("\u{2570} both hands");
+        let (mut stage, left) = armed(panel, "longsword", ')', Hold::Versatile);
+
+        assert_eq!(stage.row(2), "right hand ) longsword");
+        assert_eq!(stage.row(3), "left hand  \u{2570} both hands", "free, the left hand is the blade's");
+
+        let buckler = stage.app.world_mut().spawn((Item, Name::new("buckler"), Glyph::new('[', Color::WHITE))).id();
+        let player = stage.player;
+        stage.app.world_mut().get_mut::<Equipped>(player).unwrap().equip(buckler, &EquipShape::in_slot(left)).expect("the left hand is free to fill");
+        stage.tick();
+        assert_eq!(stage.row(2), "right hand ) longsword", "still worn");
+        assert_eq!(stage.row(3), "left hand  [ buckler", "filled, the left hand reads as its own");
+    }
+
+    /// With no label given, a held slot is drawn as it always was: the
+    /// item's glyph and name a second time, and nothing it notes.
+    #[test]
+    fn without_a_label_a_held_slot_is_drawn_as_it_always_was() {
+        let panel = || GearPanel::new(GridRect::new(0, 0, 30, 6));
+        let (two_handed, _) = armed(panel(), "greataxe", '/', Hold::BothHands);
+        assert_eq!(two_handed.row(3), "left hand  / greataxe", "a two-hander's claimed hand");
+        let (one_or_two, _) = armed(panel(), "longsword", ')', Hold::Versatile);
+        assert_eq!(one_or_two.row(3), "left hand  ) longsword", "a versatile blade's free hand");
     }
 }

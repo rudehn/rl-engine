@@ -36,6 +36,7 @@ atglyph is not on crates.io yet, so a game depends on a release by its git tag, 
 - `ItemParts::check` refuses a versatile blow on a thing that takes the slot it needs free, a two-hander or a thing held only in that slot, since it could never strike its bigger roll.
 - `AddsOwnBlow`: an actor whose worn weapon's blow adds to its own, as a monster's does in DCSS, the player untouched.
   `Loadout::melee` puts its own roll in the blow's new `MeleeAttack::also` (a versatile weapon's bigger roll and its own together), the fight rolls the two as one hit so armor meets them once, a shot and a throw carry none of it, the forecast counts it, the sheet and the pack say it as `1d4+1d2`, and a mind weighing gear for one gives up none of its `OwnBlowScore` by putting a blade on; `arms::own_blow_added` is the one rule all of them read.
+- `GearPanel::held_as`, and a versatile item's free slot shown as held: a slot another slot's item holds, a two-hander's claimed hand or the free hand a versatile blade is swung in, reads the game's label in the muted tone, `╰ both hands`, in place of the item a second time; `GearView` fills a versatile blade's free slot with its row, not primary, as it fills a two-hander's, the slot still free to fill.
 
 ### Changed
 
