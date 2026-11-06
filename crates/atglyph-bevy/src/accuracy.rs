@@ -118,16 +118,22 @@ impl Marksmanship<'_, '_> {
     /// The odds of what `attacker` would attack `target` with from where it
     /// stands: a blow when adjacent, a shot while its shot reaches, and
     /// nothing further, which is the rule `resolve_attacks` picks by and
-    /// `forecast::Arms::at` states. `shift` is as [`Marksmanship::odds`]
-    /// takes it.
-    pub fn at_distance(&self, loadout: &Loadout, attacker: Entity, target: Entity, shift: i32) -> Option<Odds> {
+    /// `forecast::Arms::at` states. Its shot is its gun's when it has one,
+    /// as the resolver fires, and otherwise `launched`, what a launcher it
+    /// wears has ready, as [`Throws::launched`](crate::throwing::Throws::launched)
+    /// answers. `shift` is as [`Marksmanship::odds`] takes it.
+    pub fn at_distance(&self, loadout: &Loadout, attacker: Entity, target: Entity, launched: Option<&ThrowAs>, shift: i32) -> Option<Odds> {
         let (from, to) = (self.positions.get(attacker).ok()?.0, self.positions.get(target).ok()?.0);
         let distance = geometry::chebyshev(from, to);
         let (melee, gun) = (loadout.melee(attacker), loadout.ranged(attacker));
-        let in_range = gun.is_some_and(|g| distance <= g.range);
-        match atglyph_rules::arms::choose_reach(distance <= 1, in_range, melee.is_some(), gun.is_some())? {
+        let range = gun.map(|g| g.range).or(launched.map(|t| t.range));
+        let in_range = range.is_some_and(|r| distance <= r);
+        match atglyph_rules::arms::choose_reach(distance <= 1, in_range, melee.is_some(), range.is_some())? {
             atglyph_rules::arms::Reach::Melee => self.odds(attacker, target, Attempt::Blow, shift),
-            atglyph_rules::arms::Reach::Ranged => self.odds(attacker, target, Attempt::Shot(&gun?), shift),
+            atglyph_rules::arms::Reach::Ranged => match gun {
+                Some(gun) => self.odds(attacker, target, Attempt::Shot(&gun), shift),
+                None => self.odds(attacker, target, Attempt::Throw(launched?), shift),
+            },
         }
     }
 

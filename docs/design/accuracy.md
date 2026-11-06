@@ -39,6 +39,7 @@ A blow reads neither range nor light: it lands on the cell beside the attacker, 
 
 `Marksmanship` is the one place the facts are gathered, and the attack resolver, the throw resolver, the targeting cursor and the inspect panel all ask it.
 The chance a panel prints is therefore the chance the roll uses, the discipline `shot` and `flight` already keep for where a projectile goes.
+The inspect panel's chance at range is the shot the subject's arms would make: a gun's when it has one, and otherwise the throw a worn launcher would loose, the first carried thing it launches, as `Throws::launched` answers, which `at_distance` takes as `launched`.
 The one exception is asked for by name: `odds`, `at_distance` and `fire_odds` take a shift added to the attacker's accuracy, nought for every resolver, which a panel passes to show the chance as the player understands it, a worn thing not yet known lending what it seems to.
 The shift is added only where the game names an accuracy stat, so a game with none still hands its model "no accuracy" rather than a number.
 

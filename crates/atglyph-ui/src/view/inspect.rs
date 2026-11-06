@@ -251,6 +251,10 @@ pub struct Duelists<'w, 's> {
     seems: Query<'w, 's, &'static Seems>,
     /// What the subject has on.
     gear: Gear<'w, 's>,
+    /// What either side carries, for the shot a launcher it wears has ready.
+    bags: Query<'w, 's, &'static Inventory>,
+    /// How that shot flies, by the rule the throw resolver loosens it by.
+    throws: atglyph_bevy::Throws<'w, 's>,
 }
 
 /// What a worn thing is, as the look names it: what it is called, whether
@@ -294,18 +298,22 @@ impl Duelists<'_, '_> {
     /// `resolve_attacks` uses, so a droid that only shoots is forecast as
     /// dangerous across the room and harmless once you are on top of it.
     /// The cost goes with whichever it picked, the same charge the resolver
-    /// would spend the turn on.
+    /// would spend the turn on. A side's shot is its gun's, or else what a
+    /// launcher it wears has ready, the launcher's strike to its range, so
+    /// an archer is forecast shooting rather than closing to brawl.
     fn forecast(&self, me: Entity, them: Entity, apart: i32, mine: i32, theirs: i32) -> (Duel, Option<Odds>, bool) {
         let (my_seems, their_seems) = (self.seems.get(me).copied().unwrap_or_default(), self.seems.get(them).copied().unwrap_or_default());
         let (my_resists, their_resists) = (self.loadout.resistances(me), self.loadout.resistances(them));
-        let (my_blows, my_shots) = (seeming(self.loadout.blows(me), my_seems.blow), seeming(self.loadout.shots(me), my_seems.shot));
-        let (their_blows, their_shots) = (seeming(self.loadout.blows(them), their_seems.blow), seeming(self.loadout.shots(them), their_seems.shot));
-        let my_arms = self.loadout.arms(me, &my_blows, &my_shots);
-        let their_arms = self.loadout.arms(them, &their_blows, &their_shots);
+        let (my_launch, their_launch) = (self.launched(me), self.launched(them));
+        let (my_blows, my_shots) = (seeming(self.loadout.blows(me), my_seems.blow), seeming(self.shots(me, my_launch.as_ref()), my_seems.shot));
+        let (their_blows, their_shots) =
+            (seeming(self.loadout.blows(them), their_seems.blow), seeming(self.shots(them, their_launch.as_ref()), their_seems.shot));
+        let my_arms = self.arms(me, &my_blows, &my_shots, my_launch.as_ref());
+        let their_arms = self.arms(them, &their_blows, &their_shots, their_launch.as_ref());
         // Each side's chance of landing what it would attack with from here,
         // so the forecast counts the misses the roll will make.
-        let my_odds = self.marks.at_distance(&self.loadout, me, them, -my_seems.accuracy);
-        let their_odds = self.marks.at_distance(&self.loadout, them, me, -their_seems.accuracy);
+        let my_odds = self.marks.at_distance(&self.loadout, me, them, my_launch.as_ref(), -my_seems.accuracy);
+        let their_odds = self.marks.at_distance(&self.loadout, them, me, their_launch.as_ref(), -their_seems.accuracy);
         // Each side as it would fight once in reach, so a monster across the
         // room still says what it would take rather than "never"; only a side
         // with no attack at all reads never. The chance to hit stays what it
@@ -319,6 +327,41 @@ impl Duelists<'_, '_> {
             self.stages.0.iter().map(|s| s.as_ref() as &dyn atglyph_rules::DamageStage<Entity>).collect();
         let forecast = duel(&asker, &other, &self.registries.damage_kinds, &stages);
         (forecast, my_odds, !(my_seems.is_true() && their_seems.is_true()))
+    }
+
+    /// The shot a launcher `who` wears has ready, when it has no gun of
+    /// its own to fire first, as the resolver fires one: the first thing it
+    /// carries that the launcher launches, as it flies.
+    fn launched(&self, who: Entity) -> Option<ThrowAs> {
+        if self.loadout.ranged(who).is_some() {
+            return None;
+        }
+        self.throws.launched(who, &self.bags.get(who).ok()?.items).map(|(_, t)| t)
+    }
+
+    /// Every roll one shot by `who` lands: `launched`'s strike alone, as a
+    /// thing loosed lands, or the gun's and its extra strikes.
+    fn shots(&self, who: Entity, launched: Option<&ThrowAs>) -> Vec<(atglyph_rules::damage::DamageKindId, atglyph_core::DiceRoll)> {
+        match launched {
+            Some(shot) => shot.strike.into_iter().collect(),
+            None => self.loadout.shots(who),
+        }
+    }
+
+    /// What `who` can do at any distance, its shot `launched`'s, at its
+    /// range and the ordinary turn a throw costs, when it has one.
+    fn arms<'a>(
+        &self,
+        who: Entity,
+        blows: &'a [(atglyph_rules::damage::DamageKindId, atglyph_core::DiceRoll)],
+        shots: &'a [(atglyph_rules::damage::DamageKindId, atglyph_core::DiceRoll)],
+        launched: Option<&ThrowAs>,
+    ) -> atglyph_rules::forecast::Arms<'a> {
+        let arms = self.loadout.arms(who, blows, shots);
+        match launched {
+            Some(shot) => atglyph_rules::forecast::Arms { ranged_cost: None, range: shot.range, ..arms },
+            None => arms,
+        }
     }
 }
 
@@ -1011,6 +1054,68 @@ mod tests {
         assert_eq!(near.turns_to_fall, None, "beside it the gun is no use, which is the rule `resolve_attacks` plays by");
         assert!(near.turns_to_fell.is_some(), "and the player's own blade reaches");
         assert_eq!(near.outlook, Outlook::Easy);
+    }
+
+    /// Puts on `who` a bow, out to twenty with nothing off to eight and a
+    /// flat `roll` a shot, with `arrows` of what it launches in the bag.
+    fn bow_and_arrows(stage: &mut Stage, who: Entity, roll: i32, arrows: usize) {
+        let kind = stage.kind;
+        let ammo = atglyph_rules::TagId::from_raw(0);
+        let shape = atglyph_rules::EquipShape::in_slot(atglyph_rules::SlotId::from_raw(0));
+        let launcher = atglyph_bevy::Launcher { ammo, effective: 8, range: 20, strike: (kind, atglyph_core::DiceRoll::flat(roll)) };
+        let w = stage.app.world_mut();
+        let bow = w.spawn((Item, Name::new("bow"), launcher, Wearable(shape.clone()))).id();
+        let mut bag = vec![bow];
+        bag.extend((0..arrows).map(|_| {
+            w.spawn((
+                Item,
+                Name::new("arrow"),
+                atglyph_bevy::Tagged(vec![ammo]),
+                atglyph_bevy::Throwable::new(Some(2), Some((kind, atglyph_core::DiceRoll::flat(1)))),
+            ))
+            .id()
+        }));
+        let mut worn = atglyph_rules::Equipment::with_slot_count(1);
+        worn.equip(bow, &shape).unwrap();
+        w.entity_mut(who).insert((Inventory { items: bag }, Equipped(worn)));
+    }
+
+    /// A player wearing a bow, with arrows for it, looks at a foe nine off:
+    /// the chance is the shot's, eight cells with nothing off and five off
+    /// the one past, the chance the throw resolver rolls, and the forecast
+    /// counts the bow's flat ten at range, nine and a half a shot counting
+    /// the misses, two shots to fell ten, rather than its own 1d6 once it
+    /// had closed, three blows. With no arrows the bow shoots nothing, and
+    /// the look is the blow's.
+    #[test]
+    fn a_look_from_behind_a_bow_gives_the_shots_chance_and_forecasts_the_shot() {
+        let look = |arrows: usize| {
+            let mut stage = Stage::new_with(InspectViewPlugin, |app| {
+                app.insert_resource(atglyph_bevy::HitRules(Box::new(atglyph_rules::Percent::new(5, 0, 0))));
+            });
+            let player = stage.player;
+            bow_and_arrows(&mut stage, player, 10, arrows);
+            stage.actor("orc", 'o', 9, 0);
+            stage.tick();
+            stage.press(CursorKeys::default().look);
+            let view = stage.app.world().resource::<InspectView>();
+            (view.odds.as_ref().map(Odds::percent), view.duel.expect("a duel").turns_to_fell)
+        };
+        assert_eq!(look(3), (Some(95), Some(2)), "ten a shot, at ninety-five in the hundred");
+        assert_eq!(look(0), (None, Some(3)), "with nothing to shoot, its own 1d6 once beside the orc, and no chance from here");
+    }
+
+    /// A subject wearing a bow with arrows for it is forecast shooting
+    /// them at the player across the room, its flat ten three shots into
+    /// thirty, and not closing to strike with its own blow.
+    #[test]
+    fn a_subject_wearing_a_bow_is_forecast_shooting_it() {
+        let mut stage = stage();
+        let archer = stage.actor("centaur", 'C', 6, 0);
+        bow_and_arrows(&mut stage, archer, 10, 3);
+        stage.tick();
+        stage.press(CursorKeys::default().look);
+        assert_eq!(stage.app.world().resource::<InspectView>().duel.expect("a duel").turns_to_fall, Some(3), "its shot, not its 1d4");
     }
 
     /// Across the room neither blade reaches, and the panel still says what

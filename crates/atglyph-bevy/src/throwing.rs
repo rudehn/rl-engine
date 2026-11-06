@@ -206,6 +206,17 @@ impl Throws<'_, '_> {
     pub fn of(&self, thrower: Entity, item: Entity) -> Option<ThrowAs> {
         self.rules.by(thrower, item, self.worn.get(thrower).ok().map(|w| &w.0))
     }
+
+    /// The shot `thrower` has ready from what it wears: the first of
+    /// `carried`, in order, that a worn [`Launcher`] launches, and how it
+    /// flies. `None` with no launcher worn, or nothing carried for one.
+    ///
+    /// What a look forecasts a launcher's wearer shooting, as a fight
+    /// would: the launcher's range and strike, whichever of its ammunition
+    /// is loosed.
+    pub fn launched(&self, thrower: Entity, carried: &[Entity]) -> Option<(Entity, ThrowAs)> {
+        carried.iter().find_map(|&item| self.of(thrower, item).filter(|t| t.launched.is_some()).map(|t| (item, t)))
+    }
 }
 
 /// Throw a carried item at a cell.
