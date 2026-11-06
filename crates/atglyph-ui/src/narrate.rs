@@ -1225,15 +1225,18 @@ impl Default for Phrasebook {
             (YouMiss, "You miss {whom}.", Tones::MUTED),
             (MissesYou, "{Who} misses you.", Tones::MUTED),
             (OthersMiss, "{Who} misses {whom}.", Tones::MUTED),
-            (YourBlowIsBlocked, "Your blow is turned aside by {whose what}.", Tones::MUTED),
-            (YourShotIsBlocked, "Your shot is caught on {whose what}.", Tones::MUTED),
-            (YourThrowIsBlocked, "{Whose with} is caught on {whose what}.", Tones::MUTED),
-            (YouBlockBlow, "{Who}'s blow is turned aside by {whose what}.", Tones::GOOD),
-            (YouBlockShot, "{Who}'s shot is caught on {whose what}.", Tones::GOOD),
-            (YouBlockThrow, "{Whose with} is caught on {whose what}.", Tones::GOOD),
-            (OthersBlockBlow, "{Who}'s blow is turned aside by {whose what}.", Tones::MUTED),
-            (OthersBlockShot, "{Who}'s shot is caught on {whose what}.", Tones::MUTED),
-            (OthersBlockThrow, "{Whose with} is caught on {whose what}.", Tones::MUTED),
+            // The shield first and the verb active, so a block reads whole
+            // on a narrow log strip: `Your round shield turns aside the
+            // goblin's blow.` is shorter than the passive way round.
+            (YourBlowIsBlocked, "{Whose what} turns aside your blow.", Tones::MUTED),
+            (YourShotIsBlocked, "{Whose what} catches your shot.", Tones::MUTED),
+            (YourThrowIsBlocked, "{Whose what} catches {whose with}.", Tones::MUTED),
+            (YouBlockBlow, "{Whose what} turns aside {who}'s blow.", Tones::GOOD),
+            (YouBlockShot, "{Whose what} catches {who}'s shot.", Tones::GOOD),
+            (YouBlockThrow, "{Whose what} catches {whose with}.", Tones::GOOD),
+            (OthersBlockBlow, "{Whose what} turns aside {who}'s blow.", Tones::MUTED),
+            (OthersBlockShot, "{Whose what} catches {who}'s shot.", Tones::MUTED),
+            (OthersBlockThrow, "{Whose what} catches {whose with}.", Tones::MUTED),
             (ReflectsOntoYou, "{Who} turns it back on you.", Tones::BAD),
             (YouReflect, "You turn it back on {whom}.", Tones::HIT),
             (OthersReflect, "{Who} turns it back on {whom}.", Tones::TEXT),
@@ -2275,14 +2278,14 @@ mod tests {
         world.write_message(AttackBlocked { attacker: bandit, target: goblin, shield: round, with: None, reach: shot });
         stage.tick();
         assert_eq!(
-            spoken(&stage, &["The goblin", "Your", "The bandit"]),
+            spoken(&stage, &["Your", "The bandit's", "The goblin's"]),
             vec![
-                "The goblin's blow is turned aside by your round shield.",
-                "Your arrow is caught on the bandit's kite shield.",
-                "Your shot is caught on the bandit's kite shield.",
-                "Your blow is turned aside by the bandit's kite shield.",
-                "The goblin's knife is caught on your round shield.",
-                "The bandit's shot is caught on the goblin's round shield.",
+                "Your round shield turns aside the goblin's blow.",
+                "The bandit's kite shield catches your arrow.",
+                "The bandit's kite shield catches your shot.",
+                "The bandit's kite shield turns aside your blow.",
+                "Your round shield catches the goblin's knife.",
+                "The goblin's round shield catches the bandit's shot.",
             ]
         );
     }
@@ -2302,10 +2305,10 @@ mod tests {
         stage.tick();
         stage.app.world_mut().write_message(AttackBlocked { attacker: player, target: bandit, shield: kite, with: None, reach: DamageRoute::Melee });
         stage.tick();
-        let entry = stage.app.world().resource::<MessageLog>().iter().find(|e| e.text.starts_with("Your blow")).expect("the block is told").clone();
-        assert_eq!(entry.text, "Your blow is turned aside by the bandit's kite shield.");
+        let entry = stage.app.world().resource::<MessageLog>().iter().find(|e| e.text.starts_with("The bandit's")).expect("the block is told").clone();
+        assert_eq!(entry.text, "The bandit's kite shield turns aside your blow.");
         let coloured: Vec<(String, Color)> = entry.spans.iter().map(|s| (entry.text.chars().skip(s.start).take(s.len).collect::<String>(), s.color)).collect();
-        assert_eq!(coloured, [("the bandit".to_string(), red), (" kite shield".to_string(), grey)], "{entry:?}");
+        assert_eq!(coloured, [("The bandit".to_string(), red), (" kite shield".to_string(), grey)], "{entry:?}");
     }
 
     /// A thing thrown and caught on a shield is named as its thrower's
@@ -2333,12 +2336,12 @@ mod tests {
         world.write_message(AttackBlocked { attacker: lurker, target: player, shield: round, with: Some(knife), reach: thrown });
         stage.tick();
         assert_eq!(
-            spoken(&stage, &["The Widow's", "Something"]),
+            spoken(&stage, &["The bandit's", "Your round"]),
             vec![
-                "The Widow's Fang is caught on the bandit's kite shield.",
-                "Something is caught on the bandit's kite shield.",
-                "The Widow's Fang is caught on your round shield.",
-                "Something's knife is caught on your round shield.",
+                "The bandit's kite shield catches the Widow's Fang.",
+                "The bandit's kite shield catches something.",
+                "Your round shield catches the Widow's Fang.",
+                "Your round shield catches something's knife.",
             ]
         );
     }
