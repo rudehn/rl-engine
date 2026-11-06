@@ -85,8 +85,8 @@ pub mod combat {
     pub use atglyph_bevy::ammo::{Ammo, AmmoChanged, AmmoPlugin, AmmoSet, Dry};
     pub use atglyph_bevy::bump::{Bump, BumpRules, Bumped, OnAlly, Swapped};
     pub use atglyph_bevy::combat::{
-        Attack, AttackShape, BenchedAttack, BonusDamage, DamageDealt, DamageEvent, DamageRoute, DamageStages, Dead, DeathEvent, Heal, Healed, Invulnerable,
-        Loadout, RangedAttack, Resists, Struck, line_of_fire, shot,
+        AddsOwnBlow, Attack, AttackShape, BenchedAttack, BonusDamage, DamageDealt, DamageEvent, DamageRoute, DamageStages, Dead, DeathEvent, Heal, Healed,
+        Invulnerable, Loadout, RangedAttack, Resists, Struck, line_of_fire, shot,
     };
     pub use atglyph_bevy::effects::{Effect, EffectBonus, EffectKinds, EffectWorld, Effects, EffectsPlugin, Fired, FromArgs, Landing, TriggerKinds, Triggers};
     pub use atglyph_bevy::status::{ActiveStatuses, ApplyStatus, RemoveStatus, StatBlock, StatusEvent};

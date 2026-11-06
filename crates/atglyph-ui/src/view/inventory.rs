@@ -197,7 +197,9 @@ pub struct Replacing {
 /// What a wearer fights and sees with, by the rules a fight uses: the blow
 /// and the shot of the first worn thing, in slot order, that has one and
 /// a charge to use it, else the wearer's own, a versatile blow at its
-/// bigger roll while the slot it names is free; the first worn launcher for
+/// bigger roll while the slot it names is free, and a worn blow with the
+/// wearer's own beside it for one marked
+/// [`AddsOwnBlow`](atglyph_bevy::AddsOwnBlow); the first worn launcher for
 /// each thing launched; and the best sight in the dark of its own and of
 /// what it wears.
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -467,8 +469,15 @@ pub(crate) struct ItemRows<'w, 's> {
     wearers: Query<'w, 's, Own, Without<Item>>,
 }
 
-/// What a wearer fights and sees with of its own.
-type Own = (Option<&'static MeleeAttack>, Option<&'static RangedAttack>, Option<&'static atglyph_bevy::OwnDarkSight>, Has<atglyph_bevy::DarkSightSuppressed>);
+/// What a wearer fights and sees with of its own, and whether it adds its
+/// own blow to a worn one.
+type Own = (
+    Option<&'static MeleeAttack>,
+    Option<&'static RangedAttack>,
+    Option<&'static atglyph_bevy::OwnDarkSight>,
+    Has<atglyph_bevy::DarkSightSuppressed>,
+    Has<atglyph_bevy::AddsOwnBlow>,
+);
 
 impl ItemRows<'_, '_> {
     /// `item` as `holder` reads it, carrying `bag` and wearing `worn`: how
@@ -507,7 +516,7 @@ impl ItemRows<'_, '_> {
 
     /// What `wearer` fights and sees with, wearing `worn`: see [`Kit`].
     fn kit(&self, wearer: Entity, worn: &atglyph_rules::Equipment<Entity>) -> Kit {
-        let (own_blow, own_shot, own_sight, blind) = self.wearers.get(wearer).unwrap_or((None, None, None, false));
+        let (own_blow, own_shot, own_sight, blind, adds) = self.wearers.get(wearer).unwrap_or((None, None, None, false, false));
         let registries = self.registries.as_deref();
         let kind_name = |kind| registries.map(|r| r.damage_kinds.name(kind).to_string()).unwrap_or_default();
         let things: Vec<Entity> = worn.worn().map(|(_, thing)| thing).collect();
@@ -524,7 +533,8 @@ impl ItemRows<'_, '_> {
             own_shot.copied(),
         );
         let mut withheld = unknown(blow.and_then(|(from, _)| from)) || unknown(shot.and_then(|(from, _)| from));
-        let wielding = |from: Option<Entity>, kind, dice, range| Wielding { from: from.map(name), strike: Strike { kind: kind_name(kind), dice, range } };
+        let wielding =
+            |from: Option<Entity>, kind, dice, range, also| Wielding { from: from.map(name), strike: Strike { kind: kind_name(kind), dice, range, also } };
         let mut launchers: Vec<LaunchLine> = Vec::new();
         let mut seen = Vec::new();
         for thing in &things {
@@ -545,8 +555,13 @@ impl ItemRows<'_, '_> {
             // A versatile roll by what `worn` leaves free, which for a thing
             // tried on is the copy it was tried on: a knife for the hand a
             // sword wants empty is weighed as the sword to one hand.
-            blow: blow.map(|(from, m)| wielding(from, m.kind, atglyph_rules::arms::versatile_roll(m.dice, m.versatile.as_ref(), |s| worn.is_free(s)), None)),
-            shot: shot.map(|(from, r)| wielding(from, r.kind, r.dice, Some(r.range))),
+            // and the wearer's own blow beside a worn one, for one that adds
+            // it, as the fight strikes it.
+            blow: blow.map(|(from, m)| {
+                let dice = atglyph_rules::arms::versatile_roll(m.dice, m.versatile.as_ref(), |s| worn.is_free(s));
+                wielding(from, m.kind, dice, None, atglyph_rules::arms::own_blow_added(adds, from.is_some(), own_blow.map(|o| o.dice)))
+            }),
+            shot: shot.map(|(from, r)| wielding(from, r.kind, r.dice, Some(r.range), None)),
             launchers,
             dark_sight: atglyph_rules::equip::dark_sight(own_sight.map(|s| s.0), lent.iter().map(|(tiles, _)| *tiles), blind),
             withheld,
@@ -567,8 +582,12 @@ impl ItemRows<'_, '_> {
         let kind_name = |kind| registries.map(|r| r.damage_kinds.name(kind).to_string()).unwrap_or_default();
         let slot_name = |slot| registries.map(|r| r.slots.name(slot).to_string()).unwrap_or_default();
         let tag_name = |tag| registries.map(|r| r.tags.name(tag).to_string()).unwrap_or_default();
-        let strike =
-            |(kind, dice): (atglyph_rules::damage::DamageKindId, atglyph_core::DiceRoll), range: Option<i32>| Strike { kind: kind_name(kind), dice, range };
+        let strike = |(kind, dice): (atglyph_rules::damage::DamageKindId, atglyph_core::DiceRoll), range: Option<i32>| Strike {
+            kind: kind_name(kind),
+            dice,
+            range,
+            also: None,
+        };
         let slot = worn.and_then(|w| w.slot_of(item));
         // How it flies from its holder, its own range or the holder's reach.
         let thrown = self.throws.of(holder, item);

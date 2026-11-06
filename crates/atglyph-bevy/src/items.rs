@@ -119,6 +119,12 @@ pub struct GearScore(pub i32);
 /// trade it for a lighter one. Without it an actor's own blow is worth
 /// nothing, which is right for one that barely strikes at all and was the
 /// only rule before.
+///
+/// Not counted for an actor marked
+/// [`AddsOwnBlow`](crate::combat::AddsOwnBlow), whose own blow lands
+/// beside a worn one and so is never given up: a game scoring gear for
+/// one counts its own blow in the thing's [`GearScore`] instead, if it
+/// likes.
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub struct OwnBlowScore(pub i32);
 
@@ -1188,6 +1194,8 @@ pub struct Belongings<'w, 's> {
     lying: Query<'w, 's, Lying, With<Item>>,
     blows: Query<'w, 's, (), (With<Item>, With<crate::combat::MeleeAttack>)>,
     own: Query<'w, 's, &'static OwnBlowScore>,
+    /// Who keeps its own blow beside a worn one, and so gives none up.
+    adds: Query<'w, 's, (), With<crate::combat::AddsOwnBlow>>,
     /// What will not come off, which no gain pushes off.
     stuck: Query<'w, 's, (), With<Stuck>>,
     /// What a carried thing does when used, how it is pointed and whether
@@ -1228,12 +1236,14 @@ impl Belongings<'_, '_> {
     /// How much better `thinker` would be for wearing `item` in `shape`,
     /// scored `score`, than for what it would displace and, for a thing
     /// whose blow it would strike with where it strikes with its own now,
-    /// than for its [`OwnBlowScore`]; `None` when it wears nothing, the
+    /// than for its [`OwnBlowScore`], unless it is marked
+    /// [`AddsOwnBlow`](crate::combat::AddsOwnBlow) and loses no blow by it;
+    /// `None` when it wears nothing, the
     /// item is not scored, or putting it on would push off a [`Stuck`]
     /// thing, which the resolver would refuse.
     fn gain(&self, thinker: Entity, item: Entity, shape: &Wearable, score: &GearScore) -> Option<i32> {
         let Ok((_, Some(worn))) = self.bags.get(thinker) else { return None };
-        let own_blow = self.own.get(thinker).map_or(0, |o| o.0);
+        let own_blow = if self.adds.contains(thinker) { 0 } else { self.own.get(thinker).map_or(0, |o| o.0) };
         atglyph_rules::equip::gain(
             &worn.0,
             item,

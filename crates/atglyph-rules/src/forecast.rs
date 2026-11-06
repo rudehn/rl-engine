@@ -68,6 +68,11 @@ pub struct Combatant<'a> {
     pub resists: &'a Resistances,
     /// Every roll one blow of its lands, the main one first.
     pub strikes: &'a [(DamageKindId, DiceRoll)],
+    /// A roll added to the main one and landing in the same hit, so armor
+    /// and resistance meet the two once: an armed actor's own blow beside
+    /// its weapon's, `MeleeAttack::also` in `atglyph-bevy`. `None` for any
+    /// other, and for one that strikes nothing.
+    pub also: Option<DiceRoll>,
     /// The chance, in whole percent, that one of its attacks lands at all:
     /// 100 unless a hit model says otherwise, so a forecast built without
     /// one reads as it always did.
@@ -77,7 +82,7 @@ pub struct Combatant<'a> {
 impl Combatant<'_> {
     /// A combatant that neither strikes nor resists anything.
     pub fn unarmed(health: i32, armor: i32, speed: u32, resists: &Resistances) -> Combatant<'_> {
-        Combatant { health, armor, speed, blow_cost: None, resists, strikes: &[], chance_pct: 100 }
+        Combatant { health, armor, speed, blow_cost: None, resists, strikes: &[], also: None, chance_pct: 100 }
     }
 
     /// A combatant fighting whatever `arms` gives it at `distance`.
@@ -85,8 +90,8 @@ impl Combatant<'_> {
     /// The one place the melee-or-shot choice is made for a forecast, so a
     /// panel cannot pick differently from the resolver.
     pub fn armed<'a>(health: i32, armor: i32, speed: u32, resists: &'a Resistances, arms: &Arms<'a>, distance: i32) -> Combatant<'a> {
-        let (strikes, blow_cost) = arms.at(distance);
-        Combatant { health, armor, speed, blow_cost, resists, strikes, chance_pct: 100 }
+        let (strikes, blow_cost, also) = arms.wielding(arms.reach(distance));
+        Combatant { health, armor, speed, blow_cost, resists, strikes, also, chance_pct: 100 }
     }
 
     /// A combatant fighting what `arms` gives it at `distance`, or, when
@@ -96,8 +101,8 @@ impl Combatant<'_> {
     /// a brawler across the room still says how many blows it needs. See
     /// `Arms::closing`; `armed` is the fight as it stands.
     pub fn closing<'a>(health: i32, armor: i32, speed: u32, resists: &'a Resistances, arms: &Arms<'a>, distance: i32) -> Combatant<'a> {
-        let (strikes, blow_cost) = arms.closing(distance);
-        Combatant { health, armor, speed, blow_cost, resists, strikes, chance_pct: 100 }
+        let (strikes, blow_cost, also) = arms.wielding(arms.closing(distance));
+        Combatant { health, armor, speed, blow_cost, resists, strikes, also, chance_pct: 100 }
     }
 
     /// The same combatant landing `chance_pct` percent of its attacks, so a
@@ -120,6 +125,9 @@ impl Combatant<'_> {
 pub struct Arms<'a> {
     /// Every roll one melee blow lands.
     pub melee: &'a [(DamageKindId, DiceRoll)],
+    /// A roll added to the first of `melee` and landing in the same hit,
+    /// as [`Combatant::also`] says. A shot never carries one.
+    pub melee_also: Option<DiceRoll>,
     /// What one melee blow costs, `None` for the ordinary turn.
     pub melee_cost: Option<u32>,
     /// Every roll one shot lands.
@@ -150,31 +158,44 @@ impl<'a> Arms<'a> {
     /// map, and a forecast that a wall may yet block is still the right
     /// forecast for the fight the two would have.
     pub fn at(&self, distance: i32) -> (&'a [(DamageKindId, DiceRoll)], Option<u32>) {
+        let (rolls, cost, _) = self.wielding(self.reach(distance));
+        (rolls, cost)
+    }
+
+    /// Which of these arms [`at`](Self::at) fights with at `distance`, or
+    /// `None` for neither.
+    fn reach(&self, distance: i32) -> Option<crate::arms::Reach> {
         // The slices carry their own emptiness, so both weapons count as
         // held here and an empty one is the answer, not a missing one.
-        match crate::arms::choose_reach(distance <= 1, distance <= self.range, true, true) {
-            Some(crate::arms::Reach::Melee) => (self.melee, self.melee_cost),
-            Some(crate::arms::Reach::Ranged) => (self.ranged, self.ranged_cost),
-            None => (&[], None),
+        crate::arms::choose_reach(distance <= 1, distance <= self.range, true, true)
+    }
+
+    /// The rolls, the cost and the roll added to the main one of the arm
+    /// `reach` names, and nothing at all for `None`.
+    fn wielding(&self, reach: Option<crate::arms::Reach>) -> (&'a [(DamageKindId, DiceRoll)], Option<u32>, Option<DiceRoll>) {
+        match reach {
+            Some(crate::arms::Reach::Melee) => (self.melee, self.melee_cost, self.melee_also),
+            Some(crate::arms::Reach::Ranged) => (self.ranged, self.ranged_cost, None),
+            None => (&[], None, None),
         }
     }
 
-    /// What these arms would fight with once in reach of a target at
-    /// `distance`: [`at`](Self::at) when something reaches from there, and
+    /// Which of these arms would fight once in reach of a target at
+    /// `distance`: [`at`](Self::at)'s when something reaches from there, and
     /// otherwise the shot if there is one, since it only has to close to
     /// its range, or the blow if not.
     ///
     /// Beside the target nothing changes: an actor with no blow of its own
     /// cannot hurt what stands next to it, and saying otherwise would be a
     /// forecast of a fight the resolver never fights.
-    pub(crate) fn closing(&self, distance: i32) -> (&'a [(DamageKindId, DiceRoll)], Option<u32>) {
-        let reach = self.at(distance);
-        if !reach.0.is_empty() || distance <= 1 {
+    pub(crate) fn closing(&self, distance: i32) -> Option<crate::arms::Reach> {
+        let reach = self.reach(distance);
+        if !self.wielding(reach).0.is_empty() || distance <= 1 {
             reach
         } else if !self.ranged.is_empty() {
-            (self.ranged, self.ranged_cost)
+            Some(crate::arms::Reach::Ranged)
         } else {
-            (self.melee, self.melee_cost)
+            Some(crate::arms::Reach::Melee)
         }
     }
 }
@@ -196,10 +217,14 @@ pub(crate) fn expected_damage<A: Copy>(
     attacker
         .strikes
         .iter()
-        .map(|(kind, dice)| {
+        .enumerate()
+        .map(|(i, (kind, dice))| {
+            // The main roll and the one added to it land as one hit, so
+            // their averages are summed before the defender meets them.
+            let also = if i == 0 { attacker.also.map_or(0.0, DiceRoll::avg) } else { 0.0 };
             // resolve takes integers, so the average is split into the two
             // rolls that bracket it and weighted by how often each comes up.
-            let avg = dice.avg();
+            let avg = dice.avg() + also;
             let low = avg.floor() as i32;
             let share = avg - low as f32;
             let at = |amount: i32| {
@@ -350,7 +375,7 @@ mod tests {
         let stages = stage_refs(&boxed);
         let none = Resistances::new();
         let strikes = [(kinds.expect("kinetic"), DiceRoll::new(1, 4))];
-        let attacker = Combatant { health: 10, armor: 0, speed: 100, blow_cost: None, resists: &none, strikes: &strikes, chance_pct: 100 };
+        let attacker = Combatant { health: 10, armor: 0, speed: 100, blow_cost: None, resists: &none, strikes: &strikes, also: None, chance_pct: 100 };
         let bare = Combatant::unarmed(10, 0, 100, &none);
         let armored = Combatant::unarmed(10, 1, 100, &none);
         let open = expected_damage::<u32>(&attacker, &bare, &kinds, &stages);
@@ -381,13 +406,13 @@ mod tests {
         let stages = stage_refs(&boxed);
         let none = Resistances::new();
         let strikes = [(kinds.expect("kinetic"), DiceRoll::new(1, 2))];
-        let biter = Combatant { health: 30, armor: 0, speed: 100, blow_cost: None, resists: &none, strikes: &strikes, chance_pct: 100 };
+        let biter = Combatant { health: 30, armor: 0, speed: 100, blow_cost: None, resists: &none, strikes: &strikes, also: None, chance_pct: 100 };
         let plated = Combatant::unarmed(30, 10, 100, &none);
         assert_eq!(blows_to_fell::<u32>(&biter, &plated, &kinds, &stages), None);
         let stalemate = duel::<u32>(&plated, &biter, &kinds, &stages);
         assert_eq!(stalemate.turns_to_fall, None, "the plated one is never felled");
         assert_eq!(stalemate.outlook, Outlook::Even, "neither side can end it, which is even and not a win");
-        let armed = Combatant { health: 30, armor: 10, speed: 100, blow_cost: None, resists: &none, strikes: &strikes, chance_pct: 100 };
+        let armed = Combatant { health: 30, armor: 10, speed: 100, blow_cost: None, resists: &none, strikes: &strikes, also: None, chance_pct: 100 };
         assert_eq!(duel::<u32>(&armed, &biter, &kinds, &stages).outlook, Outlook::Easy, "armor it cannot pierce and a blow that lands");
     }
 
@@ -443,8 +468,8 @@ mod tests {
         let none = Resistances::new();
         let strikes = [(kinds.expect("kinetic"), DiceRoll::new(1, 4))];
         let target = Combatant::unarmed(30, 0, 100, &none);
-        let quick = Combatant { health: 10, armor: 0, speed: 100, blow_cost: Some(70), resists: &none, strikes: &strikes, chance_pct: 100 };
-        let ordinary = Combatant { health: 10, armor: 0, speed: 100, blow_cost: None, resists: &none, strikes: &strikes, chance_pct: 100 };
+        let quick = Combatant { health: 10, armor: 0, speed: 100, blow_cost: Some(70), resists: &none, strikes: &strikes, also: None, chance_pct: 100 };
+        let ordinary = Combatant { health: 10, armor: 0, speed: 100, blow_cost: None, resists: &none, strikes: &strikes, also: None, chance_pct: 100 };
         let cheaper = duel::<u32>(&quick, &target, &kinds, &stages);
         let plain = duel::<u32>(&ordinary, &target, &kinds, &stages);
         assert!(cheaper.turns_to_fell.is_some() && plain.turns_to_fell.is_some(), "both land the same blows and fell the target");
@@ -459,8 +484,8 @@ mod tests {
         let none = Resistances::new();
         let hard = [(kinds.expect("kinetic"), DiceRoll { num: 1, sides: 8, bonus: 4 })];
         let soft = [(kinds.expect("kinetic"), DiceRoll::new(1, 2))];
-        let strong = Combatant { health: 40, armor: 0, speed: 100, blow_cost: None, resists: &none, strikes: &hard, chance_pct: 100 };
-        let weak = Combatant { health: 40, armor: 0, speed: 100, blow_cost: None, resists: &none, strikes: &soft, chance_pct: 100 };
+        let strong = Combatant { health: 40, armor: 0, speed: 100, blow_cost: None, resists: &none, strikes: &hard, also: None, chance_pct: 100 };
+        let weak = Combatant { health: 40, armor: 0, speed: 100, blow_cost: None, resists: &none, strikes: &soft, also: None, chance_pct: 100 };
         assert_eq!(duel::<u32>(&strong, &weak, &kinds, &stages).outlook, Outlook::Easy);
         assert_eq!(duel::<u32>(&weak, &strong, &kinds, &stages).outlook, Outlook::Deadly);
         assert_eq!(duel::<u32>(&strong, &strong, &kinds, &stages).outlook, Outlook::Even);
@@ -473,7 +498,7 @@ mod tests {
         let stages = stage_refs(&boxed);
         let none = Resistances::new();
         let strikes = [(kinds.expect("kinetic"), DiceRoll::flat(1))];
-        let at = |speed, blow_cost| Combatant { health: 1000, armor: 0, speed, blow_cost, resists: &none, strikes: &strikes, chance_pct: 100 };
+        let at = |speed, blow_cost| Combatant { health: 1000, armor: 0, speed, blow_cost, resists: &none, strikes: &strikes, also: None, chance_pct: 100 };
         let stopped = duel::<u32>(&at(0, None), &at(100, None), &kinds, &stages);
         assert_eq!(stopped, duel::<u32>(&at(1, None), &at(100, None), &kinds, &stages));
         assert_eq!(stopped.turns_to_fell, Some(100_000), "a thousand blows at a hundred times the ordinary cost");
@@ -491,7 +516,7 @@ mod tests {
         let kind = kinds.expect("kinetic");
         let melee = [(kind, DiceRoll::flat(3))];
         let ranged = [(kind, DiceRoll::flat(7))];
-        let arms = Arms { melee: &melee, melee_cost: Some(50), ranged: &ranged, ranged_cost: Some(200), range: 6 };
+        let arms = Arms { melee: &melee, melee_also: None, melee_cost: Some(50), ranged: &ranged, ranged_cost: Some(200), range: 6 };
 
         assert_eq!(arms.at(1), (&melee[..], Some(50)), "beside it, the blow");
         assert_eq!(arms.at(0), (&melee[..], Some(50)), "and a thing measured against itself reads as adjacent");
@@ -511,9 +536,9 @@ mod tests {
         let stages: [&dyn DamageStage<u32>; 0] = [];
 
         let shot = [(kind, DiceRoll::flat(5))];
-        let gunner = Arms { melee: &[], melee_cost: None, ranged: &shot, ranged_cost: None, range: 8 };
+        let gunner = Arms { melee: &[], melee_also: None, melee_cost: None, ranged: &shot, ranged_cost: None, range: 8 };
         let swing = [(kind, DiceRoll::flat(5))];
-        let brawler = Arms { melee: &swing, melee_cost: None, ranged: &[], ranged_cost: None, range: 0 };
+        let brawler = Arms { melee: &swing, melee_also: None, melee_cost: None, ranged: &[], ranged_cost: None, range: 0 };
 
         fn at<'a>(arms: &Arms<'a>, none: &'a Resistances, d: i32) -> Combatant<'a> {
             Combatant::armed(20, 0, 100, none, arms, d)
@@ -542,9 +567,9 @@ mod tests {
         let none = Resistances::new();
         let stages: [&dyn DamageStage<u32>; 0] = [];
         let shot = [(kind, DiceRoll::flat(5))];
-        let gunner = Arms { melee: &[], melee_cost: None, ranged: &shot, ranged_cost: None, range: 8 };
+        let gunner = Arms { melee: &[], melee_also: None, melee_cost: None, ranged: &shot, ranged_cost: None, range: 8 };
         let swing = [(kind, DiceRoll::flat(10))];
-        let brawler = Arms { melee: &swing, melee_cost: None, ranged: &[], ranged_cost: None, range: 0 };
+        let brawler = Arms { melee: &swing, melee_also: None, melee_cost: None, ranged: &[], ranged_cost: None, range: 0 };
         let closing = |arms: &Arms<'_>, d: i32| {
             duel(&Combatant::closing(20, 0, 100, &none, arms, d), &Combatant::unarmed(20, 0, 100, &none), &kinds, &stages).turns_to_fell
         };
@@ -554,5 +579,25 @@ mod tests {
         assert_eq!(closing(&gunner, 5), Some(4), "within reach it is the same as armed");
         assert_eq!(closing(&gunner, 1), None, "beside it with no blow of its own, it still cannot hurt it");
         assert_eq!(closing(&Arms::none(), 5), None, "and a side with no attack at all never fells anything");
+    }
+
+    /// A roll added to a blow's lands in the same hit, so armor meets the
+    /// two once: five and two against three armor is four a blow, where
+    /// two hits would have been two and nothing. A shot carries none of it.
+    #[test]
+    fn a_roll_added_to_a_blow_meets_armor_once_and_never_rides_on_a_shot() {
+        let kinds = kinds();
+        let boxed = armor_only();
+        let stages = stage_refs(&boxed);
+        let none = Resistances::new();
+        let kind = kinds.expect("kinetic");
+        let (swing, shot) = ([(kind, DiceRoll::flat(5))], [(kind, DiceRoll::flat(5))]);
+        let arms = Arms { melee: &swing, melee_also: Some(DiceRoll::flat(2)), melee_cost: None, ranged: &shot, ranged_cost: None, range: 8 };
+        let armored = Combatant::unarmed(20, 3, 100, &none);
+        let per_blow = |d: i32| expected_damage::<u32>(&Combatant::armed(20, 0, 100, &none, &arms, d), &armored, &kinds, &stages);
+        assert!((per_blow(1) - 4.0).abs() < 0.01, "five and two in one hit, less three, got {}", per_blow(1));
+        assert!((per_blow(4) - 2.0).abs() < 0.01, "the shot's five less three, got {}", per_blow(4));
+        let closing = Combatant::closing(20, 0, 100, &none, &Arms { ranged: &[], ..arms }, 5);
+        assert_eq!(closing.also, Some(DiceRoll::flat(2)), "a brawler closing brings the added roll with it");
     }
 }

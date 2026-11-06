@@ -18,6 +18,7 @@ use bevy::prelude::*;
 use crate::controls::{Chord, ControlInput, EngineKey, key_name};
 use crate::cursor::CursorKeys;
 use crate::modal::{ModalId, Modals};
+use crate::panel::inventory::rolls;
 use crate::panel::{clear, clip, frame, section};
 use crate::tone::{Palette, Tones};
 use crate::view::sheet::{SheetView, SheetViewPlugin, StatLine};
@@ -204,9 +205,9 @@ pub(crate) fn draw_sheet(
             .iter()
             .enumerate()
             .map(|(i, s)| match (s.range, i) {
-                (Some(range), _) => format!("{} {}, range {range}", s.dice, s.kind),
-                (None, 0) => format!("{} {}", s.dice, s.kind),
-                (None, _) => format!("and {} {}", s.dice, s.kind),
+                (Some(range), _) => format!("{} {}, range {range}", rolls(s), s.kind),
+                (None, 0) => format!("{} {}", rolls(s), s.kind),
+                (None, _) => format!("and {} {}", rolls(s), s.kind),
             })
             .collect();
         sections.push((attacks, lines));

@@ -72,6 +72,10 @@ pub struct Strike {
     pub dice: DiceRoll,
     /// How far it reaches, for a shot; `None` for a blow.
     pub range: Option<i32>,
+    /// A second roll landing in the same hit: the wielder's own blow
+    /// beside its weapon's, for one marked [`AddsOwnBlow`], as
+    /// [`MeleeAttack::also`] says. `None` for anything else.
+    pub also: Option<DiceRoll>,
 }
 
 /// One status on the player.
@@ -232,11 +236,14 @@ pub(crate) fn collect_sheet(
         }
     }
     let kind_name = |kind: DamageKindId| registries.damage_kinds.name(kind).to_string();
+    // The blow first, with the roll that lands in its hit beside it, then
+    // the extra strikes, which carry none.
+    let mut also = loadout.melee(entity).and_then(|m| m.also);
     for (kind, dice) in loadout.blows(entity) {
-        view.strikes.push(Strike { kind: kind_name(kind), dice, range: None });
+        view.strikes.push(Strike { kind: kind_name(kind), dice, range: None, also: also.take() });
     }
     if let Some(ranged) = loadout.ranged(entity) {
-        view.strikes.push(Strike { kind: kind_name(ranged.kind), dice: ranged.dice, range: Some(ranged.range) });
+        view.strikes.push(Strike { kind: kind_name(ranged.kind), dice: ranged.dice, range: Some(ranged.range), also: None });
     }
     if let Some(afflicted) = afflicted {
         for active in afflicted.iter() {
@@ -395,5 +402,12 @@ mod tests {
         let line = view.stat("might").expect("registered");
         assert_eq!(line.value, 10 + 2 + 5);
         assert_eq!(line.changes.last().map(|c| c.from.as_str()), Some("a blade"), "{:?}", line.changes);
+        assert_eq!(view.strikes[0].also, None, "and the fist is not beside it");
+
+        stage.app.world_mut().entity_mut(player).insert(AddsOwnBlow);
+        stage.tick();
+        let view = stage.app.world().resource::<SheetView>();
+        let own = stage.app.world().get::<MeleeAttack>(player).map(|m| m.dice);
+        assert_eq!((view.strikes[0].dice, view.strikes[0].also), (DiceRoll::new(2, 6), own), "for one that adds it, its own blow beside the blade");
     }
 }

@@ -70,6 +70,19 @@ pub fn versatile_roll(dice: DiceRoll, versatile: Option<&Versatile>, is_free: im
     }
 }
 
+/// The roll an actor's `own` blow adds to the blow it strikes: its own
+/// roll, for an actor that `adds` it striking with a worn thing's blow
+/// (`worn`), and `None` otherwise, since a blow that is the actor's own is
+/// struck once and an actor that does not add its own swings the worn
+/// blow in its place.
+///
+/// After DCSS, where a monster's blow is its weapon's roll and a separate
+/// roll of its own attack. The one place the choice is made, so the fight,
+/// the forecast and a screen weighing gear strike the same rolls.
+pub fn own_blow_added(adds: bool, worn: bool, own: Option<DiceRoll>) -> Option<DiceRoll> {
+    own.filter(|_| adds && worn)
+}
+
 /// The flat armor a blow meets: the actor's `own`, every `worn` item's and
 /// the armor `stat`, summed.
 ///
@@ -101,6 +114,15 @@ pub fn scale_unaware(amount: i32, pct: u32) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_own_blow_is_added_only_by_an_actor_that_adds_it_to_a_worn_blow() {
+        let own = Some(DiceRoll::new(1, 2));
+        assert_eq!(own_blow_added(true, true, own), own, "beside a worn blow");
+        assert_eq!(own_blow_added(true, false, own), None, "its own blow is struck once");
+        assert_eq!(own_blow_added(false, true, own), None, "a worn blow replaces the own of one that does not add it");
+        assert_eq!(own_blow_added(true, true, None), None, "and there is nothing to add without a blow of its own");
+    }
 
     #[test]
     fn beside_the_target_only_the_blow_is_offered_and_never_the_gun() {

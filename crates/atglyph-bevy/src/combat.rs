@@ -97,8 +97,8 @@ pub struct Faction(pub atglyph_rules::FactionId);
 ///
 /// On an actor, its own strike: teeth, claws, a fist. On an item, what
 /// wielding it strikes with; a worn item that carries one replaces the
-/// wearer's own for as long as it is worn, which is what [`Loadout`]
-/// answers.
+/// wearer's own for as long as it is worn, or strikes beside it for one
+/// marked [`AddsOwnBlow`], which is what [`Loadout`] answers.
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MeleeAttack {
     /// Damage kind.
@@ -129,6 +129,15 @@ pub struct MeleeAttack {
     /// by [`versatile_roll`](atglyph_rules::arms::versatile_roll), so read
     /// a wearer's blow there rather than off this.
     pub versatile: Option<Versatile>,
+    /// A second roll the blow lands in the same hit, of the same kind, so
+    /// armor meets the two once: the wearer's own blow beside its worn
+    /// weapon's, for one marked [`AddsOwnBlow`]. The attack stat is added
+    /// to `dice` alone.
+    ///
+    /// [`Loadout`]'s answer, made afresh for every blow it is asked for:
+    /// a blow written on an actor or an item leaves it `None`, and what is
+    /// written there is not read.
+    pub also: Option<DiceRoll>,
 }
 
 impl MeleeAttack {
@@ -139,7 +148,7 @@ impl MeleeAttack {
     /// A constructor rather than a literal, so a field that is only ever
     /// wanted by some games is added without touching every call site.
     pub const fn new(kind: DamageKindId, dice: DiceRoll) -> Self {
-        Self { kind, dice, cost: None, look: None, shape: None, unaware: None, versatile: None }
+        Self { kind, dice, cost: None, look: None, shape: None, unaware: None, versatile: None, also: None }
     }
 
     /// The blow `part` describes, costing `cost` hundredths of a step, or
@@ -182,6 +191,19 @@ impl MeleeAttack {
         self
     }
 }
+
+/// An actor whose worn weapon's blow adds to its own rather than replacing
+/// it, as a monster's does in DCSS: a goblin with a dagger strikes for the
+/// dagger's roll and its own together.
+///
+/// Opt-in, so an actor without it, a player among them, swings a worn
+/// blow in place of its fist as before. Only a blow: a shot, a launched
+/// thing and a thing thrown strike for their own rolls alone. A mind
+/// weighing gear for one gives up nothing of its
+/// [`OwnBlowScore`](crate::items::OwnBlowScore) by putting a blade on,
+/// since its own blow still lands.
+#[derive(Component, Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct AddsOwnBlow;
 
 /// What a shot does, and how far it reaches. An attack on a target that is
 /// not adjacent uses this, if the line of fire is clear.
@@ -780,7 +802,9 @@ pub enum BenchedAttack {
 /// on every item in its [`Equipped`] slots, in slot order; and the value of
 /// the stats [`CombatRules`] names, read off its [`StatBlock`]. A worn
 /// blow or shot replaces the actor's own, since a cutlass is swung in
-/// place of a fist; armor, resistances and extra strikes add up.
+/// place of a fist, except that a worn blow lands beside the own blow of
+/// an actor marked [`AddsOwnBlow`]; armor, resistances and extra strikes
+/// add up.
 ///
 /// The one answer to the question. The attack resolver strikes with it,
 /// `apply_damage` defends with it, and the inspect forecast and the
@@ -795,6 +819,8 @@ pub enum BenchedAttack {
 #[derive(bevy::ecs::system::SystemParam)]
 pub struct Loadout<'w, 's> {
     own: Query<'w, 's, Gear>,
+    /// Who adds its own blow to a worn one.
+    adds: Query<'w, 's, (), With<AddsOwnBlow>>,
     worn: Query<'w, 's, Gear, With<Item>>,
     equipped: Query<'w, 's, &'static Equipped>,
     resists: Query<'w, 's, &'static Resists>,
@@ -887,13 +913,16 @@ impl Loadout<'_, '_> {
         let bonus = self.stat(who, |r| r.attack);
         let equipped = self.equipped.get(who).ok();
         let dice = atglyph_rules::arms::versatile_roll(base.dice, base.versatile.as_ref(), |slot| equipped.is_none_or(|e| e.0.is_free(slot)));
-        Some((from, MeleeAttack { dice: DiceRoll { bonus: dice.bonus + bonus, ..dice }, ..base }))
+        let also = atglyph_rules::arms::own_blow_added(self.adds.contains(who), from.is_some(), own.map(|o| o.dice));
+        Some((from, MeleeAttack { dice: DiceRoll { bonus: dice.bonus + bonus, ..dice }, also, ..base }))
     }
 
     /// The blow `who` strikes with: the first worn item's in slot order,
     /// or its own, at its versatile roll while the slot the versatile part
-    /// names is free on `who`, with the attack stat added to the roll. `None` for
-    /// something that cannot strike at all.
+    /// names is free on `who`, with the attack stat added to the roll, and
+    /// for one marked [`AddsOwnBlow`] striking with a worn item's, its own
+    /// roll in [`also`](MeleeAttack::also). `None` for something that
+    /// cannot strike at all.
     pub fn melee(&self, who: Entity) -> Option<MeleeAttack> {
         self.melee_with(who).map(|(_, m)| m)
     }
@@ -928,6 +957,10 @@ impl Loadout<'_, '_> {
     /// Every roll one blow by `who` lands, the main one first: what the
     /// forecast in [`atglyph_rules::forecast`] takes. Empty for something that
     /// cannot strike.
+    ///
+    /// The main one's [`also`](MeleeAttack::also) is not among them, since
+    /// it lands in the main one's hit rather than as a hit of its own;
+    /// [`arms`](Self::arms) hands it to the forecast beside these.
     pub fn blows(&self, who: Entity) -> Vec<(DamageKindId, DiceRoll)> {
         let mut all: Vec<(DamageKindId, DiceRoll)> = self.melee(who).map(|m| (m.kind, m.dice)).into_iter().collect();
         all.extend(self.strikes(who));
@@ -958,6 +991,7 @@ impl Loadout<'_, '_> {
         let shot = self.ranged(who);
         atglyph_rules::forecast::Arms {
             melee: blows,
+            melee_also: self.melee(who).and_then(|m| m.also),
             melee_cost: self.melee(who).and_then(|m| m.cost),
             ranged: shots,
             ranged_cost: shot.and_then(|r| r.cost),
@@ -1057,6 +1091,9 @@ struct ChosenAttack {
     ranged: bool,
     kind: DamageKindId,
     dice: DiceRoll,
+    /// The roll landing in the same hit as `dice`: a blow's
+    /// [`also`](MeleeAttack::also), and never anything for a shot.
+    also: Option<DiceRoll>,
     cost: Option<u32>,
     look: Option<ParticleLook>,
     shape: Option<AttackShape>,
@@ -1138,17 +1175,26 @@ pub(crate) fn resolve_attacks(
                 ranged: false,
                 kind: m.kind,
                 dice: m.dice,
+                also: m.also,
                 cost: m.cost,
                 look: m.look,
                 shape: m.shape,
                 unaware: m.unaware.or(house),
             }),
-            Some(atglyph_rules::arms::Reach::Ranged) => {
-                gun.map(|(from, r)| ChosenAttack { from, ranged: true, kind: r.kind, dice: r.dice, cost: r.cost, look: r.look, shape: r.shape, unaware: None })
-            }
+            Some(atglyph_rules::arms::Reach::Ranged) => gun.map(|(from, r)| ChosenAttack {
+                from,
+                ranged: true,
+                kind: r.kind,
+                dice: r.dice,
+                also: None,
+                cost: r.cost,
+                look: r.look,
+                shape: r.shape,
+                unaware: None,
+            }),
             None => None,
         };
-        let Some(ChosenAttack { from, ranged, kind, dice, cost, look, shape, unaware }) = chosen else {
+        let Some(ChosenAttack { from, ranged, kind, dice, also, cost, look, shape, unaware }) = chosen else {
             resolution.done(actor, atglyph_core::turn::BASE_ACTION_COST);
             continue;
         };
@@ -1190,8 +1236,13 @@ pub(crate) fn resolve_attacks(
             if !wide {
                 // Floored where it is rolled: a blow that rolls below zero
                 // has missed, and the pipeline would read a negative one as
-                // a heal.
-                hits.push(Hit::by(actor, kind, dice.roll_at_least(&mut **rng, 0)));
+                // a heal. A roll beside it is summed in first, so the two
+                // are one hit and armor meets them once.
+                let rolled = match also {
+                    Some(also) => (dice.roll(&mut **rng) + also.roll(&mut **rng)).max(0),
+                    None => dice.roll_at_least(&mut **rng, 0),
+                };
+                hits.push(Hit::by(actor, kind, rolled));
                 hits.extend(strikes.iter().map(|(kind, dice)| Hit::by(actor, *kind, dice.roll_at_least(&mut **rng, 0))));
                 for hit in &mut hits {
                     hit.amount = atglyph_rules::arms::scale_unaware(hit.amount, worth);
@@ -1791,6 +1842,7 @@ mod tests {
         let look = atglyph_rules::ability::ParticleLook { glyph: '*', color: atglyph_grid::Rgb::new(255, 80, 40) };
         let blow = MeleeAttack::new(kind, DiceRoll::flat(2));
         assert_eq!((blow.kind, blow.dice, blow.cost, blow.look, blow.shape, blow.unaware), (kind, DiceRoll::flat(2), None, None, None, None));
+        assert_eq!((blow.versatile, blow.also), (None, None));
         let blow = blow.costing(70).looking(look).shaped(AttackShape::Sweep).unaware(500);
         assert_eq!((blow.cost, blow.look, blow.shape, blow.unaware), (Some(70), Some(look), Some(AttackShape::Sweep), Some(500)));
 
@@ -2237,6 +2289,100 @@ mod tests {
         app.world_mut().write_message(Intent::new(player, Attack(target)));
         app.update();
         assert_eq!(hp(&app, target), 20 - 5 - 3, "one hand");
+    }
+
+    /// What one blow by a player whose own blow is a flat two lands on a
+    /// target behind `armor`, marked [`AddsOwnBlow`] when `adds`, wearing
+    /// `blade` in its right hand when given, with its left hand free.
+    fn own_blow_beside(adds: bool, blade: Option<MeleeAttack>, armor: i32) -> i32 {
+        use atglyph_rules::{EquipShape, Equipment, SlotId};
+        let (mut app, _, player, target) = duel(1, false, |kind| MeleeAttack::new(kind, DiceRoll::flat(2)));
+        let mut worn = Equipment::with_slot_count(2);
+        let mut items = Vec::new();
+        if let Some(blow) = blade {
+            let right = EquipShape::in_slot(SlotId::from_raw(0));
+            let item = app.world_mut().spawn((crate::items::Item, blow, crate::items::Wearable(right.clone()))).id();
+            worn.equip(item, &right).unwrap();
+            items.push(item);
+        }
+        app.world_mut().entity_mut(player).insert((crate::items::Inventory { items }, Equipped(worn)));
+        if adds {
+            app.world_mut().entity_mut(player).insert(AddsOwnBlow);
+        }
+        app.world_mut().entity_mut(target).insert(Armor(armor));
+        app.world_mut().write_message(Intent::new(player, Attack(target)));
+        app.update();
+        20 - hp(&app, target)
+    }
+
+    /// An actor marked to add its own blow strikes for its worn blade's
+    /// roll and its own together, and one that is not for the blade alone;
+    /// with nothing worn, either strikes for its own blow once.
+    #[test]
+    fn an_actor_that_adds_its_own_blow_strikes_for_both_and_one_that_does_not_for_the_weapon() {
+        let kind = DamageKindId::from_raw(0);
+        let blade = MeleeAttack::new(kind, DiceRoll::flat(5));
+        assert_eq!(own_blow_beside(true, Some(blade), 0), 7, "the blade's five and its own two");
+        assert_eq!(own_blow_beside(false, Some(blade), 0), 5, "the blade replaces the fist");
+        assert_eq!(own_blow_beside(true, None, 0), 2, "its own blow, once, with nothing worn");
+    }
+
+    /// The two rolls land as one hit, so armor meets them once: seven
+    /// against three is four, where two hits would have been two and none.
+    #[test]
+    fn an_own_blow_added_to_a_weapons_lands_in_the_same_hit_and_meets_armor_once() {
+        let blade = MeleeAttack::new(DamageKindId::from_raw(0), DiceRoll::flat(5));
+        assert_eq!(own_blow_beside(true, Some(blade), 3), 4);
+    }
+
+    /// A versatile blade swung in both hands lands its bigger roll and the
+    /// wearer's own blow beside it.
+    #[test]
+    fn an_own_blow_adds_to_a_versatile_blades_bigger_roll() {
+        use atglyph_rules::arms::Versatile;
+        let left = atglyph_rules::SlotId::from_raw(1);
+        let blade = MeleeAttack::new(DamageKindId::from_raw(0), DiceRoll::flat(3)).versatile(Versatile { roll: DiceRoll::flat(5), while_free: left });
+        assert_eq!(own_blow_beside(true, Some(blade), 0), 7, "the versatile five and its own two");
+    }
+
+    /// The loadout says what the fight strikes: the worn blade's roll and
+    /// the actor's own blow beside it, which the forecast is handed too,
+    /// and nothing beside a blow that is the actor's own.
+    #[test]
+    fn the_loadout_answers_an_own_blow_beside_a_worn_blade_and_none_beside_the_actors_own() {
+        use atglyph_rules::{EquipShape, Equipment, SlotId};
+        let (mut app, start, kind) = arena();
+        let own = MeleeAttack::new(kind, DiceRoll::new(1, 2));
+        let bare = app.world_mut().spawn((Actor, Position(start), own, AddsOwnBlow)).id();
+        let shape = EquipShape::in_slot(SlotId::from_raw(0));
+        let blade = app.world_mut().spawn((crate::items::Item, MeleeAttack::new(kind, DiceRoll::new(1, 4)), crate::items::Wearable(shape.clone()))).id();
+        let mut worn = Equipment::with_slot_count(1);
+        worn.equip(blade, &shape).unwrap();
+        let armed = app.world_mut().spawn((Actor, Position(start.offset(2, 0)), own, AddsOwnBlow, Equipped(worn))).id();
+        let mut state: bevy::ecs::system::SystemState<Loadout> = bevy::ecs::system::SystemState::new(app.world_mut());
+        let loadout = state.get(app.world()).expect("every input is optional");
+        let blow = loadout.melee(armed).unwrap();
+        assert_eq!((blow.dice, blow.also), (DiceRoll::new(1, 4), Some(DiceRoll::new(1, 2))));
+        assert_eq!(loadout.melee(bare).unwrap().also, None, "its own blow is struck once");
+        let blows = loadout.blows(armed);
+        let shots = loadout.shots(armed);
+        assert_eq!(loadout.arms(armed, &blows, &shots).melee_also, Some(DiceRoll::new(1, 2)), "and the forecast counts it");
+    }
+
+    /// A shot is the shot's roll alone, whatever the shooter's own blow.
+    #[test]
+    fn a_shot_never_adds_its_shooters_own_blow() {
+        use atglyph_rules::{EquipShape, Equipment, SlotId};
+        let (mut app, _, player, target) = duel(3, false, |kind| (MeleeAttack::new(kind, DiceRoll::flat(2)), AddsOwnBlow));
+        let kind = app.world().resource::<Registries>().damage_kinds.expect("kinetic");
+        let shape = EquipShape::in_slot(SlotId::from_raw(0));
+        let bow = app.world_mut().spawn((crate::items::Item, RangedAttack::new(kind, DiceRoll::flat(3), 6), crate::items::Wearable(shape.clone()))).id();
+        let mut worn = Equipment::with_slot_count(1);
+        worn.equip(bow, &shape).unwrap();
+        app.world_mut().entity_mut(player).insert((crate::items::Inventory { items: vec![bow] }, Equipped(worn)));
+        app.world_mut().write_message(Intent::new(player, Attack(target)));
+        app.update();
+        assert_eq!(hp(&app, target), 20 - 3);
     }
 
     /// Charges one melee blow with `cost` and answers what the turn cost.

@@ -668,13 +668,29 @@ fn hints(view: &InventoryView, menu: &InventoryMenu, binds: &InventoryKeys, conf
     keys.join(" \u{2022} ")
 }
 
-/// A strike in words: `1d6 cutlass`, or `1d8 pistol to 6` with a reach.
+/// A strike in words: `1d6 cutlass`, or `1d8 pistol to 6` with a reach,
+/// and `1d4+1d2 kinetic` with the wielder's own blow beside its weapon's.
 /// Shared with the look panel, so a thing reads the same on the floor as
 /// in the bag.
 pub(crate) fn strike(s: &Strike) -> String {
     match s.range {
-        Some(range) => format!("{} {} to {range}", s.dice, s.kind),
-        None => format!("{} {}", s.dice, s.kind),
+        Some(range) => format!("{} {} to {range}", rolls(s), s.kind),
+        None => format!("{} {}", rolls(s), s.kind),
+    }
+}
+
+/// What a strike rolls, as one sum: its roll alone, `1d4+1`, or with the
+/// roll beside it in the same hit, the dice of both and then every bonus
+/// added up, `1d4+1d2+1`, so it reads as the one hit it lands as.
+pub(crate) fn rolls(s: &Strike) -> String {
+    let Some(also) = s.also else { return s.dice.to_string() };
+    let dice: Vec<String> = [s.dice, also].iter().filter(|r| r.num != 0 && r.sides != 0).map(|r| format!("{}d{}", r.num, r.sides)).collect();
+    let bonus = s.dice.bonus + also.bonus;
+    match (dice.is_empty(), bonus.cmp(&0)) {
+        (true, _) => bonus.to_string(),
+        (false, std::cmp::Ordering::Equal) => dice.join("+"),
+        (false, std::cmp::Ordering::Greater) => format!("{}+{bonus}", dice.join("+")),
+        (false, std::cmp::Ordering::Less) => format!("{}{bonus}", dice.join("+")),
     }
 }
 
@@ -864,6 +880,12 @@ fn halves(roll: atglyph_core::DiceRoll) -> i64 {
     dice + 2 * roll.bonus as i64
 }
 
+/// Twice the mean of what `s` lands in one hit: its roll and the roll
+/// beside it.
+fn strike_halves(s: &Strike) -> i64 {
+    halves(s.dice) + s.also.map_or(0, halves)
+}
+
 /// A difference in halves as a signed number: `+1`, `-2.5`.
 fn signed_halves(halves: i64) -> String {
     let sign = if halves < 0 { '-' } else { '+' };
@@ -907,20 +929,20 @@ fn changes(row: &ItemRow, off: &[&ItemRow], replacing: &Replacing, own: &str) ->
             None => none(),
             Some(w) => {
                 let from = w.from.as_deref().unwrap_or(own);
-                let dice = if kinds_differ { format!("{} {}", w.strike.dice, w.strike.kind) } else { w.strike.dice.to_string() };
+                let dice = if kinds_differ { format!("{} {}", rolls(&w.strike), w.strike.kind) } else { rolls(&w.strike) };
                 match w.strike.range {
                     Some(range) => format!("{from} {dice} to {range}"),
                     None => format!("{from} {dice}"),
                 }
             }
         };
-        let mean = |w: &Option<Wielding>| w.as_ref().map_or(0, |w| halves(w.strike.dice));
+        let mean = |w: &Option<Wielding>| w.as_ref().map_or(0, |w| strike_halves(&w.strike));
         change(&mut changes, what, said(old), said(new), Some(mean(new) - mean(old)), AVERAGE, true);
     }
     let extras = |rows: &mut dyn Iterator<Item = &Strike>| -> (String, i64) {
         let all: Vec<&Strike> = rows.collect();
         let said = all.iter().map(|s| format!("+{}", strike(s))).collect::<Vec<_>>().join(", ");
-        (if said.is_empty() { none() } else { said }, all.iter().map(|s| halves(s.dice)).sum())
+        (if said.is_empty() { none() } else { said }, all.iter().map(|s| strike_halves(s)).sum())
     };
     let (old_extra, old_mean) = extras(&mut off.iter().flat_map(|r| &r.strikes));
     let (new_extra, new_mean) = extras(&mut row.strikes.iter());
@@ -1170,9 +1192,34 @@ mod tests {
 
     #[test]
     fn a_strike_reads_its_roll_kind_and_reach() {
-        let shot = Strike { kind: "kinetic".into(), dice: atglyph_core::DiceRoll::new(1, 2), range: Some(9) };
+        let shot = Strike { kind: "kinetic".into(), dice: atglyph_core::DiceRoll::new(1, 2), range: Some(9), also: None };
         assert_eq!(strike(&shot), "1d2 kinetic to 9");
         assert_eq!(strike(&Strike { range: None, ..shot }), "1d2 kinetic", "a blow reaches nowhere");
+    }
+
+    /// A blow with a roll beside it in the same hit reads as one sum, the
+    /// dice first and every bonus added up at the end.
+    #[test]
+    fn a_strike_with_its_own_blow_beside_it_reads_as_one_sum() {
+        let blow = Strike { kind: "kinetic".into(), dice: DiceRoll::new(1, 4), range: None, also: Some(DiceRoll::new(1, 2)) };
+        assert_eq!(strike(&blow), "1d4+1d2 kinetic");
+        assert_eq!(strike(&Strike { dice: DiceRoll { bonus: 1, ..DiceRoll::new(1, 4) }, ..blow.clone() }), "1d4+1d2+1 kinetic", "the bonus at the end");
+        assert_eq!(strike(&Strike { dice: DiceRoll::flat(5), also: Some(DiceRoll::flat(2)), ..blow }), "7 kinetic", "and two flat rolls one number");
+    }
+
+    /// A wearer that adds its own blow to a worn one weighs a dagger as the
+    /// dagger's roll and its own together, not as the dagger in place of
+    /// its own.
+    #[test]
+    fn a_blade_for_a_wearer_that_adds_its_own_blow_is_weighed_with_that_blow_beside_it() {
+        let mut stage = closet(52, 22);
+        let (right, kind, player) = (slot(&stage, "right hand"), stage.kind, stage.player);
+        let w = stage.app.world_mut();
+        w.entity_mut(player).insert((MeleeAttack::new(kind, DiceRoll::new(1, 2)), atglyph_bevy::AddsOwnBlow));
+        let dagger = w.spawn((Item, Name::new("dagger"), Wearable(EquipShape::in_slot(right)), MeleeAttack::new(kind, DiceRoll::new(1, 4)))).id();
+        dress(&mut stage, vec![dagger], &[], dagger);
+        let blow = squeezed(&described(&stage)).into_iter().find(|(t, _)| t.trim_start().starts_with("blow "));
+        assert_eq!(blow, Some(("  blow own 1d2 -> dagger 1d4+1d2 (+2.5 avg)".to_string(), Tones::GOOD)));
     }
 
     /// A player with a worn blade, a hat in the bag and a stack of knives,

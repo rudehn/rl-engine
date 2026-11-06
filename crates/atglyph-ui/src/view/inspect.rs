@@ -369,7 +369,9 @@ pub(crate) fn collect_inspect(mut view: ResMut<InspectView>, duelists: Duelists)
     if let Ok((armor, melee, ranged)) = duelists.items.get(entity)
         && !view.unknown
     {
-        let strike = |kind, dice, range| Strike { kind: duelists.registries.damage_kinds.name(kind).to_string(), dice, range };
+        // The thing's own numbers, as the bag lists them: what a wearer adds
+        // to its blow is the wearer's, and the forecast counts it.
+        let strike = |kind, dice, range| Strike { kind: duelists.registries.damage_kinds.name(kind).to_string(), dice, range, also: None };
         view.blow = melee.map(|m| strike(m.kind, m.dice, None));
         view.shot = ranged.map(|r| strike(r.kind, r.dice, Some(r.range)));
         view.armor = armor.map_or(0, |a| a.0);
@@ -815,6 +817,32 @@ mod tests {
         let (truly, said) = forecast(2, 3, false);
         assert!(!said, "nothing taken off, nothing said");
         assert_ne!(truly, seemed, "the true fight is another one");
+    }
+
+    /// A subject that adds its own blow to the blade it wears is forecast
+    /// to strike for both, as the fight strikes: a flat six and its own
+    /// 1d4 is 8.5 a blow, four into the player's thirty, where the blade
+    /// alone would take five.
+    #[test]
+    fn a_subject_that_adds_its_own_blow_is_forecast_striking_for_its_blade_and_its_own() {
+        let turns_to_fall = |adds: bool| {
+            let mut stage = stage();
+            let kind = stage.kind;
+            let orc = stage.actor("an orc", 'o', 1, 0);
+            let shape = atglyph_rules::EquipShape::in_slot(atglyph_rules::SlotId::from_raw(0));
+            let blade = stage.app.world_mut().spawn((Item, Wearable(shape.clone()), MeleeAttack::new(kind, atglyph_core::DiceRoll::flat(6)))).id();
+            let mut worn = atglyph_rules::Equipment::with_slot_count(1);
+            worn.equip(blade, &shape).unwrap();
+            stage.app.world_mut().entity_mut(orc).insert(Equipped(worn));
+            if adds {
+                stage.app.world_mut().entity_mut(orc).insert(AddsOwnBlow);
+            }
+            stage.tick();
+            stage.press(CursorKeys::default().look);
+            stage.app.world().resource::<InspectView>().duel.expect("a duel").turns_to_fall
+        };
+        assert_eq!(turns_to_fall(true), Some(4), "8.5 a blow");
+        assert_eq!(turns_to_fall(false), Some(5), "the blade's six alone");
     }
 
     /// The forecast's blow count comes from armor and dice alone, but a

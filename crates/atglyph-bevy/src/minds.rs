@@ -2385,6 +2385,40 @@ mod tests {
         assert_eq!(w.get::<Position>(lighter).map(|p| p.0), Some(start.offset(2, 0)), "and left the lighter one, worse than its own, lying");
     }
 
+    /// A mind that adds its own blow to a worn one gives nothing up by
+    /// putting a blade on, however much its own blow is worth: one worth
+    /// fifty wearing nothing puts on a blade worth ten.
+    #[test]
+    fn a_mind_that_adds_its_own_blow_puts_on_a_blade_worth_less_than_its_own_blow() {
+        use atglyph_rules::ai::tactics::Scavenge;
+        use atglyph_rules::{EquipShape, Equipment, SlotId};
+        let (mut app, start, kind) = arena();
+        app.add_plugins(crate::items::ItemsPlugin);
+        let sides = crate::testing::two_sides(&mut app);
+        let player = app.world_mut().spawn((Actor, Player, Blocks, Position(start), Viewshed::new(8), Health::full(30), Faction(sides.ours))).id();
+        let hand = EquipShape::in_slot(SlotId::from_raw(0));
+        let blade = app
+            .world_mut()
+            .spawn((Item, Wearable(hand), GearScore(10), MeleeAttack::new(kind, atglyph_core::DiceRoll::new(1, 4)), Position(start.offset(2, 0))))
+            .id();
+        let wearer = app
+            .world_mut()
+            .spawn((
+                (Actor, Blocks, Position(start.offset(3, 0)), Health::full(10), Faction(sides.theirs), Perception(8)),
+                (Inventory::default(), Equipped(Equipment::with_slot_count(1)), crate::items::OwnBlowScore(50), crate::combat::AddsOwnBlow),
+                (Mind(Arc::new(Brain::new().then(Scavenge { reach: 3 }))), Intelligence(Wits::SAPIENT)),
+            ))
+            .id();
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        for _ in 0..8 {
+            if app.world().get::<MyTurn>(player).is_some() {
+                app.world_mut().write_message(Intent::new(player, Wait));
+            }
+            app.update();
+        }
+        assert_eq!(app.world().get::<Equipped>(wearer).unwrap().in_slot(SlotId::from_raw(0)), Some(blade), "it picked the blade up and put it on");
+    }
+
     /// Mends six on its user where it stands.
     const MENDS: &str = r#"[(on: "use", effects: [(kind: "Mend", args: (roll: "6"))])]"#;
 
