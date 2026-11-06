@@ -1243,7 +1243,7 @@ impl Belongings<'_, '_> {
         bag.items
             .iter()
             .filter(spare)
-            .filter_map(|item| self.throws.of(thinker, *item).map(|t| atglyph_rules::Missile { item: *item, range: t.range }))
+            .filter_map(|item| self.throws.of(thinker, *item).map(|t| atglyph_rules::Missile { item: *item, range: t.range, launched: t.launched.is_some() }))
             .collect()
     }
 

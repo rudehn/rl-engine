@@ -66,6 +66,9 @@ pub struct Missile<A: Copy> {
     pub item: A,
     /// How far it reaches.
     pub range: i32,
+    /// Whether it is loosed from a launcher the actor wears, a shot rather
+    /// than a throw by hand, as an arrow from a worn bow.
+    pub launched: bool,
 }
 
 /// Something the actor carries that it could use this turn, as a mind

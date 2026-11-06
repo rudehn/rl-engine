@@ -1253,6 +1253,11 @@ impl<A: Copy> Tactic<A> for UseCarried {
 /// Throw something carried at the nearest enemy it reaches down a clear
 /// line, when that enemy is not already at its elbow.
 ///
+/// A missile a worn launcher looses, a
+/// [`Missile::launched`](crate::ai::snapshot::Missile::launched) one, is
+/// reached for before one thrown by hand, for that is what the launcher is
+/// worn for.
+///
 /// Only for a mind with `Wits::THROWS` carrying something to throw. It
 /// leaves an adjacent enemy to [`MeleeAdjacent`], which belongs above it: a
 /// blow in reach beats a knife that has to be fetched back. The line is
@@ -1284,21 +1289,22 @@ impl<A: Copy> Tactic<A> for ThrowAtRange {
         if !s.wits.has(Wits::THROWS) || s.missiles.is_empty() || s.enemies.is_empty() {
             return None;
         }
+        let me = s.me.pos;
+        let launched_first = || s.missiles.iter().filter(|m| m.launched).chain(s.missiles.iter().filter(|m| !m.launched));
+        let (missile, at) = s.enemies.iter().find_map(|enemy| {
+            let distance = geometry::chebyshev(me, enemy.pos);
+            if distance < 2 {
+                return None;
+            }
+            let clear = |range| clear_shot(me, enemy.pos, range, ctx.bounds, |p| p != me && (ctx.blocks_shot)(p));
+            launched_first().find(|m| m.range >= distance && clear(m.range)).map(|m| (m, enemy.pos))
+        })?;
+        // Rolled only once there is a throw to make, so a mind with nothing
+        // to throw draws nothing.
         if self.chance_pct < 100 && !ctx.rng.random_ratio(self.chance_pct.min(100), 100) {
             return None;
         }
-        let me = s.me.pos;
-        for enemy in &s.enemies {
-            let distance = geometry::chebyshev(me, enemy.pos);
-            if distance < 2 {
-                continue;
-            }
-            let clear = |range| clear_shot(me, enemy.pos, range, ctx.bounds, |p| p != me && (ctx.blocks_shot)(p));
-            if let Some(missile) = s.missiles.iter().find(|m| m.range >= distance && clear(m.range)) {
-                return Some(Decision::Throw { item: missile.item, at: enemy.pos });
-            }
-        }
-        None
+        Some(Decision::Throw { item: missile.item, at })
     }
 }
 
@@ -2575,7 +2581,7 @@ mod tests {
     }
 
     fn missile(item: u32, range: i32) -> Missile<u32> {
-        Missile { item, range }
+        Missile { item, range, launched: false }
     }
 
     /// A thrower throws at what it reaches down a clear line, and leaves
@@ -2608,6 +2614,31 @@ mod tests {
         s.enemies = vec![view(2, 4, 5, 10)];
         s.wits = Wits::ANIMAL;
         assert_eq!(decide(&s, &nothing_blocks, &mut rng), None, "and never without the wits to throw");
+    }
+
+    /// A missile a worn launcher looses is reached for before a knife
+    /// thrown by hand, wherever the two lie in the bag, and the knife is
+    /// thrown at what lies past the bow's reach.
+    #[test]
+    fn a_launched_missile_goes_before_one_thrown_by_hand() {
+        let can_step = |_: Point| true;
+        let decide = |s: &Snapshot<u32>| {
+            ThrowAtRange::default().evaluate(&mut TacticCtx {
+                snapshot: s,
+                fields: &mut NoFields,
+                can_step: &can_step,
+                blocks_shot: &nothing_blocks,
+                blocks_burst: &|_| false,
+                bounds: arena(),
+                rng: &mut StdRng::seed_from_u64(0),
+            })
+        };
+        let mut s = Snapshot::alone(view(1, 0, 5, 10));
+        s.enemies = vec![view(2, 4, 5, 10)];
+        s.missiles = vec![missile(40, 5), Missile { item: 41, range: 10, launched: true }];
+        assert_eq!(decide(&s), Some(Decision::Throw { item: 41, at: Point::new(4, 5) }), "the arrow, though the knife is first in the bag");
+        s.missiles = vec![missile(40, 5), Missile { item: 41, range: 3, launched: true }];
+        assert_eq!(decide(&s), Some(Decision::Throw { item: 40, at: Point::new(4, 5) }), "the knife, past the bow's reach");
     }
 
     /// A snapshot of a shooter alone at the origin with `reach`, facing one

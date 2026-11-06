@@ -52,6 +52,8 @@ atglyph is not on crates.io yet, so a game depends on a release by its git tag, 
 
 ### Changed
 
+- `ThrowAtRange` reaches for a missile a worn launcher looses before one thrown by hand, and rolls its chance only once it has a throw to make, so a mind with nothing to throw draws nothing from its stream.
+- **Breaking:** `Missile` has a public `launched` field, whether a worn launcher looses it; a game that writes one as a struct literal adds `launched: false`.
 - `Names::load` names an entry that does not parse by its position and the `name:` it writes, `entry 3 (rapier): ...`, rather than its position alone, so a misspelt variant deep in a long file says which definition it is in; an entry with no readable name is still named by position.
 - **Breaking:** A launcher's range, effective range and roll are the shot's, in place of the launched thing's own; `LaunchDef` takes `effective`, `range` and `kind`, and `ThrowAs::launched` names only the launcher.
 - **Breaking:** `Melee` has a public `versatile` field, a `VersatileDef`, and `MeleeAttack` a public `versatile` field, an `arms::Versatile`; a game that writes either as a struct literal adds `versatile: None`.
