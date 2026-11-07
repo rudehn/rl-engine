@@ -225,6 +225,19 @@ pub enum Phrase {
     OthersThrowAt,
     /// What someone threw by hand struck someone else for nothing.
     OthersThrowAtNothing,
+    /// You shot at someone and missed, said in place of the shot and the
+    /// miss.
+    YouShootAndMiss,
+    /// Someone shot at you and missed.
+    ShootsAtYouAndMisses,
+    /// Someone shot at someone else and missed.
+    OthersShootAndMiss,
+    /// You threw something by hand at someone and missed.
+    YouThrowAndMiss,
+    /// Someone threw something by hand at you and missed.
+    ThrowsAtYouAndMisses,
+    /// Someone threw something by hand at someone else and missed.
+    OthersThrowAndMiss,
     /// You used a thing that does something when used: drank it, lit it.
     YouUseThing,
     /// Someone else did.
@@ -831,6 +844,30 @@ impl Witness<'_, '_> {
     }
 }
 
+/// A thing thrown in a pass, as the lines about what came of it read it.
+#[derive(Debug, Clone, Copy)]
+struct Flight {
+    /// The row its throw was told in.
+    row: usize,
+    /// Who threw it.
+    actor: Entity,
+    /// The thing.
+    item: Entity,
+    /// Whom it came down on, if it struck.
+    struck: Option<Entity>,
+    /// Whether a worn launcher launched it.
+    launched: bool,
+}
+
+impl Flight {
+    /// The flight a miss or a block of `reach` by `actor` with `with` was
+    /// about: a throw's, which names the thing.
+    fn of(flights: &[Flight], reach: DamageRoute, actor: Entity, with: Option<Entity>) -> Option<Flight> {
+        let item = with.filter(|_| reach == DamageRoute::Thrown)?;
+        flights.iter().find(|f| f.actor == actor && f.item == item).copied()
+    }
+}
+
 /// Fills [`NarrationView`] with what this pass did.
 ///
 /// Runs in [`TurnSet::Record`], after every reaction, so a game's lines
@@ -947,11 +984,10 @@ pub(crate) fn collect_narration(mut view: ResMut<NarrationView>, mut heard: Narr
         rows.push(said);
     }
     let shot: Vec<(Entity, Entity)> = heard.launched.read().map(|l| (l.actor, l.item)).collect();
-    // Each thing thrown that came down on someone: the row its throw was
-    // told in, who threw it, whom it struck, the thing, and whether a worn
-    // launcher launched it. The harm it did says the throw as well, so its
-    // own row goes.
-    let mut struck_by: Vec<(usize, Entity, Entity, Entity, bool)> = Vec::new();
+    // Each thing thrown this pass. Whatever came of it, a blow struck, a
+    // miss or a shield that caught it, says the throw as well, so the
+    // throw's own row goes; one that came down on nobody keeps it.
+    let mut flights: Vec<Flight> = Vec::new();
     let mut folded: Vec<usize> = Vec::new();
     for ev in heard.items.read() {
         let (actor, item, phrase) = match *ev {
@@ -983,9 +1019,7 @@ pub(crate) fn collect_narration(mut view: ResMut<NarrationView>, mut heard: Narr
             ItemEvent::WouldNotComeOff { .. } => continue,
             ItemEvent::Thrown { actor, item, struck, .. } => {
                 let launched = shot.contains(&(actor, item));
-                if let Some(struck) = struck {
-                    struck_by.push((rows.len(), actor, struck, item, launched));
-                }
+                flights.push(Flight { row: rows.len(), actor, item, struck, launched });
                 let phrase = match (launched, witness.is_you(actor)) {
                     (true, true) => Phrase::YouLaunch,
                     (true, false) => Phrase::Launches,
@@ -1007,20 +1041,38 @@ pub(crate) fn collect_narration(mut view: ResMut<NarrationView>, mut heard: Narr
     }
     // A miss is said where a hit would have been, ahead of the damage the
     // same pass dealt, since both come from attacks made in that pass.
+    // A throw or a shot that missed is told in one line, as one that
+    // struck is: `You shoot at the goblin and miss.`, `You throw the dagger
+    // at the goblin and miss.`.
     for m in heard.missed.read() {
-        let phrase = if witness.is_you(m.attacker) {
-            Phrase::YouMiss
-        } else if witness.is_you(m.target) {
-            Phrase::MissesYou
-        } else {
-            Phrase::OthersMiss
+        use Phrase::*;
+        let flight = Flight::of(&flights, m.reach, m.attacker, m.with);
+        folded.extend(flight.map(|f| f.row));
+        let thrown = flight.is_some_and(|f| !f.launched);
+        let shot = m.reach == DamageRoute::Shot || flight.is_some_and(|f| f.launched);
+        let phrase = match (thrown, shot, witness.is_you(m.attacker), witness.is_you(m.target)) {
+            (true, _, true, _) => YouThrowAndMiss,
+            (true, _, false, true) => ThrowsAtYouAndMisses,
+            (true, ..) => OthersThrowAndMiss,
+            (_, true, true, _) => YouShootAndMiss,
+            (_, true, false, true) => ShootsAtYouAndMisses,
+            (_, true, ..) => OthersShootAndMiss,
+            (_, _, true, _) => YouMiss,
+            (_, _, false, true) => MissesYou,
+            _ => OthersMiss,
         };
-        rows.push(say(phrase, Some(m.attacker), Some(m.target)));
+        let mut said = say(phrase, Some(m.attacker), Some(m.target));
+        if thrown {
+            said.with = m.with;
+        }
+        rows.push(said);
     }
     // A block is said where the hit would have been, as a miss is, naming
     // the shield as its bearer's and, for a throw, the thing thrown.
+    // A throw caught is told by the catch alone, which names the thing.
     for b in heard.blocked.read() {
         use Phrase::*;
+        folded.extend(Flight::of(&flights, b.reach, b.attacker, b.with).map(|f| f.row));
         let (you_struck, you_bear) = (witness.is_you(b.attacker), witness.is_you(b.target));
         let phrase = match (b.reach, you_struck, you_bear) {
             (DamageRoute::Shot, true, _) => YourShotIsBlocked,
@@ -1108,8 +1160,8 @@ pub(crate) fn collect_narration(mut view: ResMut<NarrationView>, mut heard: Narr
         // goblin for 5.`, and by hand a throw at someone, `You throw the
         // dagger at the goblin for 1.`.
         let thrown =
-            (d.reach == DamageRoute::Thrown).then(|| struck_by.iter().find(|(_, by, at, ..)| Some(*by) == d.hit.attacker && *at == target)).flatten().copied();
-        if let Some((row, _, _, item, false)) = thrown {
+            (d.reach == DamageRoute::Thrown).then(|| flights.iter().find(|f| Some(f.actor) == d.hit.attacker && f.struck == Some(target))).flatten().copied();
+        if let Some(Flight { row, item, launched: false, .. }) = thrown {
             let phrase = match (you_attacker, you_target, landed) {
                 (true, _, true) => Phrase::YouThrowAt,
                 (true, _, false) => Phrase::YouThrowAtNothing,
@@ -1125,7 +1177,7 @@ pub(crate) fn collect_narration(mut view: ResMut<NarrationView>, mut heard: Narr
             folded.push(row);
             continue;
         }
-        folded.extend(thrown.map(|(row, ..)| row));
+        folded.extend(thrown.map(|f| f.row));
         // A shot is not a blow: it came from somewhere the player may not
         // even be able to see, and "hits you" reads as something standing
         // over you. Anything else that did not travel as a weapon keeps
@@ -1238,7 +1290,7 @@ pub(crate) fn collect_narration(mut view: ResMut<NarrationView>, mut heard: Narr
     // through the air, keeps its own line, since it is the only one.
     // Within the pass, where a use and what it landed are always found
     // together, so nothing spoken earlier is ever taken back.
-    // A throw that struck is folded into the harm it did the same way.
+    // A throw is folded into what came of it the same way.
     let unsaid: Vec<usize> = uses.iter().filter(|(_, user, ability)| harmed_by.contains(&(*user, *ability))).map(|(row, ..)| *row).chain(folded).collect();
     let mut row = 0;
     rows.retain(|_| {
@@ -1302,7 +1354,7 @@ pub struct Phrasebook {
 impl Default for Phrasebook {
     fn default() -> Self {
         use Phrase::*;
-        let table: [(Phrase, &str, ToneId); 96] = [
+        let table: [(Phrase, &str, ToneId); 102] = [
             (YouHit, "You hit {whom} for {n}.", Tones::HIT),
             (YouHitNothing, "You hit {whom}, to no effect.", Tones::MUTED),
             (HitsYou, "{Who} hits you for {n}.", Tones::BAD),
@@ -1379,6 +1431,12 @@ impl Default for Phrasebook {
             (ThrowsAtYouForNothing, "{Who} throws {the with} at you, to no effect.", Tones::MUTED),
             (OthersThrowAt, "{Who} throws {the with} at {whom} for {n}.", Tones::TEXT),
             (OthersThrowAtNothing, "{Who} throws {the with} at {whom}, to no effect.", Tones::MUTED),
+            (YouShootAndMiss, "You shoot at {whom} and miss.", Tones::MUTED),
+            (ShootsAtYouAndMisses, "{Who} shoots at you and misses.", Tones::MUTED),
+            (OthersShootAndMiss, "{Who} shoots at {whom} and misses.", Tones::MUTED),
+            (YouThrowAndMiss, "You throw {the with} at {whom} and miss.", Tones::MUTED),
+            (ThrowsAtYouAndMisses, "{Who} throws {the with} at you and misses.", Tones::MUTED),
+            (OthersThrowAndMiss, "{Who} throws {the with} at {whom} and misses.", Tones::MUTED),
             (Throws, "{Who} throws {what}.", Tones::NOTICE),
             (YouLaunch, "You shoot {what}.", Tones::TEXT),
             (Launches, "{Who} shoots {what}.", Tones::NOTICE),
@@ -2443,7 +2501,8 @@ mod tests {
     }
 
     /// A miss is said from where the player stands, and the droid is named
-    /// the way a hit names it.
+    /// the way a hit names it: a shot that missed as a shot, a blow as a
+    /// blow.
     #[test]
     fn a_miss_is_said_from_where_the_player_stands() {
         let mut stage = Stage::new(NarratorPlugin::default());
@@ -2453,9 +2512,53 @@ mod tests {
         let world = stage.app.world_mut();
         world.write_message(Missed { attacker: player, target: droid, with: None, reach: DamageRoute::Shot });
         world.write_message(Missed { attacker: droid, target: player, with: None, reach: DamageRoute::Shot });
+        world.write_message(Missed { attacker: player, target: droid, with: None, reach: DamageRoute::Melee });
+        world.write_message(Missed { attacker: droid, target: player, with: None, reach: DamageRoute::Melee });
         stage.tick();
-        assert_eq!(spoken(&stage, &["You miss"]), vec!["You miss the line droid."]);
-        assert_eq!(spoken(&stage, &["The line droid"]), vec!["The line droid misses you."]);
+        assert_eq!(spoken(&stage, &["You "]), ["You shoot at the line droid and miss.", "You miss the line droid."]);
+        assert_eq!(spoken(&stage, &["The line droid"]), ["The line droid shoots at you and misses.", "The line droid misses you."]);
+    }
+
+    /// A throw or a shot that missed or was caught is told in one line, the
+    /// throw folded in as it is into a blow it struck; one that came down on
+    /// nobody keeps its own.
+    #[test]
+    fn a_throw_that_missed_or_was_caught_is_one_line_and_one_at_nobody_keeps_its_own() {
+        let mut stage = Stage::new(NarratorPlugin::default());
+        let player = stage.player;
+        let bandit = stage.actor("bandit", 'b', 2, 0);
+        let goblin = stage.actor("goblin", 'g', 3, 0);
+        let knife = stage.thing("knife", '/', 2, 1);
+        let arrow = stage.thing("arrow", '|', 2, 2);
+        let bow = stage.thing("bow", '}', 2, 3);
+        let shield = stage.thing("round shield", '[', 3, 1);
+        let (at, thrown) = (Position(stage.at.offset(3, 0)), DamageRoute::Thrown);
+        let world = stage.app.world_mut();
+        // You throw a knife at the bandit and miss; the bandit shoots at you
+        // and misses; then, in one pass, the bandit throws its knife at
+        // nobody and the goblin catches your arrow, a pass's throws told
+        // before its blocks.
+        world.write_message(ItemEvent::Thrown { actor: player, item: knife, at, struck: None });
+        world.write_message(Missed { attacker: player, target: bandit, with: Some(knife), reach: thrown });
+        world.write_message(ItemEvent::Thrown { actor: bandit, item: arrow, at, struck: None });
+        world.write_message(Launched { actor: bandit, item: arrow, launcher: bow });
+        world.write_message(Missed { attacker: bandit, target: player, with: Some(arrow), reach: thrown });
+        stage.tick();
+        let world = stage.app.world_mut();
+        world.write_message(ItemEvent::Thrown { actor: player, item: arrow, at, struck: None });
+        world.write_message(Launched { actor: player, item: arrow, launcher: bow });
+        world.write_message(AttackBlocked { attacker: player, target: goblin, shield, with: Some(arrow), reach: thrown });
+        world.write_message(ItemEvent::Thrown { actor: bandit, item: knife, at, struck: None });
+        stage.tick();
+        assert_eq!(
+            spoken(&stage, &["You ", "The bandit", "The goblin"]),
+            [
+                "You throw the knife at the bandit and miss.",
+                "The bandit shoots at you and misses.",
+                "The bandit throws a knife.",
+                "The goblin's round shield catches your arrow.",
+            ]
+        );
     }
 
     /// A block names the shield as its bearer's own: a blow is turned
