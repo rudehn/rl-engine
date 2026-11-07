@@ -5,8 +5,10 @@ use atglyph_core::GridRect;
 use atglyph_render::Terminal;
 use bevy::prelude::*;
 
+use crate::log::LogEntry;
 use crate::log::MessageLog;
-use crate::panel::{clear, clip_rich, print_rich, wrap_rich};
+use crate::panel::{Segment, clear, print_rich, wrap_rich};
+use crate::tone::ToneId;
 use crate::tone::{Palette, Tones};
 
 /// Where the log is drawn.
@@ -41,7 +43,14 @@ impl Plugin for LogPanel {
     }
 }
 
-/// Paints the log.
+/// Paints the log: as many of the newest lines as fit whole, each wrapped
+/// onto the rows it needs.
+///
+/// Wrapped rather than clipped, since the end of a line is as often what it
+/// was for as its start: how much a blow took, what a shield caught. A
+/// line is shown whole or not at all, so the strip never starts partway
+/// through a sentence; only one line taller than the whole strip is cut,
+/// showing its start and ending where it was cut.
 pub(crate) fn draw_log(mut terminal: ResMut<Terminal>, layout: Res<LogLayout>, log: Res<MessageLog>, palette: Res<Palette>) {
     let rect = layout.rect;
     if rect.width < 4 || rect.height < 1 {
@@ -49,13 +58,53 @@ pub(crate) fn draw_log(mut terminal: ResMut<Terminal>, layout: Res<LogLayout>, l
     }
     clear(&mut terminal, rect, &palette);
     let bg = palette.get(Tones::SURFACE);
-    for (i, entry) in log.recent(rect.height as usize).enumerate() {
-        let y = if layout.newest_last { rect.bottom() - 1 - i as i32 } else { rect.y + i as i32 };
-        // One row per entry, clipped rather than wrapped: the strip is for
-        // the last few things, and the scrollback for reading them whole.
-        let runs = clip_rich(&wrap_rich(&entry.display(), &entry.spans, usize::MAX).remove(0), rect.width as usize);
-        print_rich(&mut terminal, rect.x, y, &runs, palette.get(entry.tone), bg, &palette);
+    let rows = fitted(log.recent(rect.height as usize), rect.width as usize, rect.height as usize);
+    // Newest first, each line's rows in reading order.
+    let ordered: Vec<(&Vec<Segment>, ToneId)> = if layout.newest_last {
+        rows.iter().rev().flat_map(|(lines, tone)| lines.iter().map(|l| (l, *tone))).collect()
+    } else {
+        rows.iter().flat_map(|(lines, tone)| lines.iter().map(|l| (l, *tone))).collect()
+    };
+    let top = if layout.newest_last { rect.bottom() - ordered.len() as i32 } else { rect.y };
+    for (i, (line, tone)) in ordered.into_iter().enumerate() {
+        print_rich(&mut terminal, rect.x, top + i as i32, line, palette.get(tone), bg, &palette);
     }
+}
+
+/// The newest `entries` that fit whole in `height` rows of `width`, newest
+/// first, each as its wrapped rows and its tone; the newest alone cut to
+/// the strip, with an ellipsis, when it is taller than all of it.
+fn fitted<'a>(entries: impl Iterator<Item = &'a LogEntry>, width: usize, height: usize) -> Vec<(Vec<Vec<Segment>>, ToneId)> {
+    let mut shown = Vec::new();
+    let mut used = 0;
+    for entry in entries {
+        let mut lines = wrap_rich(&entry.display(), &entry.spans, width);
+        if used + lines.len() > height {
+            if used == 0 {
+                lines.truncate(height);
+                if let Some(last) = lines.last_mut() {
+                    cut(last, width);
+                }
+                shown.push((lines, entry.tone));
+            }
+            break;
+        }
+        used += lines.len();
+        shown.push((lines, entry.tone));
+    }
+    shown
+}
+
+/// Ends `line` with an ellipsis, in place of its last character when it
+/// fills `width`.
+fn cut(line: &mut Vec<Segment>, width: usize) {
+    let len: usize = line.iter().map(|(text, _)| text.chars().count()).sum();
+    if len >= width
+        && let Some((text, _)) = line.last_mut()
+    {
+        text.pop();
+    }
+    line.push(("\u{2026}".to_string(), None));
 }
 
 #[cfg(test)]
@@ -75,6 +124,51 @@ mod tests {
         assert_eq!(stage.row(2), "short");
         assert_eq!(stage.row(1), "a long line that fills the row", "the older line moved up intact");
         assert_eq!(stage.row(0), "");
+    }
+
+    /// A line too long for the strip wraps onto the rows it needs, its
+    /// names keeping their colours across the break, and the line before it
+    /// moves up whole.
+    #[test]
+    fn a_long_line_wraps_onto_the_rows_it_needs_and_keeps_its_colours() {
+        let mut stage = Stage::new(LogPanel::new(GridRect::new(0, 0, 20, 4))).screen(20, 4);
+        let green = Color::srgb(0.2, 0.9, 0.3);
+        let mut log = stage.app.world_mut().resource_mut::<MessageLog>();
+        log.push_at("you wait", Tones::TEXT, 0);
+        log.push_spans("the giant spider bites you hard", vec![crate::log::Span { start: 10, len: 6, color: green }], Tones::BAD, 1);
+        stage.tick();
+        assert_eq!(stage.rows(), ["", "you wait", "the giant spider", "bites you hard"]);
+        let t = stage.app.world().resource::<atglyph_render::Terminal>();
+        assert_eq!(t.get(10, 2).unwrap().fg, green, "'spider' in its own green");
+        let palette = stage.app.world().resource::<Palette>();
+        assert_eq!(t.get(0, 3).unwrap().fg, palette.get(Tones::BAD), "the wrapped row in the line's tone");
+    }
+
+    /// The oldest line shown is shown whole or not at all, so the strip
+    /// never starts partway through a sentence; newest first, the same.
+    #[test]
+    fn a_line_that_does_not_fit_whole_is_left_out_rather_than_cut() {
+        for newest_first in [false, true] {
+            let panel = LogPanel::new(GridRect::new(0, 0, 20, 2));
+            let panel = if newest_first { panel.newest_first() } else { panel };
+            let mut stage = Stage::new(panel).screen(20, 2);
+            let mut log = stage.app.world_mut().resource_mut::<MessageLog>();
+            log.push_at("the giant spider bites you hard", Tones::BAD, 1);
+            log.push_at("you wait", Tones::TEXT, 1);
+            stage.tick();
+            let rows = if newest_first { ["you wait", ""] } else { ["", "you wait"] };
+            assert_eq!(stage.rows(), rows, "newest first: {newest_first}");
+        }
+    }
+
+    /// A line longer than the whole strip shows its start, ending where it
+    /// was cut, rather than nothing.
+    #[test]
+    fn a_line_taller_than_the_strip_shows_its_start_and_where_it_was_cut() {
+        let mut stage = Stage::new(LogPanel::new(GridRect::new(0, 0, 20, 1))).screen(20, 1);
+        stage.app.world_mut().resource_mut::<MessageLog>().push_at("the giant spider bites you hard", Tones::BAD, 1);
+        stage.tick();
+        assert_eq!(stage.rows(), ["the giant spider\u{2026}"]);
     }
 
     #[test]
