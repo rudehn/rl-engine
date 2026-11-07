@@ -212,6 +212,19 @@ pub enum Phrase {
     YouLaunch,
     /// Something someone else wears did.
     Launches,
+    /// What you threw by hand struck someone for something, said in place
+    /// of the throw and the blow.
+    YouThrowAt,
+    /// What you threw by hand struck someone for nothing.
+    YouThrowAtNothing,
+    /// What someone threw by hand struck you for something.
+    ThrowsAtYou,
+    /// What someone threw by hand struck you for nothing.
+    ThrowsAtYouForNothing,
+    /// What someone threw by hand struck someone else for something.
+    OthersThrowAt,
+    /// What someone threw by hand struck someone else for nothing.
+    OthersThrowAtNothing,
     /// You used a thing that does something when used: drank it, lit it.
     YouUseThing,
     /// Someone else did.
@@ -432,6 +445,12 @@ impl Called {
     /// As a sentence says it: `a sword`, `5 arrows`, `chain mail`.
     pub(crate) fn counted(&self) -> String {
         atglyph_core::noun::counted_as(&self.name, self.count, self.countability)
+    }
+
+    /// As one already spoken of: `the sword`, `the 5 arrows`, and a proper
+    /// name by itself.
+    pub(crate) fn the(&self) -> String {
+        if self.count == 1 { atglyph_core::noun::with_the(&self.name) } else { format!("the {}", self.counted()) }
     }
 
     /// As the player's own: `your sword`, `your 5 arrows`.
@@ -928,9 +947,12 @@ pub(crate) fn collect_narration(mut view: ResMut<NarrationView>, mut heard: Narr
         rows.push(said);
     }
     let shot: Vec<(Entity, Entity)> = heard.launched.read().map(|l| (l.actor, l.item)).collect();
-    // Who a launched thing came down on, by whom: its harm is a shot, as
-    // its launch was, and not a blow.
-    let mut shot_at: Vec<(Entity, Entity)> = Vec::new();
+    // Each thing thrown that came down on someone: the row its throw was
+    // told in, who threw it, whom it struck, the thing, and whether a worn
+    // launcher launched it. The harm it did says the throw as well, so its
+    // own row goes.
+    let mut struck_by: Vec<(usize, Entity, Entity, Entity, bool)> = Vec::new();
+    let mut folded: Vec<usize> = Vec::new();
     for ev in heard.items.read() {
         let (actor, item, phrase) = match *ev {
             // Named at how many were picked up, not at the stack they
@@ -961,8 +983,8 @@ pub(crate) fn collect_narration(mut view: ResMut<NarrationView>, mut heard: Narr
             ItemEvent::WouldNotComeOff { .. } => continue,
             ItemEvent::Thrown { actor, item, struck, .. } => {
                 let launched = shot.contains(&(actor, item));
-                if let (true, Some(struck)) = (launched, struck) {
-                    shot_at.push((actor, struck));
+                if let Some(struck) = struck {
+                    struck_by.push((rows.len(), actor, struck, item, launched));
                 }
                 let phrase = match (launched, witness.is_you(actor)) {
                     (true, true) => Phrase::YouLaunch,
@@ -1081,13 +1103,35 @@ pub(crate) fn collect_narration(mut view: ResMut<NarrationView>, mut heard: Narr
             }
             continue;
         }
+        // A thing thrown that struck is told in one line, its throw folded
+        // in: launched from a bow or a sling it is a shot, `You shoot the
+        // goblin for 5.`, and by hand a throw at someone, `You throw the
+        // dagger at the goblin for 1.`.
+        let thrown =
+            (d.reach == DamageRoute::Thrown).then(|| struck_by.iter().find(|(_, by, at, ..)| Some(*by) == d.hit.attacker && *at == target)).flatten().copied();
+        if let Some((row, _, _, item, false)) = thrown {
+            let phrase = match (you_attacker, you_target, landed) {
+                (true, _, true) => Phrase::YouThrowAt,
+                (true, _, false) => Phrase::YouThrowAtNothing,
+                (false, true, true) => Phrase::ThrowsAtYou,
+                (false, true, false) => Phrase::ThrowsAtYouForNothing,
+                (false, false, true) => Phrase::OthersThrowAt,
+                (false, false, false) => Phrase::OthersThrowAtNothing,
+            };
+            let mut said = say(phrase, d.hit.attacker, Some(target));
+            said.with = Some(item);
+            said.amount = d.dealt;
+            rows.push(said);
+            folded.push(row);
+            continue;
+        }
+        folded.extend(thrown.map(|(row, ..)| row));
         // A shot is not a blow: it came from somewhere the player may not
         // even be able to see, and "hits you" reads as something standing
-        // over you. A thing launched from a bow or a sling is a shot too;
-        // one thrown by hand keeps the blow's words. Anything else that did not travel as a weapon keeps
+        // over you. Anything else that did not travel as a weapon keeps
         // the blow wording, since a poison is already narrated by whatever
         // inflicted it.
-        let shot = d.reach == DamageRoute::Shot || (d.reach == DamageRoute::Thrown && d.hit.attacker.is_some_and(|by| shot_at.contains(&(by, target))));
+        let shot = d.reach == DamageRoute::Shot || thrown.is_some();
         let phrase = match (shot, you_attacker, you_target, landed) {
             (false, true, _, true) => Phrase::YouHit,
             (false, true, _, false) => Phrase::YouHitNothing,
@@ -1194,7 +1238,8 @@ pub(crate) fn collect_narration(mut view: ResMut<NarrationView>, mut heard: Narr
     // through the air, keeps its own line, since it is the only one.
     // Within the pass, where a use and what it landed are always found
     // together, so nothing spoken earlier is ever taken back.
-    let unsaid: Vec<usize> = uses.iter().filter(|(_, user, ability)| harmed_by.contains(&(*user, *ability))).map(|(row, ..)| *row).collect();
+    // A throw that struck is folded into the harm it did the same way.
+    let unsaid: Vec<usize> = uses.iter().filter(|(_, user, ability)| harmed_by.contains(&(*user, *ability))).map(|(row, ..)| *row).chain(folded).collect();
     let mut row = 0;
     rows.retain(|_| {
         row += 1;
@@ -1257,7 +1302,7 @@ pub struct Phrasebook {
 impl Default for Phrasebook {
     fn default() -> Self {
         use Phrase::*;
-        let table: [(Phrase, &str, ToneId); 90] = [
+        let table: [(Phrase, &str, ToneId); 96] = [
             (YouHit, "You hit {whom} for {n}.", Tones::HIT),
             (YouHitNothing, "You hit {whom}, to no effect.", Tones::MUTED),
             (HitsYou, "{Who} hits you for {n}.", Tones::BAD),
@@ -1328,6 +1373,12 @@ impl Default for Phrasebook {
             (TakesOff, "{Who} takes off {what}.", Tones::MUTED),
             (WillNotComeOff, "{Your what} will not come off.", Tones::BAD),
             (YouThrow, "You throw {what}.", Tones::TEXT),
+            (YouThrowAt, "You throw {the with} at {whom} for {n}.", Tones::HIT),
+            (YouThrowAtNothing, "You throw {the with} at {whom}, to no effect.", Tones::MUTED),
+            (ThrowsAtYou, "{Who} throws {the with} at you for {n}.", Tones::BAD),
+            (ThrowsAtYouForNothing, "{Who} throws {the with} at you, to no effect.", Tones::MUTED),
+            (OthersThrowAt, "{Who} throws {the with} at {whom} for {n}.", Tones::TEXT),
+            (OthersThrowAtNothing, "{Who} throws {the with} at {whom}, to no effect.", Tones::MUTED),
             (Throws, "{Who} throws {what}.", Tones::NOTICE),
             (YouLaunch, "You shoot {what}.", Tones::TEXT),
             (Launches, "{Who} shoots {what}.", Tones::NOTICE),
@@ -1519,6 +1570,7 @@ pub(crate) fn render(template: &str, said: &Said, names: &Names<'_, '_>, speak_u
             "whose what" => Some(names.owned(said.whom, whom_unseen, &said.called[1], said.what, &said.called_thing)),
             "whose with" => Some(names.owned(said.who, !(said.who_seen || speak_unseen), &said.called[0], said.with, &said.called_with)),
             "with" => Some(one(names.thing(said.with, &said.called_with, Called::counted))),
+            "the with" => Some(one(names.thing(said.with, &said.called_with, Called::the))),
             "n" => Some(one(Named { text: said.amount.to_string(), color: None })),
             "named" => Some(one(Named { text: said.named.clone(), color: None })),
             "detail" => Some(one(Named { text: said.detail.clone(), color: None })),
@@ -2067,10 +2119,11 @@ mod tests {
         assert_eq!(spoken(&stage, &["You throw", "You shoot"]), ["You shoot a pellet."]);
     }
 
-    /// What a worn launcher launched and struck someone with is a shot, as
-    /// its launch was, and a thing thrown by hand still hits as a blow.
+    /// What a worn launcher launched and struck someone with is told as one
+    /// shot, and a thing thrown by hand that struck as one throw at them,
+    /// neither said again as the throw before it.
     #[test]
-    fn a_launched_thing_that_strikes_is_a_shot_and_a_thrown_one_a_hit() {
+    fn a_launched_thing_that_strikes_is_one_shot_and_a_thrown_one_one_throw_at_them() {
         let (mut stage, _) = with_things("[]");
         let (player, kind) = (stage.player, stage.kind);
         let ammo = atglyph_rules::TagId::from_raw(0);
@@ -2090,10 +2143,24 @@ mod tests {
         stage.tick();
         stage.app.world_mut().write_message(Intent::new(player, Throw { item: stone, at }));
         stage.tick();
-        assert_eq!(
-            spoken(&stage, &["You throw", "You shoot", "You hit", "You miss"]),
-            ["You shoot a pellet.", "You shoot the rat for 1.", "You throw a stone.", "You hit the rat for 1."]
-        );
+        assert_eq!(spoken(&stage, &["You throw", "You shoot", "You hit", "You miss"]), ["You shoot the rat for 1.", "You throw the stone at the rat for 1."]);
+    }
+
+    /// Another's throw that struck is one line too, from either side.
+    #[test]
+    fn anothers_throw_that_strikes_is_one_line_at_you_or_at_another() {
+        let mut stage = Stage::new(NarratorPlugin::default());
+        let (player, kind) = (stage.player, stage.kind);
+        let bandit = stage.actor("bandit", 'b', 2, 0);
+        let goblin = stage.actor("goblin", 'g', 3, 0);
+        let knife = stage.thing("knife", '/', 2, 1);
+        let world = stage.app.world_mut();
+        for (target, at) in [(player, stage.at), (goblin, stage.at.offset(3, 0))] {
+            world.write_message(ItemEvent::Thrown { actor: bandit, item: knife, at: Position(at), struck: Some(target) });
+            world.write_message(DamageEvent::arriving(target, atglyph_rules::Hit::by(bandit, kind, 3), DamageRoute::Thrown));
+        }
+        stage.tick();
+        assert_eq!(spoken(&stage, &["The bandit"]), ["The bandit throws the knife at you for 3.", "The bandit throws the knife at the goblin for 3."]);
     }
 
     /// The lines a test cares about, oldest first.
