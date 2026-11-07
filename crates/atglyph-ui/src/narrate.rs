@@ -928,6 +928,9 @@ pub(crate) fn collect_narration(mut view: ResMut<NarrationView>, mut heard: Narr
         rows.push(said);
     }
     let shot: Vec<(Entity, Entity)> = heard.launched.read().map(|l| (l.actor, l.item)).collect();
+    // Who a launched thing came down on, by whom: its harm is a shot, as
+    // its launch was, and not a blow.
+    let mut shot_at: Vec<(Entity, Entity)> = Vec::new();
     for ev in heard.items.read() {
         let (actor, item, phrase) = match *ev {
             // Named at how many were picked up, not at the stack they
@@ -956,8 +959,12 @@ pub(crate) fn collect_narration(mut view: ResMut<NarrationView>, mut heard: Narr
             // is a wait nobody needs told.
             ItemEvent::WouldNotComeOff { actor, item } if witness.is_you(actor) => (actor, item, Phrase::WillNotComeOff),
             ItemEvent::WouldNotComeOff { .. } => continue,
-            ItemEvent::Thrown { actor, item, .. } => {
-                let phrase = match (shot.contains(&(actor, item)), witness.is_you(actor)) {
+            ItemEvent::Thrown { actor, item, struck, .. } => {
+                let launched = shot.contains(&(actor, item));
+                if let (true, Some(struck)) = (launched, struck) {
+                    shot_at.push((actor, struck));
+                }
+                let phrase = match (launched, witness.is_you(actor)) {
                     (true, true) => Phrase::YouLaunch,
                     (true, false) => Phrase::Launches,
                     (false, true) => Phrase::YouThrow,
@@ -1076,10 +1083,11 @@ pub(crate) fn collect_narration(mut view: ResMut<NarrationView>, mut heard: Narr
         }
         // A shot is not a blow: it came from somewhere the player may not
         // even be able to see, and "hits you" reads as something standing
-        // over you. Anything else that did not travel as a weapon keeps
+        // over you. A thing launched from a bow or a sling is a shot too;
+        // one thrown by hand keeps the blow's words. Anything else that did not travel as a weapon keeps
         // the blow wording, since a poison is already narrated by whatever
         // inflicted it.
-        let shot = d.reach == DamageRoute::Shot;
+        let shot = d.reach == DamageRoute::Shot || (d.reach == DamageRoute::Thrown && d.hit.attacker.is_some_and(|by| shot_at.contains(&(by, target))));
         let phrase = match (shot, you_attacker, you_target, landed) {
             (false, true, _, true) => Phrase::YouHit,
             (false, true, _, false) => Phrase::YouHitNothing,
@@ -2057,6 +2065,35 @@ mod tests {
         stage.app.world_mut().write_message(Intent::new(player, Throw { item: pellet, at }));
         stage.tick();
         assert_eq!(spoken(&stage, &["You throw", "You shoot"]), ["You shoot a pellet."]);
+    }
+
+    /// What a worn launcher launched and struck someone with is a shot, as
+    /// its launch was, and a thing thrown by hand still hits as a blow.
+    #[test]
+    fn a_launched_thing_that_strikes_is_a_shot_and_a_thrown_one_a_hit() {
+        let (mut stage, _) = with_things("[]");
+        let (player, kind) = (stage.player, stage.kind);
+        let ammo = atglyph_rules::TagId::from_raw(0);
+        let shape = atglyph_rules::EquipShape::in_slot(atglyph_rules::SlotId::from_raw(0));
+        let launcher = Launcher { ammo, effective: 3, range: 10, strike: (kind, atglyph_core::DiceRoll::flat(1)) };
+        let launcher_item = stage.app.world_mut().spawn((Item, Name::new("launcher"), launcher, Wearable(shape.clone()))).id();
+        let strike = Some((kind, atglyph_core::DiceRoll::flat(1)));
+        let pellet = stage.app.world_mut().spawn((Item, Name::new("pellet"), Tagged(vec![ammo]), Throwable::new(Some(6), strike))).id();
+        let stone = stage.app.world_mut().spawn((Item, Name::new("stone"), Throwable::new(Some(6), strike))).id();
+        let mut worn = atglyph_rules::Equipment::with_slot_count(1);
+        worn.equip(launcher_item, &shape).unwrap();
+        stage.app.world_mut().entity_mut(player).insert((Inventory { items: vec![launcher_item, pellet, stone] }, Equipped(worn)));
+        stage.actor("rat", 'r', 2, 0);
+        stage.tick();
+        let at = stage.at.offset(2, 0);
+        stage.app.world_mut().write_message(Intent::new(player, Throw { item: pellet, at }));
+        stage.tick();
+        stage.app.world_mut().write_message(Intent::new(player, Throw { item: stone, at }));
+        stage.tick();
+        assert_eq!(
+            spoken(&stage, &["You throw", "You shoot", "You hit", "You miss"]),
+            ["You shoot a pellet.", "You shoot the rat for 1.", "You throw a stone.", "You hit the rat for 1."]
+        );
     }
 
     /// The lines a test cares about, oldest first.

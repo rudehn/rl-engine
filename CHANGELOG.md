@@ -56,6 +56,7 @@ atglyph is not on crates.io yet, so a game depends on a release by its git tag, 
 
 - `ThrowAtRange` reaches for a missile a worn launcher looses before one thrown by hand, and rolls its chance only once it has a throw to make, so a mind with nothing to throw draws nothing from its stream.
 - **Breaking:** `Missile` has a public `launched` field, whether a worn launcher looses it; a game that writes one as a struct literal adds `launched: false`.
+- A thing a worn launcher launched that strikes someone is narrated as a shot, `You shoot the goblin for 5.` and `The bandit shoots you for 2.`, as its launch is, rather than as a blow; a thing thrown by hand still hits.
 - **Breaking:** `Tell` has a public `count` field; a game that writes one as a struct literal adds `count: None`.
 - `Names::load` names an entry that does not parse by its position and the `name:` it writes, `entry 3 (rapier): ...`, rather than its position alone, so a misspelt variant deep in a long file says which definition it is in; an entry with no readable name is still named by position.
 - **Breaking:** A launcher's range, effective range and roll are the shot's, in place of the launched thing's own; `LaunchDef` takes `effective`, `range` and `kind`, and `ThrowAs::launched` names only the launcher.
