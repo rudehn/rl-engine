@@ -227,7 +227,7 @@ pub mod ui {
     pub use atglyph_ui::log::{LogEntry, MessageLog, Span};
     pub use atglyph_ui::menu::{ListMenu, MenuRow, draw_menu};
     pub use atglyph_ui::modal::{ModalId, Modals, modal_is, modal_open, no_modal};
-    pub use atglyph_ui::narrate::{MassNoun, NarrationView, Phrasebook, Said, Tell, Words};
+    pub use atglyph_ui::narrate::{MassNoun, NarrationView, Phrasebook, Said, Tell, Teller, Words};
     pub use atglyph_ui::panel::{
         AbilityKeys, AbilityPanel, ActivityWords, AlertWords, Choosing, ChoosingFor, Confirming, ContainerPanel, ControlsPanel, CountFor, CountKeys, Counting,
         GearPanel, GroundMenu, GroundPanel, InspectPanel, InventoryKeys, InventoryMenu, InventoryPanel, NearbyPanel, OfferChoice, OffersPanel, ScrollbackKeys,

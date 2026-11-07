@@ -54,9 +54,11 @@
 //! after them, as a row whose [`Words`] are the game's own. A line pushed
 //! straight to the [`MessageLog`] from inside a pass lands ahead of every
 //! row the frame has yet to speak, so a game's answer to a sighting
-//! reads above the sighting itself. A line from outside the turns, the one a run opens
-//! with or a key refused before any turn is spent, has no pass to wait
-//! for and still goes to the log directly.
+//! reads above the sighting itself. A line from outside the turns, a deal
+//! struck at a counter or a key refused before any turn is spent, has no
+//! pass to wait for: a [`Teller`] puts it among the rows the frame speaks,
+//! its names in their colours as a [`Tell`]'s are, and one that names
+//! nothing, the one a run opens with, may still go to the log directly.
 
 use std::collections::BTreeMap;
 
@@ -475,8 +477,8 @@ pub struct MassNoun;
 ///
 /// Always spoken: the game chose to say it, so whether the player saw who
 /// it names is the game's to have weighed. A line written outside the
-/// turns, such as the one a run opens with, is read on the next pass, so
-/// it goes to the [`MessageLog`] directly instead.
+/// turns would be read only on the next pass, so it goes through a
+/// [`Teller`] instead, which speaks it this frame.
 #[derive(Message, Debug, Clone, PartialEq)]
 pub struct Tell {
     /// What to say, with placeholders as a phrase has.
@@ -489,12 +491,16 @@ pub struct Tell {
     pub whom: Option<Entity>,
     /// `{what}`, if anything.
     pub what: Option<Entity>,
+    /// How many of `what` the line is about, whatever its stack holds by
+    /// the time it is read: part of a pile sold, or a pile bought that
+    /// joined another. `None` counts the stack as it stands.
+    pub count: Option<u32>,
 }
 
 impl Tell {
     /// `text`, said in `tone`, naming nobody.
     pub fn new(text: impl Into<String>, tone: ToneId) -> Self {
-        Self { text: text.into(), tone, who: None, whom: None, what: None }
+        Self { text: text.into(), tone, who: None, whom: None, what: None, count: None }
     }
 
     /// Names `who`, for `{who}`.
@@ -513,6 +519,42 @@ impl Tell {
     pub fn about(mut self, what: Entity) -> Self {
         self.what = Some(what);
         self
+    }
+
+    /// Names `count` of `what`, `3 arrows`, whatever its stack holds.
+    pub fn counting(mut self, count: u32) -> Self {
+        self.count = Some(count);
+        self
+    }
+}
+
+/// Tells a game's own line from outside the turns, among the rows the
+/// frame speaks, so its names wear their colours as a [`Tell`]'s do.
+///
+/// For what happens between passes: a deal struck at a trader's counter,
+/// a key answered before any turn is spent. A [`Tell`] written then waits
+/// for the next pass, which may be many frames off, and a line pushed to
+/// the [`MessageLog`] is all in one tone, naming nothing in its colour.
+/// The system that tells runs before [`ViewSet::Speak`](crate::ViewSet::Speak),
+/// which speaks it, and the line lands after whatever the frame's passes
+/// did.
+#[derive(bevy::ecs::system::SystemParam)]
+pub struct Teller<'w, 's> {
+    view: ResMut<'w, NarrationView>,
+    turns: Res<'w, Turns>,
+    names: Query<'w, 's, (Option<&'static Name>, Has<MassNoun>)>,
+}
+
+impl Teller<'_, '_> {
+    /// Speaks `tell` this frame, its thing counted now when it says how
+    /// many, as the collector counts it inside a pass.
+    pub fn tell(&mut self, tell: Tell) {
+        let mut said = Said::told(&tell, self.turns.turn_number());
+        said.called_thing = tell.count.and_then(|count| {
+            let (name, mass) = self.names.get(tell.what?).ok()?;
+            Some(called(name?, count, mass))
+        });
+        self.view.rows.push(said);
     }
 }
 
@@ -1135,6 +1177,7 @@ pub(crate) fn collect_narration(mut view: ResMut<NarrationView>, mut heard: Narr
     for tell in heard.tells.read() {
         let mut said = Said::told(tell, turn);
         said.at = tell.who.or(tell.whom).and_then(|e| witness.at(e));
+        said.called_thing = tell.count.and_then(|count| witness.called_at(tell.what, count));
         rows.push(said);
     }
     // "You use bolt on the rat." and then "Your bolt hits the rat for 3."
@@ -2164,6 +2207,57 @@ mod tests {
         assert_eq!(said[1], "Struck: the slime.", "{said:#?}");
         assert_eq!(said[2], "The slime hits you for 2.", "{said:#?}");
         assert_eq!(said[3], "Struck: you.", "{said:#?}");
+    }
+
+    /// The text and the coloured runs of the logged line `text`.
+    fn coloured(stage: &Stage, text: &str) -> Vec<(String, Color)> {
+        let log = stage.app.world().resource::<MessageLog>();
+        let entries: Vec<&crate::log::LogEntry> = log.iter().filter(|e| e.text == text).collect();
+        assert_eq!(entries.len(), 1, "{text:?} logged once in {:?}", lines(stage));
+        let chars: Vec<char> = text.chars().collect();
+        entries[0].spans.iter().map(|s| (chars[s.start..s.start + s.len].iter().collect(), s.color)).collect()
+    }
+
+    /// A pile of twenty pebbles in grey, carried by nobody.
+    fn pebbles(stage: &mut Stage) -> (Entity, Color) {
+        let grey = Color::srgb(0.5, 0.5, 0.5);
+        let pile = stage.app.world_mut().spawn((Item, Name::new("pebble"), Stack { key: 1, count: 20 }, Glyph::new('*', grey))).id();
+        (pile, grey)
+    }
+
+    /// A game's line inside a pass names as many of a pile as it says,
+    /// whatever the pile holds, in the pile's colour.
+    #[test]
+    fn a_tell_counting_part_of_a_pile_names_that_many_in_its_colour() {
+        let mut stage = Stage::new(NarratorPlugin::default());
+        let (pile, grey) = pebbles(&mut stage);
+        let once = move |mut tell: MessageWriter<Tell>, mut told: Local<bool>| {
+            if !std::mem::replace(&mut *told, true) {
+                tell.write(Tell::new("You sell {what}.", Tones::TEXT).about(pile).counting(3));
+            }
+        };
+        stage.app.add_systems(Turn, once.in_set(TurnSet::Listen));
+        stage.tick();
+        assert_eq!(coloured(&stage, "You sell 3 pebbles."), [("3 pebbles".to_string(), grey)]);
+    }
+
+    /// A game's line from outside the turns is spoken in the same frame,
+    /// with no pass run, its thing named as a `Tell`'s is: counted as the
+    /// line says and in its colour.
+    #[test]
+    fn a_teller_speaks_a_line_from_outside_the_turns_in_the_same_frame_with_its_names_coloured() {
+        let mut stage = Stage::new(NarratorPlugin::default());
+        let (pile, grey) = pebbles(&mut stage);
+        let once = move |mut teller: Teller, mut told: Local<bool>| {
+            if !std::mem::replace(&mut *told, true) {
+                teller.tell(Tell::new("You buy {what}.", Tones::TEXT).about(pile).counting(1));
+                teller.tell(Tell::new("You weigh {what}.", Tones::TEXT).about(pile));
+            }
+        };
+        stage.app.add_systems(Update, once.before(crate::ViewSet::Speak));
+        stage.app.update();
+        assert_eq!(coloured(&stage, "You buy a pebble."), [("a pebble".to_string(), grey)]);
+        assert_eq!(coloured(&stage, "You weigh 20 pebbles."), [("20 pebbles".to_string(), grey)], "no count counts the pile");
     }
 
     /// A mind that notices the player and strikes in one turn is heard to

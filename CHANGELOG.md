@@ -8,6 +8,8 @@ atglyph is not on crates.io yet, so a game depends on a release by its git tag, 
 
 ### Added
 
+- `Teller` tells a game's own line from outside the turns, a deal struck at a counter or a key answered before any turn is spent, among the rows the frame speaks, so its names wear their colours as a `Tell`'s do; a `Tell` written then waited for the next pass.
+- `Tell::counting` names as many of `{what}` as the line is about, `You sell 3 arrows.`, whatever its stack holds by the time the line is read.
 - The look says what its subject wields and what else it wears: `InspectView::wields`, every worn thing it strikes or shoots with, a launcher with nothing to launch among them, and `InspectView::wears`, the rest, each as a sentence names it, `an axe` or `iron greaves`; `InspectPanel` says `o orc, wielding an axe` beside the name, or whole on the row under it when the two do not fit, and `wearing a cap` under where it stands, in its `gear` templates.
 - `EquipBoth` puts two carried things on in one action, all or nothing.
 - The pack and the trade screen say what a shield blocks and an attack speed, `blocks 1 a turn at 50%` and `attack speed 95`, and weigh both before it goes on.
@@ -54,6 +56,7 @@ atglyph is not on crates.io yet, so a game depends on a release by its git tag, 
 
 - `ThrowAtRange` reaches for a missile a worn launcher looses before one thrown by hand, and rolls its chance only once it has a throw to make, so a mind with nothing to throw draws nothing from its stream.
 - **Breaking:** `Missile` has a public `launched` field, whether a worn launcher looses it; a game that writes one as a struct literal adds `launched: false`.
+- **Breaking:** `Tell` has a public `count` field; a game that writes one as a struct literal adds `count: None`.
 - `Names::load` names an entry that does not parse by its position and the `name:` it writes, `entry 3 (rapier): ...`, rather than its position alone, so a misspelt variant deep in a long file says which definition it is in; an entry with no readable name is still named by position.
 - **Breaking:** A launcher's range, effective range and roll are the shot's, in place of the launched thing's own; `LaunchDef` takes `effective`, `range` and `kind`, and `ThrowAs::launched` names only the launcher.
 - **Breaking:** `Melee` has a public `versatile` field, a `VersatileDef`, and `MeleeAttack` a public `versatile` field, an `arms::Versatile`; a game that writes either as a struct literal adds `versatile: None`.
