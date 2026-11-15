@@ -11,7 +11,7 @@
             crates/atglyph-mapgen/src/secrets.rs
             crates/atglyph-core/src/seed.rs
             crates/atglyph-mapgen/src/place.rs
-     fingerprint: edeb8056 -->
+     fingerprint: 2568b365 -->
 
 # Map generation
 
@@ -24,7 +24,7 @@ What a pass has to tell the rest of generation, a room it carved, a start it cho
 
 There is no plugin and no system: `atglyph-mapgen` is tier 1, has no Bevy in it, and nothing in it runs unless a game calls `Chain::run`.
 A game builds a `BaseContext` over a blank terrain, assembles a `Chain` with `then`, and runs it with a `PlaceSeed` or a `RunSeed`.
-Where that happens is the game's business, and in practice it is inside the `PlaceRules::build` the engine calls the first time a place is entered, handing it that place's own `PlaceSeed`, or the `build_chunk` it calls for each chunk of a streamed place as the chunk comes into reach.
+Where that happens is the game's business, and in practice it is inside the `PlaceRules::build` the engine calls the first time a place is entered, handing it that place's own `PlaceSeed`, or the `build_chunk` it calls for each chunk of a streamed place as the chunk comes into reach, and again only for a chunk let go long enough ago that the place no longer keeps it whole.
 `Chain::run` stops at the first failure and hands back the `BuildError` naming the pass, so a caller that asked for six rooms on a map with space for four retries rather than shipping a map its game does not expect.
 `Chain::run_retrying` is that retry: it takes a function that makes a fresh `BaseContext`, since a pass that fails may already have written part of its work, as `Rooms` does, and runs the chain again from the next attempt until one succeeds or the attempts are spent.
 
@@ -37,8 +37,12 @@ Where that happens is the game's business, and in practice it is inside the `Pla
 `BaseContext` is the one context every pass works on: `terrain` and `terrain_mut`, `tiles`, `rng` and `set_rng`, `emit`, `outputs` and `outputs_mut`, so a game's own pass is written against the same struct as the engine's, and what it needs beyond a terrain arrives as an output an earlier pass emitted.
 `BaseContext` is a terrain, a `TileRegistry`, a stream once one is installed, `Outputs` and optional snapshots; `with_snapshots` records the terrain after every pass, for a tool that wants to watch a map being built, and `finish` takes the terrain and the outputs apart.
 `Outputs` is typed rather than keyed: `emit` pushes any `Any + Send` value, and `iter::<T>` and `first::<T>` read back only the ones of that type, so two passes publishing different things never collide.
-`passes` holds what needs nothing but a terrain and a registry: `Fill` and `Border` in `Ground`, `Scatter` and `ScatterBy` in `Growth`, `CellularCave` in `Ground`, `KeepLargestRegion` in `Connect`, and `CentralStart` in `Exits`.
+`passes` holds what needs nothing but a terrain and a registry: `Fill` and `Border` in `Ground`, `Scatter` and `ScatterBy` in the phase their `phase` field names, `CellularCave` in `Ground`, `KeepLargestRegion` in `Connect`, and `CentralStart` in `Exits`.
 `Scatter` and `ScatterBy` carry their own `name` field because two scatters in one chain must draw different streams, and `ScatterBy` takes a `ChanceFn`, a chance read off the `&BaseContext` and the cell, so it can follow anything the context carries rather than being one number.
+A scatter's `phase` is `Phase::Growth` to cover the ground before anything is built on it, or `Phase::Finish` to strew over what was.
+`carve` holds two `Ground` passes that open floor out of solid rock a cell at a time, each beside floor already open from one `Origin`, so what they carve is one piece with nothing after them to join it, and each stops at the `open_pct` of the map asked for inside a `margin` of rock.
+`DrunkardsWalk` sends long random walks out with a `brush` of floor round every step, a broad hall with islands of rock standing in it; `Aggregate` is diffusion-limited aggregation, particles wandering in until one touches the open ground, which grows branching tunnels with no loops, bushier the weaker its `pull_pct` toward where growth started.
+Neither emits a `Room`.
 A place grown piece by piece, `Accrete` and the passes that survey it and hold it to a recipe, is [the layout page](layout.md)'s.
 `dungeon` holds the bounded-map passes: `Rooms` and `Bsp` in `Structures`, `Doors` behind them, and `RandomStart` and `FarthestExit` in `Exits`.
 `Rooms` scatters non-overlapping rectangles and joins each to the one before it with an L-shaped corridor, failing below `min_rooms`; `Bsp` splits the map into a tree of leaves, carves a room per leaf and joins siblings, so the layout fills the map evenly.
@@ -58,6 +62,10 @@ It is laid centred, and slid to the nearest place where it paints and marks neit
 Every stamp publishes a `Stamped` with its bounds and its marks in map coordinates, so a later pass can keep out of it or spawn into it.
 A piece `keyed` with an opaque number carries that key through every turn and mirror to its stamp's `Stamped::prefab`, so whoever fills the marks can trace them back to the piece that gave them meaning.
 `StampPicks` lays a place's `PoolPick`s in `Finish`, each a stamp or a dressing in a room no stamp took, by a `Prefer` of `Secluded`, `DeadEnd`, `Junction`, `Hidden` or `Anywhere`, failing the place for a required pick that fits nowhere; `Dress` then lays each `Dressing`, things spread over an area's walls, corners, center, rows or anywhere, in the areas named and the rooms left over.
+A dressing's `Thing` lays a `density_pct` of the cells its `Spread` offers, or an exact `count` drawn from a range, and may keep `from_door` `Near` or `Far` by the path in from the nearest opening, or `Behind` the things an earlier rule laid as a glyph, as shelves behind a counter.
+Three spreads furnish a house: `Beside` a glyph an earlier rule laid, `Across` the room square to the way in with a `gap` left open, as a shop's counter, and `OutsideDoor`, a cell flanking an opening outside the area that never cuts the ground there.
+Whatever a dressing asks, nothing stands on or beside an opening or the way in or down, and nothing is laid that cuts an area or shuts a slot in.
+`dress_room` dresses one room's cells and openings on a terrain by the same rules with no chain, for a game that lays its own buildings, and returns the slots it laid.
 `Lakes` grows water over the floor in `Structures`, `Bridges` joins what it parted or would make a long detour of in `Connect`, and `HideOpenings` walls over dead-end doors and loop openings in `Finish`, publishing each as a `SecretCell` only where the route and every cell stay reachable once it is found.
 
 ## Using it

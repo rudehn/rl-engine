@@ -16,7 +16,7 @@
             crates/atglyph-mapgen/src/place.rs
             crates/atglyph-rules/src/dressing.rs
             crates/atglyph-bevy/src/seed.rs
-     fingerprint: ad32efaf -->
+     fingerprint: 57bb9545 -->
 
 # Prefabs
 
@@ -44,6 +44,7 @@ The loader resolves every tile, prop, tag, monster and role name and reports eve
 `role::draw` is the game's spawn table restricted to the role's members, with the rows' own weights, through `BandedTable::pick_where` at the band `role::band_for` answers with `BandedTable::band_where`: the band asked when a member applies there, else the deepest shallower band that has one, else the shallowest deeper.
 `prefab::coverage` runs every drawn slot against a game's `Sources`, its roles, spawn table, loot table and tags, at every band in a range; `Coverage::render` prints `✓`, `~N` for a fallback to band `N`, or `✗`, and `empties` lists the gaps for a test.
 `atglyph::rules::dressing::load` reads a dressing file, a prefab's legend laid by rules rather than rows, whose slots fill as a prefab's do.
+A rule lays its glyph at a `density_pct` share of the cells or an exact `count`, and may keep `from_door` `Near`, `Far` or `Behind` another glyph, with the spreads `Beside`, `Across` and `OutsideDoor` among the rest, as [Map generation](mapgen.md) says; the loader refuses a rule giving both a density and a count or neither.
 `PrefabLibrary` holds the loaded prefabs, roles and dressings, and `Prefabs` is one shared copy of it as a resource, which it derefs to, so the game's place builder and the engine read the same files.
 `PrefabLibrary::piece` hands a chain a prefab by name as a `Prefab` keyed by its registry id, each slot a mark painted with the ground and turned and mirrored only as its file allows; `grown` hands the same piece as a shape grown as an area of its own, `dressing` a dressing keyed the same way, and `slot` says what a stamped glyph stands for.
 `PlaceBuild::from_context`, in `atglyph::mapgen::place`, turns each stamped mark into a `Spot` carrying its piece's key, and drops a mark inside the bounds of any stamp emitted after its own: the piece drawn on top owns its cells.

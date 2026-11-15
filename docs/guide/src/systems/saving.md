@@ -15,7 +15,7 @@
             crates/atglyph-bevy/src/minds.rs
             crates/atglyph-bevy/src/title.rs
             crates/atglyph-save/src/lib.rs
-     fingerprint: d01944f6 -->
+     fingerprint: a21890f9 -->
 
 # Saving and the ending screen
 
@@ -44,7 +44,7 @@ Nothing here is on by default, and a game that adds no `SavePlugin` never reache
 ## The model
 
 `Saveable` is the one trait a game writes, implemented on the component that marks a kind: `capture` writes an entity down as `Self::Saved`, and `restore` spawns one again from that, nowhere, carrying nothing, at full health.
-Neither says anything about position, health, bags, slots, stacks, statuses, remains, where a transition leads, where an actor is posted, the work it is in the middle of, how long something alight has left to burn, or whom it follows as a leader, because that is `EntityState`, the engine's half of every saved entity, and every field of it is optional, so a kind that gains a bag later still reads an old save.
+Neither says anything about position, health, bags, slots, stacks, statuses, remains, where a transition leads, how an actor moves when idle (its `Moves`), the `Ground` and `Herd` it keeps to, the `Rounds` it walks and which point of them is next, the work it is in the middle of, how long something alight has left to burn, or whom it follows as a leader, because that is `EntityState`, the engine's half of every saved entity, and every field of it is optional, so a kind that gains a bag later still reads an old save.
 `EntityState::leader` is by `SaveId` rather than by the brain it rides on, since a kind's `Brain` is content made again from its definition and not a thing to save: a follower whose leader was saved too follows it again, by the entity map, and one whose leader was not follows nobody rather than an entity that no longer exists.
 A status a worn thing holds is saved apart from the rest, with the thing's save id, and put back held by the thing; one whose thing did not come back is left out rather than put back loose, since it lasted only while that thing was worn.
 Remains are saved as whatever they were, and a prop kind a game laid on a body afterwards is part of what `EntityState` records of the remains, which is why `PropKind` answers false to `Saveable::TAKES_REMAINS`; a capture that finds one entity claimed by two kinds is refused with both named, since restoring it would spawn the thing twice.
@@ -64,6 +64,7 @@ An `Entity` means nothing in another process, so a save numbers entities as `Sav
 `WebBackend` and the page-unload listener are the only surface behind `#[cfg(target_arch = "wasm32")]`, beyond the wasm arm inside each `platform_default`, so a desktop build has no `WebBackend` to name and a browser build still has a `FileBackend` with no filesystem under it.
 `Versioned` is the envelope and `encode` and `decode` the pair that reads the version before it trusts the rest.
 Two numbers are matched, both exactly: `SaveSlot::version`, which a game bumps when its own kinds change shape, and `RunSave::FORMAT`, which the engine bumps when the run's shape does.
+The format is 2 since an actor's `Post` gave way to its `Moves`, so a save written by v0.5.0 is refused rather than read without its posts.
 `save_run` encodes the world, writes it to the slot and stashes it; `load_run` reads the slot back, answering `None` when nothing was saved there and a `SaveError` when what is there is not something this build reads.
 `Stash` is the last encoding the game made, behind an `Arc<Mutex<_>>` so a handler running outside the app holds the same one, and a flush writes it and keeps it, since a browser may send both of its unload events.
 The stash is re-encoded once per whole turn while playing rather than once a frame, so a window closed on a run loses at most the turn in hand, and forgetting the save deletes the slot and clears the stash together, and says in `SavedRun` that the slot is empty once it is.

@@ -19,7 +19,7 @@
             crates/atglyph-grid/src/light.rs
             crates/atglyph-ui/src/view/nearby.rs
             crates/atglyph-ui/src/view/vitals.rs
-     fingerprint: 14072d58 -->
+     fingerprint: d42b7c32 -->
 
 # Stealth
 
@@ -33,7 +33,7 @@ A status can go further and make its holder unseen, hidden from every mind at an
 
 A game adds the plugin with the rule it wants: `StealthPlugin::per_observer()` or `StealthPlugin::by_range(rules)`, where `rules` is a `RangeRules` of the game's own numbers, since the engine has none.
 Either way the plugin adds the same six systems (by range, two more keep each range current), and the messages and the stream they need: the noticing roll in `DecideSet::Notice`, before a mind decides; taking out the unseen, then the unnoticed, in `PerceiveSet::Filter`, after the roster stage put everyone in sight into a snapshot; revealing attackers and marking the unseen in `ResolveSet::Effects`, either side of the statuses being applied and ticked; and waking the struck in `ReactSet::Settle`, inside `TurnSet::React`, where a turn's consequences land, so a game that reads `Noticed` or writes an `Aware` in its own reactions orders itself after that set.
-It registers `RemoveStatus` and declares that it reads `Struck`, `ItemEvent` and `LandedOn`, so a game with stealth and no items or abilities has nothing to reveal on rather than a panic; with no status registered as unseen nothing is ever unseen.
+It registers `RemoveStatus` and declares that it reads `Struck`, `Missed`, `AttackBlocked`, `ItemEvent` and `LandedOn`, so a game with stealth and no items or abilities has nothing to reveal on rather than a panic; with no status registered as unseen nothing is ever unseen.
 It declares `depends_on::<MindsPlugin>`, since noticing is a thing minds act on, and the stream is `StealthRng`, so a tactic added to a brain or a blow struck elsewhere cannot shift which turn a guard spots you on.
 
 Per observer, both sides have to be authored before anything changes: a `Notice` absent means the observer sees on sight, which is the behaviour before stealth existed, and a `Stealth` absent means the subject never hides.
@@ -68,7 +68,7 @@ By range, `StealthRange(i32)` is the subject's: the distance within which an obs
 `RangeRules` is the game's, one set for the whole game: `base`, the range in the open; `dark_divisor` and `cover_divisor`, dividing it down in the dark and in cover; `still_divisor`, dividing it, rounding up, while the subject stands still; `attack_multiplier`, on the turn it attacks; `floor`, below which it never falls; `chance_pct`, the chance a turn of being spotted within it; `hold`, the times the range within which an alert observer keeps hold of it in view; and `memory`, the turns an observer keeps looking after losing hold.
 Each divisor is at least one and each multiplier, `attack_multiplier` and `hold`, at least nought: `RangeRules::check` names any that are not, `StealthPlugin::by_range` refuses rules that fail it, naming every one, and a multiplier too large for a range saturates rather than overflowing.
 `range_of` works a range out from them and a `Standing`, in that order of steps.
-The engine keeps each actor's range current itself: `LastDeed`, brought by `StealthRange`, is what the actor did last, `Deed::Waited` when its action was a wait, `Deed::Attacked` when it struck, missed or threw at someone, and `Deed::Acted` for any other action.
+The engine keeps each actor's range current itself: `LastDeed`, brought by `StealthRange`, is what the actor did last, `Deed::Waited` when its action was a wait, `Deed::Attacked` when it struck, missed, had its attack turned aside by a shield or threw at someone, and `Deed::Acted` for any other action.
 At the head of every pass, before the roll, the range of each actor on the current map that moved or finished an action since the last pass is worked out afresh from its `LastDeed` and where it stands, and of every actor when the light or the map changed under them: the dark band alone is dark, so a lit tile or a lamp's dim ring is not, and a tile is cover when the tile tables say so.
 So a range a game gives an actor at spawn lasts only until the first turn, and a game changes ranges by changing its `RangeRules`, its tiles and its light.
 An unaware observer spots a subject within its range by the chance alone, never beyond it however long it looks, and never for certain however near.
@@ -85,11 +85,11 @@ An ally is never judged by either rule, and a subject the observer does not judg
 The unnoticed filter takes the hiders the mind holding the turn has not noticed back out of its enemies, and by range out of its others too, so a neutral is hidden from a mind until it notices it just as an enemy is; its allies it never touches, and a mind that keeps no `Aware` it leaves alone.
 It then offers every subject the mind is alert to, at odds with, and cannot see as a trail through `Thinking::offer_trail`; one it is not at odds with, as a deer the player, it keeps in mind and forgets the same way, but never walks back to look for.
 Noise offers its own to the same place, the freshest becomes `Snapshot::last_known`, and `SearchLastKnown` walks to it.
-Whoever takes a blow from something that hides is woken and pointed at the attacker's cell: a mend is a `Heal` and never a blow, a blow armor stopped at zero still wakes it, and so does a rolled attack that missed, read from `Missed`, so a hider cannot fire at a sleeper until one lands.
+Whoever takes a blow from something that hides is woken and pointed at the attacker's cell: a mend is a `Heal` and never a blow, a blow armor stopped at zero still wakes it, and so does a rolled attack that missed, read from `Missed`, or one a shield turned aside, read from `AttackBlocked`, so a hider cannot fire at a sleeper until one lands.
 Whether stealth is running is asked of the rule the plugin inserts rather than of the components, because `Notice` brings an `Aware` with it and a game that authored observers without the plugin would otherwise have monsters that notice nothing forever; `Watchers::running` answers it.
 `Watchers` answers who is watching whom by the rule the minds act on: an observer that keeps an `Aware` watches what it knows about, one that does not watches whatever its own sight reaches, and neither watches anything it is not at odds with or anything unseen.
 `Watchers::remembers` answers whether an observer still has a subject in mind, watching it or not, and the two part only for the unseen.
-`Watchers::unaware` answers whether an observer has not noticed a subject at all, which combat asks before a blow by the subject lands harder for it: only while the plugin runs, for an observer keeping an `Aware`, at odds with a subject that hides, that remembers nothing of it, so one searching where it lost the trail is not caught unaware and the player never is.
+`Watchers::unaware` answers whether an observer has not noticed a subject at all, which combat asks before a blow by the subject lands harder for it, and a shield before it turns that blow aside, since a bearer caught unaware raises none: only while the plugin runs, for an observer keeping an `Aware`, at odds with a subject that hides, that remembers nothing of it, so one searching where it lost the trail is not caught unaware and the player never is.
 `StatusDef::unseen`, `unseen: true` in a status file, is a status whose holder nothing sees while it lasts, and `Unseen` is the marker the engine keeps on whoever holds one.
 It is kept from `Changed<ActiveStatuses>` after the statuses are applied, ticked and cured, so it lasts exactly as long as the status, a continued run gets it back from the statuses it saved, and the pass a status goes on is the pass the next mind to decide cannot see its holder.
 An unseen status a worn thing holds ends by the items plugin's `RemoveStatus`, written in the same stage before the statuses resolve, so the marker comes off in the pass the thing does and the next mind to decide sees its wearer.

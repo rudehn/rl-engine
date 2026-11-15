@@ -8,7 +8,7 @@
             crates/atglyph-bevy/src/world.rs
             crates/atglyph-bevy/src/title.rs
             crates/atglyph-ui/src/player_keys.rs
-     fingerprint: 0c71fd4b -->
+     fingerprint: dbbe817f -->
 
 # The turn loop
 
@@ -45,7 +45,8 @@ A resolver takes a `Resolution`: `claim` gives it the turn once, `done(actor, co
 The cleanup requeues at `scaled_cost` of what was owed against the actor's speed, requeues one actor once per pass, and charges a wait to any non-player left holding a turn nobody used.
 That speed is what `Speeds::of` reads, the one reader, so nothing that shows a speed disagrees with the queue about who is hasted: the actor's own `Speed`, a hundred when it has none, with the value of the stat `TurnRules::new().speed_stat(stat)` names added as a percentage of it, so a hundred on the stat is twice as fast and minus fifty half as fast.
 The stat wants a base of nought, so an actor with nothing on it is as fast as it was spawned, and nothing takes a speed below one, since an actor that is not to act at all is held by a status rather than slowed to nothing.
-`Cued` is what a resolver writes when a turn did something worth seeing: a `Cue::Flight` between two `Anchor`s or a `Cue::Burst` on several, all at once or going out `from` one of them, where an anchor that follows an entity goes where the entity goes.
+`Cued` is what a resolver writes when a turn did something worth seeing: a `Cue::Flight` between two `Anchor`s, a `Cue::Burst` on several, all at once or going out `from` one of them, or a `Cue::Beam { from, to, look, pulse }`, a line held between two anchors with an optional pulse running along it from the first to the second, where an anchor that follows an entity goes where the entity goes.
+A beam lands nothing, since what it shows has already happened, and holds the turns as any cue does: a drain is seen to flow from whom it takes to whom it gives.
 `Pace` is how fast the turns run while nobody is waited on: `Pace::unpaced()`, the default, `Pace::per_second(hundredths)` of game time for each second of the wall clock, or `Pace::stopped()`.
 A frame's share is earned once a frame, capped at a quarter of a second, and spent as the clock advances, so a pass that moves no time is free and one that jumps the clock is paid off over the frames after.
 Once it is gone nobody is dealt a turn, and the pass that finds it so changes nothing and ends the loop: a turn already dealt is always resolved, a player's intent is answered in its own frame at any pace, and a warp asked for while the turns are stopped is still answered.
@@ -53,6 +54,10 @@ A `Player` that is no `Actor` is an onlooker: never admitted to the queue, so ne
 `CueWait` is the brake, and it takes only while something watches: the loop waits after any pass that cued, and runs no pass until the watcher lets go; `wait` and `is_waiting` are how a watcher holds it and asks.
 `Airborne<L>` is what a subsystem has in the air, emptied when a run ends; a landing is handed straight back when nothing watches, so a headless game lands everything at once.
 The move resolver refuses a `Step` into an occupied or unwalkable cell, and a diagonal one besides unless the one corner rule answers yes: a diagonal may squeeze only between two cells the map lets a diagonal past, never a wall's corner or a closed door's, which is the same question `CostSource::lets_diagonal_past` puts to a search, so a mind's own path and the move it resolves never disagree and a mover is never refused the same step twice.
+A walker carrying `Passes { solid, shut_doors }` steps where others cannot: `solid` into rock, any cell nobody can stand on that is not a door, and `shut_doors` onto a shut door, locked or not, which stays shut.
+`Passes::through(map, p)` is the one answer to where such a walker can stand, never off the loaded map, and the corner rule asks it in place of the map's, so a diagonal squeezes between any two cells the walker could stand on itself; a cell somebody stands in is refused to it all the same, and a step into what it passes is costed as a step onto a tile of `BASE_ACTION_COST`, a diagonal one more by `step_cost`.
+A bump honours it too, stepping onto a shut door it passes rather than opening it, and a swap is refused when either walker would be put where it cannot stand, so one that passes rock never trades a cell in it to one that does not.
+Minds flood their ways over the same ground, as [Minds](minds.md) says, and a kind writes it as `ActorParts::passes`; absent, or all `false`, a walker walks as everyone does.
 
 ## Using it
 
@@ -77,6 +82,7 @@ A system that scans the world every frame is not a reaction and belongs in `Pres
 Systems in a pass run several times a frame, so a system that must run once a frame says so by being in `EngineSet::Input` or a `PresentSet` layer instead.
 Which executor a pass runs on is the engine's default and not its decision: a game whose own system in the pass is heavy enough to be worth a thread puts the multi-threaded one back with `app.edit_schedule(Turn, ..)`.
 The pace is the game's number and its alone: it decides how many passes a frame runs and never what a pass does, so one seed plays one run at any pace, stopped and started or not.
+What a walker passes is the game's content and where it may then stand is the engine's one answer, `Passes::through`, asked alike by a step, a swap and a mind's ways, so a walker through rock is never led somewhere its own step would be refused.
 The engine owns who is dealt a turn, when, and what is done with an action that nobody resolved; the game owns what actions exist beyond the few above, what each costs, and who is allowed to try it.
 A game orders its systems into `TurnSet` and `ResolveSet`, never after another crate's system function.
 
@@ -84,5 +90,5 @@ A game orders its systems into `TurnSet` and `ResolveSet`, never after another c
 
 `atglyph-core` is tier 0 and has no Bevy in it: `TurnQueue` is generic over the actor id, so its whole ordering contract is tested with ids made out of thin air, and `scaled_cost` and `reschedule_at` are `const fn` tested by arithmetic alone.
 That split is why the ordering rules can be proved without an `App`, and why nothing in them can quietly come to depend on an entity's index.
-`atglyph-bevy` is tier 2 and owns the loop over it: `turn.rs` has `Turns`, `Occupancy`, `Action`, `Intent`, `Resolution` and the systems of a pass, and `cue.rs` has `Cued`, `CueWait` and `Airborne`.
+`atglyph-bevy` is tier 2 and owns the loop over it: `turn.rs` has `Turns`, `Occupancy`, `Action`, `Intent`, `Resolution`, `Passes` and the systems of a pass, and `cue.rs` has `Cued`, `CueWait` and `Airborne`.
 `plugin.rs` has the sets, the schedules, the loop of passes and `CorePlugin` itself, in one file because the order of a frame is one decision and not six.

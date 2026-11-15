@@ -7,7 +7,7 @@
             crates/atglyph-rules/src/items.rs
             crates/atglyph-ui/src/view/trade.rs
             crates/atglyph-ui/src/panel/trade.rs
-     fingerprint: 5d8be37b -->
+     fingerprint: 42414cd3 -->
 
 # Trade
 
@@ -30,6 +30,7 @@ A game binds nothing: the screen opens itself when the engine opens a trade.
 A trader is an actor carrying `Trader` and offering the `TRADE` verb through its `Offers`, as `Offering::new(verb, time)`, whose time is what opening the trade costs.
 `Trader` is `buys`, the tags of what it buys, empty for one that only sells, and `pays_pct`, the share of a thing's worth it pays, in hundredths.
 What it sells is what it carries: its `Inventory` is its stock, saved with the run as any actor's pack is, and restocking is the game filling it.
+A mind that is a `Trader` is told of nothing it carries to throw and of nothing to use but what it wears, so a keeper fights with what it wields and never throws or eats what it sells.
 `Worth(pub u32)` is what one of a thing is worth in the currency, the game's, kept current on each item and not saved, so a continued run has it back from the game's own pass; a thing without one is neither sold nor bought.
 `Currency(pub TagId)` names the tag, `is` says whether a thing is a piece of it, and `count` is how much a bag holds, a stack counting its count.
 Taking up the offer opens a trade the player's screen reads from `Trading`, whose `open` gives the `Parties`, the `customer` and the `trader`, and whose `close` ends it.
@@ -45,8 +46,14 @@ A payee with no pack is given one, a payee that is gone is paid nothing, and `pa
 `TradeView` is the open trade as plain rows: `parties`, the `trader` as a `Row` carrying whatever facet the game pushed onto it, `wares` and `pack` as `TradeRow`s, and `purse`, `trader_purse` and `currency`, the currency's own name.
 The wares are what the trader carries with a price and not worn, so its own gear is never offered; the pack is what the customer carries but its currency, priced at what the trader would pay.
 A `TradeRow` is a shared `Row`, the `count`, the price of one as `each` and the `refused` reason, with `price` for the whole row and `open` saying whether one could change hands now.
-`TradeView::rows_mut` walks every row on both sides, for a game annotating what it recognises.
-The screen shows the wares on the left and the pack on the right: the direction keys walk the rows and cross the sides, confirm deals one of the row picked out, `TradeKeys::whole`, `a` by default and rebound by inserting a `TradeKeys`, deals the whole of it, and close puts the screen away and ends the trade.
+Each `TradeRow` also carries `described`, the thing as the customer's bag describes it, an `ItemRow` with its `replacing` weighed against what the customer wears, and `items`, every thing the row stands for.
+Rows of one name are listed together, where the first of them stands, and otherwise in the bag's order, so a thing sold goes in beside the trader's own of its name.
+Things alike and not stacked, alike in everything the row and its description show, are one counted row priced for one, `3 daggers`, and a thing with `MassNoun` is counted as written, `2 leather leggings`.
+They are counted in `ViewSet::Settle`, after the game annotates, so a thing the game notes stays a row of its own.
+`TradeView::rows_mut` walks every row on both sides, for a game annotating what it recognises, and `TradeView::described_mut` every description, for a facet read in the pane.
+The screen shows the wares on the left and the pack on the right: the direction keys walk the rows and cross the sides, confirm deals one of the row picked out, `TradeKeys::whole`, `a` by default and rebound by inserting a `TradeKeys`, deals the whole of it, a whole stack or each of the things a counted row stands for, one deal apiece, and close puts the screen away and ends the trade.
+A counted row's price always says it is for one, giving up the refusal and then the end of the row's name for room, never the word.
+Under the two lists, where the screen is tall enough, a pane describes the row picked out on either side as the bag does and weighs it against what the customer wears, the customer's own blow called by `TradeWords::own`; it is as tall as the longest description on the screen, so it holds still as the cursor moves.
 A deal is written whether or not its row is greyed, so the resolver stays the one judge of it, and dealing never closes the screen, since a shop is usually more than one deal.
 `TradeMenu` is where the cursor is, a `TradeSide` and a row on each side, and `trade_modal` is the modal's id for a game gating its own systems.
 `TradeWords` is every word the screen draws that is not a name or the game's line, from the side headings to what each refusal is called on the side it is struck from.
@@ -54,6 +61,7 @@ A deal is written whether or not its row is greyed, so the resolver stays the on
 ## Using it
 
 A trader is a component on an actor the game spawns: a shopkeeper is spawned with `Trader { buys, pays_pct }`, the tags its shop buys and the share of a thing's worth it pays, a quarter say, and the engine does not save it, so the game gives it again to a keeper a continued run puts back.
+A keeper of a side that gives way is walked into as an offer rather than swapped with under `BumpRules::offers_first`, so bumping into it opens the trade.
 
 The step turning it on takes beyond the plugins is the currency, a tag of the game's content, inserted as `Currency(tags.expect("gold"))` so the engine counts a purse and a price without knowing a coin from anything else the game calls an item.
 

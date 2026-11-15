@@ -19,7 +19,7 @@
             crates/atglyph-save/src/engine.rs
             crates/atglyph-bevy/src/lighting.rs
             crates/atglyph-bevy/src/app.rs
-     fingerprint: 8452d7b5 -->
+     fingerprint: 700f21d8 -->
 
 # Props
 
@@ -83,6 +83,7 @@ The engine owns the interaction and the game owns what it meant, which is a syst
 The engine decides whether an interaction is possible, what it costs and when it resolves; what it meant is the game's, read off `Interacted` and filtered by verb.
 There is no registry of behaviours and no trait to implement, because a game already knows how to answer a message, and a refusal is free: the offers are worked out before the player acts, so nothing is spent finding out that nothing was there.
 A prop or an actor that blocks and offers one thing that can be taken up is walked into, because the bump redirect writes the interaction; one offering two, offering one it refuses, or one that is priced, asks or chooses first spends no turn and says so as `Bumped` with `offers` set, since a walk key can neither ask a question nor give a reason, nor spend currency.
+A neutral of a side `BumpRules` lets give way is swapped with rather than dealt with, unless `BumpRules::offers_first` is set, which deals with one that offers something before it gives way, so walking into a store keeper opens the trade and one offering nothing is still passed.
 `OffersPanel` opens on that flag rather than asking whether the thing bumped was a prop, which is what lets a captive bumped into with nothing free to say read the same way a workbench with two tools does.
 What a bump cannot reach, a body underfoot or a plate already found, is `UiPlugin`'s interact key, its binding in `InteractKeys`, which takes the one offer in reach and takes none where two are offered.
 `OffersPanel` and `ContainerPanel`, in `atglyph-ui`, are where that question and that rummaging are drawn, and a game with neither gets nothing rather than a guess.

@@ -16,7 +16,7 @@
             crates/atglyph-bevy/src/status.rs
             crates/atglyph-ui/src/view/nearby.rs
             crates/atglyph-ui/src/panel/nearby.rs
-     fingerprint: 2227d2e2 -->
+     fingerprint: 39760af1 -->
 
 # Noise
 
@@ -71,7 +71,7 @@ And what the engine's own actions cost is one constant, handed to the plugin as 
 The engine decides how far a sound carries and who it reaches; a game decides what is worth making a sound about, and how loud.
 A thing that makes a sound where it lands, a grenade or an alarm plate, says so in its content through `Noise` rather than in a system of the game's, so its loudness sits in the file beside what else it does and its thrower, as its maker, does not hear it.
 A listener is told a place, and the engine tells it nothing about what happened there: `sound` and `maker` ride along for a game's own reactions and the engine reads neither, except to spare a listener its own.
-Hearing and stealth are two levers that never read each other: `Stealth::quiet` is how hard you are to see and `Footfall` is how loud you are to walk, and all hearing does for noticing is bring a monster close, where the notice roll is likely to land.
+Hearing and stealth are two levers that never read each other: `Stealth`'s `quiet`, or under `StealthPlugin::by_range` a `StealthRange`, is how hard you are to see and `Footfall` is how loud you are to walk, and all hearing does for noticing is bring a monster close, where the notice roll is likely to land.
 What follows a sound is a tactic reading `last_known`: `SearchLastKnown` walks to the place, `Keep::enemies` keeps station on it once nothing is in sight and `Hover` holds while it is remembered, each of them only for a mind whose `Wits` hold `SEARCHES`, so a mind without the wit, or with none of those tactics in its brain, hears the sound and does nothing with it.
 Nothing here persists between turns: a noise never outlives the pass it was made in, so there is no field to step and nothing to save, and `Heard` is lost on load the way awareness is, which is a monster on its way to look at a sound forgetting it.
 A game that adds the plugin and authors no `Hearing` anywhere hears nothing at all, which is the right way round and the likely first report.

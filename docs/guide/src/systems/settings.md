@@ -7,7 +7,7 @@
             crates/atglyph-ui/src/panel/title.rs
             crates/atglyph-save/src/settings.rs
             crates/atglyph/src/lib.rs
-     fingerprint: 9ae1d39c -->
+     fingerprint: d2366a72 -->
 
 # Settings
 
@@ -34,6 +34,7 @@ It does not say which setting moved; a reader watches the resource with Bevy's c
 `remembered` is every name with the words of its choice, and `recall` sets each declared setting a map names, passing over a name nobody declared and a choice a setting no longer has.
 Words and not places in the list, so a choice added in the middle of a setting does not turn everyone's into another.
 `FullscreenPlugin` puts the primary window in borderless fullscreen or back in a window in `PostUpdate` on a frame the settings changed and the setting and the window disagree, and once more in its `cleanup`, after every plugin's `finish`, so a choice already recalled is on the window before the first frame.
+A game that opens its window with `RoguelikePlugins::fit_screen`, as large as the screen allows, has `FitScreenPlugin` read the setting in its own `cleanup` and leave alone a window the recalled choice opens fullscreen, so fitting the screen never fights the setting.
 `SettingsPanel` lists the settings under their groups, a group standing where its first setting was declared: up and down pick a row, left and right change it, confirm changes it forward and the close key goes back to whatever was under the screen.
 A setting's own key changes it when no screen is open or this one is on top, in any engine state.
 The game menu offers a `Settings` row above `Quit` when the panel was added and at least one setting is declared, and is not drawn while the screen it opened is up; the title offers one on the same terms, and leaves it out rather than drawing it dim when there is nothing to set.

@@ -384,6 +384,28 @@ Nothing about a game's own choice changes, and a game's own ability-like tactic 
 Refusing to build this is refusing to build the subsystem.
 A wand the player can fire and a monster cannot is the half-shipped shape `PLAN.md` section 1 is about.
 
+### 6.1 Casting by what a use would do
+
+The footprint rule knows where a use lands and on whom, never what it does there.
+It cannot tell a bolt that wounds a foe from one that heals a foe that absorbs its kind, nor an ability aimed at anyone from one aimed at a friend, so a game whose content leans on resistance or on uses that cut both ways got monsters that wasted turns or helped the enemy.
+From 0.6.0 each effect may say what it would do: `Effect::predict(on, user, ctx)` returns a `Prospect`, an `Impact` on whoever it lands on and one on its user, damage or a heal in hundredths, a status put on or taken off with whether it is a boon, nothing, or `Unknown`.
+`Unknown` is the default, so every effect a game wrote before still compiles and is still weighed by its footprint.
+
+The prediction is made in tier 2 and the weighing in tier 1.
+`predict_abilities` asks each usable ability's effects about every actor the mind sees, its user alone for one aimed at its user, and hands the answers over on the snapshot as `Snapshot::predicted`.
+`UseAbility` then scores each aim it would have tried, and every actor the ability could strike: each effect's chance times what its two impacts are worth by a `Valuation`, summed over whoever the footprint strikes.
+Where anything struck cannot be foreseen, that aim falls back to the footprint, scaled so that among abilities none of which is foreseen the choice is exactly the old one.
+A use aimed at its user alone still waits for a foe in sight, foreseen or not.
+
+The views carry what an effect needs to answer truly: what each actor resists and its armor, filled by combat, and the statuses it holds and can never be given, filled by statuses.
+`Harm` runs every roll it could make through the game's own damage stages, the same call the resolver lands it through, so a floor at nothing after armor or an absorbing resistance is weighed as it bites.
+
+Rejected:
+- Predicting per aim in the contributor. It would have had the contributor compute every footprint, a second copy of the tactic's own rule; per actor is enough, since the tactic already knows whom a footprint strikes.
+- A game's own targeting tactic. Every game that has a use that heals the wrong side would write the same one, and the engine's `UseAbility` would stay wrong for all of them.
+- A fixed scoring in the engine. What a status is worth beside so much damage is a game's judgement, and may differ between two monsters of one kind, so the score is a `Valuation` a brain is given (`UseAbility::valuing`, `StandardBrain::valuing`), with `StandardValuation` when none is.
+- A valuation on `Standard` or `Repertoire`. Both are plain, copyable descriptions of a chain and a kind; a judgement is per brain, so it rides on the brain being built.
+
 ## 7. Save, determinism and facts
 
 - Cooldowns and pools go in the save beside the scheduler's clock, in the same units.

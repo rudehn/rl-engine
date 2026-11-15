@@ -9,7 +9,7 @@
             crates/atglyph-grid/src/light.rs
             crates/atglyph-bevy/src/items.rs
             crates/atglyph-mapgen/src/place.rs
-     fingerprint: 467e39c3 -->
+     fingerprint: 43b647e5 -->
 
 # Sight and lighting
 
@@ -32,8 +32,9 @@ A game that adds neither has no sight: nothing ever casts a `Viewshed`, `can_see
 
 `LightSource(pub Glow)` is the one component for everything that glows, the `Glow` being the one light type, which a tile's definition, a prop's and a game's content all write.
 `intensity` is the brightness at the source's own tile, `radius` how far it reaches, falling to exactly zero at the rim, and `color` its hue; `LightSource::darkness(intensity, radius)` takes light away instead, pitch black at its heart at 255.
-Every cell of a place whose tile's definition carries a `Glow` gets a fixture when the place is built, and again when a continued run restores it, read off the terrain rather than saved, and a streamed place's each time one of its chunks loads; a prop whose definition carries a `light` gets its `LightSource` when its kind is put on it.
+Every cell of a place whose tile's definition carries a `Glow` gets a fixture when the place is built, and again when a continued run restores it, read off the terrain rather than saved, and a streamed place's the first time each of its chunks loads, the fixtures of a chunk that left standing where they were and cast only while the window holds them; a prop whose definition carries a `light` gets its `LightSource` when its kind is put on it.
 An entity that takes no turns is a fixture in the static layer and an actor or a carried item is in the dynamic layer; either is recast when its sorted list of emitters differs from the last cast, and both are recast whole when the window moves, when play crosses to another map, or when the map's opacity changes.
+A window that moves on the same place marks only the viewsheds whose sight takes in a tile whose light crossed the threshold, or one the window did not hold before, so a streamed place's move does not recast every viewer by its light.
 An item on the floor lights the tile it lies on, and once picked up it sheds from its carrier's tile instead.
 `DarkSight(pub i32)` is how far an actor sees with no light at all; absent, it sees only what it is touching.
 Set by hand it is left as set; an actor with an `OwnDarkSight`, or wearing a thing with a `WornDarkSight`, has it kept by `ItemsPlugin` as the best of the two, and none while the game has put `DarkSightSuppressed` on it.
@@ -43,6 +44,8 @@ The `Lighting` resource carries `ambient`, `threshold` and `bright` as public fi
 `threshold` starts at `DEFAULT_THRESHOLD`, which is 16, `bright` at 64, and `band` names a tile's `LightBand`: `Dark` below `threshold`, `Dim` from there to `bright`, and `Lit` at or above it.
 The engine reads a missing `Lighting` as lit, the same way a game without lighting sees everywhere.
 `Viewshed` holds both bit grids: `line` is the shadowcast, and `visible` is what the gate left of it.
+Both cover the window they were cast over, and `origin` names the world tile of their bit 0.
+A viewshed is stale when it is marked `dirty`, when the map's opacity changed, or when the window moved and its square of sight reaches ground the window did not hold both before and after; one whose sight lies in what stayed is kept as cast, since a cast over the new window would come out the same, and `Viewshed::everywhere()` is stale at any move.
 `gate` writes the second from the first, and `cast` is the whole recast for one viewer, the shadowcast and then the gate.
 `Concealed`, which a game puts on a thing, hides it from a viewer while its cell is not in the lit band and the two are not beside each other.
 `PlayerSight` is the one answer to what the player sees of things, asked by the map, the list of what is in sight and every panel and cursor on it: `shows` is a thing on the current map, in the player's viewshed and not concealed from where it stands.
@@ -97,3 +100,4 @@ What the bands are worth is the game's: the engine names them, stealth reads the
 Both read a borrowed `OpacitySource` and write into buffers the caller owns, so a recast allocates nothing and either can be tested without an `App`.
 `atglyph-bevy` is tier 2 and has the plugins: `fov.rs` holds `cast` and the recast of every stale viewshed over the `Viewshed` that `components.rs` defines, and `lighting.rs` holds the light components, the `Lighting` resource, the casting, the lighting of places and props, the fuel and `gate`.
 `atglyph-render` reads the composed field once more, for the color and the waver that gameplay ignores.
+Its `CellBrightness` resource lets a game draw each cell of a map brighter or darker than its tile, as high ground brighter than low, in sight and in memory alike; it is cosmetic and no rule reads it.

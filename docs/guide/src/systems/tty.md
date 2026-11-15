@@ -6,7 +6,7 @@
             crates/atglyph-tty/src/paint.rs
             crates/atglyph/src/lib.rs
             crates/atglyph-save/src/backend.rs
-     fingerprint: e1092f89 -->
+     fingerprint: 21a22ff9 -->
 
 # The text terminal
 
@@ -18,7 +18,7 @@ So a game, its panels and its keys run unchanged, and which front end it runs on
 
 `TtyRoguelikePlugins::new(cols, rows)`, in `atglyph::prelude::ui`, is the group a game adds in place of `RoguelikePlugins`, with the same `map` and `across`.
 It is Bevy's `MinimalPlugins` running thirty frames a second, about as often as a terminal repeats a held key, with states and input, `TtyPlugin`, and the engine's half of `RoguelikePlugins`: `CorePlugin`, `FovPlugin`, `MapViewPlugin` with `ParticlesPlugin`, `UiPlugin` and `ReplayPlugin`.
-It leaves out whatever needs a window, `CapturePlugin`, `FullscreenPlugin` and a typeface, since the terminal draws in its own font, and Bevy's `LogPlugin`, whose lines would land on the game's screen.
+It leaves out whatever needs a window, `CapturePlugin`, `FullscreenPlugin`, the `FitScreenPlugin` that `RoguelikePlugins::fit_screen` adds and a typeface, since the terminal draws in its own font, and Bevy's `LogPlugin`, whose lines would land on the game's screen.
 A game adds its own plugins after either group and plays the same.
 The crate and the group are desktop only; the browser has no terminal.
 

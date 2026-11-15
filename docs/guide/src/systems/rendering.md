@@ -1,6 +1,7 @@
 <!-- documents:
-     plugins: TerminalPlugin, ParticlesPlugin, MapViewPlugin, CapturePlugin
+     plugins: TerminalPlugin, ParticlesPlugin, MapViewPlugin, CapturePlugin, FitScreenPlugin
      files: crates/atglyph-render/src/lib.rs
+            crates/atglyph-render/src/fit_screen.rs
             crates/atglyph-render/src/terminal.rs
             crates/atglyph-render/src/layout.rs
             crates/atglyph-render/src/pointer.rs
@@ -14,7 +15,7 @@
             crates/atglyph-bevy/src/cue.rs
             crates/atglyph-ui/src/tone.rs
             crates/atglyph/src/lib.rs
-     fingerprint: 6b4bb6cf -->
+     fingerprint: d26a9dbb -->
 
 # Rendering
 
@@ -24,8 +25,9 @@ What a tile looks like is the game's to say; what light, memory, fire and gas do
 
 ## Turning it on
 
-`RoguelikePlugins` adds all four, and `FullscreenPlugin` beside them, which the settings page covers, because a game with no terminal has nothing to draw into and a map with no viewport is a map nobody sees.
-`TerminalPlugin::new` takes the grid in cells, the pixel size of one cell and the font height, spawns the camera and the cell entities in `Startup`, lays the grid out again in `PreUpdate` when the window has changed, early enough that it is drawn where it was put in the same frame, and flushes the buffer in `PostUpdate`.
+`RoguelikePlugins` adds `TerminalPlugin`, `MapViewPlugin`, `ParticlesPlugin` and `CapturePlugin`, and `FullscreenPlugin` beside them, which the settings page covers, because a game with no terminal has nothing to draw into and a map with no viewport is a map nobody sees.
+`TerminalPlugin::new` takes the grid in cells, the pixel size of one cell and the font height, spawns the camera and the cell entities in `Startup`, lays the grid out again in `PreUpdate` when the window has changed, early enough that it is drawn where it was put in the same frame, and flushes the buffer in `PostUpdate`, before Bevy lays the new text out, works out what is shown and moves what moved, so a step never leaves last frame's glyph standing in the new colour for a frame.
+`RoguelikePlugins::fit_screen` adds `FitScreenPlugin` too, which opens the window as large as the screen allows rather than at the cells' declared size; without it the window opens at the declared size.
 `TerminalPlugin::typeface`, and `RoguelikePlugins::typeface` for a game on the group, takes the bytes of a TrueType or OpenType file the game ships, a `&'static` slice or a `Vec<u8>` read at run time, and every glyph is drawn in it.
 Bytes rather than an asset path, because an asset arrives after the first frames are drawn, and on the web only from a page that serves the game's assets beside it.
 Without one, glyphs come from the system's monospace family, which needs Bevy's `system_font_discovery` feature and is another face on every platform, a glyph it lacks drawn as an empty box; a browser has no font database to search, so on wasm they come from the font Bevy embeds, which covers printable ASCII and nothing else.
@@ -42,6 +44,12 @@ It reads cues in `PresentSet::Narrate` and watches the turns' `CueWait` on enter
 `Cell` is one character position: a `glyph`, a foreground `fg` and a fill `bg`, with `new`, `on` and `dimmed` to build one.
 `Terminal` is the back buffer, a resource, so any crate's presenter writes into it: `set`, `set_wide`, `set_bg`, `put`, `print`, `print_on`, `fill` and `clear` write, `get` and `span` read back, and every write outside the grid is dropped rather than wrapping or panicking.
 `Fit` is how the grid sits in a window, a cell and a margin in physical pixels, and `layout::fit` works it out: the largest zoom that fits, each cell floored to whole pixels so no seam shows between two backgrounds, and the grid centred.
+`FitScreenPlugin::new(cols, rows, cell)` takes the grid as `TerminalPlugin` declares it and opens the primary window at the largest size that keeps the grid's shape and fits what the system leaves to windows, less a gap all round and a title bar, centred there, and `layout::fit` then draws the grid larger to fill it.
+What the system keeps is read from the platform on macOS, the menu bar and the dock from the screen's visible frame, and taken elsewhere as 32 logical pixels along the top and 48 along the bottom.
+The window is sized before it is shown, never shown small and then grown: Bevy knows the monitors only once the window exists, so the plugin's `cleanup` makes it hidden, the first frame a monitor is known sizes it, and the next places it and shows it, two frames because a resize can move the window's top edge.
+Each frame that leaves it hidden asks for the next, so under reactive updates it never waits on input to be shown, and a platform that reports no monitor within thirty frames has the window shown at the size it was made.
+It fits the primary monitor, or any when none is marked primary, and gives the position in the scale the window reads it in, so a window made on a monitor of another scale than the primary's is placed in its own scale.
+It is only the opening, and the window is the player's afterwards: it leaves alone a window that opens fullscreen, one whose fullscreen setting `FullscreenPlugin` remembered, read in `cleanup` so a setting recalled from a save is known whichever order the plugins were added in, a window whose scale factor the game overrides, a capture, which shoots the declared size on every machine, and the web, where the canvas follows its page.
 `Pointer` is the terminal cell the mouse is over, kept by `TerminalPlugin` once a frame after the grid is laid out, by `Fit::cell_at`, the same arithmetic run backwards: `cell` is that cell, `within(rect)` the cell when it is inside a panel's rectangle, and `tile(&view)` the map tile a `MapView` draws there; it is `None` in the margin and outside the window, and with no window it is left where a test put it with `Pointer::at`.
 `Tileset` is pictures in place of glyphs: a sheet, how it is cut up, a picture per character with `with(glyph, index)`, and with `within(rect)` the part of the terminal it covers; the flush shows a cell whose glyph it names as that picture, tinted by the cell's colour, and no glyph, on a sprite spawned per cell the first time there is a tileset, and `turned(false)`, or removing the resource, draws every cell as its glyph again.
 `MapViewPlugin::new(rect).across(2)` draws each tile two cells across, for square tiles on narrow cells: `MapView::to_screen` answers a tile's first cell, `to_world` takes any of its cells back, `tiles` walks the view, and `set`, `wash` and `put` write a whole tile, `set` as one wide cell of the terminal, whose glyph or picture is drawn centred across its run until something else is written into it, so a screen drawn over the map is drawn a letter to a cell.
@@ -52,6 +60,8 @@ The camera never scales; the glyphs take a font size scaled with the cell and ar
 The map fills `Knowledge` once a frame with the topmost glyph on every tile in sight of anything that is not an `Actor` and not `Hidden`, or nothing, and `recalled` draws it over the tile once it is out of sight, in its own colour faded by the same `Memory`, so the stairs behind the player read as remembered and stay legible.
 `TileAppearance::from_tiles` builds the table from the `TileLook` each tile in a `TileRegistry` carries, written in code or read with the tile from a file by `atglyph_rules::tiles::load`, and names at once every tile without one, so a gap is reported at startup rather than found on the map.
 `Vary` is how a tile strays from cell to cell and over time, a `brightness` spread, a `hue` spread per channel and a `shimmer` that drifts; `Memory` is the brightness, saturation and cool `tint` a remembered tile keeps; `Shading` is how light becomes colour, with the level a tile shows its authored colour at, what an unlit but seen tile keeps, and the speeds a flicker and a shimmer move at.
+`CellBrightness::new(|map, p| ...)` is how bright a game draws each cell of a map, as a share of its tile's colours, 1 as authored, more brighter and less darker, high ground brighter than low, since a tile cannot say it when the same tile stands in a valley and on a ridge.
+It scales both of a cell's colours before light and memory touch them, so a cell remembered is as bright as it was seen; it is asked of every cell drawn every frame, so it is a lookup rather than a generation, and absent, every cell is drawn as authored.
 All of it is cosmetic, and the only clock is the frame's, so a replayed seed plays identically however it is coloured.
 `FieldAppearance` is fire and gas over the tiles they are on: a `flame` cell and the `flare` it flickers toward, the `ember` that now and then rises off a flame into the cell over it, the `haze` glyphs gas thick enough to hide behind is drawn with, thinnest first, and a tint per `GasId` that is grey until the game names one.
 What the map draws of fire and gas is `ShownFields`, not the fields as they stand: when a cell's fields change it blends from what it showed to what they hold over `BLEND_SECS`, so a cloud rolls on a turn rather than jumping, and a player who acts mid-blend sees it pick up from where it had got to.
@@ -62,11 +72,13 @@ A blend starts when the last `Wavefront` still playing reaches the cell, which i
 `LightOverlay` draws each visible tile's light as a digit, and only where there is a `Lighting` to read: a game with no lighting plugin sees the map drawn as it always is, since a world with no light to measure has nothing to put in the digit.
 `Particles` is what is playing, and `is_waited_on` says whether any of it keeps the turns waiting.
 What plays is the engine's own: one animation per actor per frame, built from that actor's `Cued` messages in the order they were written, each waited on, and left behind when the player leaves its map.
-An animation is a list of beats, each a trail, a glyph flying between two anchors with three cells of fading tail, or a burst, every anchor lit and fading, each cell showing one of a few glyphs picked by position so it reads as embers rather than a stamp.
+An animation is a list of beats, each a trail, a glyph flying between two anchors with three cells of fading tail, a beam, a line held between two anchors, or a burst, every anchor lit and fading, each cell showing one of a few glyphs picked by position so it reads as embers rather than a stamp.
 A burst with a source is a blast: each anchor lights `ring_secs` later for every cell it is further from the source, give or take half a ring so the front is ragged, burns down its glyphs from white-hot to embers while lighting the ground under it, and throws a few sparks ahead of the front to its far edge.
 A beat's frame is a list of sparks, each a cell, a glyph, a colour, how far it has faded and how far it lights the ground, worked out from where the anchors stand that frame, so the line is redrawn every frame between where the two anchors are now and a flight at someone who walks on bends to follow them.
-`ParticleStyle` is the pace and the look of anything with none of its own: the `plain` glyph and colour, `cell_secs` per cell of flight, `burst_secs` a burst takes, the `burst_glyphs` it picks from, and a blast's `ring_secs` and the `blast_glyphs` it cools through.
-A style whose `cell_secs` and `burst_secs` are both nought takes no time, which is what a headless test wants, and then the plugin never watches the turns; it tells the map where every blast's front is before the map is drawn either way.
+`Cue::Beam { from, to, look, pulse }` is the beam: a line in `look` drawn on only the cells strictly between the two anchors, so whoever stands at either end stays drawn, and, if `pulse` gives one, a glyph running along it from `from` to `to` over its time, so what one gives another is seen to flow from the first to the second.
+It holds until its last quarter and then fades, the pulse bright to the end; it holds the turns as any cue does and lands nothing, since what it shows has already happened, and two anchors side by side have nothing between them, so a beam between them takes no time.
+`ParticleStyle` is the pace and the look of anything with none of its own: the `plain` glyph and colour, `cell_secs` per cell of flight, `burst_secs` a burst takes, the `burst_glyphs` it picks from, a blast's `ring_secs` and the `blast_glyphs` it cools through, and `beam_secs`, how long a beam is held, which by default, `None`, is as long as a flight over the same cells and never less than a burst.
+A style whose `cell_secs` and `burst_secs` are both nought, and whose `beam_secs` is `None` or nought, takes no time, which is what a headless test wants, and then the plugin never watches the turns; it tells the map where every blast's front is before the map is drawn either way.
 It keeps the loop stopped exactly while something waited on is playing and the player does not already hold a turn, and `skip_on_key` lets a key pressed during the wait drop everything waited on, run the turns on, and still be read with the player's turn in hand.
 `CapturePlugin` reads `ATGLYPH_CAPTURE` for the path, `ATGLYPH_CAPTURE_KEYS` for keys to press first, `ATGLYPH_CAPTURE_FRAMES` for the earliest frame, and `ATGLYPH_CAPTURE_AT=hold` to shoot a tenth of a second into the first hold rather than after it.
 `capture::prepare` puts the window above the others and unfocused, so a capture never takes the keyboard from whoever is at the machine, and a frame that comes back entirely black is refused with an error rather than saved.
@@ -128,6 +140,7 @@ One sprite and one text entity per cell is fine at a hundred columns and would b
 Keeping the shading in a module of its own makes it plain functions over a colour, a light level and a position, tested with no `App` and read by no rule.
 The loader is separate again, so a game's colours are a file beside its monsters and a new tile is a line rather than a recompile.
 The layout is the same again: `fit` is arithmetic over a grid, a window and a scale factor, so that it fits, is centred and is whole pixels are properties tested over a range of windows with no `App`.
+`fit_screen.rs` keeps the window's opening as arithmetic over a screen too, so that the window stays inside the usable area, is centred in it and draws the largest cell the room allows is tested over monitors from smaller than the grid to far larger, at the scales displays come in, with only the hiding and showing tested through an `App`.
 The particles' arithmetic is a beat's and an animation's frame over a time and the anchors, which is why what a flight shows at a given moment is a test rather than a screenshot, and `fields.rs` is the same for the map's side of a blast: when a cell's smoke shows and how thick is `ShownFields` over a time, with no `App`.
 `atglyph-bevy` owns the cue and the wait, not the drawing, so a headless game raises the same cues and waits for nothing.
 `CapturePlugin` is its own plugin because it is the one thing here that is not about a player: a game disables it the way Bevy's groups allow, and a run without the environment variable never notices it.

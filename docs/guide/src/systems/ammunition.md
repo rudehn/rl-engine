@@ -5,7 +5,7 @@
             crates/atglyph-bevy/src/items.rs
             crates/atglyph-ui/src/view/gear.rs
             crates/atglyph-bevy/src/throwing.rs
-     fingerprint: fb9ec0fd -->
+     fingerprint: b071a1aa -->
 
 # Ammunition
 
@@ -25,6 +25,7 @@ A game that wants its own reaction to a shot or to a bag settled first orders ag
 `Ammo { tag }` on an item makes it fed: the tag, registered as every tag is, is what one shot spends, and a weapon carries it beside its `RangedAttack`.
 What it spends is any carried thing with that tag in its `Tagged` and a `Stack`, so a quiver is a stack of arrows and its count is what is left.
 `spend_ammo` reads every ranged `Struck` whose item is fed and takes one off the first stack in the attacker's bag with the tag and something left in it, despawning the stack at nought; a blow, a `Struck` naming no item and an attacker with no bag are passed over.
+A `Struck` is written for every shot fired, before it is rolled, so a shot that misses or that a shield turns aside has spent its unit, and an attack refused because the shooter's side spares its target is never fired and spends nothing.
 `sync_ammo` then reads every fed item in every `Inventory`, worn or not, and sets it dry or loaded from that bag alone: with no unit of its tag left it takes the `RangedAttack` off, puts it by as `BenchedAttack::Ranged` and marks the item `Dry`, and with one back it puts the attack back and takes both off.
 Only a change writes `AmmoChanged { item, dry }`, so a game that tells its player a weapon has run dry or loaded again reads that rather than watching components come and go.
 `BenchedAttack` is combat's holder for an attack a worn thing cannot make right now, and a game benching a weapon for a reason of its own, heat among them, puts it in the same holder; `Dry` marks the ones ammunition put there, so `sync_ammo` restores only what it put by and a game's own reason, querying its own cause, never sees one ammunition benched.
@@ -40,7 +41,7 @@ A fed weapon is one spawned with `Ammo { tag }` beside its `RangedAttack`, and w
 
 The engine decides what a shot spends, when a weapon is dry, and that a dry weapon has no shot to offer a player, a mind or a forecast.
 The game decides which weapons are fed and by what tag, how many a stack holds, and what is said when one runs dry or loads again, in its own words over `AmmoChanged`.
-A worn `Launcher` names a tag too, and is not ammunition: what it launches is thrown, flies and lands as any throw does and is picked up again, so nothing is spent and nothing goes dry, as [Abilities](abilities.md) says.
+A worn `Launcher` names a tag too, and is not ammunition: what it launches is thrown, flies and lands as any throw does, at the launcher's own range and roll, and is picked up again, so nothing is spent and nothing goes dry, as [Abilities](abilities.md) says.
 A weapon is dry for want of its tag in its wielder's bag and for nothing else: there is no magazine and no count kept on the weapon, so two weapons on one tag share one supply, and a game that wants reloading writes it as the stack a reload makes.
 Ammunition was one game's own until a second game had a bow, and the loop the first wrote, spending on a shot and drying on an empty bag, was the loop every game with a gun would have copied, so the loop moved into the engine and the game kept its content and its words.
 What a row says of a dry weapon is a facet rather than a field of `Row`, because `Row` is the shape vitals and nearby share too, and a magazine's count is a fact about a fed weapon and not about every row a panel shows.

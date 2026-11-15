@@ -11,7 +11,7 @@
             crates/atglyph-bevy/src/effects/engine.rs
             crates/atglyph-bevy/src/world.rs
             crates/atglyph-bevy/src/plugin.rs
-     fingerprint: ec38f78b -->
+     fingerprint: b9415dcb -->
 
 # Fire and gas
 
@@ -29,6 +29,7 @@ Each is opt-in on its own, because a game may want smoke and no fire, or fire an
 `FirePlugin` declares `needs::<FireRules>`, `needs::<Registries>` for which gases burn, and `needs::<Seed>` for the rolls; `GasPlugin` declares `needs::<Registries>` for the gases themselves and `needs::<Seed>` for what its spills and swirls are hashed from.
 Fire checks again as play begins that what the content asks for can happen: fire that smokes wants `GasPlugin`, refused by name rather than left to do nothing.
 Adding `FirePlugin` registers the `Ignite` effect, which writes a `Kindle` for every cell a landing covers, and `GasPlugin` registers `Emit`, which writes a `Release`, so an ability, a trap or a grenade reaches either field without knowing there is a field.
+Neither effect predicts what it would do to whoever it lands on, so a mind choosing by predicted outcome weighs an ability made of them by its footprint.
 Both reset on a new run, and both declare `depends_on::<CorePlugin>`.
 
 ## The model
@@ -54,7 +55,7 @@ Which cell of two nearly as near a spill fills first, and which way each patch s
 A tile that stops a thrown thing stops gas too, so walls and closed doors hold a cloud back and open water does not.
 `Release { gas, at, amount }` asks for gas at a cell and `Vents { gas, amount }` gives some off wherever its entity stands, every whole turn, both as `gas::release` does, with an amount past 255 spilling.
 Each gas is its own field, so gases overlap without pushing each other aside: sight stops where any of them veils, and whoever stands in two breathes both.
-Gas at or above its `veils_at` is written into the map's veil with `set_veil`, and `WorldMap::is_opaque` reads that veil beside the tile's own opacity, so sight and light both stop in thick smoke.
+Gas at or above its `veils_at` is written into the map's veil with `set_veil`, and the window's `WorldMap::view` reads that veil beside the tile's own opacity, so sight and light both stop in thick smoke.
 `Breathed` is sent for every actor standing in any gas at the end of a turn, whether or not the gas does anything to it.
 
 ## Using it

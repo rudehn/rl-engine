@@ -11,7 +11,7 @@
             crates/atglyph-bevy/src/plugin.rs
             crates/atglyph-bevy/src/knowledge.rs
             crates/atglyph-bevy/src/minds.rs
-     fingerprint: 3e2d4bcd -->
+     fingerprint: bf8cbc2b -->
 
 # Places
 
@@ -32,6 +32,7 @@ A run whose start makes no `WorldMap` gets one built over `PlaceRules::tiles`, a
 `WorldMap` is the resource every reader reads: `tile`, `set_tile`, `is_walkable`, `opens`, `closes` and `is_loaded` all answer for the current map, and `None` or impassable for a cell outside it.
 `current`, `window_tiles`, `to_world` and `to_local` say which map and what it covers; `view` and `opening_view` hand a `WindowView` to a grid algorithm, the second costing a closed door as the turn spent opening it plus the step onto what it opens into, so a flood routes through a door when that is shorter.
 Three counters the engine keeps tell its readers when to recompute without anyone asking them: one moves when the map changes, one when an edit changes what blocks sight, and one when an edit changes where an actor may walk or what a step costs.
+A streamed place's window moving moves the first and neither of the others, since no tile changed: a viewshed whose sight lies in what the window holds before and after is kept, and a mind's flow field is kept wherever it provably leads as one flooded over the new window would.
 A veil is the fourth case, a set of cells that hide what is behind them for a reason other than their tile, as thick gas does, rewritten each turn by whatever makes it and lifted whenever the map under it changes.
 `lock` says what is shut on a cell and `unlock` takes a lock or a seal off, `secrets` lists what a place still hides and `find_secret` lays the real tiles of a found secret's whole group, and `is_peaceful` says whether a map's builder made it a place where nobody is harmed.
 The place model is `atglyph::mapgen::place`, tier 1: `PlaceRules::build` takes a `MapId` and the place's own `PlaceSeed`, derived from the run's seed and the map's number alone, and returns a `PlaceBuild`: a `Terrain`, an `entry`, an optional `exit`, a `Vec<Spot>` of points of interest tagged in the game's own numbering, the `locks` and `secrets` its chain laid, its `ambient` light and whether it is `peaceful`.
@@ -46,10 +47,13 @@ A mind that `FOLLOWS_THROUGH`, stood beside an actor as it went through, and was
 An arrival on a taken cell lands on the nearest free one that can be walked to from it, by `atglyph_grid::landing`, so a follower stands beside whom it followed.
 A warp that lands on a map nobody has built calls the rules and installs the result with `install_place`, whoever arrived; `PlaceEntered` is written for the player alone, with `first` true on the player's first arrival, which is the one arrival on which a game populates a floor.
 `MapChanged` is written when the player changes map and `Travelled` when anyone does, naming the cell it left and whom it went after.
+An actor that changes map loses its `Moves` unless it is `Wander`, since a held cell or a roamed area is cells of the map it left.
 The player's warp also switches the per-map indexes with the map: `Occupancy` swaps its `SpatialGrid` for the arriving map's and stashes the one it had, `Knowledge` does the same with explored tiles and the still things last seen on them, and `FlowFields` is invalidated so the next mind rebuilds.
-A place too large to build whole is streamed: `PlaceRules::streamed` returns a `Streamed` layout for its map, chunks `chunk` tiles a side, `chunks` across and down, the `reach` of chunks kept loaded each way round the player's, and the `entry`, `ambient` and `peaceful` a whole build would carry, and `PlaceRules::build_chunk` builds one chunk from the place's seed, a pure function of the two since a chunk is built again whenever it comes back.
+A place too large to build whole is streamed: `PlaceRules::streamed` returns a `Streamed` layout for its map, chunks `chunk` tiles a side, `chunks` across and down, the `reach` of chunks kept loaded each way round the player's, its `slack`, and the `entry`, `ambient` and `peaceful` a whole build would carry, and `PlaceRules::build_chunk` builds one chunk from the place's seed, a pure function of the two since a chunk left long enough is built again when it comes back.
+`slack` keeps the window where it is while the player stands within that many tiles of the chunk it was made round, and moves it only once the player is that far into another, so pacing along a chunk's edge loads and lets go of nothing; it is cut to a tile short of a chunk, and a save written before it was named reads it as nothing.
+`Streamed::centre_following` answers the chunk the window follows and `Streamed::window_of` the window round it.
 The warp installs such a place with `install_streamed` and loads the chunks round the player's landing with `WorldMap::stream`; `stream_places` keeps them round the player once a frame in `EngineSet::Stream` and again in each turn pass after the warps.
-A chunk leaving the window keeps only what was changed on it, laid back when it is built again, and `ChunkLoaded` is written for every chunk that loads, its `first` true the once it is first built, which is when a game puts on it what its tiles do not say.
+A chunk leaving the window is kept whole among the last to leave, two windows' worth, so walking back over ground just left builds nothing; one that left longer ago keeps only what was changed on it, laid back when it is built again, and `ChunkLoaded` is written for every chunk that loads, its `first` true the once it is first built, which is when a game puts on it what its tiles do not say.
 The window of a streamed place is the loaded chunks, so `window_tiles`, `is_loaded` and every reader cover those alone, and an actor on a chunk not loaded is frozen as one on another map is.
 `PlaceMap::bounds` is a place's whole extent, `tile` one of its tiles, and `terrain` every tile of a place built whole, `None` for a streamed one.
 `export` and `import` are the save shape: every place built whole with its tiles, every streamed place with what was changed on it and which chunks were ever built, and which one is current.

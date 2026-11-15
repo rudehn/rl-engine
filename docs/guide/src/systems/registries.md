@@ -5,7 +5,7 @@
             crates/atglyph-rules/src/names.rs
             crates/atglyph-core/src/id.rs
             crates/atglyph-bevy/src/noise.rs
-     fingerprint: 7f43eb69 -->
+     fingerprint: 7295f1ac -->
 
 # Registries and content
 
@@ -31,6 +31,7 @@ Registries name each other, so a game fills them in the order they refer to one 
 `validate` runs a check over every definition and collects every failure, so a file with three typos reports three.
 `Named` is the one thing a definition type implements: it answers with its unique name, and that is the whole of what the engine asks of a game's own type.
 `Names` borrows whichever registries exist, the engine's and a game's alike, and `Names::load` reads a file through it: a `NameRef<T>` field in the RON becomes an `Id<T>` at load, and a name looked up in a registry that was never given is reported as unknown rather than panicking.
+An unknown name is reported prefixed with the name of the definition it is in, and an entry that does not parse with its position and the `name:` it writes, `entry 3 (rapier): ...`, or its position alone when it writes no readable name.
 `Names::load_list` reads a plain list the same way, for rows that name content without being content: a spawn table has a row per band for one monster, so it is not a `Registry`, and its errors are reported by row.
 `Names::interned` puts a vocabulary in scope that a subsystem interns while the app is built rather than loads from a file, looked up and misspelled exactly as a registry's are, so content naming a sound fails at load the way content naming a status does.
 `Registries::names` builds that view over seven of its own fields, every one but `props`, which is itself loaded through it, so a game loads its content against exactly the tables the engine will read it with; the sounds are not among them, and a game whose effects make a noise chains `SoundNames::sounds` onto it.
