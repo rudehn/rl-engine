@@ -574,6 +574,7 @@ pub fn read_args<T: serde::de::DeserializeOwned>(args: &RawValue) -> Result<T, S
 
 /// An ability as authored, before its names are resolved.
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct Authored {
     name: String,
     #[serde(default)]
@@ -722,6 +723,14 @@ fn resolve_requirement(r: &RequirementRon, names: &Names<'_>) -> Result<Requirem
 mod tests {
     use super::*;
     use crate::tag::TagDef;
+
+    /// A field written that an ability does not have, `cooldwon` for
+    /// `cooldown`, is refused naming it, rather than read as nothing.
+    #[test]
+    fn a_misspelled_field_in_an_ability_is_refused() {
+        let refused = load(r#"[(name: "bolt", mode: Bolt(range: 6), cooldwon: 500)]"#, &Names::new()).unwrap_err().to_string();
+        assert!(refused.contains("cooldwon"), "{refused}");
+    }
 
     /// A trigger reads as its moment and nothing else when it takes the
     /// thing's shared list at its own feet, and as much more as it needs.

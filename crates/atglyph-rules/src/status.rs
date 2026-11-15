@@ -232,6 +232,7 @@ pub type StatusId = Id<StatusDef>;
 
 /// A status as authored, before its names are resolved.
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct Authored {
     name: String,
     #[serde(default = "refresh")]
@@ -706,6 +707,14 @@ mod tests {
         ])
         .unwrap();
         (stats, statuses)
+    }
+
+    /// A field written that a status does not have, `hold` for `holds`, is
+    /// refused naming it, rather than read as nothing.
+    #[test]
+    fn a_misspelled_field_in_a_status_is_refused() {
+        let refused = load(r#"[(name: "dazed", hold: true)]"#, &Names::new()).unwrap_err().to_string();
+        assert!(refused.contains("hold"), "{refused}");
     }
 
     #[test]

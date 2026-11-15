@@ -92,7 +92,7 @@ pub mod combat {
         Effect, EffectBonus, EffectKinds, EffectWorld, Effects, EffectsPlugin, Fired, FromArgs, Landing, PredictCtx, TriggerKinds, Triggers,
     };
     pub use atglyph_bevy::shields::{AttackBlocked, BlocksSpent, Guarding, Shield, ShieldsPlugin};
-    pub use atglyph_bevy::status::{ActiveStatuses, ApplyStatus, RemoveStatus, StatBlock, StatusEvent};
+    pub use atglyph_bevy::status::{ActiveStatuses, ApplyStatus, RemoveStatus, StatBlock, StatusEvent, StatusImmunities};
     pub use atglyph_bevy::throwing::{Launched, Launcher, Throw, ThrowAs, Throwable, ThrowingPlugin, Throws};
     pub use atglyph_rules::ability::{
         AbilityDef, AbilityId, Aim, Asks, Blocked, Cost, EffectArea, EffectSpec, Gates, Purse, Requirement, Targeting, TriggerSpec, blocked, read_args,

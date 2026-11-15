@@ -61,6 +61,8 @@ atglyph is not on crates.io yet, so a game depends on a release by its git tag, 
 
 ### Changed
 
+- **Breaking:** A status or an ability written with a field it does not have, `hold` for `holds` or `cooldwon` for `cooldown`, is refused at load naming the field, where it was read as nothing; a content file carrying a stray field fixes or drops it.
+- `StatusImmunities` is in the prelude beside the other status types.
 - `UseAbility` chooses by predicted outcome wherever an ability's effects foresee themselves: a bolt that would heal its foe is never loosed, and an ability aimed at anyone goes to whoever it does most good on, foe or friend. Where they cannot tell it weighs the footprint as before, so a game whose effects predict nothing chooses exactly as it did.
 - **Breaking:** `ActorView` has four more fields and is no longer `Copy`, so a view written out in full gains them (or is built with `ActorView::of`) and one copied out of a snapshot is cloned; `UseAbility` has a `values` field and is no longer `Copy` (`UseAbility::new(chance)` builds one); `UseAbility` and `StandardBrain` ask `A: PartialEq` of the actor id.
 - **Breaking:** `Cue` has a `Beam` variant, and `ParticleStyle` a `beam_secs` field; a `match` on `Cue` or a `ParticleStyle` written out in full gains one.
