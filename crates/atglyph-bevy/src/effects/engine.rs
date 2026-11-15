@@ -353,12 +353,21 @@ impl Effect for Shove {
     fn apply(&self, landing: &Landing, world: &mut EffectWorld<'_, '_>) {
         for target in landing.targets.clone() {
             let Some(at) = world.position(target) else { continue };
-            let away = Point::new(at.x + (at.x - landing.origin.x).signum(), at.y + (at.y - landing.origin.y).signum());
+            let from = reference(landing, world, at);
+            let away = Point::new(at.x + (at.x - from.x).signum(), at.y + (at.y - from.y).signum());
             let cells = self.cells.roll(&mut **world.rng);
             let landed = world.slide(target, at, away, cells);
             moved(world, landing.user, target, at, landed);
         }
     }
+}
+
+/// The cell a shove pushes away from and a pull draws towards for a target
+/// at `at`: where the landing came from, or, for one standing on that very
+/// cell, as whoever a creature's `hit` struck stands where the moment
+/// lands, its user.
+fn reference(landing: &Landing, world: &EffectWorld<'_, '_>, at: Point) -> Point {
+    if landing.origin == at { world.position(landing.user).unwrap_or(landing.origin) } else { landing.origin }
 }
 
 /// Shows `who`, moved from `from` to `to` by `by`'s effect, sliding over
@@ -412,8 +421,9 @@ impl Effect for Pull {
     fn apply(&self, landing: &Landing, world: &mut EffectWorld<'_, '_>) {
         for target in landing.targets.clone() {
             let Some(at) = world.position(target) else { continue };
+            let towards = reference(landing, world, at);
             let cells = self.cells.roll(&mut **world.rng);
-            let landed = world.slide(target, at, landing.origin, cells);
+            let landed = world.slide(target, at, towards, cells);
             moved(world, landing.user, target, at, landed);
         }
     }

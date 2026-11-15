@@ -3435,6 +3435,17 @@ mod tests {
         assert_eq!(bite, vec![(others[0], Some(player))], "credited to the biter");
     }
 
+    /// An actor whose own `hit` shoves throws whom it struck away from
+    /// itself, the cell the struck one stands on, where the moment lands,
+    /// being no way to push from.
+    #[test]
+    fn an_actors_hit_that_shoves_throws_the_struck_away_from_it() {
+        let (mut app, start, player, others) = crowd(0, |kind| MeleeAttack::new(kind, DiceRoll::flat(1)), &[((1, 0), THEIRS)]);
+        answers(&mut app, player, r#"[(on: "hit", effects: [(kind: "Shove", args: (cells: 2))])]"#);
+        attack(&mut app, player, others[0]);
+        assert_eq!(app.world().get::<Position>(others[0]).unwrap().0, start.offset(3, 0), "two cells further from the one that struck it");
+    }
+
     /// A blow from a worn weapon by an actor that answers `hit` itself
     /// lands the weapon's `hit`, the wielder's own, and the `struck` of the
     /// one it landed on, each once and in that order, after the blow.

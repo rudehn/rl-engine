@@ -149,6 +149,7 @@ atglyph is not on crates.io yet, so a game depends on a release by its git tag, 
 
 ### Fixed
 
+- A creature's own `hit` that shoves threw nobody: its moment lands where the struck one stands, and a shove pushed away from that very cell, which is no way at all. A shove pushes, and a pull draws, from the user when the target stands on the landing's origin.
 - A status held several times was listed once per instance: the nearby rail said "poisoned · poisoned · poisoned" and the vitals drew a badge for each. Both list a status once.
 - A dressing no longer cuts an area through a slot an earlier area laid outside its door: that slot's cell was counted as a way round the area's own things, so a cave beside a dressed house could be laid in two halves, each reached by a different opening. It now blocks as the area's own things do.
 - The look gives the chance of a shot from a worn launcher and forecasts it: a player with a bow and arrows sees the chance the shot rolls at a foe in the bow's range, and both sides' duel counts the launcher's strike to its range, rather than the wearer's own blow once it had closed, so an archer is no longer forecast as a brawler.
