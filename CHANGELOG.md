@@ -8,6 +8,7 @@ atglyph is not on crates.io yet, so a game depends on a release by its git tag, 
 
 ### Added
 
+- `InspectPanel::fitted` draws the panel's frame round what it holds, no taller than its rectangle, keeping the edge nearer the screen's: a monster with two lines takes no more room than one with ten.
 - `Landing::ability` and `Landing::reach` are public, so a game's own effect draws its ability's look and lands harm told as the engine's `Harm` is.
 - An ability written `shown: false` is not drawn by the resolver, neither flying nor bursting, and lands at once: its effects show what it does, a drain's beam or a body standing up.
 - `Brain::names` lists a brain's tactics in priority order, for a game that assembles its brains from parts to check what it built.

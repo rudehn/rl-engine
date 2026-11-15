@@ -67,6 +67,9 @@ pub(crate) struct InspectLayout {
     /// What else someone is said to wear, on a row of its own under where
     /// it stands, `{what}` as for `wielding`.
     pub wearing: String,
+    /// Whether the frame is drawn round what it holds rather than the
+    /// whole rectangle, keeping the rectangle's edge nearer the screen's.
+    pub fit: bool,
 }
 
 /// Draws [`InspectView`] and the cursor on the map.
@@ -89,6 +92,7 @@ impl InspectPanel {
             more: "and {n} more".into(),
             wielding: "wielding {what}".into(),
             wearing: "wearing {what}".into(),
+            fit: false,
         })
     }
 
@@ -123,6 +127,15 @@ impl InspectPanel {
     /// Sets how the cell being looked at is marked.
     pub fn cursor(mut self, style: CursorStyle) -> Self {
         self.0.cursor = style;
+        self
+    }
+
+    /// Draws the frame round what it holds, no taller than its rectangle,
+    /// keeping whichever of the rectangle's top and bottom edges is nearer
+    /// the screen's: a panel for a monster with two lines says no more room
+    /// than one with ten.
+    pub fn fitted(mut self) -> Self {
+        self.0.fit = true;
         self
     }
 
@@ -240,9 +253,58 @@ pub(crate) fn draw_inspect(
     if rect.width < 12 || rect.height < 4 {
         return;
     }
+    let rect = if layout.fit { fitted(rect, &layout, &view, &palette, terminal.height()) } else { rect };
     clear(&mut terminal, rect, &palette);
     frame(&mut terminal, rect, &layout.title, &layout.hints, &palette);
     let inner = GridRect::new(rect.x + 2, rect.y + 1, rect.width - 4, rect.height - 2);
+    paint(&mut *terminal, inner, &layout, &view, &palette);
+}
+
+/// `rect` cut to the rows its frame and what it holds take, keeping the
+/// edge of it nearer the screen's: its bottom on the lower half of a screen
+/// `screen` rows tall, its top on the upper.
+fn fitted(rect: GridRect, layout: &InspectLayout, view: &InspectView, palette: &Palette, screen: i32) -> GridRect {
+    let inner = GridRect::new(rect.x + 2, rect.y + 1, rect.width - 4, rect.height - 2);
+    let used = paint(&mut Measure, inner, layout, view, palette) - inner.y;
+    let height = (used + 2).clamp(4, rect.height);
+    if rect.y + rect.height / 2 >= screen / 2 {
+        GridRect::new(rect.x, rect.bottom() - height, rect.width, height)
+    } else {
+        GridRect::new(rect.x, rect.y, rect.width, height)
+    }
+}
+
+/// Where the panel's lines go: the terminal, or nowhere, for a pass that
+/// only counts the rows they take.
+trait Paint {
+    /// Writes `text` at `x`, `y`.
+    fn print_on(&mut self, x: i32, y: i32, text: &str, fg: Color, bg: Color);
+    /// A bar `width` cells long at `x`, `y`, filled to `fraction`.
+    fn bar(&mut self, x: i32, y: i32, width: i32, fraction: f32, tone: ToneId, palette: &Palette);
+}
+
+impl Paint for Terminal {
+    fn print_on(&mut self, x: i32, y: i32, text: &str, fg: Color, bg: Color) {
+        Terminal::print_on(self, x, y, text, fg, bg);
+    }
+
+    fn bar(&mut self, x: i32, y: i32, width: i32, fraction: f32, tone: ToneId, palette: &Palette) {
+        bar(self, x, y, width, fraction, tone, palette);
+    }
+}
+
+/// A pass that draws nothing: what [`paint`] returns from it is the row
+/// after the last it would have written.
+struct Measure;
+
+impl Paint for Measure {
+    fn print_on(&mut self, _: i32, _: i32, _: &str, _: Color, _: Color) {}
+    fn bar(&mut self, _: i32, _: i32, _: i32, _: f32, _: ToneId, _: &Palette) {}
+}
+
+/// Paints what the panel holds inside `inner`, and returns the row after
+/// the last it wrote.
+fn paint(out: &mut impl Paint, inner: GridRect, layout: &InspectLayout, view: &InspectView, palette: &Palette) -> i32 {
     let bg = palette.get(Tones::SURFACE);
     let width = inner.width.max(0) as usize;
     // The ground, always, so a burnt cell says what it burnt to.
@@ -255,15 +317,16 @@ pub(crate) fn draw_inspect(
     }
     let bottom = inner.bottom();
     let Some(subject) = &view.subject else {
-        terminal.print_on(inner.x, inner.y, &clip(&layout.empty, width), palette.get(Tones::MUTED), bg);
+        out.print_on(inner.x, inner.y, &clip(&layout.empty, width), palette.get(Tones::MUTED), bg);
         if !ground.is_empty() && inner.y + 1 < bottom {
-            terminal.print_on(inner.x, inner.y + 1, &clip(&ground, width), palette.get(Tones::TEXT), bg);
+            out.print_on(inner.x, inner.y + 1, &clip(&ground, width), palette.get(Tones::TEXT), bg);
+            return inner.y + 2;
         }
-        return;
+        return inner.y + 1;
     };
     let mut y = inner.y;
-    terminal.print_on(inner.x, y, &subject.glyph.ch.to_string(), subject.glyph.fg, bg);
-    terminal.print_on(inner.x + 2, y, &clip(&subject.label, width.saturating_sub(2)), palette.get(relation_tone(subject.relation)), bg);
+    out.print_on(inner.x, y, &subject.glyph.ch.to_string(), subject.glyph.fg, bg);
+    out.print_on(inner.x + 2, y, &clip(&subject.label, width.saturating_sub(2)), palette.get(relation_tone(subject.relation)), bg);
     // What it wields, beside its name when the two fit, and whole on the
     // row under it otherwise, so neither is cut for the other.
     let said = |template: &str, things: &[String]| template.replace("{what}", &things.join(" and "));
@@ -271,13 +334,13 @@ pub(crate) fn draw_inspect(
     let beside = 2 + subject.label.chars().count();
     match wields {
         Some(wields) if beside + 2 + wields.chars().count() <= width => {
-            terminal.print_on(inner.x + beside as i32, y, &format!(", {wields}"), palette.get(Tones::MUTED), bg);
+            out.print_on(inner.x + beside as i32, y, &format!(", {wields}"), palette.get(Tones::MUTED), bg);
             y += 1;
         }
         Some(wields) => {
             y += 1;
             if y < inner.bottom() {
-                terminal.print_on(inner.x, y, &clip(&wields, width), palette.get(Tones::MUTED), bg);
+                out.print_on(inner.x, y, &clip(&wields, width), palette.get(Tones::MUTED), bg);
                 y += 1;
             }
         }
@@ -287,19 +350,19 @@ pub(crate) fn draw_inspect(
         && y < inner.bottom()
     {
         let reading = format!("health {hp}/{max}");
-        terminal.print_on(inner.x, y, &clip(&reading, width), palette.get(Tones::TEXT), bg);
+        out.print_on(inner.x, y, &clip(&reading, width), palette.get(Tones::TEXT), bg);
         let x = inner.x + reading.chars().count() as i32 + 1;
         if x + 10 < inner.right() {
-            bar(&mut terminal, x, y, 10, subject.health_fraction(), crate::view::health_tone(hp, max), &palette);
+            out.bar(x, y, 10, subject.health_fraction(), crate::view::health_tone(hp, max), palette);
         }
         y += 1;
     }
     if y < inner.bottom() {
-        terminal.print_on(inner.x, y, &clip(&whereabouts(subject.distance, &ground), width), palette.get(Tones::MUTED), bg);
+        out.print_on(inner.x, y, &clip(&whereabouts(subject.distance, &ground), width), palette.get(Tones::MUTED), bg);
         y += 1;
     }
     if !view.wears.is_empty() && y < inner.bottom() {
-        terminal.print_on(inner.x, y, &clip(&said(&layout.wearing, &view.wears), width), palette.get(Tones::MUTED), bg);
+        out.print_on(inner.x, y, &clip(&said(&layout.wearing, &view.wears), width), palette.get(Tones::MUTED), bg);
         y += 1;
     }
     // What an item is worth, in the bag's own words.
@@ -315,7 +378,7 @@ pub(crate) fn draw_inspect(
         if y >= inner.bottom() {
             break;
         }
-        terminal.print_on(inner.x, y, &clip(&line, width), palette.get(Tones::TEXT), bg);
+        out.print_on(inner.x, y, &clip(&line, width), palette.get(Tones::TEXT), bg);
         y += 1;
     }
     // A thing not yet known is no more than its name here, as in the bag,
@@ -326,7 +389,7 @@ pub(crate) fn draw_inspect(
             seems => seems.iter().map(|f| (f.text.as_str(), f.tone)).collect(),
         };
         for (text, tone) in said.into_iter().take((inner.bottom() - y).max(0) as usize) {
-            terminal.print_on(inner.x, y, &clip(text, width), palette.get(tone), bg);
+            out.print_on(inner.x, y, &clip(text, width), palette.get(tone), bg);
             y += 1;
         }
     }
@@ -334,20 +397,20 @@ pub(crate) fn draw_inspect(
         && y < inner.bottom()
     {
         let template = if work.target.is_some() { &layout.working } else { &layout.working_alone };
-        terminal.print_on(inner.x, y, &clip(&working_line(template, work), width), palette.get(Tones::NOTICE), bg);
+        out.print_on(inner.x, y, &clip(&working_line(template, work), width), palette.get(Tones::NOTICE), bg);
         y += 1;
     }
     if let Some(duel) = view.duel
         && y + 1 < inner.bottom()
     {
         y += 1;
-        terminal.print_on(inner.x, y, "outlook ", palette.get(Tones::TEXT), bg);
-        terminal.print_on(inner.x + 8, y, duel.outlook.label(), palette.get(outlook_tone(duel.outlook)), bg);
+        out.print_on(inner.x, y, "outlook ", palette.get(Tones::TEXT), bg);
+        out.print_on(inner.x + 8, y, duel.outlook.label(), palette.get(outlook_tone(duel.outlook)), bg);
         y += 1;
         if y < inner.bottom() {
             let turns = |t: Option<u32>| t.map(|t| t.to_string()).unwrap_or_else(|| "never".into());
             let reading = format!("you fell it in {}, it fells you in {}", turns(duel.turns_to_fell), turns(duel.turns_to_fall));
-            terminal.print_on(inner.x, y, &clip(&reading, width), palette.get(Tones::MUTED), bg);
+            out.print_on(inner.x, y, &clip(&reading, width), palette.get(Tones::MUTED), bg);
             y += 1;
         }
     }
@@ -356,7 +419,7 @@ pub(crate) fn draw_inspect(
         && y < inner.bottom()
     {
         let reading = format!("{name}: blocks {} a turn at {}%", shield.blocks, shield.chance.min(100));
-        terminal.print_on(inner.x, y, &clip(&reading, width), palette.get(Tones::MUTED), bg);
+        out.print_on(inner.x, y, &clip(&reading, width), palette.get(Tones::MUTED), bg);
         y += 1;
     }
     // The chance the player's own attack lands, and every line the model
@@ -365,13 +428,13 @@ pub(crate) fn draw_inspect(
         && y < inner.bottom()
     {
         let percent = odds.percent();
-        terminal.print_on(inner.x, y, &clip(&format!("Chance to hit: {percent}%"), width), palette.get(crate::panel::odds_tone(percent)), bg);
+        out.print_on(inner.x, y, &clip(&format!("Chance to hit: {percent}%"), width), palette.get(crate::panel::odds_tone(percent)), bg);
         y += 1;
         for line in &odds.lines {
             if y >= inner.bottom() {
                 break;
             }
-            terminal.print_on(inner.x, y, &clip(&format!("  {:+} {}", line.value, line.label), width), palette.get(Tones::MUTED), bg);
+            out.print_on(inner.x, y, &clip(&format!("  {:+} {}", line.value, line.label), width), palette.get(Tones::MUTED), bg);
             y += 1;
         }
     }
@@ -383,14 +446,16 @@ pub(crate) fn draw_inspect(
     let shown = fitting(view.facets.iter().map(|f| wrap(&f.text, width).len()), rows);
     for facet in &view.facets[..shown] {
         for line in wrap(&facet.text, width) {
-            terminal.print_on(inner.x, y, &line, palette.get(facet.tone), bg);
+            out.print_on(inner.x, y, &line, palette.get(facet.tone), bg);
             y += 1;
         }
     }
     let left = view.facets.len() - shown;
     if left > 0 && y < inner.bottom() {
-        terminal.print_on(inner.x, y, &clip(&layout.more.replace("{n}", &left.to_string()), width), palette.get(Tones::MUTED), bg);
+        out.print_on(inner.x, y, &clip(&layout.more.replace("{n}", &left.to_string()), width), palette.get(Tones::MUTED), bg);
+        y += 1;
     }
+    y
 }
 
 /// How many of a run of facets, each so many lines tall, are drawn whole
@@ -731,6 +796,35 @@ mod tests {
             [inner(22), inner(23), inner(24), inner(25)],
             [") round shield".to_string(), "2 tiles away, on floor".into(), "blocks 1 a turn at 50%".into(), "attack speed 95".into()]
         );
+    }
+
+    /// A fitted panel draws its frame round what it holds, two facets
+    /// under the crab's name and whereabouts, and no further, keeping the
+    /// edge nearer the screen's: along the foot of the screen, its bottom.
+    #[test]
+    fn a_fitted_panel_draws_its_frame_round_what_it_holds() {
+        const TWO: &[&str] = &["hunts in packs", "sees in the dark"];
+        let mut stage = Stage::new_with(InspectPanel::new(GridRect::new(0, 21, 30, 12)).fitted(), |app| {
+            app.add_plugins(atglyph_render::MapViewPlugin::new(GridRect::new(0, 0, 40, 20)));
+        })
+        .screen(40, 33);
+        let annotate = move |mut view: ResMut<InspectView>| {
+            if view.subject.is_some() {
+                view.facets.extend(TWO.iter().map(|text| crate::Facet::new("trait", *text)));
+            }
+        };
+        stage.app.add_systems(Update, annotate.in_set(crate::ViewSet::Annotate));
+        stage.actor("crab", 'c', 2, 0);
+        stage.tick();
+        stage.press(CursorKeys::default().look);
+        stage.press(CursorKeys::default().next);
+        let rows: Vec<String> = (21..33).map(|y| stage.row(y)).collect();
+        let top = rows.iter().position(|r| r.starts_with('\u{250c}')).expect("a top border");
+        assert!(rows[11].starts_with('\u{2514}'), "the bottom edge kept: {rows:#?}");
+        let inner: Vec<String> =
+            rows[top + 1..11].iter().map(|r| r.trim_start_matches("\u{2502} ").trim_end_matches('\u{2502}').trim_end().to_string()).collect();
+        assert_eq!(inner.last().map(String::as_str), Some("sees in the dark"), "the last facet on the last row inside: {inner:#?}");
+        assert!(rows[..top].iter().all(|r| r.trim().is_empty() || !r.starts_with('\u{2502}')), "nothing of it above its frame: {rows:#?}");
     }
 
     /// A stage looking at a crab the game says `facets` about, in a panel
