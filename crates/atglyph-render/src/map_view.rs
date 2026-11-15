@@ -484,6 +484,7 @@ impl Plugin for MapViewPlugin {
             .init_resource::<ShownFields>()
             .init_resource::<Wavefronts>()
             .init_resource::<DrawnActors>()
+            .init_resource::<Sliding>()
             .insert_resource(MapView::new(self.viewport).across(self.across))
             .add_systems(
                 Update,
@@ -625,7 +626,20 @@ const ANIMATION_RATE: f32 = 12.0;
 
 /// What a thing on the map is drawn by: where, as what, on which map, and
 /// whether it is [`Concealed`] in the dark.
-type Drawn = (&'static Position, &'static Glyph, Option<&'static OnMap>, Has<Concealed>, Has<Actor>);
+type Drawn = (Entity, &'static Position, &'static Glyph, Option<&'static OnMap>, Has<Concealed>, Has<Actor>);
+
+/// Where an actor shoved or pulled is drawn while it is seen on its way, in
+/// place of the cell it stands on: refilled every frame by the particles,
+/// and empty when nothing slides.
+#[derive(Resource, Debug, Default)]
+pub struct Sliding(pub(crate) Vec<(Entity, Point)>);
+
+impl Sliding {
+    /// Where `who` is drawn this frame, if it is sliding.
+    pub fn at(&self, who: Entity) -> Option<Point> {
+        self.0.iter().find(|(e, _)| *e == who).map(|(_, p)| *p)
+    }
+}
 
 /// The tiles the map drew someone on this frame: every actor the player
 /// sees, the player among them, refilled by `draw_map`.
@@ -671,11 +685,12 @@ pub struct Scene<'w, 's> {
     shown: Res<'w, ShownFields>,
     registries: Option<Res<'w, Registries>>,
     brightness: Option<Res<'w, CellBrightness>>,
+    sliding: Option<Res<'w, Sliding>>,
 }
 
 /// Paints the viewport: lit where the player sees, dim where remembered.
 pub(crate) fn draw_map(mut terminal: ResMut<Terminal>, mut actors: ResMut<DrawnActors>, scene: Scene) {
-    let Scene { time, view, map, look, knowledge, lighting, overlay, player, glyphs, sight, fields, shown, registries, brightness } = &scene;
+    let Scene { time, view, map, look, knowledge, lighting, overlay, player, glyphs, sight, fields, shown, registries, brightness, sliding } = &scene;
     let now = time.elapsed_secs();
     let t = (now * ANIMATION_RATE).floor() / ANIMATION_RATE;
     let viewshed = player.single().ok();
@@ -726,29 +741,31 @@ pub(crate) fn draw_map(mut terminal: ResMut<Terminal>, mut actors: ResMut<DrawnA
     }
     let mut drawn: Vec<(Point, i32)> = Vec::new();
     actors.0.clear();
-    for (pos, glyph, on, concealed, actor) in glyphs {
-        if !sight.shows(pos.0, on, concealed) {
+    for (entity, pos, glyph, on, concealed, actor) in glyphs {
+        // A shoved actor is drawn where it is seen on its way.
+        let at = sliding.as_deref().and_then(|s| s.at(entity)).unwrap_or(pos.0);
+        if !sight.shows(at, on, concealed) {
             continue;
         }
-        if view.to_screen(pos.0).is_none() {
+        if view.to_screen(at).is_none() {
             continue;
         }
         if actor {
-            actors.0.push(pos.0);
+            actors.0.push(at);
         }
-        if let Some(existing) = drawn.iter_mut().find(|(q, _)| *q == pos.0) {
+        if let Some(existing) = drawn.iter_mut().find(|(q, _)| *q == at) {
             if existing.1 >= glyph.layer {
                 continue;
             }
             existing.1 = glyph.layer;
         } else {
-            drawn.push((pos.0, glyph.layer));
+            drawn.push((at, glyph.layer));
         }
         let fg = match lighting {
-            Some(l) => look.shading.light(glyph.fg, l.at(pos.0), pos.0, t),
+            Some(l) => look.shading.light(glyph.fg, l.at(at), at, t),
             None => glyph.fg,
         };
-        view.put(&mut terminal, pos.0, glyph.ch, fg);
+        view.put(&mut terminal, at, glyph.ch, fg);
     }
 }
 

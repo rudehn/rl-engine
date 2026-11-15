@@ -1822,15 +1822,23 @@ mod tests {
         let them = foe(&mut app, start.offset(1, 0));
         settle(&mut app);
 
+        cues(&mut app);
         app.world_mut().write_message(Intent::new(me, Use { ability: heave, aim: start.offset(1, 0) }));
         app.update();
         assert_eq!(app.world().get::<Position>(them).unwrap().0, start.offset(3, 0), "two cells further out");
+        let slid: Vec<Cue> = cues(&mut app).into_iter().filter(|c| matches!(c, Cue::Slide { .. })).collect();
+        assert_eq!(
+            slid,
+            vec![Cue::Slide { who: them, path: vec![start.offset(1, 0), start.offset(2, 0), start.offset(3, 0)] }],
+            "seen to slide over every cell it passed"
+        );
 
         // A wall right behind it: the shove stops rather than passing.
         app.world_mut().resource_mut::<WorldMap>().set_tile(start.offset(4, 0), TileId(1));
         app.world_mut().write_message(Intent::new(me, Use { ability: heave, aim: start.offset(3, 0) }));
         app.update();
         assert_eq!(app.world().get::<Position>(them).unwrap().0, start.offset(3, 0), "the wall took it");
+        assert!(!cues(&mut app).iter().any(|c| matches!(c, Cue::Slide { .. })), "and what did not move is not seen to slide");
     }
 
     /// An effect the engine has never heard of reaches the world through

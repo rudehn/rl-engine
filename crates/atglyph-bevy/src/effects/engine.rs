@@ -341,8 +341,8 @@ impl FromArgs for Cleanse {
 /// the occupancy index straight.
 #[derive(Debug, Clone, Copy)]
 pub struct Shove {
-    /// How many cells.
-    pub cells: i32,
+    /// How many cells: dice rolled for each target, or a fixed number.
+    pub cells: DiceRoll,
 }
 
 impl Effect for Shove {
@@ -354,30 +354,54 @@ impl Effect for Shove {
         for target in landing.targets.clone() {
             let Some(at) = world.position(target) else { continue };
             let away = Point::new(at.x + (at.x - landing.origin.x).signum(), at.y + (at.y - landing.origin.y).signum());
-            world.slide(target, at, away, self.cells);
+            let cells = self.cells.roll(&mut **world.rng);
+            let landed = world.slide(target, at, away, cells);
+            moved(world, landing.user, target, at, landed);
         }
     }
+}
+
+/// Shows `who`, moved from `from` to `to` by `by`'s effect, sliding over
+/// every cell between, when it moved at all.
+fn moved(world: &mut EffectWorld<'_, '_>, by: Entity, who: Entity, from: Point, to: Point) {
+    if from == to {
+        return;
+    }
+    // A slide walks one straight way, so the cells it passed are the steps
+    // from where it stood.
+    let step = Point::new((to.x - from.x).signum(), (to.y - from.y).signum());
+    let n = (to.x - from.x).abs().max((to.y - from.y).abs());
+    let path = (0..=n).map(|k| Point::new(from.x + step.x * k, from.y + step.y * k)).collect();
+    world.cues.write(crate::cue::Cued { actor: by, cue: crate::cue::Cue::Slide { who, path } });
+}
+
+/// Reads a shove's or a pull's cells, refusing dice that could move nobody.
+fn read_cells(args: &RawValue, kind: &str) -> Result<DiceRoll, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct Args {
+        cells: DiceRoll,
+    }
+    let a: Args = read_args(args).map_err(|e| format!("{kind}: {e}"))?;
+    if i64::from(a.cells.num) + i64::from(a.cells.bonus) < 1 {
+        return Err(format!("{kind}: cells {} could move nobody", a.cells));
+    }
+    Ok(a.cells)
 }
 
 impl FromArgs for Shove {
     const KIND: &'static str = "Shove";
 
     fn from_args(args: &RawValue, _names: &Names<'_>) -> Result<Self, String> {
-        #[derive(serde::Deserialize)]
-        #[serde(deny_unknown_fields)]
-        struct Args {
-            cells: i32,
-        }
-        let a: Args = read_args(args)?;
-        Ok(Self { cells: a.cells })
+        Ok(Self { cells: read_cells(args, Self::KIND)? })
     }
 }
 
 /// Drag everyone under the footprint towards the user.
 #[derive(Debug, Clone, Copy)]
 pub struct Pull {
-    /// How many cells.
-    pub cells: i32,
+    /// How many cells: dice rolled for each target, or a fixed number.
+    pub cells: DiceRoll,
 }
 
 impl Effect for Pull {
@@ -388,7 +412,9 @@ impl Effect for Pull {
     fn apply(&self, landing: &Landing, world: &mut EffectWorld<'_, '_>) {
         for target in landing.targets.clone() {
             let Some(at) = world.position(target) else { continue };
-            world.slide(target, at, landing.origin, self.cells);
+            let cells = self.cells.roll(&mut **world.rng);
+            let landed = world.slide(target, at, landing.origin, cells);
+            moved(world, landing.user, target, at, landed);
         }
     }
 }
@@ -397,13 +423,7 @@ impl FromArgs for Pull {
     const KIND: &'static str = "Pull";
 
     fn from_args(args: &RawValue, _names: &Names<'_>) -> Result<Self, String> {
-        #[derive(serde::Deserialize)]
-        #[serde(deny_unknown_fields)]
-        struct Args {
-            cells: i32,
-        }
-        let a: Args = read_args(args)?;
-        Ok(Self { cells: a.cells })
+        Ok(Self { cells: read_cells(args, Self::KIND)? })
     }
 }
 
@@ -501,8 +521,8 @@ impl Effect for Emit {
 }
 
 /// `n` cells, as a phrase.
-fn cells(n: i32) -> String {
-    if n == 1 { "a cell".to_string() } else { format!("{n} cells") }
+fn cells(n: DiceRoll) -> String {
+    if n == DiceRoll::flat(1) { "a cell".to_string() } else { format!("{n} cells") }
 }
 
 impl FromArgs for Emit {
@@ -697,7 +717,7 @@ mod tests {
         let cure = Cleanse { status: slowed };
         assert_eq!(predict(&cure, &world, &holder), Prospect::on(Impact::Cleanse { id: slowed, boon: false }));
         assert_eq!(predict(&cure, &world, &someone(20)), Prospect::on(Impact::Nothing), "nothing to take off");
-        assert_eq!(predict(&Shove { cells: 2 }, &world, &someone(20)), Prospect::UNKNOWN, "and what says nothing of itself is unknown");
+        assert_eq!(predict(&Shove { cells: DiceRoll::flat(2) }, &world, &someone(20)), Prospect::UNKNOWN, "and what says nothing of itself is unknown");
     }
 
     /// A bonus adds its amount to a harm and a mend roll and its turns to
@@ -779,6 +799,25 @@ mod tests {
         assert_eq!(one.describe(&registries, EffectBonus::default()), "paralysed for 2 turns");
         assert_eq!(dice.describe(&registries, EffectBonus::default()), "paralysed for 1d3+2 turns");
         assert_eq!(dice.describe(&registries, EffectBonus { turns: 1, amount: 0 }), "paralysed for 1d3+3 turns", "a bonus adds to the dice");
+    }
+
+    /// A shove's and a pull's cells are dice or a number, said as written;
+    /// dice that could move nobody are refused naming the effect.
+    #[test]
+    fn shove_and_pull_cells_are_dice_or_a_number() {
+        let names = Names::new();
+        let args = |text: &str| atglyph_rules::ability::parse_args(text).unwrap();
+        let registries = Registries::default();
+        let shove = Shove::from_args(&args(r#"(cells: "1d3")"#), &names).unwrap();
+        assert_eq!(shove.cells, DiceRoll::new(1, 3));
+        assert_eq!(shove.describe(&registries, EffectBonus::default()), "shoves 1d3 cells back");
+        let one = Shove::from_args(&args("(cells: 1)"), &names).unwrap();
+        assert_eq!(one.describe(&registries, EffectBonus::default()), "shoves a cell back");
+        let pull = Pull::from_args(&args(r#"(cells: "1d2+1")"#), &names).unwrap();
+        assert_eq!(pull.describe(&registries, EffectBonus::default()), "pulls 1d2+1 cells closer");
+        let none = Shove::from_args(&args(r#"(cells: "1d2-2")"#), &names).expect_err("it could move nobody");
+        assert!(none.contains("Shove") && none.contains("1d2-2"), "{none}");
+        assert!(Pull::from_args(&args("(cells: 0)"), &names).unwrap_err().contains("Pull"));
     }
 
     /// Dice turns roll within their span, and both ends turn up.

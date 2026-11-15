@@ -225,6 +225,21 @@ impl Beam {
     }
 }
 
+/// An actor seen moving over cells it did not step.
+///
+/// Draws no sparks of its own: the map draws the actor where
+/// [`Particles::sliders`] says it is while the slide plays, and the cell
+/// it landed on shows whatever lies there until it arrives.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct Slide {
+    /// Who.
+    pub who: Entity,
+    /// The cells it passed, from where it stood to where it landed.
+    pub path: Vec<Point>,
+    /// Seconds on each cell.
+    pub cell_secs: f32,
+}
+
 /// One beat of an animation: what plays before the next begins.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum Beat {
@@ -234,6 +249,8 @@ pub(crate) enum Beat {
     Burst(Burst),
     /// A beam.
     Beam(Beam),
+    /// A slide.
+    Slide(Slide),
 }
 
 impl Beat {
@@ -244,6 +261,7 @@ impl Beat {
             Beat::Burst(b) => b.duration(),
             Beat::Beam(b) if b.spans() => b.secs,
             Beat::Beam(_) => 0.0,
+            Beat::Slide(s) => s.path.len().saturating_sub(1) as f32 * s.cell_secs,
         }
     }
 
@@ -275,6 +293,7 @@ impl Beat {
                 }
                 beam.frame(t, at)
             }
+            Beat::Slide(_) => Vec::new(),
             Beat::Burst(burst) => {
                 if burst.secs <= 0.0 || t >= burst.duration() {
                     return Vec::new();
@@ -391,6 +410,33 @@ impl Particles {
         fronts
     }
 
+    /// Every actor a slide is showing on its way at `now`, and the cell it
+    /// is on: the first cell of its path until the slide begins, even
+    /// while what plays before it in the same animation plays, then each
+    /// cell for a cell's time. An actor in two slides is where the first
+    /// that has not ended puts it, so a second shove follows the first.
+    pub(crate) fn sliders(&self, now: f32) -> Vec<(Entity, Point)> {
+        let mut out: Vec<(Entity, Point)> = Vec::new();
+        for (animation, began) in &self.playing {
+            let t = began.map_or(0.0, |b| now - b);
+            let mut begun = 0.0;
+            for step in &animation.steps {
+                let ends = begun + step.duration();
+                if let Beat::Slide(slide) = step
+                    && t < ends
+                    && !out.iter().any(|(e, _)| *e == slide.who)
+                {
+                    let cell = if t <= begun || slide.cell_secs <= 0.0 { 0 } else { ((t - begun) / slide.cell_secs).floor() as usize };
+                    if let Some(at) = slide.path.get(cell.min(slide.path.len().saturating_sub(1))) {
+                        out.push((slide.who, *at));
+                    }
+                }
+                begun = ends;
+            }
+        }
+        out
+    }
+
     /// What every animation shows at `now` with the anchors where `at`
     /// puts them, starting the ones that have not begun and dropping the
     /// ones that have finished.
@@ -405,6 +451,10 @@ impl Particles {
         sparks
     }
 }
+
+/// Seconds a shoved actor is seen on each cell it passes: quicker than a
+/// walk, so it reads as thrown, and slow enough to be seen at all.
+pub const SLIDE_SECS: f32 = 0.04;
 
 /// How the engine's own animations look: the flight and burst of anything
 /// with no look of its own, and the pace of everything.
@@ -425,6 +475,9 @@ pub struct ParticleStyle {
     /// Seconds a beam is held; `None` holds it as long as a flight over
     /// the same cells would take, and never less than a burst.
     pub beam_secs: Option<f32>,
+    /// Seconds a shoved or pulled actor spends on each cell it is seen to
+    /// slide over.
+    pub slide_secs: f32,
 }
 
 impl Default for ParticleStyle {
@@ -439,6 +492,7 @@ impl Default for ParticleStyle {
             // one going up.
             blast_glyphs: vec!['*', '%', '+', '\u{00b7}'],
             beam_secs: None,
+            slide_secs: SLIDE_SECS,
         }
     }
 }
@@ -446,7 +500,7 @@ impl Default for ParticleStyle {
 impl ParticleStyle {
     /// Whether anything drawn in this style takes time to watch.
     pub(crate) fn takes_time(&self) -> bool {
-        self.cell_secs > 0.0 || self.burst_secs > 0.0 || self.beam_secs.is_some_and(|s| s > 0.0)
+        self.cell_secs > 0.0 || self.burst_secs > 0.0 || self.slide_secs > 0.0 || self.beam_secs.is_some_and(|s| s > 0.0)
     }
 
     /// How long a beam over `cells` cells is held.
@@ -470,6 +524,7 @@ impl Plugin for ParticlesPlugin {
             .add_systems(OnEnter(EngineState::Playing), watch_unless_instant)
             .add_systems(Update, skip_on_key.before(EngineSet::Input).run_if(in_state(EngineState::Playing)))
             .add_systems(Update, (play_cues, publish_wavefronts).chain().in_set(PresentSet::Narrate))
+            .add_systems(Update, place_sliders.in_set(PresentSet::Map).before(draw_map))
             .add_systems(Update, (draw_particles, wait_on_particles).chain().in_set(PresentSet::Map).after(draw_map));
     }
 
@@ -526,6 +581,7 @@ impl Cues<'_, '_> {
                 let glyphs = if from.is_some() { &self.style.blast_glyphs } else { &self.style.burst_glyphs };
                 Beat::Burst(Burst { on: on.clone(), glyphs: glyphs.clone(), color, secs: self.style.burst_secs, from: *from, ring_secs: self.style.ring_secs })
             }
+            Cue::Slide { who, path } => Beat::Slide(Slide { who: *who, path: path.clone(), cell_secs: self.style.slide_secs }),
         }
     }
 }
@@ -546,6 +602,11 @@ pub(crate) fn play_cues(mut particles: ResMut<Particles>, mut cues: Cues) {
     for (_, animation) in per_actor {
         particles.play(animation);
     }
+}
+
+/// Tells the map view where every sliding actor is to be drawn this frame.
+pub(crate) fn place_sliders(particles: Res<Particles>, mut sliding: ResMut<crate::map_view::Sliding>, time: Res<Time>) {
+    sliding.0 = particles.sliders(time.elapsed_secs());
 }
 
 /// Tells the map view where every blast's front is, so the fire and gas a
@@ -638,6 +699,89 @@ mod tests {
 
     fn trail() -> Trail {
         Trail::new(Anchor::cell(Point::new(0, 0)), Anchor::cell(Point::new(4, 0)), '*', Color::WHITE, 0.1)
+    }
+
+    /// A slide shows its actor on the cell it was moved from until it
+    /// begins, then on each cell it passed in turn, a cell's time apiece,
+    /// and nowhere once it has landed, where the map draws it as ever.
+    #[test]
+    fn a_slide_shows_its_actor_at_the_start_until_it_begins_then_along_its_path() {
+        let who = Entity::from_bits(9);
+        let path = vec![Point::new(1, 1), Point::new(2, 1), Point::new(3, 1)];
+        let slide = Beat::Slide(Slide { who, path: path.clone(), cell_secs: 0.1 });
+        assert_eq!(slide.duration(), 0.2, "two cells to cross");
+        assert!(slide.frame(0.05, &fixed).is_empty(), "the map draws it; nothing sparks");
+        let mut particles = Particles::default();
+        particles.play(Animation { map: MapId::ZERO, steps: vec![Beat::Trail(trail()), slide], waits: true });
+        assert_eq!(particles.sliders(5.0), vec![(who, path[0])], "not begun: where it stood");
+        particles.frame(5.0, MapId::ZERO, &fixed);
+        assert_eq!(particles.sliders(5.3), vec![(who, path[0])], "the flight before it is still playing");
+        assert_eq!(particles.sliders(5.45), vec![(who, path[0])], "a cell's time on its first cell");
+        assert_eq!(particles.sliders(5.55), vec![(who, path[1])], "then the next");
+        assert!(particles.sliders(5.65).is_empty(), "and landed");
+    }
+
+    /// Through the plugin: a shoved actor is drawn on each cell it passed,
+    /// its own cell showing the ground while it is on its way, and on its
+    /// own cell once it lands; and the turns wait for it.
+    #[test]
+    fn a_sliding_actor_is_drawn_along_its_path_and_at_its_cell_once_it_lands() {
+        use atglyph_core::GridRect;
+        let mut app = atglyph_bevy::testing::headless_app();
+        app.add_plugins((atglyph_bevy::fov::FovPlugin, crate::map_view::MapViewPlugin::new(GridRect::new(0, 0, 40, 20)), ParticlesPlugin));
+        app.insert_resource(Terminal::new(40, 20, Vec2::ONE));
+        app.insert_resource(ParticleStyle { slide_secs: 0.05, ..ParticleStyle::default() });
+        let start = atglyph_bevy::testing::ground(&mut app);
+        app.world_mut().spawn((Player, Position(start), Viewshed::new(8), RevealsMap));
+        let landed = start.offset(4, 0);
+        let crab = app.world_mut().spawn((Position(landed), Glyph::new('c', Color::WHITE))).id();
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        app.update();
+        let shown = |app: &App, p: Point| app.world().resource::<crate::map_view::MapView>().get(app.world().resource::<Terminal>(), p).map(|c| c.glyph);
+        assert_eq!(shown(&app, landed), Some('c'), "drawn where it stands");
+
+        let path = vec![start.offset(2, 0), start.offset(3, 0), landed];
+        app.world_mut().write_message(Cued { actor: crab, cue: Cue::Slide { who: crab, path: path.clone() } });
+        app.update();
+        assert_eq!(shown(&app, path[0]), Some('c'), "seen where it was moved from");
+        assert_ne!(shown(&app, landed), Some('c'), "and not yet where it landed");
+        assert!(app.world().resource::<CueWait>().is_waiting(), "the turns wait for it");
+        let mut seen = Vec::new();
+        let began = app.world().resource::<Time>().elapsed_secs();
+        while app.world().resource::<Time>().elapsed_secs() - began < 0.3 {
+            app.update();
+            seen.extend(path.iter().copied().filter(|p| shown(&app, *p) == Some('c')));
+        }
+        assert!(seen.contains(&path[1]), "it passed the cell between: {seen:?}");
+        assert_eq!(shown(&app, landed), Some('c'), "and stands where it landed");
+        assert!(!app.world().resource::<CueWait>().is_waiting(), "and let the turns go");
+    }
+
+    /// A slide whose actor is gone before it ends still ends, leaves no
+    /// glyph behind, and lets the turns go.
+    #[test]
+    fn a_slide_whose_actor_is_gone_ends_and_releases_the_turn() {
+        use atglyph_core::GridRect;
+        let mut app = atglyph_bevy::testing::headless_app();
+        app.add_plugins((atglyph_bevy::fov::FovPlugin, crate::map_view::MapViewPlugin::new(GridRect::new(0, 0, 40, 20)), ParticlesPlugin));
+        app.insert_resource(Terminal::new(40, 20, Vec2::ONE));
+        app.insert_resource(ParticleStyle { slide_secs: 0.05, ..ParticleStyle::default() });
+        let start = atglyph_bevy::testing::ground(&mut app);
+        app.world_mut().spawn((Player, Position(start), Viewshed::new(8), RevealsMap));
+        let crab = app.world_mut().spawn((Position(start.offset(4, 0)), Glyph::new('c', Color::WHITE))).id();
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        app.update();
+        let path = vec![start.offset(2, 0), start.offset(3, 0), start.offset(4, 0)];
+        app.world_mut().write_message(Cued { actor: crab, cue: Cue::Slide { who: crab, path: path.clone() } });
+        app.update();
+        app.world_mut().despawn(crab);
+        let began = app.world().resource::<Time>().elapsed_secs();
+        while app.world().resource::<Time>().elapsed_secs() - began < 0.3 {
+            app.update();
+        }
+        let shown = |p: Point| app.world().resource::<crate::map_view::MapView>().get(app.world().resource::<Terminal>(), p).map(|c| c.glyph);
+        assert!(path.iter().all(|p| shown(*p) != Some('c')), "nothing left of it");
+        assert!(!app.world().resource::<CueWait>().is_waiting(), "and the turns go on");
     }
 
     #[test]

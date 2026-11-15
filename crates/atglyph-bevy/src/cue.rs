@@ -108,6 +108,19 @@ pub enum Cue {
         /// What runs along it, if anything.
         pulse: Option<LookOf>,
     },
+    /// An actor moved across cells it did not step, a shove or a pull: seen
+    /// to travel them, the cells it was moved from first and the one it
+    /// landed on last, rather than to vanish from one and appear on the
+    /// other. It holds the turns as any cue does, and lands nothing: the
+    /// actor is already where it landed, and the drawer shows it along the
+    /// way until it has arrived.
+    Slide {
+        /// Who was moved.
+        who: Entity,
+        /// The cells it passed, every one, from where it stood to where it
+        /// landed.
+        path: Vec<Point>,
+    },
 }
 
 /// A cue, and whose act it was. Cues from one actor in one pass play one

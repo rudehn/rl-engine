@@ -10,6 +10,8 @@ atglyph is not on crates.io yet, so a game depends on a release by its git tag, 
 
 ### Added
 
+- A shove or a pull is seen: `Shove` and `Pull` write a `Cue::Slide { who, path }` over every cell the actor passed, and the particles draw it travelling them, `ParticleStyle::slide_secs` a cell, the map showing it on its way rather than on the cell it landed on, as `map_view::Sliding` says, while the turns wait. Nothing slides that did not move.
+- Shove and pull distances may be dice, `cells: "1d3"`, rolled for each target; dice that could move nobody are refused at load.
 - A status may tick and mend dice, `ticks: ("fire", "1d3")`, rolled for each instance each turn from the seed, the turn and the holder's cell, so every holder is dealt the same whatever order they are ticked in and a save keeps no generator for it; a fixed number draws nothing. Dice that could come to less than nothing, or mend nothing, are refused at load.
 - A status may be `lasting`: every instance lasts until it is cured, whatever turns it was put on for, so an infection whose stacks never wear off is one line of content whoever puts it on.
 - `Statuses::count(id)`: how many instances of one status are held.
@@ -73,6 +75,7 @@ atglyph is not on crates.io yet, so a game depends on a release by its git tag, 
 
 ### Changed
 
+- **Breaking:** `Shove::cells` and `Pull::cells` are `DiceRoll`s, and `Cue` has a `Slide` variant a match on it must cover.
 - **Breaking:** `StatusDef::tick_damage` is `Option<(DamageKindId, DiceRoll)>` and `tick_mend` is `Option<DiceRoll>`; the rules' `Tick` and `Mended` carry the `roll` their resolver rolls, where they carried an `amount`, and the sheet's `StatusLine` its `ticks` and `mends` as dice.
 - **Breaking:** `DamageKind` has a public `told` field; a game that writes one as a struct literal adds `told: true`, or builds it with `DamageKind::new`.
 - **Breaking:** `ActorParts` has public `immune_to` and `passes` fields and `Snapshot` a public `predicted` field; a game that writes either as a struct literal adds them, or builds from `ActorParts::default()` and `Snapshot::alone`.
