@@ -516,7 +516,7 @@ pub(crate) mod tests {
         let rows = [("blade", 1, 3), ("saber", 4, 6), ("lance", 7, 9), ("plate", 2, 9)]
             .into_iter()
             .map(|(name, min, max)| LootRow::new(defs.expect(name)).bands(min, max).tagged(defs.get(defs.expect(name)).tags.clone()))
-            .chain([LootRow::new(defs.expect("slug")).bands(1, 9).weight(3).group(2, 4)])
+            .chain([LootRow::new(defs.expect("slug")).bands(1, 9).weight(3).group(atglyph_core::DiceRoll::between(2, 4))])
             .collect();
         let table = LootTable::new(rows, |id| defs.get(id).name.to_string());
         Toys { defs, table, rules }

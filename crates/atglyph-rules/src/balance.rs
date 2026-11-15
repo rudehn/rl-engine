@@ -79,7 +79,7 @@ impl Report {
                 .iter()
                 .map(|e| {
                     let (name, t) = describe(&e.item);
-                    let group = (e.min_group as f32 + e.max_group as f32) / 2.0;
+                    let group = e.group.avg().max(1.0);
                     (name, t, e.weight as f32, group)
                 })
                 .collect();
@@ -142,8 +142,10 @@ mod tests {
 
     #[test]
     fn the_report_ranks_bands_and_finds_gaps() {
-        let table =
-            BandedTable::new(vec![BandedEntry::new("crab").bands(0, 2).weight(3).group(2, 4), BandedEntry::new("jaguar").bands(2, 5).weight(1).group(1, 1)]);
+        let table = BandedTable::new(vec![
+            BandedEntry::new("crab").bands(0, 2).weight(3).group(atglyph_core::DiceRoll::between(2, 4)),
+            BandedEntry::new("jaguar").bands(2, 5).weight(1).group(1),
+        ]);
         let score = |name: &&str| (name.to_string(), if *name == "crab" { 10.0 } else { 100.0 });
         let r = Report::over(&table, 0..=7, score);
         assert_eq!(r.gaps, vec![6, 7]);

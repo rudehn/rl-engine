@@ -1199,7 +1199,9 @@ mod tests {
         let pool = read(&w, &text).unwrap();
         let roles = Registry::<crate::role::RoleDef<()>>::from_defs(Vec::new()).unwrap();
         let monsters = crate::content::BandedTable::new(Vec::new());
-        let row = |lo, hi| vec![crate::loot::LootRow { item: 1u32, bands: (lo, hi), weight: 1, group: (1, 1), tags: vec![w.tags.expect("key")] }];
+        let row = |lo, hi| {
+            vec![crate::loot::LootRow { item: 1u32, bands: (lo, hi), weight: 1, group: atglyph_core::DiceRoll::flat(1), tags: vec![w.tags.expect("key")] }]
+        };
         let items = crate::loot::LootTable::new(row(1, 9), |n| n.to_string());
         let report = coverage(&pool, &w.pieces, &Sources { roles: &roles, monsters: &monsters, items: &items, tags: &w.tags });
         assert_eq!(report.bands, 1..=5, "from the first floor a piece stands on to the last");

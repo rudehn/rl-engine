@@ -15,7 +15,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 ///
 /// A flat value parses as `num: 0, sides: 0, bonus: value` and rolls as a
 /// constant, so "flat or dice" is one type at every call site.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default, Hash)]
 pub struct DiceRoll {
     /// Number of dice. `0` means the expression is a flat bonus.
     pub num: u32,
@@ -36,9 +36,15 @@ impl DiceRoll {
         Self { num, sides, bonus: 0 }
     }
 
+    /// An even roll from `fewest` to `most`, both included: one die, or a
+    /// fixed number when they are the same, so a count once written as a
+    /// range reads as dice.
+    pub const fn between(fewest: u32, most: u32) -> Self {
+        if most <= fewest { Self::flat(fewest as i32) } else { Self { num: 1, sides: most - fewest + 1, bonus: fewest as i32 - 1 } }
+    }
+
     /// Lowest possible result.
-    #[cfg(test)]
-    pub(crate) const fn min(self) -> i32 {
+    pub const fn min(self) -> i32 {
         self.num as i32 + self.bonus
     }
 
@@ -178,6 +184,15 @@ mod tests {
         assert_eq!("1d3-1".parse::<DiceRoll>().unwrap(), DiceRoll { num: 1, sides: 3, bonus: -1 });
         assert_eq!("3".parse::<DiceRoll>().unwrap(), DiceRoll::flat(3));
         assert_eq!(" 1 D 4 + 2 ".parse::<DiceRoll>().unwrap(), DiceRoll { num: 1, sides: 4, bonus: 2 });
+    }
+
+    /// `between` is an even roll from the fewest to the most, both
+    /// included: one die, and a fixed number when they are the same.
+    #[test]
+    fn between_rolls_evenly_from_the_fewest_to_the_most() {
+        assert_eq!(DiceRoll::between(2, 4), DiceRoll { num: 1, sides: 3, bonus: 1 });
+        assert_eq!(DiceRoll::between(3, 3), DiceRoll::flat(3));
+        assert_eq!((DiceRoll::between(2, 5).min(), DiceRoll::between(2, 5).max()), (2, 5));
     }
 
     #[test]

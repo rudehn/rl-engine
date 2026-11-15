@@ -160,7 +160,7 @@ A shot, a blow, a light and the span a kind keeps from its enemies are parts bot
 A monster is saved the way an item is (`docs/design/items.md`, section 7a): `atglyph_save::SaveableActor`, registered with `save_actors`, writes which definition it is by its maker's `name_of` and the game's own extra beside it, and restores it through `ActorMaker::make_at`, nowhere and with nothing rolled, before the extra goes back on, since what a game keeps is a change to what it was made as: a side it was turned to, a mind it was given, a look a wreck lost.
 `ActorMaker::make` calls `make_at` unless a game rolls something on a monster, so a game that rolls nothing writes one function.
 
-Where each kind turns up is one file shape in both games, read by `atglyph_rules::load_spawns`: `(monster, bands: (first, last), weight, group: (fewest, most))`, `group` optional, into the `BandedTable` a population and a prefab's role draw from.
+Where each kind turns up is one file shape in both games, read by `atglyph_rules::load_spawns`: `(monster, bands: (first, last), weight, group: "1d3+1")`, `group` optional dice, into the `BandedTable` a population and a prefab's role draw from.
 The band's name is the engine's, `bands` as the item spawn file's is, since a floor and a deck are both a band a maker answers for.
 
 ## 9. The standard chain

@@ -1150,7 +1150,10 @@ mod tests {
 
     fn weapons(w: &World, lo: i32, hi: i32) -> crate::loot::LootTable<u32> {
         let weapon = w.tags.expect("weapon");
-        crate::loot::LootTable::new(vec![crate::loot::LootRow { item: 1u32, bands: (lo, hi), weight: 1, group: (1, 1), tags: vec![weapon] }], |n| n.to_string())
+        crate::loot::LootTable::new(
+            vec![crate::loot::LootRow { item: 1u32, bands: (lo, hi), weight: 1, group: atglyph_core::DiceRoll::flat(1), tags: vec![weapon] }],
+            |n| n.to_string(),
+        )
     }
 
     #[test]

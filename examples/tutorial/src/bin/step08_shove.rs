@@ -412,7 +412,7 @@ impl Bestiary {
         for (id, def) in defs.iter() {
             let (first, last, weight, group_min, group_max) = def.spawn;
             if weight > 0 {
-                table.push(BandedEntry::new(id).bands(first, last).weight(weight).group(group_min, group_max));
+                table.push(BandedEntry::new(id).bands(first, last).weight(weight).group(DiceRoll::between(group_min, group_max)));
             }
             // ANCHOR: brain
             let wits = if def.clever { Wits::SAPIENT } else { Wits::ANIMAL };

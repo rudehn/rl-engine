@@ -651,9 +651,10 @@ mod tests {
         let all = read(&w, FILE).unwrap();
         let monsters = crate::content::BandedTable::new(vec![crate::content::BandedEntry::new(w.beasts.expect("heavy")).bands(3, 8)]);
         let weapon = w.tags.expect("weapon");
-        let items = crate::loot::LootTable::new(vec![crate::loot::LootRow { item: 1u32, bands: (1, 10), weight: 1, group: (1, 1), tags: vec![weapon] }], |n| {
-            n.to_string()
-        });
+        let items = crate::loot::LootTable::new(
+            vec![crate::loot::LootRow { item: 1u32, bands: (1, 10), weight: 1, group: atglyph_core::DiceRoll::flat(1), tags: vec![weapon] }],
+            |n| n.to_string(),
+        );
         let sources = Sources { roles: &w.roles, monsters: &monsters, items: &items, tags: &w.tags };
         let report = crate::prefab::coverage(all.iter().map(|(_, d)| d), &sources, 1..=3);
         let glyphs: Vec<(&str, char)> = report.rows.iter().map(|r| (r.prefab.as_str(), r.glyph)).collect();

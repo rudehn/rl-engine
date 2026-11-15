@@ -1,7 +1,7 @@
 //! Weighted draws banded by a number: depth, distance from town, danger,
 //! and [`load_spawns`], the file a game writes where its actors turn up in.
 
-use atglyph_core::Id;
+use atglyph_core::{DiceRoll, Id};
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 
@@ -22,12 +22,13 @@ pub struct BandedEntry<T> {
     /// Relative chance among the rows that apply.
     #[serde(default = "one")]
     pub weight: u32,
-    /// Smallest group drawn with the item.
-    #[serde(default = "one")]
-    pub min_group: u32,
-    /// Largest group drawn with the item.
-    #[serde(default = "one")]
-    pub max_group: u32,
+    /// How many are drawn together with the item: dice, at least one.
+    #[serde(default = "alone")]
+    pub group: DiceRoll,
+}
+
+fn alone() -> DiceRoll {
+    DiceRoll::flat(1)
 }
 
 fn band_min() -> i32 {
@@ -43,7 +44,7 @@ fn one() -> u32 {
 impl<T> BandedEntry<T> {
     /// A row that applies everywhere with weight 1 and a group of one.
     pub fn new(item: T) -> Self {
-        Self { item, min_band: i32::MIN, max_band: i32::MAX, weight: 1, min_group: 1, max_group: 1 }
+        Self { item, min_band: i32::MIN, max_band: i32::MAX, weight: 1, group: DiceRoll::flat(1) }
     }
 
     /// Restricts the row to `min..=max`.
@@ -59,10 +60,9 @@ impl<T> BandedEntry<T> {
         self
     }
 
-    /// Sets the group size range.
-    pub fn group(mut self, min: u32, max: u32) -> Self {
-        self.min_group = min;
-        self.max_group = max.max(min);
+    /// Sets how many come together: a number or dice.
+    pub fn group(mut self, group: impl Into<DiceRoll>) -> Self {
+        self.group = group.into();
         self
     }
 
@@ -152,11 +152,11 @@ impl<T> BandedTable<T> {
         self.pick_where(band, |_| true, rng)
     }
 
-    /// Draws one row and a group size within its range.
+    /// Draws one row and a group size rolled from its dice, at least one;
+    /// a fixed group draws nothing more.
     pub fn pick_group(&self, band: i32, rng: &mut impl Rng) -> Option<(&T, u32)> {
         let e = self.pick(band, rng)?;
-        let n = if e.max_group > e.min_group { rng.random_range(e.min_group..=e.max_group) } else { e.min_group };
-        Some((&e.item, n))
+        Some((&e.item, e.group.roll(rng).max(1) as u32))
     }
 
     /// The bands in `range` that no row covers, for a guard test.
@@ -173,7 +173,7 @@ struct Authored<D: 'static> {
     bands: (i32, i32),
     weight: u32,
     #[serde(default)]
-    group: Option<(u32, u32)>,
+    group: Option<DiceRoll>,
 }
 
 /// Loads where a game's actors turn up from a spawn file, a RON list of
@@ -188,8 +188,8 @@ struct Authored<D: 'static> {
 ///   distance from town, whatever a game's band counts.
 /// - `weight`: how often against every other row that applies at a band;
 ///   only the ratio matters.
-/// - `group`: optional; `(fewest, most)` that come together; one when left
-///   out.
+/// - `group`: optional; how many come together, a number or dice,
+///   `"1d3+1"` for two to four; one when left out.
 ///
 /// A kind may have several rows, so its groups grow with depth, and one
 /// with none never turns up by itself. Rows keep the order they are
@@ -211,13 +211,14 @@ struct Authored<D: 'static> {
 /// let beasts = Registry::from_defs(vec![Beast("rat"), Beast("wolf")]).unwrap();
 /// let names = Names::new().with("monster", &beasts);
 /// let table = load_spawns(
-///     r#"[(monster: "rat", bands: (1, 3), weight: 6, group: (2, 4)), (monster: "wolf", bands: (2, 9), weight: 1)]"#,
+///     r#"[(monster: "rat", bands: (1, 3), weight: 6, group: "1d3+1"), (monster: "wolf", bands: (2, 9), weight: 1)]"#,
 ///     &names,
 ///     &beasts,
 /// )
 /// .unwrap();
 /// assert_eq!(table.entries()[0].item, beasts.expect("rat"), "in the order written");
-/// assert_eq!((table.entries()[1].min_group, table.entries()[1].max_group), (1, 1), "a group of one unless written");
+/// assert_eq!(table.entries()[0].group, atglyph_core::DiceRoll::between(2, 4));
+/// assert_eq!(table.entries()[1].group, atglyph_core::DiceRoll::flat(1), "a group of one unless written");
 /// assert!(!table.covers(10));
 /// ```
 pub fn load_spawns<D: Named + 'static>(text: &str, names: &Names<'_>, defs: &Registry<D>) -> Result<BandedTable<Id<D>>, ContentError> {
@@ -233,11 +234,11 @@ pub fn load_spawns<D: Named + 'static>(text: &str, names: &Names<'_>, defs: &Reg
         if a.weight == 0 {
             errors.push(format!("{at}: a weight of nothing is never drawn; leave the row out instead"));
         }
-        let (fewest, most) = a.group.unwrap_or((1, 1));
-        if fewest == 0 || fewest > most {
-            errors.push(format!("{at}: a group of {fewest} to {most} is no group at all"));
+        let group = a.group.unwrap_or(DiceRoll::flat(1));
+        if group.min() < 1 {
+            errors.push(format!("{at}: a group of {group} could come to no group at all"));
         }
-        table.push(BandedEntry::new(id).bands(a.bands.0, a.bands.1).weight(a.weight).group(fewest, most));
+        table.push(BandedEntry::new(id).bands(a.bands.0, a.bands.1).weight(a.weight).group(group));
     }
     if !errors.is_empty() {
         return Err(ContentError::Invalid(errors));
@@ -252,7 +253,7 @@ mod tests {
 
     fn table() -> BandedTable<&'static str> {
         BandedTable::new(vec![
-            BandedEntry::new("rat").bands(1, 5).weight(3).group(2, 4),
+            BandedEntry::new("rat").bands(1, 5).weight(3).group(DiceRoll::between(2, 4)),
             BandedEntry::new("wolf").bands(3, 10).weight(1),
             BandedEntry::new("bear").bands(8, 10).weight(2),
         ])
@@ -282,6 +283,17 @@ mod tests {
         assert!(t.pick(11, &mut rng).is_none());
         assert_eq!(t.gaps(0..=12), vec![0, 11, 12]);
         assert!(t.covers(9));
+    }
+
+    /// A group is dice, `1d3+1` rolling two to four: every size turns up
+    /// and none outside, and a row written with none is a group of one.
+    #[test]
+    fn groups_roll_within_their_dice() {
+        let t = table();
+        let mut rng = StdRng::seed_from_u64(2);
+        let sizes: Vec<u32> = (0..300).map(|_| t.pick_group(2, &mut rng).unwrap().1).collect();
+        assert!(sizes.iter().all(|n| (2..=4).contains(n)) && [2, 3, 4].iter().all(|n| sizes.contains(n)), "{sizes:?}");
+        assert_eq!(BandedEntry::new("wolf").group, DiceRoll::flat(1));
     }
 
     #[test]
@@ -349,11 +361,14 @@ mod tests {
         let text = r#"[
             (monster: "rat", bands: (4, 2), weight: 1),
             (monster: "wolf", bands: (1, 3), weight: 0),
-            (monster: "rat", bands: (1, 3), weight: 1, group: (3, 2)),
+            (monster: "rat", bands: (1, 3), weight: 1, group: "1d2-2"),
         ]"#;
         let Err(ContentError::Invalid(errors)) = load_spawns(text, &names, &beasts) else { panic!("it read") };
         assert_eq!(errors.len(), 3, "{errors:?}");
         assert!(errors[0].starts_with("entry 1 (rat): bands 4 to 2"), "{errors:?}");
+        assert!(errors[2].contains("1d2-2") && errors[2].contains("no group"), "{errors:?}");
+        let ranged = load_spawns(r#"[(monster: "rat", bands: (1, 3), weight: 1, group: (2, 4))]"#, &names, &beasts);
+        assert!(ranged.is_err(), "a group is dice now, not a range");
         assert!(load_spawns(r#"[(monster: "rat", floors: (1, 2), weight: 1)]"#, &names, &beasts).is_err(), "a band under a name of a game's own");
     }
 }

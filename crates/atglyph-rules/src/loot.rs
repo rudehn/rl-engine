@@ -52,8 +52,8 @@ pub struct LootRow<K> {
     /// How often, against every other row that applies at a band; only
     /// the ratio matters.
     pub weight: u32,
-    /// The fewest and most found together, on the floor.
-    pub group: (u32, u32),
+    /// How many are found together, on the floor: dice, at least one.
+    pub group: atglyph_core::DiceRoll,
     /// The tags the item carries, for a draw that asks for one.
     pub tags: Vec<TagId>,
 }
@@ -61,7 +61,7 @@ pub struct LootRow<K> {
 impl<K> LootRow<K> {
     /// A row for `item` at every band, weight one, found alone.
     pub fn new(item: K) -> Self {
-        Self { item, bands: (i32::MIN, i32::MAX), weight: 1, group: (1, 1), tags: Vec::new() }
+        Self { item, bands: (i32::MIN, i32::MAX), weight: 1, group: atglyph_core::DiceRoll::flat(1), tags: Vec::new() }
     }
 
     /// Restricts it to `min..=max`.
@@ -77,8 +77,8 @@ impl<K> LootRow<K> {
     }
 
     /// Sets how many are found together.
-    pub fn group(mut self, min: u32, max: u32) -> Self {
-        self.group = (min, max.max(min));
+    pub fn group(mut self, group: impl Into<atglyph_core::DiceRoll>) -> Self {
+        self.group = group.into();
         self
     }
 
@@ -128,9 +128,7 @@ impl<K: Copy> LootTable<K> {
     /// are found together; `None` when nothing applies.
     pub fn pick(&self, band: i32, rng: &mut impl Rng) -> Option<(K, u32)> {
         let row = draw(self.rows.iter().filter(|r| r.applies(band)), rng)?;
-        let (min, max) = row.group;
-        let count = if max > min { rng.random_range(min..=max) } else { min };
-        Some((row.item, count))
+        Some((row.item, row.group.roll(rng).max(1) as u32))
     }
 
     /// Draws one item carrying `tag` by weight, at `band` or, when nothing
@@ -193,7 +191,7 @@ struct Authored<D: 'static> {
     bands: (i32, i32),
     weight: u32,
     #[serde(default)]
-    group: Option<(u32, u32)>,
+    group: Option<atglyph_core::DiceRoll>,
 }
 
 /// Loads a loot table from a spawn file, a RON list of rows, each item
@@ -206,8 +204,8 @@ struct Authored<D: 'static> {
 /// - `bands`: `(shallowest, deepest)`, both included.
 /// - `weight`: how often against every other row that applies at a band;
 ///   only the ratio matters.
-/// - `group`: optional; `(fewest, most)` found together on the floor; one
-///   when left out.
+/// - `group`: optional; how many are found together on the floor, a number
+///   or dice, `"1d4+1"` for two to five; one when left out.
 ///
 /// An item may have several rows, and one with none is never found by a
 /// table. Names that resolve to nothing are reported together first; once
@@ -229,14 +227,14 @@ struct Authored<D: 'static> {
 /// let names = Names::new().tags(&tags).with("item", &things);
 /// let weapon = tags.expect("weapon");
 /// let table = loot::load(
-///     r#"[(item: "slug", bands: (1, 10), weight: 4, group: (2, 5)), (item: "blade", bands: (1, 10), weight: 1)]"#,
+///     r#"[(item: "slug", bands: (1, 10), weight: 4, group: "1d4+1"), (item: "blade", bands: (1, 10), weight: 1)]"#,
 ///     &names,
 ///     &things,
 ///     |t: &Thing| if t.1 { vec![weapon] } else { vec![] },
 /// )
 /// .unwrap();
 /// assert_eq!(table.rows()[0].item, things.expect("blade"), "sorted by name, whatever order they were written in");
-/// assert_eq!(table.rows()[1].group, (2, 5));
+/// assert_eq!(table.rows()[1].group, atglyph_core::DiceRoll::between(2, 5));
 /// assert!(table.carries(weapon));
 /// ```
 pub fn load<D: Named + 'static>(text: &str, names: &Names<'_>, items: &Registry<D>, tags: impl Fn(&D) -> Vec<TagId>) -> Result<LootTable<Id<D>>, ContentError> {
@@ -252,9 +250,9 @@ pub fn load<D: Named + 'static>(text: &str, names: &Names<'_>, items: &Registry<
         if a.weight == 0 {
             errors.push(format!("{at}: a weight of nothing is never drawn; leave the row out instead"));
         }
-        let group = a.group.unwrap_or((1, 1));
-        if group.0 == 0 || group.0 > group.1 {
-            errors.push(format!("{at}: a group of {} to {} is no group at all", group.0, group.1));
+        let group = a.group.unwrap_or(atglyph_core::DiceRoll::flat(1));
+        if group.min() < 1 {
+            errors.push(format!("{at}: a group of {group} could come to no group at all"));
         }
         rows.push(LootRow { item: id, bands: a.bands, weight: a.weight, group, tags: tags(items.get(id)) });
     }
@@ -565,7 +563,7 @@ mod tests {
             LootRow::new('b').bands(3, 6).weight(2).tagged(vec![WEAPON]),
             LootRow::new('c').bands(6, 8).weight(1).tagged(vec![WEAPON]),
             LootRow::new('p').bands(2, 8).weight(2).tagged(vec![ARMOR]),
-            LootRow::new('s').bands(1, 8).weight(4).group(2, 5),
+            LootRow::new('s').bands(1, 8).weight(4).group(atglyph_core::DiceRoll::between(2, 5)),
         ]
     }
 
@@ -599,7 +597,7 @@ mod tests {
                 let (item, count) = t.pick(band, &mut rng).expect("something at every band");
                 let row = t.rows().iter().find(|r| r.item == item).unwrap();
                 assert!(row.applies(band), "{item} drawn at {band}");
-                assert!((row.group.0..=row.group.1).contains(&count), "{item} in a group of {count}");
+                assert!((row.group.min() as u32..=row.group.max() as u32).contains(&count), "{item} in a group of {count}");
             }
         }
         assert_eq!(t.pick(20, &mut rng), None, "nothing past the table");
@@ -713,7 +711,7 @@ mod tests {
         }
         let things = Registry::from_defs(vec![Thing("slug".into())]).unwrap();
         let names = Names::new().with("item", &things);
-        let err = load(r#"[(item: "slug", bands: (5, 1), weight: 0, group: (3, 1))]"#, &names, &things, |_| Vec::new())
+        let err = load(r#"[(item: "slug", bands: (5, 1), weight: 0, group: "1d2-2")]"#, &names, &things, |_| Vec::new())
             .expect_err("a file this wrong does not load")
             .to_string();
         for said in ["no range", "weight of nothing", "no group"] {
