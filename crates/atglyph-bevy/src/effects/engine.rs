@@ -205,49 +205,6 @@ impl FromArgs for Mend {
     }
 }
 
-/// How many whole turns an inflicted status lasts: one number, or a range
-/// rolled each time it lands, both ends included.
-///
-/// Read from a file as `turns: 2` or `turns: (1, 2)`, so a paralysis that
-/// holds for a turn or two is one line of content rather than an effect of
-/// a game's own.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TurnSpan {
-    /// Always this many.
-    Fixed(u32),
-    /// From the first to the second, both included.
-    Between(u32, u32),
-}
-
-impl TurnSpan {
-    /// The turns it comes to this time: the number, or one drawn from the
-    /// range.
-    pub fn roll(&self, rng: &mut impl rand::Rng) -> u32 {
-        match *self {
-            TurnSpan::Fixed(n) => n,
-            // Either way round: one built in code backwards is the same range.
-            TurnSpan::Between(a, b) => rng.random_range(a.min(b)..=a.max(b)),
-        }
-    }
-
-    /// The same, `turns` longer at both ends.
-    fn plus(self, turns: u32) -> Self {
-        match self {
-            TurnSpan::Fixed(n) => TurnSpan::Fixed(n + turns),
-            TurnSpan::Between(fewest, most) => TurnSpan::Between(fewest + turns, most + turns),
-        }
-    }
-}
-
-impl std::fmt::Display for TurnSpan {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            TurnSpan::Fixed(n) => write!(f, "{n}"),
-            TurnSpan::Between(fewest, most) => write!(f, "{fewest} to {most}"),
-        }
-    }
-}
-
 /// Put a status on everyone under the footprint.
 ///
 /// Named for what it does rather than for the message it writes, because
@@ -256,9 +213,9 @@ impl std::fmt::Display for TurnSpan {
 pub struct Inflict {
     /// Which status.
     pub status: StatusId,
-    /// For how many whole turns, before any bonus: a number, or a range
-    /// rolled for each target as it lands.
-    pub turns: TurnSpan,
+    /// For how many whole turns, before any bonus: dice rolled for each
+    /// target as it lands, or a fixed number, which draws nothing.
+    pub turns: DiceRoll,
     /// Whether the status lasts only while the thing that landed it is
     /// worn. Read only when a trigger landed it, since only a thing can be
     /// worn: the [`ApplyStatus`] is then held by the thing, held for every
@@ -275,9 +232,9 @@ pub struct Inflict {
 }
 
 impl Inflict {
-    /// The turns with `bonus`'s turns added, at both ends of a range.
-    pub(crate) fn turns_with(&self, bonus: EffectBonus) -> TurnSpan {
-        self.turns.plus(bonus.turns)
+    /// The turns with `bonus`'s turns added to the dice.
+    pub(crate) fn turns_with(&self, bonus: EffectBonus) -> DiceRoll {
+        DiceRoll { bonus: self.turns.bonus.saturating_add(bonus.turns as i32), ..self.turns }
     }
 }
 
@@ -287,9 +244,14 @@ impl Effect for Inflict {
             super::Source::Trigger { on, .. } if self.while_worn => Some(on),
             _ => None,
         };
-        let span = self.turns_with(landing.bonus);
+        let dice = self.turns_with(landing.bonus);
         for target in &landing.targets {
-            let turns = span.roll(&mut **world.rng);
+            // Dice that load can never come to less than a turn; one built
+            // in code that does puts nothing on.
+            let Ok(turns) = u32::try_from(dice.roll(&mut **world.rng)) else { continue };
+            if turns == 0 {
+                continue;
+            }
             world.afflict.write(ApplyStatus { target: *target, status: self.status, turns, by: Some(landing.user), held_by });
         }
     }
@@ -317,26 +279,16 @@ impl FromArgs for Inflict {
         #[serde(deny_unknown_fields)]
         struct Args {
             status: String,
-            turns: Span,
+            turns: DiceRoll,
             #[serde(default)]
             while_worn: bool,
         }
-        /// One number, or a range of two.
-        #[derive(serde::Deserialize)]
-        #[serde(untagged)]
-        enum Span {
-            One(u32),
-            Range((u32, u32)),
+        let a: Args = read_args(args).map_err(|e| format!("Inflict: {e}"))?;
+        // The least the dice come to: a one on every die, and the bonus.
+        if (a.turns.num as i64) + (a.turns.bonus as i64) < 1 {
+            return Err(format!("Inflict: turns {} could come to less than one turn", a.turns));
         }
-        let a: Args = read_args(args)?;
-        let turns = match a.turns {
-            Span::One(n) => TurnSpan::Fixed(n),
-            Span::Range((fewest, most)) if fewest > most => {
-                return Err(format!("Inflict: turns ({fewest}, {most}) is no range; write the fewest first"));
-            }
-            Span::Range((fewest, most)) => TurnSpan::Between(fewest, most),
-        };
-        Ok(Self { status: names.status(&a.status)?, turns, while_worn: a.while_worn })
+        Ok(Self { status: names.status(&a.status)?, turns: a.turns, while_worn: a.while_worn })
     }
 }
 
@@ -706,16 +658,12 @@ mod tests {
     }
 
     /// A roll with more ways to fall than can be weighed, 24d32, is
-    /// predicted at its average rather than overflowing; and a range built
-    /// backwards in code rolls within it all the same.
+    /// predicted at its average rather than overflowing.
     #[test]
-    fn a_roll_too_big_to_weigh_is_predicted_at_its_average_and_a_backward_range_still_rolls() {
+    fn a_roll_too_big_to_weigh_is_predicted_at_its_average() {
         let world = predicting();
         let huge = Harm { kind: DamageKindId::from_raw(0), roll: DiceRoll::new(24, 32) };
         assert_eq!(predict(&huge, &world, &someone(1000)), Prospect::on(Impact::Damage(39600)), "24 times 16.5");
-        use rand::SeedableRng;
-        let mut rng = rand::rngs::StdRng::seed_from_u64(3);
-        assert!((0..50).map(|_| TurnSpan::Between(2, 1).roll(&mut rng)).all(|t| (1..=2).contains(&t)));
     }
 
     /// A mend predicts what it would give back, no more than is missing,
@@ -738,7 +686,7 @@ mod tests {
     fn inflict_on_a_holder_or_an_immune_target_predicts_nothing() {
         let world = predicting();
         let (slowed, hasted) = (StatusId::from_raw(0), StatusId::from_raw(1));
-        let slow = Inflict { status: slowed, turns: TurnSpan::Fixed(3), while_worn: false };
+        let slow = Inflict { status: slowed, turns: DiceRoll::flat(3), while_worn: false };
         let haste = Inflict { status: hasted, ..slow };
         assert_eq!(predict(&slow, &world, &someone(20)), Prospect::on(Impact::Status { id: slowed, boon: false }));
         assert_eq!(predict(&haste, &world, &someone(20)), Prospect::on(Impact::Status { id: hasted, boon: true }));
@@ -763,8 +711,10 @@ mod tests {
         assert_eq!((mend.roll_with(EffectBonus::default()), mend.roll_with(bonus)), (DiceRoll::flat(1), DiceRoll::flat(4)));
         let harm = Harm { kind, roll: DiceRoll::new(2, 6) };
         assert_eq!(harm.roll_with(bonus), DiceRoll { num: 2, sides: 6, bonus: 3 });
-        let hiding = Inflict { status: StatusId::from_raw(0), turns: TurnSpan::Fixed(5), while_worn: false };
-        assert_eq!((hiding.turns_with(EffectBonus::default()), hiding.turns_with(bonus)), (TurnSpan::Fixed(5), TurnSpan::Fixed(7)));
+        let hiding = Inflict { status: StatusId::from_raw(0), turns: DiceRoll::flat(5), while_worn: false };
+        assert_eq!((hiding.turns_with(EffectBonus::default()), hiding.turns_with(bonus)), (DiceRoll::flat(5), DiceRoll::flat(7)));
+        let rolled = Inflict { turns: DiceRoll::new(1, 3), ..hiding };
+        assert_eq!(rolled.turns_with(bonus), DiceRoll { num: 1, sides: 3, bonus: 2 }, "dice turns take the bonus as their own");
     }
 
     /// A `per_level` left in a `Harm`, a `Mend` or an `Inflict`'s
@@ -808,35 +758,37 @@ mod tests {
         assert!(err.contains("cellz"), "{err}");
     }
 
-    /// A status's turns are one number or a range, `turns: 2` or `turns:
-    /// (1, 2)`; a range written backwards is refused naming the effect, and
-    /// a range is said as one where the effect is described.
+    /// A status's turns are dice or a number, `turns: "1d3+2"` or `turns:
+    /// 2`; a range is no longer either and is refused naming the effect, as
+    /// are dice that could come to less than a turn; and the dice are said
+    /// as written where the effect is described, a bonus added to them.
     #[test]
-    fn turns_are_one_number_or_a_range_and_a_backward_range_is_refused() {
+    fn turns_are_dice_or_a_number() {
         let statuses = atglyph_rules::Registry::from_defs(vec![atglyph_rules::StatusDef::new("paralysed")]).unwrap();
         let names = Names::new().statuses(&statuses);
         let args = |text: &str| atglyph_rules::ability::parse_args(text).unwrap();
         let one = Inflict::from_args(&args(r#"(status: "paralysed", turns: 2)"#), &names).unwrap();
-        assert_eq!(one.turns, TurnSpan::Fixed(2));
-        let range = Inflict::from_args(&args(r#"(status: "paralysed", turns: (1, 2))"#), &names).unwrap();
-        assert_eq!(range.turns, TurnSpan::Between(1, 2));
-        let backward = Inflict::from_args(&args(r#"(status: "paralysed", turns: (2, 1))"#), &names).expect_err("2 to 1 is no range");
-        assert!(backward.contains("Inflict") && backward.contains("(2, 1)"), "{backward}");
+        assert_eq!(one.turns, DiceRoll::flat(2));
+        let dice = Inflict::from_args(&args(r#"(status: "paralysed", turns: "1d3+2")"#), &names).unwrap();
+        assert_eq!(dice.turns, DiceRoll { num: 1, sides: 3, bonus: 2 });
+        let range = Inflict::from_args(&args(r#"(status: "paralysed", turns: (1, 2))"#), &names).expect_err("a range is no roll");
+        assert!(range.contains("Inflict"), "{range}");
+        let short = Inflict::from_args(&args(r#"(status: "paralysed", turns: "1d2-2")"#), &names).expect_err("it could come to no turns");
+        assert!(short.contains("Inflict") && short.contains("1d2-2"), "{short}");
         let registries = Registries { statuses, ..Default::default() };
-        assert_eq!(range.describe(&registries, EffectBonus::default()), "paralysed for 1 to 2 turns");
-        assert_eq!(range.describe(&registries, EffectBonus { turns: 1, amount: 0 }), "paralysed for 2 to 3 turns", "a bonus lengthens both ends");
+        assert_eq!(one.describe(&registries, EffectBonus::default()), "paralysed for 2 turns");
+        assert_eq!(dice.describe(&registries, EffectBonus::default()), "paralysed for 1d3+2 turns");
+        assert_eq!(dice.describe(&registries, EffectBonus { turns: 1, amount: 0 }), "paralysed for 1d3+3 turns", "a bonus adds to the dice");
     }
 
-    /// A range rolls a number of turns within it, both ends included, and
-    /// both ends turn up; one number is always itself.
+    /// Dice turns roll within their span, and both ends turn up.
     #[test]
-    fn a_range_of_turns_rolls_within_it_and_both_ends_turn_up() {
+    fn dice_turns_roll_within_their_span_and_both_ends_turn_up() {
         use rand::SeedableRng;
         let mut rng = rand::rngs::StdRng::seed_from_u64(3);
-        let rolled: Vec<u32> = (0..200).map(|_| TurnSpan::Between(1, 2).roll(&mut rng)).collect();
-        assert!(rolled.iter().all(|t| (1..=2).contains(t)), "{rolled:?}");
-        assert!(rolled.contains(&1) && rolled.contains(&2), "both ends");
-        assert!((0..20).all(|_| TurnSpan::Fixed(4).roll(&mut rng) == 4));
+        let rolled: Vec<i32> = (0..200).map(|_| DiceRoll { num: 1, sides: 3, bonus: 2 }.roll(&mut rng)).collect();
+        assert!(rolled.iter().all(|t| (3..=5).contains(t)), "{rolled:?}");
+        assert!(rolled.contains(&3) && rolled.contains(&5), "both ends");
     }
 
     /// `while_worn` is read when written and false when not, and a held
