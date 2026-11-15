@@ -15,7 +15,7 @@
             crates/atglyph-bevy/src/cue.rs
             crates/atglyph-ui/src/tone.rs
             crates/atglyph/src/lib.rs
-     fingerprint: d26a9dbb -->
+     fingerprint: e11b74e7 -->
 
 # Rendering
 

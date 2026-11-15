@@ -38,7 +38,7 @@ Add both crates to `Cargo.toml`:
 
 ```toml
 [dependencies]
-atglyph = { git = "https://github.com/rudehn/rl-engine", tag = "v0.5.0" }
+atglyph = { git = "https://github.com/rudehn/rl-engine", tag = "v0.6.0" }
 bevy = "0.19"
 ```
 
