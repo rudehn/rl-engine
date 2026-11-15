@@ -134,7 +134,7 @@ fn draw_row(terminal: &mut Terminal, line: GridRect, row: &Row, elsewhere: bool,
     }
     let text = clip_keeping(&row.label, &tail, (line.width - 2).max(0) as usize);
     let tone = if elsewhere { Tones::MUTED } else { Tones::TEXT };
-    paint_row(terminal, line, row, palette.get(Tones::SURFACE), &text, tone, palette);
+    paint_row(terminal, line, row, palette.get(Tones::SURFACE), super::nearby::Words { text: &text, tone, toned: &[] }, palette);
 }
 
 #[cfg(test)]

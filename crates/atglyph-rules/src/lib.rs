@@ -190,7 +190,7 @@ pub use prefab::{BandFallback, Coverage, CoverageRow, Legend, Legended, PrefabDe
 pub use prop::{ContainerDef, ContentRoll, HiddenDef, OfferDef, PropDef, PropId, Stock};
 pub use role::RoleDef;
 pub use stats::{Modifier, ModifierSource, Op, StatDef, StatId, Stats};
-pub use status::{ActiveStatus, Mended, SLEEPER_REACH, Stacking, StatusDef, StatusId, Statuses, Tick, TickReport, UNTIL_CURED};
+pub use status::{ActiveStatus, Mended, SLEEPER_REACH, Stacking, StatusDef, StatusId, StatusTier, Statuses, Tick, TickReport, UNTIL_CURED};
 pub use tag::{TagDef, TagId};
 pub use work::{BreakReason, Work, WorkKind, WorkKindId};
 
@@ -222,6 +222,6 @@ pub mod prelude {
     pub use crate::names::{NameRef, Names};
     pub use crate::prop::{ContainerDef, ContentRoll, HiddenDef, OfferDef, PropDef, PropId, Stock};
     pub use crate::stats::{Modifier, ModifierSource, Op, StatDef, StatId, Stats};
-    pub use crate::status::{ActiveStatus, Mended, SLEEPER_REACH, Stacking, StatusDef, StatusId, Statuses, Tick, TickReport, UNTIL_CURED};
+    pub use crate::status::{ActiveStatus, Mended, SLEEPER_REACH, Stacking, StatusDef, StatusId, StatusTier, Statuses, Tick, TickReport, UNTIL_CURED};
     pub use crate::tag::{TagDef, TagId};
 }

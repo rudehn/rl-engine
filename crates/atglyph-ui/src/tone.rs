@@ -180,6 +180,30 @@ pub fn readable(color: Color, palette: &Palette) -> Color {
     own.mix(&text, share).into()
 }
 
+/// The tone a status's tier is shown in, named for the tier: declared and
+/// coloured from the status file by [`tone_status_tiers`], so content
+/// writes a tier's colour beside its name and no game sets it again.
+pub fn tier_tone(tones: &Tones, tier: &atglyph_rules::StatusTier) -> ToneId {
+    tones.get(&tier_tone_name(tier)).unwrap_or(Tones::TEXT)
+}
+
+fn tier_tone_name(tier: &atglyph_rules::StatusTier) -> String {
+    format!("status: {}", tier.name)
+}
+
+/// Declares a tone for every tier of every status, in the tier's colour,
+/// whenever the registries change.
+pub(crate) fn tone_status_tiers(registries: Option<Res<atglyph_bevy::Registries>>, mut tones: ResMut<Tones>, mut palette: ResMut<Palette>) {
+    let Some(registries) = registries.filter(|r| r.is_changed()) else { return };
+    for (_, def) in registries.statuses.iter() {
+        for tier in &def.tiers {
+            let tone = tones.declare(&tier_tone_name(tier));
+            let (r, g, b) = tier.color;
+            palette.set(tone, Color::srgb_u8(r, g, b));
+        }
+    }
+}
+
 /// The body of [`UiApp::add_tone`](crate::app::UiApp::add_tone).
 pub(crate) fn add_tone<'a>(app: &'a mut App, name: &str, color: Color) -> &'a mut App {
     app.init_resource::<Tones>().init_resource::<Palette>();

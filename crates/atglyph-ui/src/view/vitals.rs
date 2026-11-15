@@ -181,6 +181,7 @@ pub struct Me<'w, 's> {
     /// The light, when the game has any, for the band the player stands in.
     lighting: Option<Res<'w, Lighting>>,
     player: Query<'w, 's, Vitals, With<Player>>,
+    tones: Res<'w, Tones>,
 }
 
 /// Fills [`VitalsView`] from the player.
@@ -233,8 +234,14 @@ pub(crate) fn collect_vitals(mut view: ResMut<VitalsView>, mut me: Me) {
         view.bars.push(Bar::new("health", health.current.max(0), health.max, health_tone(health.current, health.max)));
     }
     let Some(registries) = &me.registries else { return };
-    for active in afflicted.into_iter().flat_map(|a| a.iter()) {
-        if let Some(glyph) = registries.statuses.get(active.id).badge {
+    // Once per status, however many are stacked: one with tiers named by
+    // the tier its count reaches, in its tone, one with a badge by its
+    // badge.
+    for (id, count) in afflicted.map(|a| crate::view::held_counts(a)).unwrap_or_default() {
+        let def = registries.statuses.get(id);
+        if let (name, Some(tier)) = def.shown(count) {
+            view.facets.push(Facet::new("status", name).toned(crate::tone::tier_tone(&me.tones, tier)));
+        } else if let Some(glyph) = def.badge {
             view.badges.push(Facet::new("badge", glyph.to_string()).toned(Tones::NOTICE));
         }
     }
@@ -431,6 +438,44 @@ mod tests {
         stage.tick();
         stage.tick();
         assert_eq!(stage.app.world().resource::<VitalsView>().exposure, Some(LightBand::Lit));
+    }
+
+    /// A status held three times shows once: a badge once, not three, and
+    /// a status with tiers by the name of the tier its count reaches, in
+    /// that tier's tone.
+    #[test]
+    fn the_vitals_show_a_stacked_status_once() {
+        let mut stage = Stage::new(VitalsViewPlugin);
+        let defs = atglyph_rules::Registry::from_defs(vec![
+            atglyph_rules::StatusDef { badge: Some('v'), ..atglyph_rules::StatusDef::new("venom").stacking(atglyph_rules::Stacking::Stack) },
+            atglyph_rules::StatusDef {
+                tiers: vec![
+                    atglyph_rules::StatusTier { from: 1, name: "poisoned".into(), color: (156, 211, 90) },
+                    atglyph_rules::StatusTier { from: 4, name: "badly poisoned".into(), color: (76, 194, 58) },
+                ],
+                ..atglyph_rules::StatusDef::new("poisoned").stacking(atglyph_rules::Stacking::Stack)
+            },
+        ])
+        .unwrap();
+        let (venom, poisoned) = (defs.expect("venom"), defs.expect("poisoned"));
+        stage.app.world_mut().resource_mut::<Registries>().statuses = defs;
+        let player = stage.player;
+        for _ in 0..3 {
+            stage.app.world_mut().write_message(ApplyStatus { target: player, status: venom, turns: 5, by: None, held_by: None });
+        }
+        for _ in 0..5 {
+            stage.app.world_mut().write_message(ApplyStatus { target: player, status: poisoned, turns: 5, by: None, held_by: None });
+        }
+        stage.tick();
+        stage.tick();
+        let view = stage.app.world().resource::<VitalsView>();
+        let badges: Vec<&str> = view.badges.iter().map(|b| b.text.as_str()).collect();
+        assert_eq!(badges, ["v"], "one badge for three instances");
+        let named: Vec<&Facet> = view.facets.iter().filter(|f| f.key == "status").collect();
+        assert_eq!(named.iter().map(|f| f.text.as_str()).collect::<Vec<_>>(), ["badly poisoned"], "five held: the second tier, once");
+        let tones = stage.app.world().resource::<crate::tone::Tones>();
+        let tone = named[0].tone;
+        assert_eq!(stage.app.world().resource::<crate::tone::Palette>().get(tone), Color::srgb_u8(76, 194, 58), "in the tier's colour ({})", tones.name(tone));
     }
 
     #[test]

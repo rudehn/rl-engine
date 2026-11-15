@@ -30,6 +30,19 @@ pub mod trade;
 pub mod vitals;
 
 pub use ability::{AbilityRow, AbilityView, AbilityViewPlugin};
+
+/// Each status `held` holds and how many of it, in the order each was
+/// first put on: what a rail shows once however many are stacked.
+pub(crate) fn held_counts(held: &atglyph_rules::Statuses) -> Vec<(atglyph_rules::StatusId, usize)> {
+    let mut counts: Vec<(atglyph_rules::StatusId, usize)> = Vec::new();
+    for active in held.iter() {
+        match counts.iter_mut().find(|(id, _)| *id == active.id) {
+            Some((_, n)) => *n += 1,
+            None => counts.push((active.id, 1)),
+        }
+    }
+    counts
+}
 pub use container::{ContainerView, ContainerViewPlugin, OpenContainer};
 pub use ending::{EndingSection, EndingView, EndingViewPlugin};
 pub use gear::{GearLine, GearSlot, GearView, GearViewPlugin};

@@ -143,16 +143,26 @@ pub struct NearbyStatuses {
 /// In [`ViewSet::Annotate`](crate::ViewSet::Annotate), while a game has
 /// inserted [`NearbyStatuses`]; nothing is said in a game with no
 /// [`Registries`].
-pub(crate) fn note_statuses(mut nearby: ResMut<NearbyView>, says: Res<NearbyStatuses>, registries: Option<Res<Registries>>, held: Query<&ActiveStatuses>) {
+pub(crate) fn note_statuses(
+    mut nearby: ResMut<NearbyView>,
+    says: Res<NearbyStatuses>,
+    registries: Option<Res<Registries>>,
+    tones: Res<crate::tone::Tones>,
+    held: Query<&ActiveStatuses>,
+) {
     let Some(registries) = registries.as_deref() else { return };
     for row in &mut nearby.actors {
         let Ok(held) = held.get(row.entity) else { continue };
-        for active in held.iter() {
-            let def = registries.statuses.get(active.id);
+        // Once per status, however many are stacked: named by the tier
+        // the count reaches, in its tone, or by its own name.
+        for (id, count) in crate::view::held_counts(held) {
+            let def = registries.statuses.get(id);
             if def.sleeps {
                 (row.alert, row.doing) = (Some(Alert::Unaware), Some(says.asleep));
-            } else if def.badge.is_some() {
-                row.facets.push(Facet::new(says.key, registries.statuses.name(active.id)));
+            } else if def.badge.is_some() || !def.tiers.is_empty() {
+                let (name, tier) = def.shown(count);
+                let tone = tier.map_or(crate::tone::Tones::TEXT, |t| crate::tone::tier_tone(&tones, t));
+                row.facets.push(Facet::new(says.key, name).toned(tone));
             }
         }
     }
@@ -706,6 +716,42 @@ mod tests {
 
     fn said(stage: &Stage, who: Entity) -> Vec<String> {
         row(stage, who).facets.iter().map(|f| f.text.clone()).collect()
+    }
+
+    /// A status an actor holds three times is one entry beside its name,
+    /// and one with tiers is named by the tier its count reaches, in that
+    /// tier's tone.
+    #[test]
+    fn a_stacked_status_is_one_entry_on_the_rail_named_by_its_tier() {
+        let mut stage = Stage::new_with(NearbyViewPlugin, |app| {
+            app.insert_resource(NearbyStatuses { key: "status", asleep: "asleep" });
+        });
+        let defs = atglyph_rules::Registry::from_defs(vec![
+            atglyph_rules::StatusDef { badge: Some('P'), ..atglyph_rules::StatusDef::new("held fast").stacking(atglyph_rules::Stacking::Stack) },
+            atglyph_rules::StatusDef {
+                tiers: vec![
+                    atglyph_rules::StatusTier { from: 1, name: "poisoned".into(), color: (156, 211, 90) },
+                    atglyph_rules::StatusTier { from: 4, name: "badly poisoned".into(), color: (76, 194, 58) },
+                ],
+                ..atglyph_rules::StatusDef::new("poisoned").stacking(atglyph_rules::Stacking::Stack)
+            },
+        ])
+        .unwrap();
+        stage.app.world_mut().resource_mut::<Registries>().statuses = defs.clone();
+        let spider = stage.actor("spider", 's', 1, 0);
+        let (mut held, mut stats) = (atglyph_rules::Statuses::new(), atglyph_rules::Stats::new());
+        for _ in 0..3 {
+            held.apply(defs.expect("held fast"), 5, None, &defs, &mut stats);
+        }
+        for _ in 0..4 {
+            held.apply(defs.expect("poisoned"), 5, None, &defs, &mut stats);
+        }
+        stage.app.world_mut().entity_mut(spider).insert(ActiveStatuses(held));
+        stage.tick();
+        assert_eq!(said(&stage, spider), vec!["held fast".to_string(), "badly poisoned".to_string()]);
+        let tone = row(&stage, spider).facets[1].tone;
+        assert_eq!(stage.app.world().resource::<crate::tone::Palette>().get(tone), Color::srgb_u8(76, 194, 58));
+        assert_eq!(row(&stage, spider).facets[0].tone, crate::tone::Tones::TEXT, "one with no tiers keeps the row's own");
     }
 
     /// With the game's say-so, an actor in sight that a badged status

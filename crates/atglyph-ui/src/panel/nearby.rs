@@ -328,9 +328,16 @@ pub(crate) const WASH: f32 = 0.2;
 fn draw_row(terminal: &mut Terminal, line: GridRect, row: &Row, focused: bool, beneath: &Beneath, layout: &NearbyLayout, palette: &Palette) {
     let base = palette.get(if focused { Tones::SELECT } else { Tones::SURFACE });
     let mut name = row.label.clone();
+    // A facet with a tone of its own, a status's tier, is painted in it;
+    // the rest read in the row's.
+    let mut toned: Vec<(usize, usize, ToneId)> = Vec::new();
     for facet in row.facets.iter().filter(|f| !beneath.takes(f)) {
         name.push_str(" \u{00b7} ");
+        let from = name.chars().count();
         name.push_str(&facet.text);
+        if facet.tone != Tones::TEXT {
+            toned.push((from, name.chars().count(), facet.tone));
+        }
     }
     // What it is doing, in the panel's own words and after the name: a
     // state a player reads rather than a mark they learn. What it is busy
@@ -347,11 +354,31 @@ fn draw_row(terminal: &mut Terminal, line: GridRect, row: &Row, focused: bool, b
     // own colour are the ones that know you are there.
     let tone = if row.alert == Some(Alert::Unaware) { Tones::MUTED } else { relation_tone(row.relation) };
     let text = clip_keeping(&name, &state, (line.width - 2).max(0) as usize);
-    paint_row(terminal, line, row, base, &text, tone, palette);
+    // Where the name was clipped, its last cell is the clip's mark, and
+    // nothing after it is the facet it was.
+    let kept = if text.chars().count() < name.chars().count() + state.chars().count() {
+        text.chars().count().saturating_sub(state.chars().count() + 1)
+    } else {
+        usize::MAX
+    };
+    let toned: Vec<(usize, usize, ToneId)> = toned.into_iter().filter(|(from, ..)| *from < kept).map(|(from, to, t)| (from, to.min(kept), t)).collect();
+    paint_row(terminal, line, row, base, Words { text: &text, tone, toned: &toned }, palette);
+}
+
+/// What a row says after its glyph: the text, the tone it reads in, and
+/// the spans of characters that read in a tone of their own.
+pub(crate) struct Words<'a> {
+    /// The words.
+    pub text: &'a str,
+    /// Their tone.
+    pub tone: ToneId,
+    /// Each span, from and to a character, and its own tone.
+    pub toned: &'a [(usize, usize, ToneId)],
 }
 
 /// Paints `row` on `line`, one cell high: its glyph, then `text` in
-/// `tone`, over the row as its own health bar.
+/// `tone`, each span of characters `toned` names in its own tone, over the
+/// row as its own health bar.
 ///
 /// Health fills the line from the left in the health's own tone, mixed
 /// into `base` rather than painted over it, so a wounded thing reads at
@@ -359,7 +386,8 @@ fn draw_row(terminal: &mut Terminal, line: GridRect, row: &Row, focused: bool, b
 /// with no health is `base` edge to edge. The nearby rail and the party
 /// rail both draw their rows so, and a follower reads as hurt by the
 /// same wash a foe beside it does.
-pub(crate) fn paint_row(terminal: &mut Terminal, line: GridRect, row: &Row, base: Color, text: &str, tone: ToneId, palette: &Palette) {
+pub(crate) fn paint_row(terminal: &mut Terminal, line: GridRect, row: &Row, base: Color, words: Words<'_>, palette: &Palette) {
+    let Words { text, tone, toned } = words;
     let (x0, y) = (line.x, line.y);
     terminal.fill(line, Cell::new(' ', base).on(base));
     let filled = match row.health {
@@ -375,7 +403,8 @@ pub(crate) fn paint_row(terminal: &mut Terminal, line: GridRect, row: &Row, base
     terminal.print_on(x0, y, &row.glyph.ch.to_string(), row.glyph.fg, bg_at(x0));
     for (i, ch) in text.chars().enumerate() {
         let x = x0 + 2 + i as i32;
-        terminal.print_on(x, y, &ch.to_string(), palette.get(tone), bg_at(x));
+        let own = toned.iter().find(|(from, to, _)| (*from..*to).contains(&i)).map_or(tone, |(.., t)| *t);
+        terminal.print_on(x, y, &ch.to_string(), palette.get(own), bg_at(x));
     }
 }
 
@@ -694,6 +723,37 @@ mod tests {
     }
 
     /// The background of the terminal cell at `x, y`.
+    /// A status beside a name is painted in its own tone when it has one,
+    /// a tier's colour, while the name and a status without one keep the
+    /// row's.
+    #[test]
+    fn the_rail_paints_a_status_in_its_own_tone() {
+        let panel = NearbyPanel::new(GridRect::new(0, 0, 40, 10)).titled("").statuses("status", "asleep");
+        let mut stage = Stage::new(panel).screen(40, 10);
+        let tiers = vec![atglyph_rules::StatusTier { from: 1, name: "poisoned".into(), color: (156, 211, 90) }];
+        let defs = atglyph_rules::Registry::from_defs(vec![
+            atglyph_rules::StatusDef { tiers, ..atglyph_rules::StatusDef::new("poisoned").stacking(atglyph_rules::Stacking::Stack) },
+            atglyph_rules::StatusDef { badge: Some('P'), ..atglyph_rules::StatusDef::new("held") },
+        ])
+        .unwrap();
+        stage.app.world_mut().resource_mut::<atglyph_bevy::Registries>().statuses = defs.clone();
+        let crab = stage.actor("crab", 'c', 2, 0);
+        let (mut held, mut stats) = (atglyph_rules::Statuses::new(), atglyph_rules::Stats::new());
+        held.apply(defs.expect("held"), 5, None, &defs, &mut stats);
+        held.apply(defs.expect("poisoned"), 5, None, &defs, &mut stats);
+        stage.app.world_mut().entity_mut(crab).insert(atglyph_bevy::ActiveStatuses(held));
+        stage.tick();
+        stage.tick();
+        let rows = stage.rows();
+        assert!(rows[2].starts_with("c crab \u{b7} held \u{b7} poisoned"), "{:?}", rows[2]);
+        let fg = |x: i32| stage.app.world().resource::<Terminal>().get(x, 2).expect("on the screen").fg;
+        let column = |word: &str| rows[2].chars().collect::<Vec<_>>().windows(word.len()).position(|w| w.iter().collect::<String>() == word).unwrap() as i32;
+        let (name, plain, tiered) = (fg(column("crab")), fg(column("held")), fg(column("poisoned")));
+        assert_eq!(tiered, Color::srgb_u8(156, 211, 90), "the tier's own colour");
+        assert_eq!(plain, name, "one with no tone of its own reads as the row does");
+        assert_eq!(fg(column("poisoned") + 7), tiered, "every letter of it");
+    }
+
     fn bg(stage: &Stage, x: i32, y: i32) -> Color {
         stage.app.world().resource::<Terminal>().get(x, y).expect("on the screen").bg
     }

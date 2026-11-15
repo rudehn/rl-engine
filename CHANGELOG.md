@@ -10,6 +10,7 @@ atglyph is not on crates.io yet, so a game depends on a release by its git tag, 
 
 ### Added
 
+- A status may have `tiers`, each `(from: n, name, color)`: it is shown by the name of the last tier its count reaches, in that tier's colour, "poisoned" then "badly poisoned" in a deadlier green. `StatusDef::shown(count)` answers it, and the UI declares a tone per tier from the status file, so a game sets no colour again; the nearby rail paints a status in its own tone beside a name in the row's, and the vitals list a tiered status by name.
 - A shove or a pull is seen: `Shove` and `Pull` write a `Cue::Slide { who, path }` over every cell the actor passed, and the particles draw it travelling them, `ParticleStyle::slide_secs` a cell, the map showing it on its way rather than on the cell it landed on, as `map_view::Sliding` says, while the turns wait. Nothing slides that did not move.
 - Shove and pull distances may be dice, `cells: "1d3"`, rolled for each target; dice that could move nobody are refused at load.
 - A status may tick and mend dice, `ticks: ("fire", "1d3")`, rolled for each instance each turn from the seed, the turn and the holder's cell, so every holder is dealt the same whatever order they are ticked in and a save keeps no generator for it; a fixed number draws nothing. Dice that could come to less than nothing, or mend nothing, are refused at load.
@@ -138,6 +139,7 @@ atglyph is not on crates.io yet, so a game depends on a release by its git tag, 
 
 ### Fixed
 
+- A status held several times was listed once per instance: the nearby rail said "poisoned · poisoned · poisoned" and the vitals drew a badge for each. Both list a status once.
 - A dressing no longer cuts an area through a slot an earlier area laid outside its door: that slot's cell was counted as a way round the area's own things, so a cave beside a dressed house could be laid in two halves, each reached by a different opening. It now blocks as the area's own things do.
 - The look gives the chance of a shot from a worn launcher and forecasts it: a player with a bow and arrows sees the chance the shot rolls at a foe in the bow's range, and both sides' duel counts the launcher's strike to its range, rather than the wearer's own blow once it had closed, so an archer is no longer forecast as a brawler.
 - A mind that is a `Trader` no longer throws or uses its stock: what it carries and does not wear is for sale, so its `Snapshot::missiles` are empty and its `Snapshot::carried` only what it wears, and a store keeper that sees a foe across its floor no longer throws its wares there for anyone to pick up, nor eats the bread it sells when hurt.

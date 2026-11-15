@@ -246,6 +246,7 @@ impl Plugin for UiPlugin {
                 (ViewSet::Sight, ViewSet::Collect, ViewSet::Annotate, ViewSet::Settle, ViewSet::Speak).chain().in_set(atglyph_bevy::PresentSet::Narrate),
             )
             .add_systems(First, |mut modals: ResMut<Modals>| modals.begin_frame())
+            .add_systems(Update, tone::tone_status_tiers.in_set(atglyph_bevy::PresentSet::Narrate).before(ViewSet::Sight))
             // Before anything reads a key, and before key repeat advances:
             // a window that lost focus never saw what was released while
             // it was away. The message is Bevy's own, and a headless game

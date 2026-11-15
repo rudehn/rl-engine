@@ -48,6 +48,20 @@ pub struct StatusModifier {
     pub op: Op,
 }
 
+/// What a status is called once its holder holds at least `from` of it,
+/// and the colour it is shown in: "poisoned", then "badly poisoned", in a
+/// deadlier green. Only a stacking status counts higher than one.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct StatusTier {
+    /// The fewest held for this name.
+    pub from: u32,
+    /// The name, in the game's language.
+    pub name: String,
+    /// Its colour, red, green and blue.
+    pub color: (u8, u8, u8),
+}
+
 /// A registered status.
 ///
 /// Built by [`load`] from names, or by hand with the methods below, and
@@ -75,6 +89,10 @@ pub struct StatusDef {
     /// count on each application, because the content that puts it on, a
     /// blow, a cloud, a trap, should not each have to know it never ends.
     pub lasting: bool,
+    /// What it is called by how many of it are held, the first from one,
+    /// each from more than the one before; empty, it is called by its name
+    /// however many are held. See [`StatusDef::shown`].
+    pub tiers: Vec<StatusTier>,
     /// Glyph for a badge, if the game wants one.
     pub badge: Option<char>,
     /// Whether nothing sees whoever holds it while it lasts. What that
@@ -141,6 +159,7 @@ impl StatusDef {
             tick_damage: None,
             tick_mend: None,
             lasting: false,
+            tiers: Vec::new(),
             badge: None,
             unseen: false,
             boon: false,
@@ -182,6 +201,15 @@ impl StatusDef {
     pub fn lasting(mut self) -> Self {
         self.lasting = true;
         self
+    }
+
+    /// What it is shown as when `count` of it are held: the name of the
+    /// last tier `count` reaches and that tier, or its own name and none.
+    pub fn shown(&self, count: usize) -> (&str, Option<&StatusTier>) {
+        match self.tiers.iter().rev().find(|t| t.from as usize <= count.max(1)) {
+            Some(tier) => (&tier.name, Some(tier)),
+            None => (&self.name, None),
+        }
     }
 
     /// Makes whoever holds it unseen while it lasts.
@@ -261,6 +289,8 @@ struct Authored {
     #[serde(default)]
     lasting: bool,
     #[serde(default)]
+    tiers: Vec<StatusTier>,
+    #[serde(default)]
     badge: Option<char>,
     #[serde(default)]
     unseen: bool,
@@ -304,6 +334,9 @@ impl Named for Authored {
 ///   able to come to less than 1.
 /// - `lasting`: whether every instance lasts until it is cured, whatever
 ///   turns it was put on for. Absent, it runs out.
+/// - `tiers`: what it is called by how many of it are held, each
+///   `(from: n, name: "badly poisoned", color: (r, g, b))`, the first from
+///   1 and each from more than the last. Absent, it is called by its name.
 /// - `badge`: one character a panel may draw beside a health bar.
 /// - `unseen`: `true` for a status whose holder nothing can see while it
 ///   lasts; `false`, the default, otherwise.
@@ -360,6 +393,12 @@ pub fn load(text: &str, names: &Names<'_>) -> Result<Registry<StatusDef>, Conten
         if let Some(amount) = a.mends.filter(|amount| least(amount) < 1) {
             errors.push(format!("{}: `mends` of {amount} restores nothing; it is at least 1", a.name));
         }
+        if a.tiers.first().is_some_and(|t| t.from != 1) {
+            errors.push(format!("{}: `tiers` begin from 1, so one held is named", a.name));
+        }
+        if a.tiers.windows(2).any(|w| w[1].from <= w[0].from) {
+            errors.push(format!("{}: `tiers` rise, each from more than the one before", a.name));
+        }
         // A cap on a status that never stacks is a rule nothing plays, so
         // it is refused rather than read as a promise.
         match a.max {
@@ -393,6 +432,7 @@ pub fn load(text: &str, names: &Names<'_>) -> Result<Registry<StatusDef>, Conten
             tick_damage,
             tick_mend: a.mends,
             lasting: a.lasting,
+            tiers: a.tiers.clone(),
             badge: a.badge,
             unseen: a.unseen,
             boon: a.boon,
@@ -927,6 +967,50 @@ mod tests {
         assert!(hurtless.to_string().contains("odd") && hurtless.to_string().contains("1d2-3"), "{hurtless}");
         let mendless = load(r#"#![enable(implicit_some)] [(name: "odd", mends: "1d2-1")]"#, &names).expect_err("it could mend nothing");
         assert!(mendless.to_string().contains("at least 1"), "{mendless}");
+    }
+
+    /// A status with tiers is named by the last tier its count reaches, in
+    /// that tier's colour, and one without by its own name; tiers are read
+    /// from a file as written.
+    #[test]
+    fn a_stacked_status_is_named_by_the_tier_its_count_reaches() {
+        let (stats, kinds) = vocabulary();
+        let names = Names::new().stats(&stats).damage_kinds(&kinds);
+        let text = r#"#![enable(implicit_some)] [
+            (name: "poisoned", stacking: Stack, max: 10, tiers: [
+                (from: 1, name: "poisoned", color: (156, 211, 90)),
+                (from: 4, name: "badly poisoned", color: (76, 194, 58)),
+                (from: 8, name: "gravely poisoned", color: (31, 168, 74)),
+            ]),
+            (name: "dazed"),
+        ]"#;
+        let defs = load(text, &names).unwrap();
+        let poisoned = defs.get(defs.expect("poisoned"));
+        let named = |count| poisoned.shown(count).0.to_string();
+        assert_eq!(
+            [named(1), named(3), named(4), named(7), named(8), named(10)],
+            ["poisoned", "poisoned", "badly poisoned", "badly poisoned", "gravely poisoned", "gravely poisoned"]
+        );
+        assert_eq!(poisoned.shown(5).1.map(|t| t.color), Some((76, 194, 58)));
+        let dazed = defs.get(defs.expect("dazed"));
+        assert_eq!((dazed.shown(1).0, dazed.shown(1).1), ("dazed", None), "no tiers: its own name, no colour of its own");
+    }
+
+    /// Tiers must begin at one and rise, so every count is named and none
+    /// twice; anything else is refused naming the status.
+    #[test]
+    fn tiers_that_do_not_rise_from_one_are_refused() {
+        let (stats, kinds) = vocabulary();
+        let names = Names::new().stats(&stats).damage_kinds(&kinds);
+        for (tiers, says) in [
+            (r#"[(from: 2, name: "a", color: (1, 1, 1))]"#, "from 1"),
+            (r#"[(from: 1, name: "a", color: (1, 1, 1)), (from: 1, name: "b", color: (1, 1, 1))]"#, "rise"),
+            (r#"[(from: 1, name: "a", color: (1, 1, 1)), (from: 5, name: "b", color: (1, 1, 1)), (from: 3, name: "c", color: (1, 1, 1))]"#, "rise"),
+        ] {
+            let text = format!(r#"#![enable(implicit_some)] [(name: "odd", tiers: {tiers})]"#);
+            let refused = load(&text, &names).expect_err(tiers).to_string();
+            assert!(refused.contains("odd") && refused.contains(says), "{refused}");
+        }
     }
 
     /// A lasting status is never counted down, whatever turns it was put on
