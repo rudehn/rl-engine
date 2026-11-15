@@ -215,7 +215,7 @@ fn start(mut commands: Commands, seed: Res<Seed>, effect_kinds: Res<EffectKinds>
                 .then(FleeWhenHurt::at(25))
                 // Uses a knack when it would help: a ratling gnaws its
                 // crust when hurt.
-                .then(UseAbility { chance_pct: 80 })
+                .then(UseAbility::new(80))
                 .then(ThrowAtRange { chance_pct: 60 })
                 .then(Scavenge { reach: 9 })
                 .then(Hunt)

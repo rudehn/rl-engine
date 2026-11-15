@@ -1,6 +1,7 @@
 //! The tactics every roguelike needs.
 
 use std::collections::VecDeque;
+use std::sync::Arc;
 
 use atglyph_core::{Direction, Point, geometry};
 use atglyph_grid::{TargetMode, clear_shot, footprint};
@@ -10,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use crate::ability::{Aim, Usable};
 use crate::ai::brain::{Decision, Fields, Tactic, TacticCtx};
 use crate::ai::snapshot::{ActorView, ItemView, Snapshot};
+use crate::ai::valuation::{Party, StandardValuation, Valuation};
 use crate::ai::wits::Wits;
 use crate::faction::Relation;
 
@@ -1045,8 +1047,16 @@ impl<A: Copy> Tactic<A> for GiveWay {
 /// Use the best ability in reach, when one covers something worth
 /// covering.
 ///
-/// The engine cannot know what an ability does, so this scores what its
-/// footprint would land on: the things its [`Aim`]
+/// Where the ability's effects foresee what they would do, in the
+/// snapshot's [`predicted`](Snapshot::predicted), an aim is scored by what
+/// it would do: each effect's chance times what its outcome is worth by
+/// the mind's [`Valuation`], to everyone the footprint strikes and to the
+/// user for each of them. A bolt that would mend the foe it is aimed at
+/// is never loosed, and one aimed at anyone goes to whoever it does most
+/// good on, foe or friend.
+///
+/// Where they cannot tell, the engine cannot know what an ability does,
+/// so this scores what its footprint would land on: the things its [`Aim`]
 /// wants, less the things it does not. A monster will not drop a burst on
 /// its own allies to catch one enemy, and never learns what the burst is.
 ///
@@ -1056,17 +1066,34 @@ impl<A: Copy> Tactic<A> for GiveWay {
 /// Nor is an ability pointed where its flight would stop short, which the
 /// resolver refuses and would leave the caster with a turn spent on
 /// nothing.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct UseAbility {
     /// Percentage chance of reaching for an ability on a turn one is
     /// available. Below a hundred so a caster does not fire every single
     /// turn, which reads as a machine rather than a monster.
     pub chance_pct: u32,
+    /// What a foreseen outcome is worth to this mind; `None` is
+    /// [`StandardValuation`].
+    pub values: Option<Arc<dyn Valuation>>,
 }
 
 impl Default for UseAbility {
     fn default() -> Self {
-        Self { chance_pct: 100 }
+        Self::new(100)
+    }
+}
+
+impl UseAbility {
+    /// Reaching for an ability at `chance_pct` on a turn one is ready,
+    /// weighing what it foresees by [`StandardValuation`].
+    pub fn new(chance_pct: u32) -> Self {
+        Self { chance_pct, values: None }
+    }
+
+    /// Weighing what it foresees by `values` instead.
+    pub fn valuing(mut self, values: Arc<dyn Valuation>) -> Self {
+        self.values = Some(values);
+        self
     }
 }
 
@@ -1109,6 +1136,50 @@ fn everyone<A: Copy>(snapshot: &Snapshot<A>) -> impl Iterator<Item = (&ActorView
         .chain(snapshot.allies.iter().map(|a| (a, Relation::Allied, false)))
 }
 
+/// [`everyone`], and then the bystanders: whoever a foreseen use could be
+/// pointed at or land on, in the order the aims are tried.
+fn everyone_seen<A: Copy>(snapshot: &Snapshot<A>) -> impl Iterator<Item = (&ActorView<A>, Relation, bool)> {
+    everyone(snapshot).chain(snapshot.others.iter().map(|o| (o, Relation::Neutral, false)))
+}
+
+/// What one point of a footprint's worth counts for beside a foreseen
+/// outcome, in the hundredths of health a [`Valuation`] scores in: two and
+/// a half points of health, so an ability nobody can foresee competes with
+/// one that is foreseen, and among abilities none of which is foreseen the
+/// choice is the footprint's alone, as it always was.
+const FOOTPRINT_POINT: i32 = 250;
+
+/// How the user stands to an actor, as a valuation is told it.
+fn party(relation: Relation, is_user: bool) -> Party {
+    match (is_user, relation) {
+        (true, _) => Party::Myself,
+        (false, Relation::Hostile) => Party::Foe,
+        (false, Relation::Allied) => Party::Ally,
+        (false, Relation::Neutral) => Party::Neutral,
+    }
+}
+
+/// What `ability` landing on everyone under `cells` is worth by `values`,
+/// or `None` when any of them, or what it would do to the user, cannot be
+/// foreseen.
+fn foreseen_worth<A: Copy + PartialEq>(ability: crate::AbilityId, aim: Aim, cells: &[Point], snapshot: &Snapshot<A>, values: &dyn Valuation) -> Option<i32> {
+    let me = snapshot.me.recipient();
+    let mut total: i64 = 0;
+    for (actor, relation, is_user) in everyone_seen(snapshot) {
+        if !cells.contains(&actor.pos) || !aim.hits(Some(relation), is_user) {
+            continue;
+        }
+        let predicted = snapshot.predicted.iter().find(|p| p.ability == ability && p.on == actor.id)?;
+        let (to, who) = (party(relation, is_user), actor.recipient());
+        for expected in &predicted.effects {
+            let target = values.worth(expected.outcome.on_target, to, &who)?;
+            let user = values.worth(expected.outcome.on_user, Party::Myself, &me)?;
+            total += i64::from(expected.chance) * i64::from(target + user) / 100;
+        }
+    }
+    Some(total.clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32)
+}
+
 /// The best cell to point a use wanting `aim` in the shape `mode` at, and
 /// what it is worth there; `None` when nowhere is worth it.
 ///
@@ -1121,6 +1192,11 @@ fn everyone<A: Copy>(snapshot: &Snapshot<A>) -> impl Iterator<Item = (&ActorView
 /// stopped would be worth something: the resolver refuses a use that lands
 /// anywhere but where it was pointed.
 fn best_aim<A: Copy>(aim: Aim, mode: TargetMode, ctx: &TacticCtx<'_, A>) -> Option<(i32, Point)> {
+    best_aim_by(aim, mode, ctx, |cells| footprint_worth(aim, cells, ctx.snapshot))
+}
+
+/// [`best_aim`], scored by `worth` over the cells an aim covers.
+fn best_aim_by<A: Copy>(aim: Aim, mode: TargetMode, ctx: &TacticCtx<'_, A>, worth: impl Fn(&[Point]) -> i32) -> Option<(i32, Point)> {
     let me = ctx.snapshot.me.pos;
     let worth_pointing_at = everyone(ctx.snapshot).filter(|(actor, relation, is_user)| aim.worth_aiming_at(Some(*relation), *is_user, actor.is_hurt()));
     let mut best: Option<(i32, Point)> = None;
@@ -1129,7 +1205,7 @@ fn best_aim<A: Copy>(aim: Aim, mode: TargetMode, ctx: &TacticCtx<'_, A>) -> Opti
         if aim.needs_cursor() && shape.reached.is_some_and(|got| got != at) {
             continue;
         }
-        let score = footprint_worth(aim, &shape.cells, ctx.snapshot);
+        let score = worth(&shape.cells);
         if score > 0 && best.is_none_or(|(b, _)| score > b) {
             best = Some((score, at));
         }
@@ -1137,7 +1213,52 @@ fn best_aim<A: Copy>(aim: Aim, mode: TargetMode, ctx: &TacticCtx<'_, A>) -> Opti
     best
 }
 
-impl<A: Copy> Tactic<A> for UseAbility {
+/// The best cell to point `usable` at and what it is worth there, scored
+/// by what it foresees wherever it can, and by its footprint wherever it
+/// cannot.
+///
+/// The aims a footprint is weighed at are the ones [`best_aim`] tries, in
+/// its order; the foreseen aims are everyone the ability could strike,
+/// tried after them, so an ability aimed at anyone can go to a friend. A
+/// tie goes to the first tried.
+fn best_foreseen_aim<A: Copy + PartialEq>(usable: &Usable, ctx: &TacticCtx<'_, A>, values: &dyn Valuation) -> Option<(i32, Point)> {
+    let snapshot = ctx.snapshot;
+    let (aim, me) = (usable.aim, snapshot.me.pos);
+    if aim == Aim::SelfOnly {
+        let cells = [me];
+        return foreseen_worth(usable.ability, aim, &cells, snapshot, values)
+            .or_else(|| Some(footprint_worth(aim, &cells, snapshot) * FOOTPRINT_POINT))
+            .filter(|score| *score > 0)
+            .map(|score| (score, me));
+    }
+    let mut best: Option<(i32, Point)> = None;
+    let mut tried: Vec<Point> = Vec::new();
+    let worth_pointing_at = everyone(snapshot).filter(|(actor, relation, is_user)| aim.worth_aiming_at(Some(*relation), *is_user, actor.is_hurt()));
+    let struck = everyone_seen(snapshot).filter(|(_, relation, is_user)| aim.hits(Some(*relation), *is_user));
+    for (at, weighed) in worth_pointing_at.map(|(a, _, _)| (a.pos, true)).chain(struck.map(|(a, _, _)| (a.pos, false))) {
+        if tried.contains(&at) {
+            continue;
+        }
+        tried.push(at);
+        let shape = footprint(usable.mode, me, at, ctx.bounds, |p| p != me && (ctx.blocks_shot)(p), ctx.blocks_burst);
+        if shape.reached.is_some_and(|got| got != at) {
+            continue;
+        }
+        // Foreseen, or else weighed by its footprint, which only an aim the
+        // footprint rule would have tried is.
+        let score = match foreseen_worth(usable.ability, aim, &shape.cells, snapshot, values) {
+            Some(score) => score,
+            None if weighed => footprint_worth(aim, &shape.cells, snapshot) * FOOTPRINT_POINT,
+            None => continue,
+        };
+        if score > 0 && best.is_none_or(|(b, _)| score > b) {
+            best = Some((score, at));
+        }
+    }
+    best
+}
+
+impl<A: Copy + PartialEq> Tactic<A> for UseAbility {
     fn name(&self) -> &'static str {
         "use_ability"
     }
@@ -1155,9 +1276,10 @@ impl<A: Copy> Tactic<A> for UseAbility {
         // Ties go to the ability declared first, and to the nearest aim,
         // so two runs of one seed agree.
         let snapshot = ctx.snapshot;
+        let values: &dyn Valuation = self.values.as_deref().unwrap_or(&StandardValuation);
         let mut best: Option<(i32, Usable, Point)> = None;
         for usable in &snapshot.usable {
-            if let Some((score, aim)) = best_aim(usable.aim, usable.mode, ctx)
+            if let Some((score, aim)) = best_foreseen_aim(usable, ctx, values)
                 && best.is_none_or(|(b, _, _)| score > b)
             {
                 best = Some((score, *usable, aim));
@@ -1469,14 +1591,16 @@ fn first_step(from: Point, to: Point, limit: i32, can_step: &dyn Fn(Point) -> bo
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::StatusId;
     use crate::ai::brain::{Brain, Fields, NoFields};
     use crate::ai::snapshot::{ActorView, Carried, Missile, Snapshot, Vitals};
+    use crate::ai::valuation::{Expected, Impact, Party, Prediction, Prospect, Recipient, Valuation};
     use atglyph_core::Id;
     use atglyph_grid::{DijkstraMap, PathRules, Terrain, TileRegistry};
     use rand::{SeedableRng, rngs::StdRng};
 
     fn view(id: u32, x: i32, y: i32, hp: i32) -> ActorView<u32> {
-        ActorView { id, pos: Point::new(x, y), health: Some(Vitals { current: hp, max: 10 }), faction: Some(Id::from_raw(0)) }
+        ActorView::of(id, Point::new(x, y), Some(Vitals { current: hp, max: 10 }), Some(Id::from_raw(0)))
     }
 
     /// Room enough that no shape is clipped by the edge.
@@ -2578,6 +2702,149 @@ mod tests {
             rng: &mut rng,
         };
         assert_eq!(UseAbility::default().evaluate(&mut ctx), None, "the wall is in the way");
+    }
+
+    /// What ability `raw` would do to `on`: one certain effect, `target`
+    /// to it and `user` to the caster.
+    fn foresee(raw: u32, on: u32, target: Impact, user: Impact) -> Prediction<u32> {
+        Prediction { ability: Id::from_raw(raw), on, effects: vec![Expected { chance: 100, outcome: Prospect { on_target: target, on_user: user } }] }
+    }
+
+    /// What `tactic` chooses over `snapshot`, nothing in the way.
+    fn choose(tactic: &UseAbility, snapshot: &Snapshot<u32>) -> Option<Decision<u32>> {
+        let mut rng = StdRng::seed_from_u64(7);
+        tactic.evaluate(&mut TacticCtx {
+            snapshot,
+            fields: &mut NoFields,
+            can_step: &|_| true,
+            blocks_shot: &nothing_blocks,
+            blocks_burst: &|_| false,
+            bounds: arena(),
+            rng: &mut rng,
+        })
+    }
+
+    fn bolt(raw: u32, aim: Aim) -> Usable {
+        usable(raw, aim, atglyph_grid::TargetMode::Bolt { range: 8 })
+    }
+
+    /// A bolt that would mend the foe it strikes is never loosed at it,
+    /// however much the foe is what a foe-aimed bolt is for; one that would
+    /// hurt it is.
+    #[test]
+    fn a_spell_that_would_heal_a_foe_is_never_cast_at_it() {
+        let mut s = Snapshot::alone(view(1, 0, 5, 10));
+        s.enemies = vec![view(2, 4, 5, 6)];
+        s.usable = vec![bolt(0, Aim::Foe)];
+        s.predicted = vec![foresee(0, 2, Impact::Heal(500), Impact::Nothing)];
+        assert_eq!(choose(&UseAbility::default(), &s), None, "it would mend the foe");
+        s.predicted = vec![foresee(0, 2, Impact::Damage(500), Impact::Nothing)];
+        assert_eq!(choose(&UseAbility::default(), &s), Some(Decision::Ability { ability: Id::from_raw(0), aim: Point::new(4, 5) }));
+    }
+
+    /// A spell aimed at anyone goes where its outcome is worth most: at a
+    /// foe it would hurt, else at a friend it would help, and nowhere when
+    /// every aim would cost more than it gains.
+    #[test]
+    fn an_anyone_spell_goes_where_it_scores_best() {
+        let mut s = Snapshot::alone(view(1, 0, 5, 10));
+        s.enemies = vec![view(2, 4, 5, 10)];
+        s.allies = vec![view(3, 0, 8, 3)];
+        s.usable = vec![bolt(0, Aim::Anyone)];
+        // A drain: what it takes from a living target the caster gains, and
+        // what it gives an undead one the caster pays.
+        let (living, undead) = ((Impact::Damage(700), Impact::Heal(700)), (Impact::Heal(700), Impact::Damage(700)));
+        s.predicted = vec![foresee(0, 2, living.0, living.1), foresee(0, 3, undead.0, undead.1)];
+        let at = |s: &Snapshot<u32>| match choose(&UseAbility::default(), s) {
+            Some(Decision::Ability { aim, .. }) => Some(aim),
+            _ => None,
+        };
+        assert_eq!(at(&s), Some(Point::new(4, 5)), "the living foe");
+        s.predicted = vec![foresee(0, 2, undead.0, undead.1), foresee(0, 3, undead.0, undead.1)];
+        assert_eq!(at(&s), Some(Point::new(0, 8)), "the undead foe would be healed: the hurt undead friend is better");
+        s.allies = vec![view(3, 0, 8, 10)];
+        assert_eq!(at(&s), None, "and a friend at full health gains nothing for what the caster pays");
+    }
+
+    /// The caster's own share of a drain is worth more the more it is
+    /// hurt: unhurt, the harder bolt; badly hurt, the drain.
+    #[test]
+    fn a_hurt_caster_values_healing_itself_more() {
+        let mut s = Snapshot::alone(view(1, 0, 5, 10));
+        s.enemies = vec![view(2, 4, 5, 10)];
+        s.usable = vec![bolt(0, Aim::Foe), bolt(1, Aim::Foe)];
+        s.predicted = vec![foresee(0, 2, Impact::Damage(500), Impact::Nothing), foresee(1, 2, Impact::Damage(400), Impact::Heal(400))];
+        let which = |s: &Snapshot<u32>| match choose(&UseAbility::default(), s) {
+            Some(Decision::Ability { ability, .. }) => Some(ability.index()),
+            _ => None,
+        };
+        assert_eq!(which(&s), Some(0), "unhurt, the bolt");
+        s.me = view(1, 0, 5, 2);
+        assert_eq!(which(&s), Some(1), "hurt, the drain");
+    }
+
+    /// Outcomes nobody could foresee are weighed by the footprint, as
+    /// they always were: a burst still goes at the huddle.
+    #[test]
+    fn unknown_outcomes_choose_as_before() {
+        let burst = usable(0, Aim::Foe, atglyph_grid::TargetMode::Ball { range: 8, radius: 1 });
+        let mut s = Snapshot::alone(view(1, 0, 5, 10));
+        s.enemies = vec![view(2, 3, 8, 10), view(3, 6, 5, 10), view(4, 6, 6, 10)];
+        s.usable = vec![burst];
+        s.sort();
+        let before = choose(&UseAbility::default(), &s);
+        assert!(matches!(before, Some(Decision::Ability { aim, .. }) if aim == Point::new(6, 5) || aim == Point::new(6, 6)), "{before:?}");
+        s.predicted = [2, 3, 4].map(|on| foresee(0, on, Impact::Unknown, Impact::Unknown)).to_vec();
+        assert_eq!(choose(&UseAbility::default(), &s), before, "said to be unknown, the same as said nothing");
+    }
+
+    /// Two abilities worth the same, at two foes worth the same: the first
+    /// ability, at the nearest foe, however the foes were listed.
+    #[test]
+    fn equal_scores_break_by_ability_then_aim() {
+        let mut s = Snapshot::alone(view(1, 0, 5, 10));
+        s.enemies = vec![view(3, 0, 9, 10), view(2, 3, 5, 10)];
+        s.usable = vec![bolt(0, Aim::Foe), bolt(1, Aim::Foe)];
+        s.predicted = [(0, 2), (0, 3), (1, 2), (1, 3)].map(|(a, on)| foresee(a, on, Impact::Damage(500), Impact::Nothing)).to_vec();
+        s.sort();
+        let first = choose(&UseAbility::default(), &s);
+        assert_eq!(first, Some(Decision::Ability { ability: Id::from_raw(0), aim: Point::new(3, 5) }));
+        s.enemies.reverse();
+        s.sort();
+        assert_eq!(choose(&UseAbility::default(), &s), first, "the same, listed the other way round");
+    }
+
+    /// A valuation of a game's own, given to the tactic, is what it scores
+    /// by: one that prizes a status above any damage casts the hex.
+    #[test]
+    fn a_valuation_given_to_the_tactic_is_the_one_it_scores_by() {
+        #[derive(Debug)]
+        struct Hexer;
+        impl Valuation for Hexer {
+            fn damage(&self, h: i32, _: Party, _: &Recipient<'_>) -> i32 {
+                h / 10
+            }
+            fn heal(&self, _: i32, _: Party, _: &Recipient<'_>) -> i32 {
+                0
+            }
+            fn status(&self, _: StatusId, _: bool, _: Party, _: &Recipient<'_>) -> i32 {
+                10_000
+            }
+            fn cleanse(&self, _: StatusId, _: bool, _: Party, _: &Recipient<'_>) -> i32 {
+                0
+            }
+        }
+        let mut s = Snapshot::alone(view(1, 0, 5, 10));
+        s.enemies = vec![view(2, 4, 5, 10)];
+        s.usable = vec![bolt(0, Aim::Foe), bolt(1, Aim::Foe)];
+        let hex = Impact::Status { id: StatusId::from_raw(0), boon: false };
+        s.predicted = vec![foresee(0, 2, Impact::Damage(900), Impact::Nothing), foresee(1, 2, hex, Impact::Nothing)];
+        let which = |t: &UseAbility| match choose(t, &s) {
+            Some(Decision::Ability { ability, .. }) => Some(ability.index()),
+            _ => None,
+        };
+        assert_eq!(which(&UseAbility::default()), Some(0), "the engine's own: the heavy blow");
+        assert_eq!(which(&UseAbility::default().valuing(std::sync::Arc::new(Hexer))), Some(1), "the game's: the hex");
     }
 
     fn missile(item: u32, range: i32) -> Missile<u32> {

@@ -1047,7 +1047,7 @@ pub(crate) fn begin_thinking(mut thinking: ResMut<Thinking>, acting: Res<Acting>
     if acting.has_decided(actor) {
         return;
     }
-    let me = ActorView { id: actor, pos: pos.0, health: health.map(vitals), faction: faction.map(|f| f.0) };
+    let me = ActorView::of(actor, pos.0, health.map(vitals), faction.map(|f| f.0));
     let mut snapshot = Snapshot::alone(me);
     snapshot.wits = intelligence.map(|i| i.0).unwrap_or_default();
     snapshot.came_from = came_from.0;
@@ -1083,7 +1083,7 @@ pub(crate) fn perceive_roster(
     let Some(thinker) = thinking.actor() else { return };
     let Some(mine) = thinking.snapshot().map(|s| s.me.faction) else { return };
     let seen = actors.iter().filter(|(e, pos, _, _, on)| *e != thinker && sight.perceives(&thinking, pos.0, *on)).map(|(e, pos, health, faction, _)| {
-        let view = ActorView { id: e, pos: pos.0, health: health.map(vitals), faction: faction.map(|f| f.0) };
+        let view = ActorView::of(e, pos.0, health.map(vitals), faction.map(|f| f.0));
         (view, crate::combat::regard(rules.as_deref(), mine, faction.map(|f| f.0)))
     });
     let (enemies, allies, others) = sort_roster(seen);

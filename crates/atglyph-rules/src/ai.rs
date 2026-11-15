@@ -36,6 +36,7 @@ pub mod snapshot;
 pub mod standard;
 pub mod step;
 pub mod tactics;
+pub mod valuation;
 pub mod wits;
 
 pub use awareness::Awareness;
@@ -48,4 +49,5 @@ pub use roster::{Trail, sort_roster};
 pub use snapshot::{ActorView, Carried, ItemView, Missile, PropView, Sense, Snapshot, Vitals};
 pub use standard::{Repertoire, Standard, StandardBrain};
 pub use step::{StepAs, step_as};
+pub use valuation::{Expected, Impact, Party, Prediction, Prospect, Recipient, StandardValuation, Valuation};
 pub use wits::Wits;

@@ -88,7 +88,9 @@ pub mod combat {
         AddsOwnBlow, Attack, AttackShape, BenchedAttack, BonusDamage, DamageDealt, DamageEvent, DamageRoute, DamageStages, Dead, DeathEvent, Heal, Healed,
         Invulnerable, Loadout, RangedAttack, Resists, Struck, line_of_fire, shot,
     };
-    pub use atglyph_bevy::effects::{Effect, EffectBonus, EffectKinds, EffectWorld, Effects, EffectsPlugin, Fired, FromArgs, Landing, TriggerKinds, Triggers};
+    pub use atglyph_bevy::effects::{
+        Effect, EffectBonus, EffectKinds, EffectWorld, Effects, EffectsPlugin, Fired, FromArgs, Landing, PredictCtx, TriggerKinds, Triggers,
+    };
     pub use atglyph_bevy::shields::{AttackBlocked, BlocksSpent, Guarding, Shield, ShieldsPlugin};
     pub use atglyph_bevy::status::{ActiveStatuses, ApplyStatus, RemoveStatus, StatBlock, StatusEvent};
     pub use atglyph_bevy::throwing::{Launched, Launcher, Throw, ThrowAs, Throwable, ThrowingPlugin, Throws};
@@ -124,8 +126,9 @@ pub mod minds {
     pub use atglyph_bevy::stealth::{Aware, Hides, Notice, Noticed, Stealth, StealthPlugin, StealthRange, Unseen, Watchers};
     pub use atglyph_rules::ai::tactics::{Herded, Idle, Movement, Moving, OnGround, OnRounds, WalkRounds};
     pub use atglyph_rules::ai::{
-        ActorView, Awareness, Carried, Choice, Decision, Fields, HearingStats, ItemView, Missile, MovementProfile, NoFields, NoticeStats, RangeRules,
-        Repertoire, Sense, Snapshot, Standard, StandardBrain, StealthStats, Tactic, TacticCtx, Vitals, Wits, notices, tactics,
+        ActorView, Awareness, Carried, Choice, Decision, Expected, Fields, HearingStats, Impact, ItemView, Missile, MovementProfile, NoFields, NoticeStats,
+        Party, Prediction, Prospect, RangeRules, Recipient, Repertoire, Sense, Snapshot, Standard, StandardBrain, StandardValuation, StealthStats, Tactic,
+        TacticCtx, Valuation, Vitals, Wits, notices, tactics,
     };
     pub use atglyph_rules::faction::{Factions, Relation};
 }

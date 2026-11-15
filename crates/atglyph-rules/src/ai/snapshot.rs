@@ -3,9 +3,11 @@
 use std::any::Any;
 use std::fmt::Debug;
 
-use crate::FactionId;
 use crate::ability::{Targeting, Usable};
 use crate::ai::Wits;
+use crate::ai::valuation::Prediction;
+use crate::damage::Resistances;
+use crate::{FactionId, StatusId};
 use atglyph_core::{Point, geometry};
 
 /// Health as a mind reads it: what is left, and the most there can be.
@@ -29,7 +31,13 @@ impl Vitals {
 /// Health and side are optional: a prop with a mind, a civilian in a game
 /// with no combat, or anyone in a game with no factions is still someone
 /// a mind can see and step round. A tactic that needs either asks.
-#[derive(Debug, Clone, Copy, PartialEq)]
+///
+/// What it resists, its armor, the statuses it holds and the ones it can
+/// never be given are filled by the plugin that owns each, combat and
+/// statuses, and are empty in a game without them: what an effect reads to
+/// say what it would do to this actor, and a valuation to say what that is
+/// worth.
+#[derive(Debug, Clone, PartialEq)]
 pub struct ActorView<A: Copy> {
     /// Who.
     pub id: A,
@@ -39,12 +47,26 @@ pub struct ActorView<A: Copy> {
     pub health: Option<Vitals>,
     /// Which side, when it takes one.
     pub faction: Option<FactionId>,
+    /// What it resists, kind by kind.
+    pub resists: Resistances,
+    /// Its flat armor.
+    pub armor: i32,
+    /// The statuses it holds.
+    pub statuses: Vec<StatusId>,
+    /// The statuses it can never be given.
+    pub immune_to: Vec<StatusId>,
 }
 
 impl<A: Copy> ActorView<A> {
     /// Someone with no health and no side.
     pub fn at(id: A, pos: Point) -> Self {
-        Self { id, pos, health: None, faction: None }
+        Self { id, pos, health: None, faction: None, resists: Resistances::new(), armor: 0, statuses: Vec::new(), immune_to: Vec::new() }
+    }
+
+    /// Someone with `health`, if any, of `faction`, if any, and nothing
+    /// else known of them yet.
+    pub fn of(id: A, pos: Point, health: Option<Vitals>, faction: Option<FactionId>) -> Self {
+        Self { health, faction, ..Self::at(id, pos) }
     }
 
     /// Health as a percentage, when it has health.
@@ -168,6 +190,13 @@ pub struct Snapshot<A: Copy> {
     /// The abilities it could use this turn, already narrowed to what it
     /// can afford. Empty for an actor with none, which is most of them.
     pub usable: Vec<Usable>,
+    /// What each usable ability would do to each actor in sight and to the
+    /// actor itself, as its effects foresee it: what
+    /// [`UseAbility`](crate::ai::tactics::UseAbility) weighs by a
+    /// [`Valuation`](crate::ai::valuation::Valuation). An ability and an
+    /// actor with none here is one whose effects say nothing of
+    /// themselves, aimed by its footprint alone.
+    pub predicted: Vec<Prediction<A>>,
     /// Where the freshest trail it is on leads: an enemy it knows about
     /// but cannot see, where it was last seen, or a sound, where it was
     /// heard. What a search walks toward. `None` for an actor that is
@@ -228,6 +257,7 @@ impl<A: Copy> Snapshot<A> {
             others: Vec::new(),
             came_from: None,
             usable: Vec::new(),
+            predicted: Vec::new(),
             last_known: None,
             wits: Wits::default(),
             missiles: Vec::new(),
@@ -252,6 +282,18 @@ impl<A: Copy> Snapshot<A> {
     /// What the game knows of type `S`, if it said.
     pub fn sense<S: 'static>(&self) -> Option<&S> {
         self.senses.iter().find_map(|s| (**s).as_any().downcast_ref::<S>())
+    }
+
+    /// The actor deciding, then everyone it sees: its enemies, its allies
+    /// and the rest, for a contributor that fills in what it owns of each.
+    pub fn views_mut(&mut self) -> impl Iterator<Item = &mut ActorView<A>> {
+        std::iter::once(&mut self.me).chain(&mut self.enemies).chain(&mut self.allies).chain(&mut self.others)
+    }
+
+    /// The actor deciding, then everyone it sees, in the order of
+    /// [`views_mut`](Self::views_mut).
+    pub fn views(&self) -> impl Iterator<Item = &ActorView<A>> {
+        std::iter::once(&self.me).chain(&self.enemies).chain(&self.allies).chain(&self.others)
     }
 
     /// The nearest visible enemy.

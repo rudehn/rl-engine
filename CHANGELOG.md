@@ -8,6 +8,9 @@ atglyph is not on crates.io yet, so a game depends on a release by its git tag, 
 
 ### Added
 
+- Casting by predicted outcome: `Effect::predict(on, user, ctx)` says what an effect would do to whoever it lands on and to its user, as an `Impact` each (damage or a heal in hundredths, a status put on or taken off, nothing, or unknown, the default); `Harm` predicts through the game's own damage stages roll by roll, `Mend` no more than is missing, `Inflict` nothing on a holder or an immune target, `Cleanse` only on a holder. The ability contributor hands each usable ability's predictions to the mind as `Snapshot::predicted`.
+- `Valuation` turns a predicted impact into a score by who it lands on (`Party`: foe, ally, neutral, the user), and `StandardValuation` is the engine's; a game gives a brain its own with `UseAbility::valuing` or `StandardBrain::valuing`.
+- A mind's `ActorView` carries what each actor resists, its armor, the statuses it holds and the ones it can never be given, filled by combat and statuses; `ActorView::of` builds one, and `Snapshot::views` and `views_mut` walk the user and everyone it sees.
 - A beam cue, `Cue::Beam { from, to, look, pulse }`: a line held between two anchors, following them, with a pulse running along it from the first to the second, so a drain is seen to flow from whom it takes to whom it gives; held for `ParticleStyle::beam_secs`, by default as long as a flight over the same cells and never less than a burst.
 - A walker can pass rock or shut doors, `Passes { solid, shut_doors }` (`ActorParts::passes`): it steps into them, a shut door staying shut, squeezes past their corners, and its mind's ways are flooded through them, never off the map nor onto a cell somebody stands in; a swap never puts either walker where it cannot stand.
 - An inflicted status lasts one number of turns or a range rolled as it lands, written `turns: (1, 2)` beside `turns: 2`, and described as "paralysed for 1 to 2 turns".
@@ -58,6 +61,8 @@ atglyph is not on crates.io yet, so a game depends on a release by its git tag, 
 
 ### Changed
 
+- `UseAbility` chooses by predicted outcome wherever an ability's effects foresee themselves: a bolt that would heal its foe is never loosed, and an ability aimed at anyone goes to whoever it does most good on, foe or friend. Where they cannot tell it weighs the footprint as before, so a game whose effects predict nothing chooses exactly as it did.
+- **Breaking:** `ActorView` has four more fields and is no longer `Copy`, so a view written out in full gains them (or is built with `ActorView::of`) and one copied out of a snapshot is cloned; `UseAbility` has a `values` field and is no longer `Copy` (`UseAbility::new(chance)` builds one); `UseAbility` and `StandardBrain` ask `A: PartialEq` of the actor id.
 - **Breaking:** `Cue` has a `Beam` variant, and `ParticleStyle` a `beam_secs` field; a `match` on `Cue` or a `ParticleStyle` written out in full gains one.
 - **Breaking:** `Inflict::turns` is a `TurnSpan`, `TurnSpan::Fixed(n)` for a number; a game building an `Inflict` in code wraps its turns.
 - **Breaking:** `StatusEvent` has a `Refused` variant; a game matching it exhaustively adds an arm.

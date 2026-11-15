@@ -247,9 +247,9 @@ pub fn rats_act(walk: &mut Walk) {
 fn rat_turn(walk: &mut Walk, i: usize, brain: &Brain<Who>) {
     let me = walk.rats[i];
     let view = walk.terrain.view(&walk.tiles);
-    let mut snapshot = Snapshot::alone(ActorView { id: Who::Rat(i), pos: me.at, health: Some(me.health), faction: None });
+    let mut snapshot = Snapshot::alone(ActorView::of(Who::Rat(i), me.at, Some(me.health), None));
     if fov::can_see(&view, me.at, walk.at, SIGHT) {
-        snapshot.enemies.push(ActorView { id: Who::You, pos: walk.at, health: Some(walk.health), faction: None });
+        snapshot.enemies.push(ActorView::of(Who::You, walk.at, Some(walk.health), None));
     }
     let (you, rats) = (walk.at, &walk.rats);
     let can_step = |p: Point| view.is_walkable(p) && p != you && !rats.iter().any(|r| r.is_alive() && r.at == p);

@@ -21,7 +21,9 @@ use atglyph_rules::gas::GasId;
 use atglyph_rules::{Hit, Names, StatusId};
 use bevy::prelude::*;
 
-use super::{Effect, EffectBonus, EffectWorld, FromArgs, Landing};
+use atglyph_rules::ai::{ActorView, Impact, Prospect};
+
+use super::{Effect, EffectBonus, EffectWorld, FromArgs, Landing, PredictCtx};
 use crate::app::EngineApp;
 use crate::combat::{DamageEvent, Heal};
 use crate::registries::Registries;
@@ -62,6 +64,58 @@ impl Effect for Harm {
     fn describe(&self, registries: &Registries, bonus: EffectBonus) -> String {
         format!("{} {}", self.roll_with(bonus), registries.damage_kinds.name(self.kind))
     }
+
+    /// The average of what each roll comes to through the game's own
+    /// [`DamageStages`](crate::combat::DamageStages), against the target's
+    /// armor and resistances: damage, a heal where it absorbs the kind, or
+    /// nothing where it is immune.
+    fn predict(&self, on: &ActorView<Entity>, user: &ActorView<Entity>, ctx: &PredictCtx<'_>) -> Prospect {
+        let fallback = crate::combat::DamageStages::default();
+        let stages = ctx.world.get_resource::<crate::combat::DamageStages>().unwrap_or(&fallback);
+        let stages: Vec<&dyn atglyph_rules::DamageStage<Entity>> = stages.0.iter().map(|s| s.as_ref() as &dyn atglyph_rules::DamageStage<Entity>).collect();
+        let defender = atglyph_rules::damage::Defender { armor: on.armor, blocked: false };
+        let lands = |amount: i32| {
+            let hit = Hit::by(user.id, self.kind, amount.max(0));
+            atglyph_rules::resolve(&hit, &defender, &on.resists, &ctx.registries.damage_kinds, &stages)
+        };
+        match expected_hundredths(self.roll_with(ctx.bonus), lands) {
+            n if n > 0 => Prospect::on(Impact::Damage(n)),
+            n if n < 0 => Prospect::on(Impact::Heal(-n)),
+            _ => Prospect::on(Impact::Nothing),
+        }
+    }
+}
+
+/// The most dice of the most sides a roll is weighed face by face for; a
+/// larger one is weighed at its average alone.
+const WEIGHED_FACES: u32 = 2048;
+
+/// What `roll` comes to through `lands` on average, in hundredths: every
+/// sum it can roll weighed by how many ways it rolls, so a floor or a
+/// threshold in `lands` is weighed as it bites; or, for a roll of more
+/// faces than [`WEIGHED_FACES`], `lands` of its average.
+///
+/// Integers throughout, so two runs weigh alike.
+fn expected_hundredths(roll: atglyph_core::DiceRoll, lands: impl Fn(i32) -> i32) -> i32 {
+    let faces = roll.num.saturating_mul(roll.sides);
+    let ways_total = u128::from(roll.sides).checked_pow(roll.num);
+    let (Some(total), true) = (ways_total, faces <= WEIGHED_FACES && roll.sides > 0) else {
+        let average = (i64::from(roll.num) * i64::from(roll.sides + 1) / 2 + i64::from(roll.bonus)) as i32;
+        return lands(average).saturating_mul(100);
+    };
+    // Ways to roll each sum of the dice, from `num` up.
+    let mut ways: Vec<u128> = vec![1];
+    for _ in 0..roll.num {
+        let mut next = vec![0u128; ways.len() + roll.sides as usize];
+        for (sum, w) in ways.iter().enumerate() {
+            for face in 1..=roll.sides as usize {
+                next[sum + face] += w;
+            }
+        }
+        ways = next;
+    }
+    let weighed: i128 = ways.iter().enumerate().filter(|(_, w)| **w > 0).map(|(sum, w)| *w as i128 * i128::from(lands(sum as i32 + roll.bonus))).sum();
+    (weighed * 100 / total as i128).clamp(i128::from(i32::MIN), i128::from(i32::MAX)) as i32
 }
 
 impl FromArgs for Harm {
@@ -119,6 +173,16 @@ impl Effect for Mend {
     /// and spends the turn.
     fn would_act(&self, landing: &Landing, world: &World) -> bool {
         landing.targets.iter().any(|t| world.get::<crate::combat::Health>(*t).is_some_and(|h| h.current < h.max))
+    }
+
+    /// What it would give back on average, no more than the target is
+    /// missing: nothing to the unhurt, or to what has no health to mend.
+    fn predict(&self, on: &ActorView<Entity>, _: &ActorView<Entity>, ctx: &PredictCtx<'_>) -> Prospect {
+        let missing = on.health.map_or(0, |h| (h.max - h.current).max(0));
+        match expected_hundredths(self.roll_with(ctx.bonus), |amount| amount.clamp(0, missing)) {
+            0 => Prospect::on(Impact::Nothing),
+            n => Prospect::on(Impact::Heal(n)),
+        }
     }
 }
 
@@ -231,6 +295,15 @@ impl Effect for Inflict {
         let held = if self.while_worn { " while worn" } else { "" };
         format!("{} for {} turns{held}", registries.statuses.name(self.status), self.turns_with(bonus))
     }
+
+    /// The status, a boon or a bane by its definition; nothing on one that
+    /// holds it already or can never be given it.
+    fn predict(&self, on: &ActorView<Entity>, _: &ActorView<Entity>, ctx: &PredictCtx<'_>) -> Prospect {
+        if on.statuses.contains(&self.status) || on.immune_to.contains(&self.status) {
+            return Prospect::on(Impact::Nothing);
+        }
+        Prospect::on(Impact::Status { id: self.status, boon: ctx.registries.statuses.get(self.status).boon })
+    }
 }
 
 impl FromArgs for Inflict {
@@ -279,6 +352,15 @@ impl Effect for Cleanse {
     fn apply(&self, landing: &Landing, world: &mut EffectWorld<'_, '_>) {
         for target in &landing.targets {
             world.cure.write(RemoveStatus { target: *target, status: self.status });
+        }
+    }
+
+    /// The status taken off, on one that holds it; nothing on one that
+    /// does not.
+    fn predict(&self, on: &ActorView<Entity>, _: &ActorView<Entity>, ctx: &PredictCtx<'_>) -> Prospect {
+        match on.statuses.contains(&self.status) {
+            true => Prospect::on(Impact::Cleanse { id: self.status, boon: ctx.registries.statuses.get(self.status).boon }),
+            false => Prospect::on(Impact::Nothing),
         }
     }
 }
@@ -560,6 +642,99 @@ pub(crate) fn add_engine_effects(app: &mut App) -> &mut App {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use atglyph_rules::ai::{ActorView, Impact, Prospect, Vitals};
+
+    /// A world holding registries of `fire`, which armor does not stop,
+    /// and `blow`, which it does, and of `slowed`, a bane, and `hasted`, a
+    /// boon; with the engine's own damage stages, armor and then resistance.
+    fn predicting() -> World {
+        let mut world = World::new();
+        let mut blow = atglyph_rules::DamageKind::new("blow");
+        blow.armored = true;
+        let mut fire = atglyph_rules::DamageKind::new("fire");
+        fire.armored = false;
+        let statuses = vec![atglyph_rules::StatusDef::new("slowed"), atglyph_rules::StatusDef::new("hasted").boon()];
+        world.insert_resource(Registries {
+            damage_kinds: atglyph_rules::Registry::from_defs(vec![fire, blow]).unwrap(),
+            statuses: atglyph_rules::Registry::from_defs(statuses).unwrap(),
+            ..Default::default()
+        });
+        let stages: Vec<Box<dyn atglyph_rules::DamageStage<Entity> + Send + Sync>> =
+            vec![Box::new(atglyph_rules::damage::SubtractArmor), Box::new(atglyph_rules::damage::ApplyResistance)];
+        world.insert_resource(crate::combat::DamageStages(stages));
+        world
+    }
+
+    fn predict(effect: &dyn Effect, world: &World, on: &ActorView<Entity>) -> Prospect {
+        let user = ActorView::at(Entity::from_bits(1), Point::ZERO);
+        effect.predict(on, &user, &super::super::PredictCtx::new(world, EffectBonus::default()))
+    }
+
+    fn someone(hp: i32) -> ActorView<Entity> {
+        ActorView::of(Entity::from_bits(2), Point::new(3, 0), Some(Vitals { current: hp, max: 20 }), None)
+    }
+
+    /// A harm predicts its average through the game's own stages, roll by
+    /// roll as the stages would take each: about half on one that resists
+    /// half, a heal on one that absorbs, nothing on one immune, and armor
+    /// taking its share of every roll, never below nothing, on a kind armor
+    /// stops.
+    #[test]
+    fn harm_predicts_through_resistance_and_absorbing_is_a_heal() {
+        let world = predicting();
+        let (fire, blow) = (DamageKindId::from_raw(0), DamageKindId::from_raw(1));
+        let fireball = Harm { kind: fire, roll: DiceRoll::new(2, 6) };
+        let resisting = |pct: i32| {
+            let mut on = someone(20);
+            on.resists.set(fire, pct);
+            on
+        };
+        assert_eq!(predict(&fireball, &world, &someone(20)), Prospect::on(Impact::Damage(700)), "seven on average");
+        // Each roll keeps the half the stage leaves it, rounded up.
+        assert_eq!(predict(&fireball, &world, &resisting(50)), Prospect::on(Impact::Damage(375)));
+        assert_eq!(predict(&fireball, &world, &resisting(150)), Prospect::on(Impact::Heal(325)), "absorbing half again: a heal");
+        assert_eq!(predict(&fireball, &world, &resisting(100)), Prospect::on(Impact::Nothing), "immune");
+        let mut armored = someone(20);
+        armored.armor = 2;
+        assert_eq!(predict(&fireball, &world, &armored), Prospect::on(Impact::Damage(700)), "armor does not stop fire");
+        // 1d4 against two armor: 0, 0, 1 and 2, three quarters on average.
+        assert_eq!(predict(&Harm { kind: blow, roll: DiceRoll::new(1, 4) }, &world, &armored), Prospect::on(Impact::Damage(75)));
+    }
+
+    /// A mend predicts what it would give back, no more than is missing,
+    /// and nothing to the unhurt or to what has no health.
+    #[test]
+    fn mend_predicts_what_it_gives_back_and_nothing_at_full_health() {
+        let world = predicting();
+        let mend = Mend { roll: DiceRoll::new(2, 6) };
+        assert_eq!(predict(&mend, &world, &someone(20)), Prospect::on(Impact::Nothing));
+        // Three missing: all three but on the one roll in thirty-six of two.
+        assert_eq!(predict(&mend, &world, &someone(17)), Prospect::on(Impact::Heal(297)), "no more than the three missing");
+        assert_eq!(predict(&mend, &world, &someone(5)), Prospect::on(Impact::Heal(700)));
+        assert_eq!(predict(&mend, &world, &ActorView::at(Entity::from_bits(2), Point::ZERO)), Prospect::on(Impact::Nothing));
+    }
+
+    /// A status predicts itself, a boon or a bane by its definition, and
+    /// nothing on one that holds it already or can never be given it; a
+    /// cleanse predicts itself only on a holder.
+    #[test]
+    fn inflict_on_a_holder_or_an_immune_target_predicts_nothing() {
+        let world = predicting();
+        let (slowed, hasted) = (StatusId::from_raw(0), StatusId::from_raw(1));
+        let slow = Inflict { status: slowed, turns: TurnSpan::Fixed(3), while_worn: false };
+        let haste = Inflict { status: hasted, ..slow };
+        assert_eq!(predict(&slow, &world, &someone(20)), Prospect::on(Impact::Status { id: slowed, boon: false }));
+        assert_eq!(predict(&haste, &world, &someone(20)), Prospect::on(Impact::Status { id: hasted, boon: true }));
+        let holder = ActorView { statuses: vec![slowed], ..someone(20) };
+        let immune = ActorView { immune_to: vec![slowed], ..someone(20) };
+        assert_eq!(predict(&slow, &world, &holder), Prospect::on(Impact::Nothing), "already slowed");
+        assert_eq!(predict(&slow, &world, &immune), Prospect::on(Impact::Nothing), "never to be slowed");
+        let cure = Cleanse { status: slowed };
+        assert_eq!(predict(&cure, &world, &holder), Prospect::on(Impact::Cleanse { id: slowed, boon: false }));
+        assert_eq!(predict(&cure, &world, &someone(20)), Prospect::on(Impact::Nothing), "nothing to take off");
+        assert_eq!(predict(&Shove { cells: 2 }, &world, &someone(20)), Prospect::UNKNOWN, "and what says nothing of itself is unknown");
+    }
 
     /// A bonus adds its amount to a harm and a mend roll and its turns to
     /// an inflicted status, and a default bonus, what a plain carrier

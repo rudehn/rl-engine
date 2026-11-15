@@ -32,6 +32,7 @@ use atglyph_core::Point;
 use atglyph_rules::Names;
 use atglyph_rules::ability::AbilityId;
 use atglyph_rules::ability::RawValue;
+use atglyph_rules::ai::{ActorView, Expected, Prospect};
 use bevy::prelude::*;
 
 use crate::combat::DamageEvent;
@@ -394,6 +395,41 @@ pub trait Effect: Send + Sync + 'static {
         let _ = (landing, world);
         true
     }
+
+    /// What landing this on `on` would do to it and to `user`, as a mind
+    /// weighs a use before it makes one: damage or a heal on average, a
+    /// status put on or taken off, nothing, or [`Prospect::UNKNOWN`].
+    ///
+    /// Unknown unless the effect says, so one that cannot tell is weighed
+    /// by its footprint as it always was. The engine's [`Harm`], [`Mend`],
+    /// [`Inflict`] and [`Cleanse`] say; a game's own effect that takes from
+    /// one and gives to its user says both halves. Read from the views and
+    /// `ctx.world` as they stand; nothing is changed and nothing rolled, so
+    /// asking cannot move the run.
+    fn predict(&self, on: &ActorView<Entity>, user: &ActorView<Entity>, ctx: &PredictCtx<'_>) -> Prospect {
+        let _ = (on, user, ctx);
+        Prospect::UNKNOWN
+    }
+}
+
+/// What an effect is asked what it would do with.
+pub struct PredictCtx<'a> {
+    /// The world as it stands.
+    pub world: &'a World,
+    /// The game's registries, every id named through them.
+    pub registries: &'a Registries,
+    /// What the use's carrier adds to it: nothing for an ability.
+    pub bonus: EffectBonus,
+}
+
+impl<'a> PredictCtx<'a> {
+    /// Asking over `world`, with `bonus` added.
+    ///
+    /// # Panics
+    /// If `world` holds no [`Registries`], which every engine app does.
+    pub fn new(world: &'a World, bonus: EffectBonus) -> Self {
+        Self { world, registries: world.resource::<Registries>(), bonus }
+    }
 }
 
 /// An effect that knows how to build itself out of an ability's RON.
@@ -508,6 +544,12 @@ impl Effects {
     /// from the [`AbilityEvent`](crate::ability::AbilityEvent) it writes.
     pub(crate) fn would_act(&self, landing: &Landing, world: &World) -> bool {
         self.0.is_empty() || self.0.iter().any(|b| b.effect.would_act(landing, world))
+    }
+
+    /// What each of these would do to `on` and to `user`, by
+    /// [`Effect::predict`], with the chance it lands.
+    pub fn predict(&self, on: &ActorView<Entity>, user: &ActorView<Entity>, ctx: &PredictCtx<'_>) -> Vec<Expected> {
+        self.0.iter().map(|b| Expected { chance: b.chance, outcome: b.effect.predict(on, user, ctx) }).collect()
     }
 
     /// Lands every effect on `landing`, rolling each that may miss.

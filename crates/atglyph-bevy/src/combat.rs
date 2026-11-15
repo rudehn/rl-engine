@@ -1734,6 +1734,21 @@ pub(crate) fn perceive_reach(mut thinking: ResMut<crate::minds::Thinking>, loado
     }
 }
 
+/// Tells the mind holding the turn what it and everyone it sees resist
+/// and wear as armor: what their [`Loadout`] puts in a blow's way, gear
+/// included, so an effect foreseeing a hit reads what the hit would meet.
+///
+/// Combat's contribution to the views, in
+/// [`PerceiveSet::Annotate`](crate::plugin::PerceiveSet::Annotate), after
+/// the roster has filled them.
+pub(crate) fn perceive_defences(mut thinking: ResMut<crate::minds::Thinking>, loadout: Loadout) {
+    let Some(snapshot) = thinking.snapshot_mut() else { return };
+    for view in snapshot.views_mut() {
+        view.armor = loadout.armor(view.id);
+        view.resists = loadout.resistances(view.id);
+    }
+}
+
 impl Plugin for CombatPlugin {
     fn build(&self, app: &mut App) {
         use crate::app::EngineApp;
@@ -1759,7 +1774,7 @@ impl Plugin for CombatPlugin {
             .needs::<CombatRules>("CombatPlugin", "`CombatRules::new()`, who is hostile to whom")
             .needs::<crate::registries::Registries>("CombatPlugin", "`Registries`, with the damage kinds a blow can deal")
             .add_stream::<CombatRng>("CombatPlugin")
-            .add_systems(Turn, perceive_reach.in_set(crate::plugin::PerceiveSet::Annotate))
+            .add_systems(Turn, (perceive_reach, perceive_defences).in_set(crate::plugin::PerceiveSet::Annotate))
             .add_systems(
                 Turn,
                 (land_shots.in_set(crate::plugin::LandSet::Shot), resolve_attacks.in_set(ResolveSet::Act), keep_shooters.in_set(ResolveSet::Act)).chain(),

@@ -586,7 +586,9 @@ mod tests {
             ended.0 += ends.read().count();
         }
         let (mut app, _) = holding_the_turn(());
-        app.init_resource::<Ended>().add_systems(Turn, count);
+        // Where a game answers a turn: after the scheduler that ends one,
+        // so the count sees the end in the pass it is written.
+        app.init_resource::<Ended>().add_systems(Turn, count.in_set(crate::plugin::TurnSet::React));
         let turn = app.world().resource::<Turns>().turn_number();
 
         let_time_pass(&mut app, 50);

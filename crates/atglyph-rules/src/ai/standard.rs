@@ -44,8 +44,11 @@
 //! Using it is optional: a game that wants another order builds its
 //! [`Brain`] by hand, as it always could.
 
+use std::sync::Arc;
+
 use crate::ai::brain::{Brain, Tactic};
 use crate::ai::tactics::{FleeWhenHurt, Hunt, Idle, Keep, MeleeAdjacent, Scavenge, SearchLastKnown, ShootAtRange, ThrowAtRange, UseAbility};
+use crate::ai::valuation::Valuation;
 use crate::ai::wits::Wits;
 use crate::parts::KeepAway;
 
@@ -148,6 +151,7 @@ impl Standard {
             before_hunt: Vec::new(),
             instead_of_hunt: Vec::new(),
             before_idle: Vec::new(),
+            values: None,
         }
     }
 }
@@ -170,9 +174,19 @@ pub struct StandardBrain<A: Copy> {
     before_hunt: Vec<Box<dyn Tactic<A>>>,
     instead_of_hunt: Vec<Box<dyn Tactic<A>>>,
     before_idle: Vec<Box<dyn Tactic<A>>>,
+    values: Option<Arc<dyn Valuation>>,
 }
 
-impl<A: Copy + 'static> StandardBrain<A> {
+impl<A: Copy + PartialEq + 'static> StandardBrain<A> {
+    /// Weighs what its abilities foresee by `values` rather than the
+    /// engine's [`StandardValuation`](crate::ai::StandardValuation): a
+    /// brain of a game's own judgement, which two brains of one kind may
+    /// hold differently, one prizing its buffs and the other its damage.
+    pub fn valuing(mut self, values: Arc<dyn Valuation>) -> Self {
+        self.values = Some(values);
+        self
+    }
+
     /// `tactic` ahead of everything, running included: what nothing else a
     /// kind would do outranks, raising an alarm not yet raised or making
     /// off with what it stole.
@@ -215,7 +229,7 @@ impl<A: Copy + 'static> StandardBrain<A> {
 
     /// The brain, in the order the [module docs](self) give.
     pub fn build(self) -> Brain<A> {
-        let StandardBrain { chain, can, first, before_attacks, before_hunt, instead_of_hunt, before_idle } = self;
+        let StandardBrain { chain, can, first, before_attacks, before_hunt, instead_of_hunt, before_idle, values } = self;
         let mut brain = Brain::new().with_all(first);
         let flee = (chain.flee && can.flee_at > 0).then_some(FleeWhenHurt::at(can.flee_at));
         if let Some(flee) = flee.filter(|_| !chain.flee_after_attacks) {
@@ -226,7 +240,11 @@ impl<A: Copy + 'static> StandardBrain<A> {
         }
         brain = brain.with_all(before_attacks);
         if let Some(chance_pct) = chain.ability_chance.filter(|_| can.abilities) {
-            brain = brain.then(UseAbility { chance_pct });
+            let tactic = UseAbility::new(chance_pct);
+            brain = brain.then(match values {
+                Some(values) => tactic.valuing(values),
+                None => tactic,
+            });
         }
         if chain.melee && can.melee {
             brain = brain.then(MeleeAdjacent);
@@ -360,5 +378,56 @@ mod tests {
             .before_idle(StandIn)
             .build();
         assert_eq!(names(&brain), ["idle", "hover", "melee_adjacent", "follow", "shadow", "hover", "search_last_known", "stand_in", "idle"]);
+    }
+
+    /// A valuation given to the chain is the one its ability tactic scores
+    /// by: one that values nothing casts nothing, where the engine's own
+    /// casts the bolt that would hurt the foe.
+    #[test]
+    fn a_valuation_given_to_the_chain_is_the_one_its_ability_tactic_scores_by() {
+        use crate::ai::brain::NoFields;
+        use crate::ai::snapshot::{ActorView, Snapshot, Vitals};
+        use crate::ai::valuation::{Expected, Impact, Party, Prediction, Prospect, Recipient};
+        use atglyph_core::{Id, Point};
+        use rand::SeedableRng;
+        #[derive(Debug)]
+        struct Indifferent;
+        impl Valuation for Indifferent {
+            fn damage(&self, _: i32, _: Party, _: &Recipient<'_>) -> i32 {
+                0
+            }
+            fn heal(&self, _: i32, _: Party, _: &Recipient<'_>) -> i32 {
+                0
+            }
+            fn status(&self, _: crate::StatusId, _: bool, _: Party, _: &Recipient<'_>) -> i32 {
+                0
+            }
+            fn cleanse(&self, _: crate::StatusId, _: bool, _: Party, _: &Recipient<'_>) -> i32 {
+                0
+            }
+        }
+        let view = |id: u32, x: i32| ActorView::of(id, Point::new(x, 5), Some(Vitals { current: 10, max: 10 }), Some(Id::from_raw(0)));
+        let mut s = Snapshot::alone(view(1, 0));
+        s.enemies = vec![view(2, 4)];
+        s.usable = vec![crate::ability::Usable { ability: Id::from_raw(0), aim: crate::Aim::Foe, mode: atglyph_grid::TargetMode::Bolt { range: 8 } }];
+        let outcome = Prospect::on(Impact::Damage(500));
+        s.predicted = vec![Prediction { ability: Id::from_raw(0), on: 2, effects: vec![Expected { chance: 100, outcome }] }];
+        let caster = Standard { ability_chance: Some(100), ..Standard::NONE };
+        let can = Repertoire { abilities: true, ..Repertoire::default() };
+        let chosen = |brain: Brain<u32>| {
+            let mut rng = rand::rngs::StdRng::seed_from_u64(1);
+            let mut ctx = TacticCtx {
+                snapshot: &s,
+                fields: &mut NoFields,
+                can_step: &|_| true,
+                blocks_shot: &|_| false,
+                blocks_burst: &|_| false,
+                bounds: atglyph_core::GridRect::new(0, 0, 20, 20),
+                rng: &mut rng,
+            };
+            brain.deciding(&mut ctx).map(|(d, _)| d)
+        };
+        assert!(matches!(chosen(caster.brain(can).build()), Some(Decision::Ability { .. })), "the engine's own casts it");
+        assert_eq!(chosen(caster.brain(can).valuing(Arc::new(Indifferent)).build()), None, "one that values nothing does not");
     }
 }

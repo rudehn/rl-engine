@@ -1019,6 +1019,46 @@ pub(crate) fn weigh_self_abilities(world: &mut World) {
     }
 }
 
+/// Tells the mind holding the turn what each ability it may use would do
+/// to everyone it sees and to itself, by
+/// [`Effect::predict`](crate::effects::Effect::predict), once
+/// [`weigh_self_abilities`] has taken out what would act on nothing.
+///
+/// For each ability and each actor it could be pointed at, its user alone
+/// for one aimed at its user, the expected outcome of each effect with the
+/// chance it lands; an ability and an actor every effect of which cannot
+/// tell is left out, which is what the tactic reads as unknown. The world
+/// is read, never changed, and nothing is rolled.
+pub(crate) fn predict_abilities(world: &mut World) {
+    let predicted = {
+        let world: &World = world;
+        let (Some(thinking), Some(abilities)) = (world.get_resource::<crate::minds::Thinking>(), world.get_resource::<Abilities>()) else { return };
+        let Some(snapshot) = thinking.snapshot() else { return };
+        if snapshot.usable.is_empty() || world.get_resource::<crate::registries::Registries>().is_none() {
+            return;
+        }
+        let ctx = crate::effects::PredictCtx::new(world, EffectBonus::default());
+        let mut predicted = Vec::new();
+        for usable in &snapshot.usable {
+            let effects = &abilities.built[usable.ability.index()];
+            let on: Vec<&atglyph_rules::ai::ActorView<Entity>> = match usable.aim {
+                Aim::SelfOnly => vec![&snapshot.me],
+                _ => snapshot.views().collect(),
+            };
+            for view in on {
+                let expected = effects.predict(view, &snapshot.me, &ctx);
+                if !expected.is_empty() && expected.iter().any(|e| !e.outcome.is_unknown()) {
+                    predicted.push(atglyph_rules::ai::Prediction { ability: usable.ability, on: view.id, effects: expected });
+                }
+            }
+        }
+        predicted
+    };
+    if let Some(snapshot) = world.resource_mut::<crate::minds::Thinking>().snapshot_mut() {
+        snapshot.predicted = predicted;
+    }
+}
+
 /// Rebuilds every actor's [`Known`] from its own [`Grants`].
 ///
 /// Rebuilt rather than edited, the way gear modifiers are: a grant taken
@@ -1074,7 +1114,7 @@ impl Plugin for AbilitiesPlugin {
             // After every annotator rather than among them: it reads the
             // whole world, so it runs alone, and once the snapshot is
             // whole, before any mind decides on it.
-            .add_systems(Turn, weigh_self_abilities.in_set(crate::plugin::PerceiveSet::Weigh))
+            .add_systems(Turn, (weigh_self_abilities, predict_abilities).chain().in_set(crate::plugin::PerceiveSet::Weigh))
             // What has landed, then what is cast this pass.
             .add_systems(Turn, (land_abilities.in_set(crate::plugin::LandSet::Ability), resolve_abilities.in_set(ResolveSet::Act)).chain())
             .add_systems(Turn, refresh_known.in_set(TurnSet::React));
@@ -1975,6 +2015,110 @@ mod tests {
 
         app.world_mut().get_mut::<Health>(them).unwrap().current = 5;
         assert!(used_by_them(&mut app), "hurt, it mends");
+    }
+
+    /// What the mind holding the turn saw and foresaw, as the perceive
+    /// stage left it.
+    #[derive(Resource, Default)]
+    struct Foresaw(Vec<(Entity, atglyph_rules::ai::ActorView<Entity>)>, Vec<atglyph_rules::ai::Prediction<Entity>>);
+
+    fn record_foresight(thinking: Res<crate::minds::Thinking>, mut foresaw: ResMut<Foresaw>) {
+        let (Some(thinker), Some(s)) = (thinking.actor(), thinking.snapshot()) else { return };
+        let views = std::iter::once(&s.me).chain(&s.enemies).chain(&s.allies).chain(&s.others);
+        foresaw.0 = views.map(|v| (thinker, v.clone())).collect();
+        foresaw.1 = s.predicted.clone();
+    }
+
+    /// A monster knowing `known`, with a mind that casts them, four cells
+    /// east of the player, its perceptions recorded; and the player. Hits
+    /// meet armor and then resistance.
+    fn foreseeing(known: &[&str]) -> (App, Entity, Entity) {
+        use atglyph_rules::ai::tactics::UseAbility;
+        use atglyph_rules::{Brain, MovementProfile};
+        use std::sync::Arc;
+        let (mut app, start) = app();
+        let known: Vec<AbilityId> = known.iter().map(|n| ability(&app, n)).collect();
+        let stages: Vec<Box<dyn atglyph_rules::DamageStage<Entity> + Send + Sync>> =
+            vec![Box::new(atglyph_rules::damage::SubtractArmor), Box::new(atglyph_rules::damage::ApplyResistance)];
+        app.insert_resource(crate::combat::DamageStages(stages));
+        app.init_resource::<Foresaw>()
+            .add_systems(crate::plugin::Turn, record_foresight.in_set(crate::plugin::DecideSet::Perceive).after(crate::plugin::PerceiveSet::Weigh));
+        let me = caster(&mut app, start, 20, &[]);
+        let them = foe(&mut app, start.offset(4, 0));
+        let mut pools = Pools::new();
+        pools.set(StatId::from_raw(0), 20);
+        app.world_mut().entity_mut(them).insert((
+            crate::minds::Mind(Arc::new(Brain::new().then(UseAbility::default()))),
+            crate::minds::Perception(10),
+            crate::minds::Profile(MovementProfile::default()),
+            Grants(known),
+            pools,
+            Inventory::default(),
+        ));
+        settle(&mut app);
+        (app, me, them)
+    }
+
+    /// The player waits three turns, and whether the monster used anything.
+    fn waits_out(app: &mut App, me: Entity, them: Entity) -> bool {
+        for _ in 0..3 {
+            app.world_mut().write_message(Intent::new(me, crate::turn::Wait));
+            app.update();
+        }
+        app.world_mut().resource_mut::<Messages<AbilityEvent>>().drain().any(|e| matches!(e, AbilityEvent::Used { user, .. } if user == them))
+    }
+
+    /// A mind sees what each actor in sight resists, wears as armor, holds
+    /// and can never be given, and is told what each of its abilities would
+    /// do to each of them: a fire bolt of four on the player, less its two
+    /// armor and then half of what is left, which it resists; a bracing
+    /// nothing on itself, already braced.
+    #[test]
+    fn the_view_carries_resistances_statuses_and_immunities() {
+        let (mut app, me, them) = foreseeing(&["bolt", "brace"]);
+        let content = Content::new();
+        let (fire, scorched, braced) = (content.kinds.expect("fire"), content.statuses.expect("scorched"), content.statuses.expect("braced"));
+        let mut resists = atglyph_rules::Resistances::new();
+        resists.set(fire, 50);
+        app.world_mut().entity_mut(me).insert((
+            crate::combat::Resists(resists.clone()),
+            crate::combat::Armor(2),
+            crate::status::StatusImmunities(vec![braced]),
+        ));
+        for (target, status) in [(me, scorched), (them, braced)] {
+            app.world_mut().write_message(crate::status::ApplyStatus { target, status, turns: atglyph_rules::UNTIL_CURED, by: None, held_by: None });
+        }
+        waits_out(&mut app, me, them);
+        let foresaw = app.world().resource::<Foresaw>();
+        let player = foresaw.0.iter().map(|(_, v)| v).find(|v| v.id == me).expect("the player was in sight");
+        assert_eq!((&player.resists, player.armor), (&resists, 2), "what it resists and its armor");
+        assert_eq!(
+            (player.statuses.as_slice(), player.immune_to.as_slice()),
+            ([scorched].as_slice(), [braced].as_slice()),
+            "what it holds and cannot be given"
+        );
+        let on = |who: Entity, name: &str| {
+            let id = ability(&app, name);
+            foresaw.1.iter().find(|p| p.ability == id && p.on == who).map(|p| p.effects.iter().map(|e| e.outcome).collect::<Vec<_>>())
+        };
+        use atglyph_rules::ai::{Impact, Prospect};
+        assert_eq!(on(me, "bolt"), Some(vec![Prospect::on(Impact::Damage(100))]), "four, less two, less half");
+        assert_eq!(on(them, "brace"), Some(vec![Prospect::on(Impact::Nothing)]), "it is braced already");
+        assert_eq!(on(me, "brace"), None, "and a self-aimed ability foresees only its user");
+    }
+
+    /// A caster never looses a bolt at a foe its bolt would heal, and does
+    /// once the foe no longer absorbs it.
+    #[test]
+    fn a_caster_never_bolts_a_foe_its_bolt_would_heal() {
+        let (mut app, me, them) = foreseeing(&["bolt"]);
+        let fire = Content::new().kinds.expect("fire");
+        let mut absorbs = atglyph_rules::Resistances::new();
+        absorbs.set(fire, 200);
+        app.world_mut().entity_mut(me).insert(crate::combat::Resists(absorbs));
+        assert!(!waits_out(&mut app, me, them), "it would heal the player");
+        app.world_mut().entity_mut(me).remove::<crate::combat::Resists>();
+        assert!(waits_out(&mut app, me, them), "and casts once it would hurt");
     }
 
     /// A monster is never offered an ability it could not pay for, which

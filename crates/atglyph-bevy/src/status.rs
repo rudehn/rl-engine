@@ -657,11 +657,29 @@ pub(crate) fn build(app: &mut App) {
         .add_systems(Turn, (resolve_afflictions, tick_statuses).chain().in_set(ResolveSet::Effects))
         .add_systems(Turn, wake_on_harm.in_set(crate::plugin::ReactSet::Settle))
         .add_systems(Turn, (keep_sides, keep_status_resists, keep_while_holding).chain().in_set(crate::plugin::ReactSet::Statuses))
-        .add_systems(Turn, stumble.in_set(DecideSet::Statuses));
+        .add_systems(Turn, stumble.in_set(DecideSet::Statuses))
+        .add_systems(Turn, perceive_statuses.in_set(crate::plugin::PerceiveSet::Annotate));
     // Derived whenever a seed is given, and asked for only where a status
     // stumbles: a game whose statuses never draw needs no seed for them.
     crate::seed::derive_stream::<StumbleRng>(app);
     crate::plugin::needs_when::<crate::seed::Seed>(app, "CorePlugin's statuses", "`Seed(RunSeed(n))`, which a status that stumbles draws from", any_stumbles);
+}
+
+/// Tells the mind holding the turn which statuses it and everyone it sees
+/// hold, and which each can never be given: what an effect foreseeing a
+/// status reads, so a mind does not slow the slowed nor poison the
+/// undying.
+///
+/// Statuses' contribution to the views, in
+/// [`PerceiveSet::Annotate`](crate::plugin::PerceiveSet::Annotate), after
+/// the roster has filled them.
+pub(crate) fn perceive_statuses(mut thinking: ResMut<crate::minds::Thinking>, held: Query<(Option<&ActiveStatuses>, Option<&StatusImmunities>)>) {
+    let Some(snapshot) = thinking.snapshot_mut() else { return };
+    for view in snapshot.views_mut() {
+        let Ok((active, immune)) = held.get(view.id) else { continue };
+        view.statuses = active.map(|a| a.0.iter().map(|s| s.id).collect()).unwrap_or_default();
+        view.immune_to = immune.map(|i| i.0.clone()).unwrap_or_default();
+    }
 }
 
 #[cfg(test)]

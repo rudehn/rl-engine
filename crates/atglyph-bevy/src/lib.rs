@@ -118,7 +118,8 @@ pub use cue::{Airborne, Anchor, Cue, CueWait, Cued, Lands, LookOf};
 pub use doors::{Close, DoorEvent, Open};
 pub use effects::{
     Cleanse, Effect, EffectBonus, EffectKinds, EffectRng, EffectWorld, Effects, EffectsPlugin, Emit, Fired, FiredOn, FromArgs, Harm, Ignite, Inflict, Landing,
-    LandsAsItself, Mend, Noise, Pull, Remnant, RemnantKeeps, Shove, Source, Trigger, TriggerKind, TriggerKindId, TriggerKinds, Triggers, TurnSpan, area_cells,
+    LandsAsItself, Mend, Noise, PredictCtx, Pull, Remnant, RemnantKeeps, Shove, Source, Trigger, TriggerKind, TriggerKindId, TriggerKinds, Triggers, TurnSpan,
+    area_cells,
 };
 pub use events::{Counters, FactSet, FactsPlugin, Happened, QuestChange, Quests};
 pub use fields::SavedField;
