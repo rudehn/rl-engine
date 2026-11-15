@@ -126,10 +126,28 @@ impl fmt::Display for DiceRoll {
     }
 }
 
+/// Read from notation, `"1d3+2"`, or from a bare number, `3`, which is a
+/// fixed roll: so a count content writes may be either, and a fixed one
+/// needs no quotes.
 impl<'de> Deserialize<'de> for DiceRoll {
     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-        let s = String::deserialize(d)?;
-        s.parse().map_err(serde::de::Error::custom)
+        struct Notation;
+        impl serde::de::Visitor<'_> for Notation {
+            type Value = DiceRoll;
+            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                f.write_str("dice, as \"NdS\", \"NdS+B\", \"NdS-B\" or a number")
+            }
+            fn visit_str<E: serde::de::Error>(self, s: &str) -> Result<DiceRoll, E> {
+                s.parse().map_err(E::custom)
+            }
+            fn visit_i64<E: serde::de::Error>(self, n: i64) -> Result<DiceRoll, E> {
+                i32::try_from(n).map(DiceRoll::flat).map_err(|_| E::custom(format!("{n} is too large for a roll")))
+            }
+            fn visit_u64<E: serde::de::Error>(self, n: u64) -> Result<DiceRoll, E> {
+                i32::try_from(n).map(DiceRoll::flat).map_err(|_| E::custom(format!("{n} is too large for a roll")))
+            }
+        }
+        d.deserialize_any(Notation)
     }
 }
 
@@ -152,6 +170,15 @@ mod tests {
         assert_eq!("1d3-1".parse::<DiceRoll>().unwrap(), DiceRoll { num: 1, sides: 3, bonus: -1 });
         assert_eq!("3".parse::<DiceRoll>().unwrap(), DiceRoll::flat(3));
         assert_eq!(" 1 D 4 + 2 ".parse::<DiceRoll>().unwrap(), DiceRoll { num: 1, sides: 4, bonus: 2 });
+    }
+
+    #[test]
+    fn a_bare_number_reads_as_a_fixed_roll() {
+        assert_eq!(ron::from_str::<DiceRoll>("3").unwrap(), DiceRoll::flat(3));
+        assert_eq!(ron::from_str::<DiceRoll>("-1").unwrap(), DiceRoll::flat(-1));
+        assert_eq!(ron::from_str::<DiceRoll>("\"1d3+2\"").unwrap(), DiceRoll { num: 1, sides: 3, bonus: 2 });
+        assert!(ron::from_str::<DiceRoll>("\"1d\"").is_err(), "a string that is no roll is refused");
+        assert_eq!(ron::to_string(&DiceRoll::flat(3)).unwrap(), "\"3\"", "and it is written as notation");
     }
 
     #[test]
