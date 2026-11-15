@@ -8,6 +8,7 @@ atglyph is not on crates.io yet, so a game depends on a release by its git tag, 
 
 ### Added
 
+- A damage kind written `told: false` is not told by the narrator, for a kind a game tells itself or not at all: a price paid in health, a fall worded in its own line. A death it deals is told all the same.
 - `InspectPanel::fitted` draws the panel's frame round what it holds, no taller than its rectangle, keeping the edge nearer the screen's: a monster with two lines takes no more room than one with ten.
 - `Landing::ability` and `Landing::reach` are public, so a game's own effect draws its ability's look and lands harm told as the engine's `Harm` is.
 - An ability written `shown: false` is not drawn by the resolver, neither flying nor bursting, and lands at once: its effects show what it does, a drain's beam or a body standing up.
@@ -65,6 +66,7 @@ atglyph is not on crates.io yet, so a game depends on a release by its git tag, 
 
 ### Changed
 
+- **Breaking:** `DamageKind` has a public `told` field; a game that writes one as a struct literal adds `told: true`, or builds it with `DamageKind::new`.
 - **Breaking:** `ActorParts` has public `immune_to` and `passes` fields and `Snapshot` a public `predicted` field; a game that writes either as a struct literal adds them, or builds from `ActorParts::default()` and `Snapshot::alone`.
 - **Breaking:** `AbilityDef` has a public `shown` field; a game that writes one as a struct literal adds `shown: true` to keep it drawn.
 - **Breaking:** A status or an ability written with a field it does not have, `hold` for `holds` or `cooldwon` for `cooldown`, is refused at load naming the field, where it was read as nothing; a content file carrying a stray field fixes or drops it.

@@ -21,6 +21,11 @@ pub struct DamageKind {
     /// Whether flat armor applies. Off for poison, fire, and the like.
     #[serde(default = "yes")]
     pub armored: bool,
+    /// Whether the narrator tells a hit of it. Off for a kind a game tells
+    /// itself or not at all, a price paid in health or a fall it words in
+    /// its own line; a death it deals is told all the same.
+    #[serde(default = "yes")]
+    pub told: bool,
 }
 
 fn yes() -> bool {
@@ -30,7 +35,7 @@ fn yes() -> bool {
 impl DamageKind {
     /// A kind that armor applies to.
     pub fn new(name: impl Into<String>) -> Self {
-        Self { name: name.into(), armored: true }
+        Self { name: name.into(), armored: true, told: true }
     }
 
     /// A kind that ignores armor.

@@ -820,6 +820,12 @@ impl Witness<'_, '_> {
         self.registries.as_deref().map(|r| r.statuses.name(id).to_string()).unwrap_or_default()
     }
 
+    /// Whether a hit of `kind` is told: every kind but one a game marked
+    /// `told: false`.
+    fn is_told(&self, kind: atglyph_rules::damage::DamageKindId) -> bool {
+        self.registries.as_deref().is_none_or(|r| r.damage_kinds.try_get(kind).is_none_or(|k| k.told))
+    }
+
     fn is_boon(&self, id: atglyph_rules::StatusId) -> bool {
         self.registries.as_deref().is_some_and(|r| r.statuses.get(id).boon)
     }
@@ -1109,6 +1115,9 @@ pub(crate) fn collect_narration(mut view: ResMut<NarrationView>, mut heard: Narr
         rows.push(say(phrase, Some(r.by), Some(r.onto)));
     }
     for d in heard.dealt.read() {
+        if !witness.is_told(d.hit.kind) {
+            continue;
+        }
         let target = d.target;
         let you_target = witness.is_you(target);
         if let Some(status) = d.hit.status {
@@ -1977,6 +1986,25 @@ mod tests {
         stage.app.world_mut().write_message(DamageEvent::new(b, atglyph_rules::Hit::by(a, kind, 3)));
         stage.tick();
         assert_eq!(lines(&stage), vec![("The a hits the b for 3.".to_string(), Tones::TEXT)]);
+    }
+
+    /// A hit of a kind a game tells itself, `told: false`, leaves no row,
+    /// where the same hit of a told kind says who hit whom.
+    #[test]
+    fn a_hit_of_a_kind_that_is_not_told_leaves_no_row() {
+        let mut stage = Stage::new(NarratorPlugin::default());
+        let mut quiet = atglyph_rules::DamageKind::new("drained").unarmored();
+        quiet.told = false;
+        let drained = stage.app.world_mut().resource_mut::<Registries>().damage_kinds.push(quiet).unwrap();
+        let (player, droid) = (stage.player, stage.actor("line droid", 'd', 1, 0));
+        stage.tick();
+        stage.app.world_mut().write_message(DamageEvent::new(player, atglyph_rules::Hit::by(droid, drained, 2)));
+        stage.tick();
+        assert!(lines(&stage).is_empty(), "nothing said of it: {:?}", lines(&stage));
+        let told = stage.kind;
+        stage.app.world_mut().write_message(DamageEvent::new(player, atglyph_rules::Hit::by(droid, told, 2)));
+        stage.tick();
+        assert_eq!(lines(&stage).len(), 1, "the told kind is told: {:?}", lines(&stage));
     }
 
     /// A game that asked for the unseen to be narrated asked for it named.
