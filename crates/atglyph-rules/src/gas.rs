@@ -54,8 +54,9 @@ pub struct Breath {
     pub at: u8,
     /// The status.
     pub status: StatusId,
-    /// For how many whole turns.
-    pub turns: u32,
+    /// For how many whole turns: dice rolled for each breath, or a fixed
+    /// number.
+    pub turns: atglyph_core::DiceRoll,
 }
 
 /// A registered gas id.
@@ -98,9 +99,10 @@ impl GasDef {
         self
     }
 
-    /// Builder: breathing it at or above `at` inflicts `status` for `turns`.
-    pub fn inflicts(mut self, at: u8, status: StatusId, turns: u32) -> Self {
-        self.inflicts = Some(Breath { at, status, turns });
+    /// Builder: breathing it at or above `at` inflicts `status` for `turns`,
+    /// a number or dice.
+    pub fn inflicts(mut self, at: u8, status: StatusId, turns: impl Into<atglyph_core::DiceRoll>) -> Self {
+        self.inflicts = Some(Breath { at, status, turns: turns.into() });
         self
     }
 
@@ -117,6 +119,7 @@ impl GasDef {
 
 /// A gas as a content file writes it, before its status is resolved.
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct Authored {
     name: String,
     #[serde(default = "half")]
@@ -128,7 +131,7 @@ struct Authored {
     #[serde(default)]
     burns: bool,
     #[serde(default)]
-    inflicts: Option<(u8, String, u32)>,
+    inflicts: Option<(u8, String, atglyph_core::DiceRoll)>,
 }
 
 fn half() -> u8 {
@@ -156,7 +159,10 @@ impl Named for Authored {
 ///   is behind it; hides nothing when left out.
 /// - `burns`: whether fire catches in it; false.
 /// - `inflicts`: `(at, status, turns)`, a status for whoever breathes `at` or
-///   more; nothing.
+///   more, a turn at a time, for `turns`, a number or dice, `"1d3+1"`;
+///   nothing.
+///
+/// A field a gas does not have is refused naming it.
 ///
 /// Reports every unknown status in the file at once.
 ///
@@ -166,7 +172,7 @@ impl Named for Authored {
 /// let statuses = Registry::from_defs(vec![StatusDef::new("choking")]).unwrap();
 /// let gases = gas::load(r#"[(name: "smoke", veils_at: Some(90)), (name: "fumes", burns: true, inflicts: Some((60, "choking", 2)))]"#, &Names::new().statuses(&statuses)).unwrap();
 /// assert!(gases.get(gases.expect("smoke")).veils(120));
-/// assert_eq!(gases.get(gases.expect("fumes")).breathed(80).map(|b| b.turns), Some(2));
+/// assert_eq!(gases.get(gases.expect("fumes")).breathed(80).map(|b| b.turns), Some(2.into()));
 /// ```
 pub fn load(text: &str, names: &Names<'_>) -> Result<Registry<GasDef>, ContentError> {
     let authored: Registry<Authored> = Registry::from_ron_str(text)?;
@@ -174,6 +180,10 @@ pub fn load(text: &str, names: &Names<'_>) -> Result<Registry<GasDef>, ContentEr
     let mut defs = Vec::new();
     for (_, a) in authored.iter() {
         let inflicts = a.inflicts.as_ref().and_then(|(at, status, turns)| match names.status(status) {
+            Ok(_) if i64::from(turns.num) + i64::from(turns.bonus) < 1 => {
+                errors.push(format!("{}: `inflicts` for {turns} turns could come to less than one", a.name));
+                None
+            }
             Ok(status) => Some(Breath { at: *at, status, turns: *turns }),
             Err(e) => {
                 errors.push(format!("{}: {e}", a.name));
@@ -358,6 +368,24 @@ mod tests {
         true
     }
 
+    /// A breath may last dice of turns, read from a file as written, and a
+    /// field a gas does not have is refused naming it rather than read as
+    /// nothing.
+    #[test]
+    fn a_breath_may_last_dice_of_turns_and_an_unknown_field_is_refused() {
+        let statuses = Registry::from_defs(vec![crate::StatusDef::new("infected")]).unwrap();
+        let names = Names::new().statuses(&statuses);
+        let gases = load(r#"[(name: "spores", inflicts: Some((40, "infected", "1d3+1")))]"#, &names).unwrap();
+        let breath = gases.get(gases.expect("spores")).breathed(80).expect("thick enough");
+        assert_eq!(breath.turns, atglyph_core::DiceRoll { num: 1, sides: 3, bonus: 1 });
+        assert_eq!(
+            load(r#"[(name: "fumes", inflicts: Some((40, "infected", 2)))]"#, &names).unwrap().get(atglyph_core::Id::from_raw(0)).inflicts.unwrap().turns,
+            atglyph_core::DiceRoll::flat(2)
+        );
+        let refused = load(r#"[(name: "smoke", spreads: 50)]"#, &names).expect_err("no such field").to_string();
+        assert!(refused.contains("spreads"), "{refused}");
+    }
+
     /// A turn's rolls, hashed from `salt` and the cell as a caller hashes
     /// them from the run's seed and the turn.
     fn rolls(salt: u64) -> impl Fn(Point) -> u32 {
@@ -494,7 +522,7 @@ mod tests {
         let fumes = gases.get(gases.expect("fumes"));
         assert!(fumes.burns);
         assert_eq!(fumes.breathed(59), None, "too thin to bite");
-        assert_eq!(fumes.breathed(60), Some(Breath { at: 60, status: statuses.expect("choking"), turns: 2 }));
+        assert_eq!(fumes.breathed(60), Some(Breath { at: 60, status: statuses.expect("choking"), turns: atglyph_core::DiceRoll::flat(2) }));
 
         let err = load(r#"[(name: "fumes", inflicts: Some((60, "chokign", 2)))]"#, &names).unwrap_err().to_string();
         assert!(err.contains("fumes") && err.contains("chokign"), "{err}");

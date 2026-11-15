@@ -229,8 +229,15 @@ pub(crate) fn step_gases(mut ends: MessageReader<TurnEnd>, mut gases: ResMut<Gas
                 continue;
             }
             breathed.write(Breathed { actor, gas: id, amount });
+            // A breath for every turn spent in it, its turns rolled from the
+            // seed, the turn and the cell, so whoever stands in it is dealt
+            // the same whatever order they are visited in.
             if let Some(breath) = def.breathed(amount) {
-                afflict.write(ApplyStatus { target: actor, status: breath.status, turns: breath.turns, by: None, held_by: None });
+                for step in 0..passed {
+                    let turn = u64::from(clock.turn_number() + 1 - passed + step);
+                    let turns = crate::seed::hashed_roll(Some(&seed), crate::seed::GAS_BREATH, turn, pos.0, id.index() as u64, breath.turns).max(1) as u32;
+                    afflict.write(ApplyStatus { target: actor, status: breath.status, turns, by: None, held_by: None });
+                }
             }
         }
     }
@@ -362,6 +369,25 @@ mod tests {
         assert!(rig.sees(rig.start.offset(2, 0)), "while this side of it is still in sight");
         rig.wait(80);
         assert!(rig.sees(behind), "and in sight again once it thinned");
+    }
+
+    /// A breath's turns may be dice, rolled within them from the seed, the
+    /// turn and the cell, so the same run chokes the same.
+    #[test]
+    fn a_breath_of_dice_turns_rolls_within_them_the_same_for_the_same_seed() {
+        let choked_for = || {
+            let mut rig = Rig::new();
+            let (fumes, choking, player, at) = (rig.fumes, rig.choking, rig.player, rig.start);
+            let dice = atglyph_core::DiceRoll { num: 1, sides: 4, bonus: 10 };
+            rig.app.world_mut().resource_mut::<Registries>().gases =
+                Registry::from_defs(vec![GasDef::new("smoke"), GasDef::new("fumes").spread(40).fade(10).inflicts(50, choking, dice)]).unwrap();
+            rig.app.world_mut().write_message(Release { gas: fumes, at, amount: 200 });
+            rig.wait(1);
+            rig.app.world().get::<ActiveStatuses>(player).unwrap().iter().find(|s| s.id == choking).map(|s| s.turns).expect("choking")
+        };
+        let turns = choked_for();
+        assert!((10..=14).contains(&turns), "{turns}: within 1d4+10, less what has ticked");
+        assert_eq!(turns, choked_for(), "the same seed, the same breath");
     }
 
     #[test]

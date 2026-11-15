@@ -10,6 +10,7 @@ atglyph is not on crates.io yet, so a game depends on a release by its git tag, 
 
 ### Added
 
+- A gas's breath may last dice of turns, `inflicts: Some((40, "infected", "1d3+1"))`, rolled from the seed, the turn and the cell; dice that could come to less than a turn are refused at load.
 - `FireRules::kindled_by(status)`: whoever holds the status sets alight what can burn where it stands, the ground if its tile burns, a flammable thing there or a vapour that burns, and never bare stone; fuel already alight is left to burn down, so a burning creature lights the door it walks through once and its burning ends when the fuel does.
 - A status may `lifts` others, named from the same file: as it lands they come off, reported as cured, so a burning burns away a web whoever set it alight.
 - `FireRules::inflicts` takes dice of turns, rolled from the seed, the turn and the cell.
@@ -79,6 +80,9 @@ atglyph is not on crates.io yet, so a game depends on a release by its git tag, 
 
 ### Changed
 
+- **Breaking:** `Breath::turns` is a `DiceRoll`, and `GasDef::inflicts` takes a number or dice.
+- A gas file refuses a field a gas does not have, naming it, where it was read as nothing.
+- A gas inflicts its status once for every whole turn spent in it, where it was once for every pass however many turns the pass ended, so a stacking status gathers a stack a turn.
 - **Breaking:** `FireRules::inflicts` is `Option<(StatusId, DiceRoll)>`, and `FireRules` has a `kindled_by` field a struct literal must give.
 - **Breaking:** `Shove::cells` and `Pull::cells` are `DiceRoll`s, and `Cue` has a `Slide` variant a match on it must cover.
 - **Breaking:** `StatusDef::tick_damage` is `Option<(DamageKindId, DiceRoll)>` and `tick_mend` is `Option<DiceRoll>`; the rules' `Tick` and `Mended` carry the `roll` their resolver rolls, where they carried an `amount`, and the sheet's `StatusLine` its `ticks` and `mends` as dice.
