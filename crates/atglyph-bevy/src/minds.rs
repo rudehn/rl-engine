@@ -514,7 +514,10 @@ impl FlowFields {
         }
         let Some(back) = goals.iter().map(|g| out(*g)).min() else { return false };
         let tables = map.tables();
-        let Some(cheapest) = tables.move_cost.iter().zip(&tables.walkable).filter(|(_, w)| **w).map(|(c, _)| i64::from(*c)).min() else { return false };
+        let Some(walked) = tables.move_cost.iter().zip(&tables.walkable).filter(|(_, w)| **w).map(|(c, _)| i64::from(*c)).min() else { return false };
+        // A passer's step through what it passes costs a plain step, which
+        // may be cheaper than any tile.
+        let cheapest = if passes.is_none() { walked } else { walked.min(i64::from(atglyph_core::turn::BASE_ACTION_COST)) };
         let costs = self.footing.costs(*opens_doors, *passes);
         std::iter::once(from).chain(Direction::ALL.iter().map(|d| from + d.offset())).all(|p| {
             if !both.contains(p) {
@@ -1247,6 +1250,9 @@ pub(crate) struct MindWorld<'w, 's> {
     rules: Option<Res<'w, CombatRules>>,
     /// Everyone's side.
     sides: Query<'w, 's, &'static Faction>,
+    /// What anyone passes, for whether a swap puts the other where it can
+    /// stand.
+    passers: Query<'w, 's, &'static Passes>,
 }
 
 /// A mind chose something of the game's own: what its tactic returned,
@@ -1361,7 +1367,7 @@ pub(crate) fn decide_minds(
     let Ok((mind, my_pos, profile, intelligence, passes, mut came_from, mut doing, mut trails)) = minds.get_mut(thinker) else { return };
     let passes = passes.copied().unwrap_or_default();
     let thinking = &*thinking;
-    let MindWorld { fields, rng, map, occupancy, bumps, rules, sides, .. } = &mut world;
+    let MindWorld { fields, rng, map, occupancy, bumps, rules, sides, passers, .. } = &mut world;
     let (fields, rng, map, occupancy) = (&mut **fields, &mut **rng, &**map, &**occupancy);
     // Who gives way to this mind: one neutral to it of a side the bump
     // rules name, when they say minds step past too, and never to a mind
@@ -1388,9 +1394,12 @@ pub(crate) fn decide_minds(
         Some(atglyph_rules::Relation::Allied) => walking,
         _ => false,
     };
+    // Never one who could not stand where this mind stands, which the swap
+    // would put it: a mind in rock trades it to no one who cannot pass it.
+    let fits_here = |e: Entity| crate::turn::stands(map, my_pos.0, passers.get(e).copied().unwrap_or_default());
     let gives_way = |p: Point| {
         let here = occupancy.at(p);
-        passing.is_some_and(|r| !here.is_empty() && here.iter().all(|e| r.gives_way(side_of(*e)) && neutral(*e) && !(walking && on_duty(*e))))
+        passing.is_some_and(|r| !here.is_empty() && here.iter().all(|e| r.gives_way(side_of(*e)) && neutral(*e) && !(walking && on_duty(*e)) && fits_here(*e)))
     };
     let wits = intelligence.map(|i| i.0).unwrap_or_default();
     let opens_doors = wits.has(Wits::OPENS_DOORS);

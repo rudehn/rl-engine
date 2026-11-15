@@ -65,6 +65,7 @@ atglyph is not on crates.io yet, so a game depends on a release by its git tag, 
 
 ### Changed
 
+- **Breaking:** `ActorParts` has public `immune_to` and `passes` fields and `Snapshot` a public `predicted` field; a game that writes either as a struct literal adds them, or builds from `ActorParts::default()` and `Snapshot::alone`.
 - **Breaking:** `AbilityDef` has a public `shown` field; a game that writes one as a struct literal adds `shown: true` to keep it drawn.
 - **Breaking:** A status or an ability written with a field it does not have, `hold` for `holds` or `cooldwon` for `cooldown`, is refused at load naming the field, where it was read as nothing; a content file carrying a stray field fixes or drops it.
 - `StatusImmunities` is in the prelude beside the other status types.
@@ -72,7 +73,7 @@ atglyph is not on crates.io yet, so a game depends on a release by its git tag, 
 - **Breaking:** `ActorView` has four more fields and is no longer `Copy`, so a view written out in full gains them (or is built with `ActorView::of`) and one copied out of a snapshot is cloned; `UseAbility` has a `values` field and is no longer `Copy` (`UseAbility::new(chance)` builds one); `UseAbility` and `StandardBrain` ask `A: PartialEq` of the actor id.
 - **Breaking:** `Cue` has a `Beam` variant, and `ParticleStyle` a `beam_secs` field; a `match` on `Cue` or a `ParticleStyle` written out in full gains one.
 - **Breaking:** `Inflict::turns` is a `TurnSpan`, `TurnSpan::Fixed(n)` for a number; a game building an `Inflict` in code wraps its turns.
-- **Breaking:** `StatusEvent` has a `Refused` variant; a game matching it exhaustively adds an arm.
+- **Breaking:** `StatusEvent` has a `Refused` variant, with `aimed` saying whether somebody put the status on, rather than a cloud or a worn thing asking for it every turn; a game matching it exhaustively adds an arm. The narrator tells only an aimed refusal.
 - `ThrowAtRange` reaches for a missile a worn launcher looses before one thrown by hand, and rolls its chance only once it has a throw to make, so a mind with nothing to throw draws nothing from its stream.
 - **Breaking:** `Missile` has a public `launched` field, whether a worn launcher looses it; a game that writes one as a struct literal adds `launched: false`.
 - `LogPanel` wraps a line too long for its strip onto the rows it needs, names keeping their colours across the break, in place of clipping it with an ellipsis; a line is shown whole or not at all, so the strip never starts partway through a sentence, and only a line taller than the whole strip is cut.
@@ -133,7 +134,6 @@ atglyph is not on crates.io yet, so a game depends on a release by its git tag, 
 - A glowing tile on a chunk of a streamed place that left the window and came back is lit once, not once more for every return.
 - The terminal's cells reach the screen before Bevy lays the new text out, works out what is shown and moves what moved in `PostUpdate`, so a step no longer leaves last frame's glyphs standing in the new colour for a frame, white where a cell turned blank, nor a picture where it was.
 - A herd member standing on its herd's middle steps off it, as its `no_closer_than` says, rather than asking for a field and then doing nothing.
-- A trade screen row's price says "each" only where the word fits beside the whole of the row's name, so a long name, `5 loaves of bread` at a purse that cannot pay, is never cut short for it.
 
 ## [0.5.0] - 2026-10-29
 

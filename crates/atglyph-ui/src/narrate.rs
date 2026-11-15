@@ -1222,10 +1222,13 @@ pub(crate) fn collect_narration(mut view: ResMut<NarrationView>, mut heard: Narr
             // Kept up rather than begun, as a cloud breathed again keeps its
             // status every turn: it was said when it began.
             StatusEvent::Renewed { .. } => continue,
-            // Put on someone immune to it: no hold, and said so, since a
-            // player who aimed it wants to know it did nothing.
-            StatusEvent::Refused { target, status } if witness.is_you(target) => (target, status, Phrase::YouAreNotAfflicted),
-            StatusEvent::Refused { target, status } => (target, status, Phrase::IsNotAfflicted),
+            // Put on someone immune to it by somebody: no hold, and said so,
+            // since whoever aimed it wants to know it did nothing. One nobody
+            // aimed, a cloud breathed or a thing worn, asks again every turn
+            // and is refused in silence.
+            StatusEvent::Refused { aimed: false, .. } => continue,
+            StatusEvent::Refused { target, status, .. } if witness.is_you(target) => (target, status, Phrase::YouAreNotAfflicted),
+            StatusEvent::Refused { target, status, .. } => (target, status, Phrase::IsNotAfflicted),
             StatusEvent::Expired { target, status } if witness.is_you(target) => (target, status, Phrase::YouAreNoLonger),
             // A boon broken off, by a blow or by the worn thing that held it
             // coming off, is lost rather than cured: the player is not glad
@@ -2922,12 +2925,30 @@ mod tests {
         let (player, droid) = (stage.player, stage.actor("line droid", 'd', 1, 0));
         stage.tick();
         for target in [droid, player] {
-            stage.app.world_mut().write_message(StatusEvent::Refused { target, status: dazed });
+            stage.app.world_mut().write_message(StatusEvent::Refused { target, status: dazed, aimed: true });
             stage.tick();
         }
         let said: Vec<(String, ToneId)> = lines(&stage).into_iter().filter(|(t, _)| t.contains("dazed")).collect();
         let expected = [("The line droid is not dazed.", Tones::MUTED), ("You are not dazed.", Tones::MUTED)];
         assert_eq!(said, expected.map(|(t, tone)| (t.to_string(), tone)).to_vec());
+    }
+
+    /// A status nobody aimed, a cloud breathed or a thing worn asking it
+    /// again every turn, is refused in silence however often it is asked:
+    /// only one somebody put on the immune is worth a line.
+    #[test]
+    fn a_refusal_nobody_aimed_is_not_told_however_often_it_comes() {
+        let mut stage = Stage::new(NarratorPlugin::default());
+        let defs = atglyph_rules::Registry::from_defs(vec![atglyph_rules::StatusDef::new("dazed")]).unwrap();
+        let dazed = defs.expect("dazed");
+        stage.app.world_mut().resource_mut::<Registries>().statuses = defs;
+        let droid = stage.actor("line droid", 'd', 1, 0);
+        stage.tick();
+        for _ in 0..3 {
+            stage.app.world_mut().write_message(StatusEvent::Refused { target: droid, status: dazed, aimed: false });
+            stage.tick();
+        }
+        assert!(lines(&stage).iter().all(|(t, _)| !t.contains("dazed")), "{:?}", lines(&stage));
     }
 
     /// A cloud keeps its status on whoever breathes it by putting it on

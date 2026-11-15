@@ -827,6 +827,31 @@ mod tests {
         assert!(rows[..top].iter().all(|r| r.trim().is_empty() || !r.starts_with('\u{2502}')), "nothing of it above its frame: {rows:#?}");
     }
 
+    /// On the upper half of a screen a fitted panel keeps its top edge, and
+    /// the rows its rectangle held below what it says are left alone.
+    #[test]
+    fn a_fitted_panel_on_the_upper_half_keeps_its_top_edge() {
+        const ONE: &[&str] = &["hunts in packs"];
+        let mut stage = Stage::new_with(InspectPanel::new(GridRect::new(0, 21, 30, 12)).fitted(), |app| {
+            app.add_plugins(atglyph_render::MapViewPlugin::new(GridRect::new(0, 0, 40, 20)));
+        })
+        .screen(40, 80);
+        let annotate = move |mut view: ResMut<InspectView>| {
+            if view.subject.is_some() {
+                view.facets.extend(ONE.iter().map(|text| crate::Facet::new("trait", *text)));
+            }
+        };
+        stage.app.add_systems(Update, annotate.in_set(crate::ViewSet::Annotate));
+        stage.actor("crab", 'c', 2, 0);
+        stage.tick();
+        stage.press(CursorKeys::default().look);
+        stage.press(CursorKeys::default().next);
+        assert!(stage.row(21).starts_with('\u{250c}'), "the top edge kept: {:?}", stage.row(21));
+        let bottom = (22..33).find(|y| stage.row(*y).starts_with('\u{2514}')).expect("a bottom border inside the rectangle");
+        assert!(bottom < 32, "drawn round what it holds, not the whole rectangle");
+        assert!((bottom + 1..33).all(|y| !stage.row(y).starts_with('\u{2502}')), "nothing of it under its frame");
+    }
+
     /// A stage looking at a crab the game says `facets` about, in a panel
     /// `height` rows tall and thirty wide, and the panel's inner rows.
     fn looked_at_with(facets: &'static [&'static str], height: i32) -> (Stage, Vec<String>) {

@@ -842,7 +842,9 @@ impl<I: Send + Sync + 'static> ActorParts<I> {
             e.insert(Grants(self.abilities.clone()));
         }
         if !self.statuses.is_empty() {
-            e.insert(innate_statuses(&self.statuses, &registries.statuses));
+            // Never one it is immune to, whichever layer said which.
+            let held: Vec<StatusId> = self.statuses.iter().copied().filter(|s| !self.immune_to.contains(s)).collect();
+            e.insert(innate_statuses(&held, &registries.statuses));
         }
         if !self.immune_to.is_empty() {
             e.insert(StatusImmunities(self.immune_to.clone()));
@@ -1205,6 +1207,18 @@ mod tests {
         ActorParts::<()>::default().insert(&mut world.commands().entity(plain), &registries);
         world.flush();
         assert_eq!(world.get::<StatusImmunities>(e), Some(&StatusImmunities(vec![poisoned, bleeding])));
+        // A status held for life that it is immune to is never put on.
+        let mut both = World::new();
+        let registries = Registries {
+            statuses: atglyph_rules::Registry::from_defs(vec![StatusDef::new("poisoned"), StatusDef::new("bleeding")]).unwrap(),
+            ..Registries::default()
+        };
+        let held: ActorParts<()> = ActorParts { statuses: vec![poisoned, bleeding], immune_to: vec![poisoned], ..ActorParts::default() };
+        let one = both.spawn_empty().id();
+        held.insert(&mut both.commands().entity(one), &registries);
+        both.flush();
+        let active = &both.get::<ActiveStatuses>(one).unwrap().0;
+        assert!(!active.has(poisoned) && active.has(bleeding), "the one it is immune to left off");
         assert!(world.get::<StatusImmunities>(plain).is_none(), "immune to nothing, no component");
     }
 

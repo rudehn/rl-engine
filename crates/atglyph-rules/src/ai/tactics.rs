@@ -1225,6 +1225,11 @@ fn best_foreseen_aim<A: Copy + PartialEq>(usable: &Usable, ctx: &TacticCtx<'_, A
     let snapshot = ctx.snapshot;
     let (aim, me) = (usable.aim, snapshot.me.pos);
     if aim == Aim::SelfOnly {
+        // Used only with a foe in sight, foreseen or not, as it always was:
+        // a boon on itself with nobody about is spent before its fight.
+        if snapshot.enemies.is_empty() {
+            return None;
+        }
         let cells = [me];
         return foreseen_worth(usable.ability, aim, &cells, snapshot, values)
             .or_else(|| Some(footprint_worth(aim, &cells, snapshot) * FOOTPRINT_POINT))
@@ -2732,7 +2737,7 @@ mod tests {
     /// however much the foe is what a foe-aimed bolt is for; one that would
     /// hurt it is.
     #[test]
-    fn a_spell_that_would_heal_a_foe_is_never_cast_at_it() {
+    fn a_use_that_would_heal_a_foe_is_never_made_at_it() {
         let mut s = Snapshot::alone(view(1, 0, 5, 10));
         s.enemies = vec![view(2, 4, 5, 6)];
         s.usable = vec![bolt(0, Aim::Foe)];
@@ -2742,26 +2747,26 @@ mod tests {
         assert_eq!(choose(&UseAbility::default(), &s), Some(Decision::Ability { ability: Id::from_raw(0), aim: Point::new(4, 5) }));
     }
 
-    /// A spell aimed at anyone goes where its outcome is worth most: at a
+    /// A use aimed at anyone goes where its outcome is worth most: at a
     /// foe it would hurt, else at a friend it would help, and nowhere when
     /// every aim would cost more than it gains.
     #[test]
-    fn an_anyone_spell_goes_where_it_scores_best() {
+    fn a_use_aimed_at_anyone_goes_where_it_scores_best() {
         let mut s = Snapshot::alone(view(1, 0, 5, 10));
         s.enemies = vec![view(2, 4, 5, 10)];
         s.allies = vec![view(3, 0, 8, 3)];
         s.usable = vec![bolt(0, Aim::Anyone)];
-        // A drain: what it takes from a living target the caster gains, and
-        // what it gives an undead one the caster pays.
-        let (living, undead) = ((Impact::Damage(700), Impact::Heal(700)), (Impact::Heal(700), Impact::Damage(700)));
-        s.predicted = vec![foresee(0, 2, living.0, living.1), foresee(0, 3, undead.0, undead.1)];
+        // A drain: what it takes from a target that is hurt by it the user
+        // gains, and what it gives a target that absorbs it the user pays.
+        let (hurt, absorbing) = ((Impact::Damage(700), Impact::Heal(700)), (Impact::Heal(700), Impact::Damage(700)));
+        s.predicted = vec![foresee(0, 2, hurt.0, hurt.1), foresee(0, 3, absorbing.0, absorbing.1)];
         let at = |s: &Snapshot<u32>| match choose(&UseAbility::default(), s) {
             Some(Decision::Ability { aim, .. }) => Some(aim),
             _ => None,
         };
-        assert_eq!(at(&s), Some(Point::new(4, 5)), "the living foe");
-        s.predicted = vec![foresee(0, 2, undead.0, undead.1), foresee(0, 3, undead.0, undead.1)];
-        assert_eq!(at(&s), Some(Point::new(0, 8)), "the undead foe would be healed: the hurt undead friend is better");
+        assert_eq!(at(&s), Some(Point::new(4, 5)), "the foe it hurts");
+        s.predicted = vec![foresee(0, 2, absorbing.0, absorbing.1), foresee(0, 3, absorbing.0, absorbing.1)];
+        assert_eq!(at(&s), Some(Point::new(0, 8)), "the foe would be healed: the hurt friend that absorbs it is better");
         s.allies = vec![view(3, 0, 8, 10)];
         assert_eq!(at(&s), None, "and a friend at full health gains nothing for what the caster pays");
     }
@@ -2814,13 +2819,26 @@ mod tests {
         assert_eq!(choose(&UseAbility::default(), &s), first, "the same, listed the other way round");
     }
 
+    /// An ability aimed at its user alone is used only with a foe in sight,
+    /// foreseen or not, as it always was: a boon on itself with nobody about
+    /// would be spent before the fight it was for.
+    #[test]
+    fn a_self_aimed_ability_waits_for_a_foe_in_sight_even_when_foreseen() {
+        let mut s = Snapshot::alone(view(1, 0, 5, 10));
+        s.usable = vec![usable(0, Aim::SelfOnly, atglyph_grid::TargetMode::Own)];
+        s.predicted = vec![foresee(0, 1, Impact::Status { id: StatusId::from_raw(0), boon: true }, Impact::Nothing)];
+        assert_eq!(choose(&UseAbility::default(), &s), None, "nobody about");
+        s.enemies = vec![view(2, 4, 5, 10)];
+        assert_eq!(choose(&UseAbility::default(), &s), Some(Decision::Ability { ability: Id::from_raw(0), aim: Point::new(0, 5) }), "a foe in sight");
+    }
+
     /// A valuation of a game's own, given to the tactic, is what it scores
-    /// by: one that prizes a status above any damage casts the hex.
+    /// by: one that prizes a status above any damage puts the status on.
     #[test]
     fn a_valuation_given_to_the_tactic_is_the_one_it_scores_by() {
         #[derive(Debug)]
-        struct Hexer;
-        impl Valuation for Hexer {
+        struct Statuses;
+        impl Valuation for Statuses {
             fn damage(&self, h: i32, _: Party, _: &Recipient<'_>) -> i32 {
                 h / 10
             }
@@ -2837,14 +2855,14 @@ mod tests {
         let mut s = Snapshot::alone(view(1, 0, 5, 10));
         s.enemies = vec![view(2, 4, 5, 10)];
         s.usable = vec![bolt(0, Aim::Foe), bolt(1, Aim::Foe)];
-        let hex = Impact::Status { id: StatusId::from_raw(0), boon: false };
-        s.predicted = vec![foresee(0, 2, Impact::Damage(900), Impact::Nothing), foresee(1, 2, hex, Impact::Nothing)];
+        let bane = Impact::Status { id: StatusId::from_raw(0), boon: false };
+        s.predicted = vec![foresee(0, 2, Impact::Damage(900), Impact::Nothing), foresee(1, 2, bane, Impact::Nothing)];
         let which = |t: &UseAbility| match choose(t, &s) {
             Some(Decision::Ability { ability, .. }) => Some(ability.index()),
             _ => None,
         };
         assert_eq!(which(&UseAbility::default()), Some(0), "the engine's own: the heavy blow");
-        assert_eq!(which(&UseAbility::default().valuing(std::sync::Arc::new(Hexer))), Some(1), "the game's: the hex");
+        assert_eq!(which(&UseAbility::default().valuing(std::sync::Arc::new(Statuses))), Some(1), "the game's: the status");
     }
 
     fn missile(item: u32, range: i32) -> Missile<u32> {

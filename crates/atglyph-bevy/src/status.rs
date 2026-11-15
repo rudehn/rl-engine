@@ -153,6 +153,9 @@ pub enum StatusEvent {
         target: Entity,
         /// Which.
         status: StatusId,
+        /// Whether somebody put it on, rather than a cloud breathed or a
+        /// thing worn asking for it again every turn: what a narrator tells.
+        aimed: bool,
     },
 }
 
@@ -180,7 +183,7 @@ pub(crate) fn resolve_afflictions(
     let Some(registries) = registries.as_deref() else { return };
     for a in afflicts.read() {
         if actors.get(a.target).is_ok_and(|(_, _, immune)| immune.is_some_and(|i| i.covers(a.status))) {
-            events.write(StatusEvent::Refused { target: a.target, status: a.status });
+            events.write(StatusEvent::Refused { target: a.target, status: a.status, aimed: a.by.is_some() && a.held_by.is_none() });
             continue;
         }
         if let Some(fell) = fell.as_deref_mut()
@@ -667,8 +670,8 @@ pub(crate) fn build(app: &mut App) {
 
 /// Tells the mind holding the turn which statuses it and everyone it sees
 /// hold, and which each can never be given: what an effect foreseeing a
-/// status reads, so a mind does not slow the slowed nor poison the
-/// undying.
+/// status reads, so a mind puts no status on one that holds it already or
+/// can never hold it.
 ///
 /// Statuses' contribution to the views, in
 /// [`PerceiveSet::Annotate`](crate::plugin::PerceiveSet::Annotate), after
@@ -855,7 +858,19 @@ mod tests {
         let registries = app.world().resource::<Registries>();
         assert_eq!(app.world().get::<StatBlock>(player).unwrap().0.value(speed, &registries.stats), 0, "and kept none of its modifiers");
         let target = player;
-        assert_eq!(app.world().resource::<Heard>().0, [StatusEvent::Refused { target, status: slowed }, StatusEvent::Applied { target, status: dazed }]);
+        assert_eq!(
+            app.world().resource::<Heard>().0,
+            [StatusEvent::Refused { target, status: slowed, aimed: false }, StatusEvent::Applied { target, status: dazed }]
+        );
+        // Put on by somebody, it was aimed; held by a worn thing, it was not.
+        app.world_mut().resource_mut::<Heard>().0.clear();
+        for (by, held_by) in [(Some(player), None), (Some(player), Some(player))] {
+            app.world_mut().write_message(ApplyStatus { target: player, status: slowed, turns: 5, by, held_by });
+            app.update();
+        }
+        let aimed: Vec<bool> =
+            app.world().resource::<Heard>().0.iter().filter_map(|e| if let StatusEvent::Refused { aimed, .. } = e { Some(*aimed) } else { None }).collect();
+        assert_eq!(aimed, [true, false], "aimed when somebody put it on, not when a worn thing holds it");
     }
 
     /// A status that mends restores its amount every whole turn, to no

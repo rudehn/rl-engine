@@ -99,7 +99,9 @@ const WEIGHED_FACES: u32 = 2048;
 fn expected_hundredths(roll: atglyph_core::DiceRoll, lands: impl Fn(i32) -> i32) -> i32 {
     let faces = roll.num.saturating_mul(roll.sides);
     let ways_total = u128::from(roll.sides).checked_pow(roll.num);
-    let (Some(total), true) = (ways_total, faces <= WEIGHED_FACES && roll.sides > 0) else {
+    // Weighed only while every weight times the most a roll comes to stays
+    // well inside an i128; past that, at its average.
+    let (Some(total), true) = (ways_total.filter(|t| *t <= u128::from(u64::MAX)), faces <= WEIGHED_FACES && roll.sides > 0) else {
         let average = (i64::from(roll.num) * i64::from(roll.sides + 1) / 2 + i64::from(roll.bonus)) as i32;
         return lands(average).saturating_mul(100);
     };
@@ -223,7 +225,8 @@ impl TurnSpan {
     pub fn roll(&self, rng: &mut impl rand::Rng) -> u32 {
         match *self {
             TurnSpan::Fixed(n) => n,
-            TurnSpan::Between(fewest, most) => rng.random_range(fewest..=most),
+            // Either way round: one built in code backwards is the same range.
+            TurnSpan::Between(a, b) => rng.random_range(a.min(b)..=a.max(b)),
         }
     }
 
@@ -700,6 +703,19 @@ mod tests {
         assert_eq!(predict(&fireball, &world, &armored), Prospect::on(Impact::Damage(700)), "armor does not stop fire");
         // 1d4 against two armor: 0, 0, 1 and 2, three quarters on average.
         assert_eq!(predict(&Harm { kind: blow, roll: DiceRoll::new(1, 4) }, &world, &armored), Prospect::on(Impact::Damage(75)));
+    }
+
+    /// A roll with more ways to fall than can be weighed, 24d32, is
+    /// predicted at its average rather than overflowing; and a range built
+    /// backwards in code rolls within it all the same.
+    #[test]
+    fn a_roll_too_big_to_weigh_is_predicted_at_its_average_and_a_backward_range_still_rolls() {
+        let world = predicting();
+        let huge = Harm { kind: DamageKindId::from_raw(0), roll: DiceRoll::new(24, 32) };
+        assert_eq!(predict(&huge, &world, &someone(1000)), Prospect::on(Impact::Damage(39600)), "24 times 16.5");
+        use rand::SeedableRng;
+        let mut rng = rand::rngs::StdRng::seed_from_u64(3);
+        assert!((0..50).map(|_| TurnSpan::Between(2, 1).roll(&mut rng)).all(|t| (1..=2).contains(&t)));
     }
 
     /// A mend predicts what it would give back, no more than is missing,
