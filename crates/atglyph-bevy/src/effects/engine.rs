@@ -139,6 +139,48 @@ impl FromArgs for Mend {
     }
 }
 
+/// How many whole turns an inflicted status lasts: one number, or a range
+/// rolled each time it lands, both ends included.
+///
+/// Read from a file as `turns: 2` or `turns: (1, 2)`, so a paralysis that
+/// holds for a turn or two is one line of content rather than an effect of
+/// a game's own.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TurnSpan {
+    /// Always this many.
+    Fixed(u32),
+    /// From the first to the second, both included.
+    Between(u32, u32),
+}
+
+impl TurnSpan {
+    /// The turns it comes to this time: the number, or one drawn from the
+    /// range.
+    pub fn roll(&self, rng: &mut impl rand::Rng) -> u32 {
+        match *self {
+            TurnSpan::Fixed(n) => n,
+            TurnSpan::Between(fewest, most) => rng.random_range(fewest..=most),
+        }
+    }
+
+    /// The same, `turns` longer at both ends.
+    fn plus(self, turns: u32) -> Self {
+        match self {
+            TurnSpan::Fixed(n) => TurnSpan::Fixed(n + turns),
+            TurnSpan::Between(fewest, most) => TurnSpan::Between(fewest + turns, most + turns),
+        }
+    }
+}
+
+impl std::fmt::Display for TurnSpan {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TurnSpan::Fixed(n) => write!(f, "{n}"),
+            TurnSpan::Between(fewest, most) => write!(f, "{fewest} to {most}"),
+        }
+    }
+}
+
 /// Put a status on everyone under the footprint.
 ///
 /// Named for what it does rather than for the message it writes, because
@@ -147,8 +189,9 @@ impl FromArgs for Mend {
 pub struct Inflict {
     /// Which status.
     pub status: StatusId,
-    /// For how many whole turns, before any bonus.
-    pub turns: u32,
+    /// For how many whole turns, before any bonus: a number, or a range
+    /// rolled for each target as it lands.
+    pub turns: TurnSpan,
     /// Whether the status lasts only while the thing that landed it is
     /// worn. Read only when a trigger landed it, since only a thing can be
     /// worn: the [`ApplyStatus`] is then held by the thing, held for every
@@ -165,9 +208,9 @@ pub struct Inflict {
 }
 
 impl Inflict {
-    /// The turns with `bonus`'s turns added.
-    pub(crate) fn turns_with(&self, bonus: EffectBonus) -> u32 {
-        self.turns + bonus.turns
+    /// The turns with `bonus`'s turns added, at both ends of a range.
+    pub(crate) fn turns_with(&self, bonus: EffectBonus) -> TurnSpan {
+        self.turns.plus(bonus.turns)
     }
 }
 
@@ -177,8 +220,10 @@ impl Effect for Inflict {
             super::Source::Trigger { on, .. } if self.while_worn => Some(on),
             _ => None,
         };
+        let span = self.turns_with(landing.bonus);
         for target in &landing.targets {
-            world.afflict.write(ApplyStatus { target: *target, status: self.status, turns: self.turns_with(landing.bonus), by: Some(landing.user), held_by });
+            let turns = span.roll(&mut **world.rng);
+            world.afflict.write(ApplyStatus { target: *target, status: self.status, turns, by: Some(landing.user), held_by });
         }
     }
 
@@ -196,12 +241,26 @@ impl FromArgs for Inflict {
         #[serde(deny_unknown_fields)]
         struct Args {
             status: String,
-            turns: u32,
+            turns: Span,
             #[serde(default)]
             while_worn: bool,
         }
+        /// One number, or a range of two.
+        #[derive(serde::Deserialize)]
+        #[serde(untagged)]
+        enum Span {
+            One(u32),
+            Range((u32, u32)),
+        }
         let a: Args = read_args(args)?;
-        Ok(Self { status: names.status(&a.status)?, turns: a.turns, while_worn: a.while_worn })
+        let turns = match a.turns {
+            Span::One(n) => TurnSpan::Fixed(n),
+            Span::Range((fewest, most)) if fewest > most => {
+                return Err(format!("Inflict: turns ({fewest}, {most}) is no range; write the fewest first"));
+            }
+            Span::Range((fewest, most)) => TurnSpan::Between(fewest, most),
+        };
+        Ok(Self { status: names.status(&a.status)?, turns, while_worn: a.while_worn })
     }
 }
 
@@ -513,8 +572,8 @@ mod tests {
         assert_eq!((mend.roll_with(EffectBonus::default()), mend.roll_with(bonus)), (DiceRoll::flat(1), DiceRoll::flat(4)));
         let harm = Harm { kind, roll: DiceRoll::new(2, 6) };
         assert_eq!(harm.roll_with(bonus), DiceRoll { num: 2, sides: 6, bonus: 3 });
-        let hiding = Inflict { status: StatusId::from_raw(0), turns: 5, while_worn: false };
-        assert_eq!((hiding.turns_with(EffectBonus::default()), hiding.turns_with(bonus)), (5, 7));
+        let hiding = Inflict { status: StatusId::from_raw(0), turns: TurnSpan::Fixed(5), while_worn: false };
+        assert_eq!((hiding.turns_with(EffectBonus::default()), hiding.turns_with(bonus)), (TurnSpan::Fixed(5), TurnSpan::Fixed(7)));
     }
 
     /// A `per_level` left in a `Harm`, a `Mend` or an `Inflict`'s
@@ -556,6 +615,37 @@ mod tests {
         let args = atglyph_rules::ability::parse_args(r#"(cells: 2, cellz: 1)"#).unwrap();
         let err = Shove::from_args(&args, &names).expect_err("an unknown field is a typo");
         assert!(err.contains("cellz"), "{err}");
+    }
+
+    /// A status's turns are one number or a range, `turns: 2` or `turns:
+    /// (1, 2)`; a range written backwards is refused naming the effect, and
+    /// a range is said as one where the effect is described.
+    #[test]
+    fn turns_are_one_number_or_a_range_and_a_backward_range_is_refused() {
+        let statuses = atglyph_rules::Registry::from_defs(vec![atglyph_rules::StatusDef::new("paralysed")]).unwrap();
+        let names = Names::new().statuses(&statuses);
+        let args = |text: &str| atglyph_rules::ability::parse_args(text).unwrap();
+        let one = Inflict::from_args(&args(r#"(status: "paralysed", turns: 2)"#), &names).unwrap();
+        assert_eq!(one.turns, TurnSpan::Fixed(2));
+        let range = Inflict::from_args(&args(r#"(status: "paralysed", turns: (1, 2))"#), &names).unwrap();
+        assert_eq!(range.turns, TurnSpan::Between(1, 2));
+        let backward = Inflict::from_args(&args(r#"(status: "paralysed", turns: (2, 1))"#), &names).expect_err("2 to 1 is no range");
+        assert!(backward.contains("Inflict") && backward.contains("(2, 1)"), "{backward}");
+        let registries = Registries { statuses, ..Default::default() };
+        assert_eq!(range.describe(&registries, EffectBonus::default()), "paralysed for 1 to 2 turns");
+        assert_eq!(range.describe(&registries, EffectBonus { turns: 1, amount: 0 }), "paralysed for 2 to 3 turns", "a bonus lengthens both ends");
+    }
+
+    /// A range rolls a number of turns within it, both ends included, and
+    /// both ends turn up; one number is always itself.
+    #[test]
+    fn a_range_of_turns_rolls_within_it_and_both_ends_turn_up() {
+        use rand::SeedableRng;
+        let mut rng = rand::rngs::StdRng::seed_from_u64(3);
+        let rolled: Vec<u32> = (0..200).map(|_| TurnSpan::Between(1, 2).roll(&mut rng)).collect();
+        assert!(rolled.iter().all(|t| (1..=2).contains(t)), "{rolled:?}");
+        assert!(rolled.contains(&1) && rolled.contains(&2), "both ends");
+        assert!((0..20).all(|_| TurnSpan::Fixed(4).roll(&mut rng) == 4));
     }
 
     /// `while_worn` is read when written and false when not, and a held

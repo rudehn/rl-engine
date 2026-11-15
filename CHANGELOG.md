@@ -8,6 +8,7 @@ atglyph is not on crates.io yet, so a game depends on a release by its git tag, 
 
 ### Added
 
+- An inflicted status lasts one number of turns or a range rolled as it lands, written `turns: (1, 2)` beside `turns: 2`, and described as "paralysed for 1 to 2 turns".
 - Status immunity: `StatusImmunities` on an actor, and `ActorParts::immune_to`, refuses a status before it lands, with nothing of it installed, and reports `StatusEvent::Refused`, which the narrator tells as "The zombie is not paralysed." and "You are not paralysed.".
 - `Teller` tells a game's own line from outside the turns, a deal struck at a counter or a key answered before any turn is spent, among the rows the frame speaks, so its names wear their colours as a `Tell`'s do; a `Tell` written then waited for the next pass.
 - `Tell::counting` names as many of `{what}` as the line is about, `You sell 3 arrows.`, whatever its stack holds by the time the line is read.
@@ -55,6 +56,7 @@ atglyph is not on crates.io yet, so a game depends on a release by its git tag, 
 
 ### Changed
 
+- **Breaking:** `Inflict::turns` is a `TurnSpan`, `TurnSpan::Fixed(n)` for a number; a game building an `Inflict` in code wraps its turns.
 - **Breaking:** `StatusEvent` has a `Refused` variant; a game matching it exhaustively adds an arm.
 - `ThrowAtRange` reaches for a missile a worn launcher looses before one thrown by hand, and rolls its chance only once it has a throw to make, so a mind with nothing to throw draws nothing from its stream.
 - **Breaking:** `Missile` has a public `launched` field, whether a worn launcher looses it; a game that writes one as a struct literal adds `launched: false`.
