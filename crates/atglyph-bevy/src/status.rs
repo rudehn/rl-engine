@@ -211,38 +211,59 @@ pub(crate) fn resolve_afflictions(
     }
 }
 
+/// An afflicted actor as a tick reads it: its statuses, its stats, the map
+/// it is on and the cell its rolls are hashed from.
+type Ticked = (Entity, &'static mut ActiveStatuses, &'static mut StatBlock, Option<&'static OnMap>, Option<&'static Position>);
+
+/// What a tick writes, and what its dice are hashed from.
+#[derive(bevy::ecs::system::SystemParam)]
+pub(crate) struct Ticking<'w> {
+    damage: MessageWriter<'w, DamageEvent>,
+    heals: MessageWriter<'w, Heal>,
+    events: MessageWriter<'w, StatusEvent>,
+    seed: Option<Res<'w, crate::seed::Seed>>,
+    clock: Option<Res<'w, crate::turn::Turns>>,
+}
+
 /// Once per whole turn, ticks every afflicted actor on the current map:
 /// damage over time becomes [`DamageEvent`]s credited to whoever applied
 /// the status, a status that mends becomes [`Heal`]s, and what ran out is
-/// reported.
+/// reported. Dice are rolled from the seed, the turn and the holder's cell,
+/// so every holder is dealt the same whatever order they are ticked in.
 pub(crate) fn tick_statuses(
     mut ends: MessageReader<TurnEnd>,
-    mut damage: MessageWriter<DamageEvent>,
-    mut heals: MessageWriter<Heal>,
-    mut events: MessageWriter<StatusEvent>,
+    ticking: Ticking,
     registries: Option<Res<Registries>>,
     map: Res<WorldMap>,
-    mut actors: Query<(Entity, &mut ActiveStatuses, &mut StatBlock, Option<&OnMap>), With<Actor>>,
+    mut actors: Query<Ticked, With<Actor>>,
 ) {
+    let Ticking { mut damage, mut heals, mut events, seed, clock } = ticking;
     let turns = ends.read().count();
     let Some(registries) = registries.as_deref() else { return };
     if turns == 0 {
         return;
     }
     let here = map.current();
-    for (entity, mut statuses, mut stats, on) in &mut actors {
+    // The turn each of these ends closed, as fire numbers its steps.
+    let now = clock.as_deref().map_or(0, |c| u64::from(c.turn_number()));
+    let first = (now + 1).saturating_sub(turns as u64);
+    for (entity, mut statuses, mut stats, on, at) in &mut actors {
         if on.map(|m| m.0).unwrap_or(MapId::ZERO) != here {
             continue;
         }
-        for _ in 0..turns {
+        let at = at.map_or(atglyph_core::Point::new(0, 0), |p| p.0);
+        for step in 0..turns as u64 {
             let report = statuses.0.tick(&registries.statuses, &mut stats.0);
-            for t in report.ticks {
+            // Each tick and mend its own roll, numbered in the holder's
+            // order, which a save keeps.
+            let roll = |nth: usize, dice| crate::seed::hashed_roll(seed.as_deref(), crate::seed::STATUS_TICK, first + step, at, nth as u64, dice);
+            for (nth, t) in report.ticks.into_iter().enumerate() {
                 let credit = t.source.and_then(Entity::try_from_bits);
-                damage.write(DamageEvent::new(entity, Hit::from_status(credit, t.status, t.kind, t.amount)));
+                damage.write(DamageEvent::new(entity, Hit::from_status(credit, t.status, t.kind, roll(nth, t.roll))));
             }
-            for m in report.mends {
+            for (nth, m) in report.mends.into_iter().enumerate() {
                 let by = m.source.and_then(Entity::try_from_bits);
-                heals.write(Heal { target: entity, amount: m.amount, by, status: Some(m.status) });
+                heals.write(Heal { target: entity, amount: roll(nth + 1_000_000, m.roll), by, status: Some(m.status) });
             }
             for status in report.expired {
                 events.write(StatusEvent::Expired { target: entity, status });
@@ -718,6 +739,59 @@ mod tests {
 
     fn hear(mut events: MessageReader<StatusEvent>, mut heard: ResMut<Heard>) {
         heard.0.extend(events.read().copied());
+    }
+
+    /// Every actor's health each turn while two of them hold a status that
+    /// ticks `1d3`, spawned in the order given.
+    fn health_while_burning(flip: bool) -> Vec<(Point, Vec<i32>)> {
+        let mut app = headless_app();
+        app.add_plugins((crate::fov::FovPlugin, crate::combat::CombatPlugin));
+        let start = crate::testing::ground(&mut app);
+        let kinds = Registry::from_defs(vec![DamageKind::new("fire")]).unwrap();
+        let defs = Registry::from_defs(vec![StatusDef::new("burning").ticks(kinds.expect("fire"), DiceRoll::new(1, 3))]).unwrap();
+        let burning = defs.expect("burning");
+        app.insert_resource(CombatRules::new());
+        app.insert_resource(DamageStages(Vec::new()));
+        app.insert_resource(crate::seed::Seed(RunSeed(5)));
+        let facs = Registry::from_defs(vec![FactionDef::new("us")]).unwrap();
+        app.insert_resource(Registries { damage_kinds: kinds, factions: facs, statuses: defs, ..Default::default() });
+        let player = app.world_mut().spawn((Actor, Player, Blocks, Position(start), Viewshed::new(6), RevealsMap, Health::full(200))).id();
+        let spots = [start + Point::new(2, 0), start + Point::new(0, 2)];
+        let order: Vec<Point> = if flip { spots.iter().rev().copied().collect() } else { spots.to_vec() };
+        let others: Vec<Entity> = order.iter().map(|at| app.world_mut().spawn((Actor, Blocks, Position(*at), Health::full(200))).id()).collect();
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        app.update();
+        app.update();
+        for target in others.iter().copied().chain([player]) {
+            app.world_mut().write_message(ApplyStatus { target, status: burning, turns: 30, by: None, held_by: None });
+        }
+        app.update();
+        let mut seen: Vec<(Point, Vec<i32>)> = others.iter().chain([&player]).map(|e| (app.world().get::<Position>(*e).unwrap().0, Vec::new())).collect();
+        for _ in 0..20 {
+            app.world_mut().write_message(Intent::new(player, Wait));
+            app.update();
+            for (i, e) in others.iter().chain([&player]).enumerate() {
+                seen[i].1.push(app.world().get::<Health>(*e).unwrap().current);
+            }
+        }
+        seen.sort_by_key(|(p, _)| (p.y, p.x));
+        seen
+    }
+
+    /// A status that ticks dice deals within them each turn, both ends
+    /// turning up, and deals each actor the same whatever order the actors
+    /// were spawned and visited in: the roll is the seed's, the turn's and
+    /// the cell's, not a stream's next draw.
+    #[test]
+    fn a_tick_of_dice_rolls_within_them_the_same_whatever_order_actors_are_ticked_in() {
+        let ahead = health_while_burning(false);
+        assert_eq!(ahead, health_while_burning(true), "the same seed deals every actor the same");
+        for (at, health) in &ahead {
+            let lost: Vec<i32> = std::iter::once(200).chain(health.iter().copied()).collect::<Vec<_>>().windows(2).map(|w| w[0] - w[1]).collect();
+            assert!(lost.iter().all(|d| (1..=3).contains(d)), "{at:?} lost {lost:?}");
+            assert!(lost.contains(&1) && lost.contains(&3), "{at:?}: both ends of 1d3 in {lost:?}");
+        }
+        assert_ne!(ahead[0].1, ahead[1].1, "two cells roll apart");
     }
 
     #[test]

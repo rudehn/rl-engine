@@ -17,7 +17,7 @@
 //! own.
 
 use crate::content::{ContentError, Named, Registry};
-use atglyph_core::{Direction, Id};
+use atglyph_core::{DiceRoll, Direction, Id};
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 
@@ -62,11 +62,19 @@ pub struct StatusDef {
     pub stacking: Stacking,
     /// Stat changes while active.
     pub modifiers: Vec<StatusModifier>,
-    /// Damage per turn as `(kind, amount)`, if any.
-    pub tick_damage: Option<(DamageKindId, i32)>,
-    /// Health restored per turn, if any. Not a tick of a kind: mending is
-    /// not damage, so no armor, resistance or stage is asked about it.
-    pub tick_mend: Option<i32>,
+    /// Damage per turn as `(kind, dice)`, if any, rolled for each instance
+    /// each turn; a fixed number draws nothing.
+    pub tick_damage: Option<(DamageKindId, DiceRoll)>,
+    /// Health restored per turn, if any, rolled as a tick is. Not a tick of
+    /// a kind: mending is not damage, so no armor, resistance or stage is
+    /// asked about it.
+    pub tick_mend: Option<DiceRoll>,
+    /// Whether every instance of it lasts until it is cured, whatever turns
+    /// it was put on for: what a body takes on and keeps, an infection
+    /// whose stacks never wear off. A flag on the status rather than a
+    /// count on each application, because the content that puts it on, a
+    /// blow, a cloud, a trap, should not each have to know it never ends.
+    pub lasting: bool,
     /// Glyph for a badge, if the game wants one.
     pub badge: Option<char>,
     /// Whether nothing sees whoever holds it while it lasts. What that
@@ -132,6 +140,7 @@ impl StatusDef {
             modifiers: Vec::new(),
             tick_damage: None,
             tick_mend: None,
+            lasting: false,
             badge: None,
             unseen: false,
             boon: false,
@@ -156,16 +165,22 @@ impl StatusDef {
         self
     }
 
-    /// Sets damage per turn.
-    pub fn ticks(mut self, kind: DamageKindId, amount: i32) -> Self {
-        self.tick_damage = Some((kind, amount));
+    /// Sets damage per turn: a number, or dice rolled each turn.
+    pub fn ticks(mut self, kind: DamageKindId, amount: impl Into<DiceRoll>) -> Self {
+        self.tick_damage = Some((kind, amount.into()));
         self
     }
 
     /// Sets health restored per turn, so regeneration is a status as
-    /// poison is.
-    pub fn mends(mut self, amount: i32) -> Self {
-        self.tick_mend = Some(amount);
+    /// poison is: a number, or dice rolled each turn.
+    pub fn mends(mut self, amount: impl Into<DiceRoll>) -> Self {
+        self.tick_mend = Some(amount.into());
+        self
+    }
+
+    /// Makes every instance last until it is cured.
+    pub fn lasting(mut self) -> Self {
+        self.lasting = true;
         self
     }
 
@@ -240,9 +255,11 @@ struct Authored {
     #[serde(default)]
     modifies: Vec<(String, Op)>,
     #[serde(default)]
-    ticks: Option<(String, i32)>,
+    ticks: Option<(String, DiceRoll)>,
     #[serde(default)]
-    mends: Option<i32>,
+    mends: Option<DiceRoll>,
+    #[serde(default)]
+    lasting: bool,
     #[serde(default)]
     badge: Option<char>,
     #[serde(default)]
@@ -280,9 +297,13 @@ impl Named for Authored {
 ///   instance beside the first; `Ignore` does nothing.
 /// - `modifies`: stat changes while it lasts, each `(stat, op)` with `op`
 ///   one of `Add(n)`, `MulPct(n)`, `AtLeast(n)` or `AtMost(n)`.
-/// - `ticks`: `(damage kind, amount)` dealt every whole turn. Never
-///   negative: a status that mends says `mends`.
-/// - `mends`: health restored every whole turn, at least 1.
+/// - `ticks`: `(damage kind, amount)` dealt every whole turn, the amount a
+///   number or dice, `"1d3"`, rolled each turn. Never able to come to less
+///   than nothing: a status that mends says `mends`.
+/// - `mends`: health restored every whole turn, a number or dice, never
+///   able to come to less than 1.
+/// - `lasting`: whether every instance lasts until it is cured, whatever
+///   turns it was put on for. Absent, it runs out.
 /// - `badge`: one character a panel may draw beside a health bar.
 /// - `unseen`: `true` for a status whose holder nothing can see while it
 ///   lasts; `false`, the default, otherwise.
@@ -316,12 +337,18 @@ pub fn load(text: &str, names: &Names<'_>) -> Result<Registry<StatusDef>, Conten
                 Err(e) => errors.push(format!("{}: {e}", a.name)),
             }
         }
+        // The least dice come to: a one on every die, and the bonus.
+        let least = |d: &DiceRoll| i64::from(d.num) + i64::from(d.bonus);
         let tick_damage = a.ticks.as_ref().and_then(|(kind, amount)| match names.damage_kind(kind) {
             // Refused rather than read as a mend: mending was once a
             // negative tick of a kind a game invented for it, and a file
             // still written that way should say so, not quietly hurt.
-            Ok(_) if *amount < 0 => {
-                errors.push(format!("{}: `ticks` of {amount} is not damage; a status that mends says `mends: {}`", a.name, -amount));
+            Ok(_) if amount.num == 0 && amount.bonus < 0 => {
+                errors.push(format!("{}: `ticks` of {amount} is not damage; a status that mends says `mends: {}`", a.name, -amount.bonus));
+                None
+            }
+            Ok(_) if least(amount) < 0 => {
+                errors.push(format!("{}: `ticks` of {amount} could come to less than nothing", a.name));
                 None
             }
             Ok(kind) => Some((kind, *amount)),
@@ -330,7 +357,7 @@ pub fn load(text: &str, names: &Names<'_>) -> Result<Registry<StatusDef>, Conten
                 None
             }
         });
-        if let Some(amount) = a.mends.filter(|amount| *amount < 1) {
+        if let Some(amount) = a.mends.filter(|amount| least(amount) < 1) {
             errors.push(format!("{}: `mends` of {amount} restores nothing; it is at least 1", a.name));
         }
         // A cap on a status that never stacks is a rule nothing plays, so
@@ -365,6 +392,7 @@ pub fn load(text: &str, names: &Names<'_>) -> Result<Registry<StatusDef>, Conten
             modifiers,
             tick_damage,
             tick_mend: a.mends,
+            lasting: a.lasting,
             badge: a.badge,
             unseen: a.unseen,
             boon: a.boon,
@@ -427,8 +455,9 @@ pub struct Tick {
     pub status: StatusId,
     /// The damage kind.
     pub kind: DamageKindId,
-    /// How much, before mitigation.
-    pub amount: i32,
+    /// How much, before mitigation: the dice whoever resolves the tick
+    /// rolls, a fixed number drawing nothing.
+    pub roll: DiceRoll,
     /// Who applied the status, for credit.
     pub source: Option<u64>,
 }
@@ -438,8 +467,9 @@ pub struct Tick {
 pub struct Mended {
     /// Which status.
     pub status: StatusId,
-    /// How much it offers, before the holder's own mending is asked.
-    pub amount: i32,
+    /// How much it offers, before the holder's own mending is asked: the
+    /// dice whoever resolves it rolls.
+    pub roll: DiceRoll,
     /// Who applied the status.
     pub source: Option<u64>,
 }
@@ -498,6 +528,7 @@ impl Statuses {
 
     fn put(&mut self, id: StatusId, turns: u32, source: Option<u64>, held_by: Option<u64>, defs: &Registry<StatusDef>, stats: &mut Stats) -> bool {
         let def = defs.get(id);
+        let turns = if def.lasting { UNTIL_CURED } else { turns };
         let instances = self.active.iter().filter(|s| s.id == id).count();
         let existing = self.active.iter_mut().find(|s| s.id == id);
         match (def.stacking, existing) {
@@ -526,6 +557,12 @@ impl Statuses {
                 true
             }
         }
+    }
+
+    /// How many instances of `id` are held: one for a status that does not
+    /// stack, as many as were put on for one that does, nought for none.
+    pub fn count(&self, id: StatusId) -> usize {
+        self.active.iter().filter(|s| s.id == id).count()
     }
 
     /// Whether `id` is active.
@@ -601,11 +638,11 @@ impl Statuses {
         let (mut ticks, mut mends) = (Vec::new(), Vec::new());
         for s in &self.active {
             let def = defs.get(s.id);
-            if let Some((kind, amount)) = def.tick_damage {
-                ticks.push(Tick { status: s.id, kind, amount, source: s.source });
+            if let Some((kind, roll)) = def.tick_damage {
+                ticks.push(Tick { status: s.id, kind, roll, source: s.source });
             }
-            if let Some(amount) = def.tick_mend {
-                mends.push(Mended { status: s.id, amount, source: s.source });
+            if let Some(roll) = def.tick_mend {
+                mends.push(Mended { status: s.id, roll, source: s.source });
             }
         }
         let mut expired = Vec::new();
@@ -751,7 +788,7 @@ mod tests {
         assert_eq!(st.iter().filter(|s| s.id == poisoned).count(), 2, "stack sits beside");
         let report = st.tick(&defs, &mut stats);
         assert_eq!(report.ticks.len(), 3);
-        assert_eq!(report.ticks[0], Tick { status: burning, kind: DamageKindId::from_raw(0), amount: 2, source: Some(9) });
+        assert_eq!(report.ticks[0], Tick { status: burning, kind: DamageKindId::from_raw(0), roll: DiceRoll::flat(2), source: Some(9) });
         assert!(st.cure(poisoned, &mut stats));
         assert!(!st.has(poisoned));
         assert!(!st.cure(poisoned, &mut stats));
@@ -853,9 +890,9 @@ mod tests {
         assert_eq!(hasted.modifiers, vec![StatusModifier { stat: stats.expect("speed"), op: Op::MulPct(200) }]);
         assert_eq!(hasted.badge, Some('H'));
         assert_eq!(hasted.stacking, Stacking::Refresh, "the default");
-        assert_eq!(r.get(r.expect("venom")).tick_damage, Some((kinds.expect("bite"), 1)));
+        assert_eq!(r.get(r.expect("venom")).tick_damage, Some((kinds.expect("bite"), DiceRoll::flat(1))));
         let mending = r.get(r.expect("mending"));
-        assert_eq!((mending.tick_damage, mending.tick_mend), (None, Some(2)), "a mend is not a tick of any kind");
+        assert_eq!((mending.tick_damage, mending.tick_mend), (None, Some(DiceRoll::flat(2))), "a mend is not a tick of any kind");
         assert_eq!(r.get(r.expect("stunned")).stacking, Stacking::Ignore);
     }
 
@@ -872,6 +909,60 @@ mod tests {
         assert!(none.to_string().contains("at least 1"), "{none}");
     }
 
+    /// A tick and a mend may be written as dice, reported as their dice for
+    /// whoever rolls them; dice that could deal less than nothing or mend
+    /// nothing are refused naming the status, as a number is; and `lasting`
+    /// is read when written and false when not.
+    #[test]
+    fn ticks_and_mends_are_written_as_dice_and_dice_that_could_do_nothing_are_refused() {
+        let (stats, kinds) = vocabulary();
+        let names = Names::new().stats(&stats).damage_kinds(&kinds);
+        let text =
+            r#"#![enable(implicit_some)] [(name: "burning", ticks: ("bite", "1d3")), (name: "mending", mends: "1d2+1"), (name: "infected", lasting: true)]"#;
+        let defs = load(text, &names).unwrap();
+        assert_eq!(defs.get(defs.expect("burning")).tick_damage, Some((kinds.expect("bite"), DiceRoll::new(1, 3))));
+        assert_eq!(defs.get(defs.expect("mending")).tick_mend, Some(DiceRoll { num: 1, sides: 2, bonus: 1 }));
+        assert!(defs.get(defs.expect("infected")).lasting && !defs.get(defs.expect("burning")).lasting);
+        let hurtless = load(r#"#![enable(implicit_some)] [(name: "odd", ticks: ("bite", "1d2-3"))]"#, &names).expect_err("it could come to less than nothing");
+        assert!(hurtless.to_string().contains("odd") && hurtless.to_string().contains("1d2-3"), "{hurtless}");
+        let mendless = load(r#"#![enable(implicit_some)] [(name: "odd", mends: "1d2-1")]"#, &names).expect_err("it could mend nothing");
+        assert!(mendless.to_string().contains("at least 1"), "{mendless}");
+    }
+
+    /// A lasting status is never counted down, whatever turns it was put on
+    /// for: it bites every turn and ends only by a cure.
+    #[test]
+    fn a_lasting_status_never_counts_down() {
+        let (_, kinds) = vocabulary();
+        let defs = Registry::from_defs(vec![StatusDef::new("infected").lasting().stacking(Stacking::Stack)]).unwrap();
+        let infected = defs.expect("infected");
+        let (mut statuses, mut stats) = (Statuses::default(), Stats::default());
+        statuses.apply(infected, 3, None, &defs, &mut stats);
+        statuses.apply(infected, 1, None, &defs, &mut stats);
+        for _ in 0..50 {
+            assert!(statuses.tick(&defs, &mut stats).expired.is_empty());
+        }
+        assert_eq!(statuses.count(infected), 2, "both stacks are still there");
+        assert!(statuses.iter().all(|s| s.turns == UNTIL_CURED));
+        let _ = kinds;
+        assert!(statuses.cure(infected, &mut stats) && statuses.count(infected) == 0);
+    }
+
+    /// `count` is how many instances of one status are held, nought for
+    /// one not held at all.
+    #[test]
+    fn count_is_the_instances_of_one_status() {
+        let (_, defs) = world();
+        let (poisoned, burning) = (defs.expect("poisoned"), defs.expect("burning"));
+        let (mut statuses, mut stats) = (Statuses::default(), Stats::default());
+        assert_eq!(statuses.count(poisoned), 0);
+        for _ in 0..3 {
+            statuses.apply(poisoned, 4, None, &defs, &mut stats);
+        }
+        statuses.apply(burning, 2, None, &defs, &mut stats);
+        assert_eq!((statuses.count(poisoned), statuses.count(burning)), (3, 1));
+    }
+
     /// A status that mends is reported as a mend each turn, beside and
     /// apart from the damage another deals.
     #[test]
@@ -883,8 +974,8 @@ mod tests {
         statuses.apply(mending, 2, Some(9), &defs, &mut stats);
         statuses.apply(venom, 2, None, &defs, &mut stats);
         let report = statuses.tick(&defs, &mut stats);
-        assert_eq!(report.mends, vec![Mended { status: mending, amount: 2, source: Some(9) }]);
-        assert_eq!(report.ticks.iter().map(|t| (t.status, t.amount)).collect::<Vec<_>>(), vec![(venom, 1)]);
+        assert_eq!(report.mends, vec![Mended { status: mending, roll: DiceRoll::flat(2), source: Some(9) }]);
+        assert_eq!(report.ticks.iter().map(|t| (t.status, t.roll)).collect::<Vec<_>>(), vec![(venom, DiceRoll::flat(1))]);
     }
 
     #[test]

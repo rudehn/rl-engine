@@ -143,6 +143,7 @@ pub(crate) const REFLECT: SeedDomain = SeedDomain::engine(b"ability.reflect");
 pub(crate) const FIRE: SeedDomain = SeedDomain::engine(b"fire");
 pub(crate) const GAS_SPILL: SeedDomain = SeedDomain::engine(b"gas.spill");
 pub(crate) const GAS_SWIRL: SeedDomain = SeedDomain::engine(b"gas.swirl");
+pub(crate) const STATUS_TICK: SeedDomain = SeedDomain::engine(b"status.tick");
 pub(crate) const RESTART: SeedDomain = SeedDomain::engine(b"restart");
 
 /// Every domain the engine draws under, by name: its streams, a place's
@@ -168,9 +169,30 @@ pub const ENGINE_DOMAINS: &[(&str, SeedDomain)] = &[
     ("atglyph.fire", FIRE),
     ("atglyph.gas.spill", GAS_SPILL),
     ("atglyph.gas.swirl", GAS_SWIRL),
+    ("atglyph.status.tick", STATUS_TICK),
     ("atglyph.restart", RESTART),
     ("atglyph.place", SeedDomain::engine(b"place")),
 ];
+
+/// A roll of `dice` drawn from nothing but the run's seed, a domain, a
+/// turn, a cell and which of several rolls made there that turn this is:
+/// the same whatever order a system visits its rolls in and across a save
+/// and a load, with no generator to keep, as fire's and gas's rolls are.
+/// A fixed number draws nothing and comes to itself.
+///
+/// For a roll a field or a tick makes for whoever stands somewhere, where a
+/// stream's next draw would deal each actor what the query's order left it.
+/// Without a seed, as in a test that installs none, the salt is the
+/// domain's alone.
+pub(crate) fn hashed_roll(seed: Option<&Seed>, domain: SeedDomain, turn: u64, at: atglyph_core::Point, nth: u64, dice: atglyph_core::DiceRoll) -> i32 {
+    use rand::SeedableRng;
+    if dice.num == 0 {
+        return dice.bonus;
+    }
+    let salt = seed.map_or_else(|| RunSeed(0).derive(domain, turn), |s| s.0.derive(domain, turn));
+    let mut rng = StdRng::seed_from_u64(atglyph_core::seed::position_hash(salt ^ nth.wrapping_mul(0x9E37_79B9_7F4A_7C15), at.x, at.y));
+    dice.roll(&mut rng)
+}
 
 /// A random stream a subsystem owns, derived from the run's [`Seed`].
 pub trait Stream: Resource {

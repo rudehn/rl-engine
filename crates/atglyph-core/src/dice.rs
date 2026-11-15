@@ -83,6 +83,14 @@ impl fmt::Display for DiceParseError {
 
 impl std::error::Error for DiceParseError {}
 
+/// A fixed roll of `n`, so a count written in code as a number reads where
+/// dice are taken.
+impl From<i32> for DiceRoll {
+    fn from(n: i32) -> Self {
+        DiceRoll::flat(n)
+    }
+}
+
 impl FromStr for DiceRoll {
     type Err = DiceParseError;
 

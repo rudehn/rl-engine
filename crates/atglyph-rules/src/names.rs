@@ -98,7 +98,7 @@ struct Shelf<'a> {
 /// let names = names.statuses(&statuses);
 /// let abilities = ability::load(r#"[(name: "ignite", mode: Adjacent, costs: [Pool("mana", 4)])]"#, &names).unwrap();
 ///
-/// assert_eq!(statuses.get(statuses.expect("burning")).tick_damage, Some((kinds.expect("fire"), 2)));
+/// assert_eq!(statuses.get(statuses.expect("burning")).tick_damage, Some((kinds.expect("fire"), 2.into())));
 /// assert_eq!(abilities.len(), 1);
 /// assert!(names.tag("powder").is_err(), "no tags were given");
 /// ```

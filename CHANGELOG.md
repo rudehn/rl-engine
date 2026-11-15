@@ -10,6 +10,10 @@ atglyph is not on crates.io yet, so a game depends on a release by its git tag, 
 
 ### Added
 
+- A status may tick and mend dice, `ticks: ("fire", "1d3")`, rolled for each instance each turn from the seed, the turn and the holder's cell, so every holder is dealt the same whatever order they are ticked in and a save keeps no generator for it; a fixed number draws nothing. Dice that could come to less than nothing, or mend nothing, are refused at load.
+- A status may be `lasting`: every instance lasts until it is cured, whatever turns it was put on for, so an infection whose stacks never wear off is one line of content whoever puts it on.
+- `Statuses::count(id)`: how many instances of one status are held.
+- A `DiceRoll` is made from an `i32` as a fixed roll, so `StatusDef::ticks(kind, 2)` still reads.
 - A damage kind written `told: false` is not told by the narrator, for a kind a game tells itself or not at all: a price paid in health, a fall worded in its own line. A death it deals is told all the same.
 - `InspectPanel::fitted` draws the panel's frame round what it holds, no taller than its rectangle, keeping the edge nearer the screen's: a monster with two lines takes no more room than one with ten.
 - `Landing::ability` and `Landing::reach` are public, so a game's own effect draws its ability's look and lands harm told as the engine's `Harm` is.
@@ -69,6 +73,7 @@ atglyph is not on crates.io yet, so a game depends on a release by its git tag, 
 
 ### Changed
 
+- **Breaking:** `StatusDef::tick_damage` is `Option<(DamageKindId, DiceRoll)>` and `tick_mend` is `Option<DiceRoll>`; the rules' `Tick` and `Mended` carry the `roll` their resolver rolls, where they carried an `amount`, and the sheet's `StatusLine` its `ticks` and `mends` as dice.
 - **Breaking:** `DamageKind` has a public `told` field; a game that writes one as a struct literal adds `told: true`, or builds it with `DamageKind::new`.
 - **Breaking:** `ActorParts` has public `immune_to` and `passes` fields and `Snapshot` a public `predicted` field; a game that writes either as a struct literal adds them, or builds from `ActorParts::default()` and `Snapshot::alone`.
 - **Breaking:** `AbilityDef` has a public `shown` field; a game that writes one as a struct literal adds `shown: true` to keep it drawn.

@@ -91,9 +91,9 @@ pub struct StatusLine {
     /// What it does to which stat, by the stat's name.
     pub modifies: Vec<(String, Op)>,
     /// Damage it deals a turn, by the kind's name.
-    pub ticks: Option<(String, i32)>,
+    pub ticks: Option<(String, DiceRoll)>,
     /// Health it restores a turn.
-    pub mends: Option<i32>,
+    pub mends: Option<DiceRoll>,
 }
 
 /// One equipment slot.
@@ -365,7 +365,7 @@ mod tests {
         let status = &view.statuses[0];
         assert_eq!((status.name.as_str(), status.turns), ("weak", 4));
         assert_eq!(status.modifies, vec![("might".to_string(), Op::Add(-3))]);
-        assert_eq!(status.ticks, Some(("kinetic".to_string(), 1)));
+        assert_eq!(status.ticks, Some(("kinetic".to_string(), DiceRoll::flat(1))));
     }
 
     /// A worn blade is the blow the sheet lists, its armor is in the total,
