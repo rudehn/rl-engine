@@ -18,8 +18,9 @@
 //! player holds a turn nothing holds the turns, since there is nothing
 //! left to wait for; what still plays, plays over the player's move.
 //!
-//! Two shapes cover what a roguelike animates: a `Trail` between two
-//! anchors and a `Burst` over some. A burst with a source is a blast: it
+//! Three shapes cover what a roguelike animates: a `Trail` flying between
+//! two anchors, a `Beam` held between two with a pulse running along it,
+//! and a `Burst` over some. A burst with a source is a blast: it
 //! goes off there and reaches each cell a moment after the one nearer it,
 //! white-hot at its front and cooling to embers behind, with sparks thrown
 //! ahead of it, and the fire and gas it left are held back until it has
@@ -177,6 +178,53 @@ impl Burst {
     }
 }
 
+/// A line held between two anchors, drawn again every frame between where
+/// they are now, with a pulse running along it from the first to the
+/// second over its time.
+///
+/// Only the cells between the two are drawn: what stands at each end stays
+/// drawn, as the thrower of a flight does. Two ends side by side have
+/// nothing between them, and a beam between them takes no time.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct Beam {
+    /// The end the pulse leaves from.
+    pub from: Anchor,
+    /// The end the pulse runs to.
+    pub to: Anchor,
+    /// What the line is drawn with.
+    pub glyph: char,
+    /// The line's colour.
+    pub color: Color,
+    /// What runs along it, and in what colour, if anything.
+    pub pulse: Option<(char, Color)>,
+    /// Seconds it plays, if there is anything between its ends to see.
+    pub secs: f32,
+}
+
+impl Beam {
+    /// Whether the ends, as written, have a cell between them.
+    fn spans(&self) -> bool {
+        line(self.from.at, self.to.at).count() > 2
+    }
+
+    /// What it shows `t` seconds in, the line between where `at` puts its
+    /// ends now. The line holds until its last quarter and then fades; the
+    /// pulse stays bright to the end.
+    fn frame(&self, t: f32, at: &Resolve<'_>) -> Vec<Spark> {
+        let (from, to) = (at(&self.from), at(&self.to));
+        let path: Vec<Point> = line(from, to).filter(|p| *p != from && *p != to).collect();
+        let faded = ((t / self.secs - 0.75) * 4.0).clamp(0.0, 1.0);
+        let head = ((t / self.secs) * path.len() as f32).floor() as usize;
+        path.iter()
+            .enumerate()
+            .map(|(i, cell)| match self.pulse {
+                Some((glyph, color)) if i == head => Spark { at: *cell, glyph, color, faded: 0.0, glow: 0.35 },
+                _ => Spark { at: *cell, glyph: self.glyph, color: self.color, faded, glow: 0.0 },
+            })
+            .collect()
+    }
+}
+
 /// One beat of an animation: what plays before the next begins.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum Beat {
@@ -184,6 +232,8 @@ pub(crate) enum Beat {
     Trail(Trail),
     /// A burst.
     Burst(Burst),
+    /// A beam.
+    Beam(Beam),
 }
 
 impl Beat {
@@ -192,6 +242,8 @@ impl Beat {
         match self {
             Beat::Trail(t) => t.cells as f32 * t.cell_secs,
             Beat::Burst(b) => b.duration(),
+            Beat::Beam(b) if b.spans() => b.secs,
+            Beat::Beam(_) => 0.0,
         }
     }
 
@@ -216,6 +268,12 @@ impl Beat {
                     }
                 }
                 sparks
+            }
+            Beat::Beam(beam) => {
+                if t >= self.duration() {
+                    return Vec::new();
+                }
+                beam.frame(t, at)
             }
             Beat::Burst(burst) => {
                 if burst.secs <= 0.0 || t >= burst.duration() {
@@ -364,6 +422,9 @@ pub struct ParticleStyle {
     pub ring_secs: f32,
     /// What a blast's cells show as they cool, hottest first.
     pub blast_glyphs: Vec<char>,
+    /// Seconds a beam is held; `None` holds it as long as a flight over
+    /// the same cells would take, and never less than a burst.
+    pub beam_secs: Option<f32>,
 }
 
 impl Default for ParticleStyle {
@@ -377,6 +438,7 @@ impl Default for ParticleStyle {
             // Not `#`, which is a wall in most games and would read as
             // one going up.
             blast_glyphs: vec!['*', '%', '+', '\u{00b7}'],
+            beam_secs: None,
         }
     }
 }
@@ -384,7 +446,12 @@ impl Default for ParticleStyle {
 impl ParticleStyle {
     /// Whether anything drawn in this style takes time to watch.
     pub(crate) fn takes_time(&self) -> bool {
-        self.cell_secs > 0.0 || self.burst_secs > 0.0
+        self.cell_secs > 0.0 || self.burst_secs > 0.0 || self.beam_secs.is_some_and(|s| s > 0.0)
+    }
+
+    /// How long a beam over `cells` cells is held.
+    pub(crate) fn beam_time(&self, cells: usize) -> f32 {
+        self.beam_secs.unwrap_or_else(|| (cells as f32 * self.cell_secs).max(self.burst_secs))
     }
 }
 
@@ -448,6 +515,11 @@ impl Cues<'_, '_> {
             Cue::Flight { from, to, look } => {
                 let (glyph, color) = self.look(*look);
                 Beat::Trail(Trail::new(*from, *to, glyph, color, self.style.cell_secs))
+            }
+            Cue::Beam { from, to, look, pulse } => {
+                let (glyph, color) = self.look(*look);
+                let secs = self.style.beam_time(line(from.at, to.at).skip(1).count());
+                Beat::Beam(Beam { from: *from, to: *to, glyph, color, pulse: pulse.map(|p| self.look(p)), secs })
             }
             Cue::Burst { on, look, from } => {
                 let (_, color) = self.look(*look);
@@ -596,6 +668,59 @@ mod tests {
         assert_eq!(step.frame(0.39, &fixed)[0].at, Point::new(4, 0), "or where they were, if they are gone");
     }
 
+    /// A beam from the cell at the origin to the one six east, its pulse
+    /// if `pulse`, playing for six tenths of a second.
+    fn beam(pulse: bool) -> Beam {
+        let to = Anchor::on(Entity::from_bits(9), Point::new(6, 0));
+        Beam { from: Anchor::cell(Point::new(0, 0)), to, glyph: '~', color: Color::WHITE, pulse: pulse.then_some(('*', Color::BLACK)), secs: 0.6 }
+    }
+
+    /// Every cell between the two ends carries the beam the whole time it
+    /// plays, the ends themselves left to whoever stands on them, and
+    /// nothing once it is over.
+    #[test]
+    fn a_beam_draws_its_line_for_its_time_and_ends() {
+        let step = Beat::Beam(beam(false));
+        assert_eq!(step.duration(), 0.6);
+        let between: Vec<Point> = (1..6).map(|x| Point::new(x, 0)).collect();
+        for t in [0.0, 0.3, 0.59] {
+            let drawn = step.frame(t, &fixed);
+            assert_eq!(drawn.iter().map(|s| s.at).collect::<Vec<_>>(), between, "every cell between the ends at {t}");
+            assert!(drawn.iter().all(|s| s.glyph == '~'), "and the beam's glyph on each");
+        }
+        assert!(step.frame(0.6, &fixed).is_empty(), "over");
+        let side_by_side = Beam { to: Anchor::cell(Point::new(1, 0)), ..beam(true) };
+        assert_eq!(Beat::Beam(side_by_side).duration(), 0.0, "two ends side by side have nothing between them to show");
+    }
+
+    /// The pulse runs along the beam from its first end to its second, over
+    /// the beam's glyph where it stands; a beam with none shows only itself.
+    #[test]
+    fn a_pulse_travels_from_the_first_anchor_to_the_second() {
+        let step = Beat::Beam(beam(true));
+        let pulse = |t: f32| {
+            let drawn = step.frame(t, &fixed);
+            let pulses: Vec<Point> = drawn.iter().filter(|s| s.glyph == '*').map(|s| s.at).collect();
+            assert_eq!(pulses.len(), 1, "one pulse at {t}");
+            assert_eq!(drawn.len(), 5, "over the beam, not beside it");
+            pulses[0]
+        };
+        let (early, late) = (pulse(0.15), pulse(0.45));
+        assert!(early.x < 3 && late.x > 3, "nearer the first end, then the second: {early:?}, {late:?}");
+        assert!(Beat::Beam(beam(false)).frame(0.3, &fixed).iter().all(|s| s.glyph == '~'), "and no pulse unless asked");
+    }
+
+    /// The ends go where what they follow goes, and an end whose entity is
+    /// gone holds the cell it was written with, as a flight's does.
+    #[test]
+    fn a_beam_follows_its_anchors() {
+        let step = Beat::Beam(beam(false));
+        let moved = |a: &Anchor| if a.follow.is_some() { Point::new(6, 3) } else { a.at };
+        let bent: Vec<Point> = line(Point::new(0, 0), Point::new(6, 3)).skip(1).take(5).collect();
+        assert_eq!(step.frame(0.3, &moved).iter().map(|s| s.at).collect::<Vec<_>>(), bent, "bent to where it stands now");
+        assert_eq!(step.frame(0.3, &fixed).last().map(|s| s.at), Some(Point::new(5, 0)), "or ending where it stood");
+    }
+
     #[test]
     fn a_burst_lights_every_cell_at_once_and_fades_to_nothing() {
         let on = vec![Anchor::cell(Point::new(0, 0)), Anchor::cell(Point::new(1, 0)), Anchor::cell(Point::new(0, 1))];
@@ -741,6 +866,39 @@ mod tests {
         }
         assert!(!app.world().resource::<Particles>().is_playing(), "played out");
         assert!(!app.world().resource::<CueWait>().is_waiting(), "and let go");
+    }
+
+    /// Through the plugin: a beam cued holds the turns while it plays and
+    /// lets go when it ends, its time the style's, or by default as long as
+    /// a flight over the same cells and never shorter than a burst.
+    #[test]
+    fn a_beam_cued_holds_the_turns_until_it_has_played() {
+        use atglyph_core::GridRect;
+        let mut app = atglyph_bevy::testing::headless_app();
+        app.add_plugins((crate::map_view::MapViewPlugin::new(GridRect::new(0, 0, 40, 20)), ParticlesPlugin));
+        app.insert_resource(Terminal::new(40, 20, Vec2::ONE));
+        app.insert_resource(ParticleStyle { beam_secs: Some(0.05), ..ParticleStyle::default() });
+        let start = atglyph_bevy::testing::ground(&mut app);
+        app.world_mut().spawn((Player, Position(start), Viewshed::new(8), RevealsMap));
+        let caster = app.world_mut().spawn(Position(start.offset(4, 0))).id();
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        app.update();
+        let cue = Cue::Beam { from: Anchor::cell(start), to: Anchor::on(caster, start.offset(4, 0)), look: LookOf::Plain, pulse: Some(LookOf::Plain) };
+        app.world_mut().write_message(Cued { actor: caster, cue });
+        app.update();
+        let particles = app.world().resource::<Particles>();
+        let [(animation, _)] = particles.playing.as_slice() else { panic!("one animation") };
+        assert!(matches!(animation.steps.as_slice(), [Beat::Beam(b)] if b.secs == 0.05 && b.pulse.is_some()), "a beam, timed by the style");
+        assert!(app.world().resource::<CueWait>().is_waiting(), "and the turns wait");
+        let began = app.world().resource::<Time>().elapsed_secs();
+        while app.world().resource::<Time>().elapsed_secs() - began < 0.2 {
+            app.update();
+        }
+        assert!(!app.world().resource::<CueWait>().is_waiting(), "let go once played");
+
+        let style = ParticleStyle::default();
+        assert_eq!(style.beam_time(3), style.burst_secs, "a short beam lasts as long as a burst");
+        assert_eq!(style.beam_time(40), 40.0 * style.cell_secs, "a long one as long as a flight over it");
     }
 
     /// A key pressed while the turns wait drops what holds them and lets

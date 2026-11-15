@@ -4,7 +4,8 @@
 //! The turn loop is instant: a bolt is cast, flies, lands and kills in
 //! one frame, and a player sees a crab die of nothing. A resolver that did
 //! something visible writes a [`Cued`]: a [`Cue::Flight`] from one
-//! [`Anchor`] to another, or a [`Cue::Burst`] on some. An anchor is a cell
+//! [`Anchor`] to another, a [`Cue::Beam`] held between two, or a
+//! [`Cue::Burst`] on some. An anchor is a cell
 //! or an entity standing on one, and one that follows an entity goes where
 //! the entity goes: a pulse on someone who steps aside steps aside with
 //! them, and a bolt at a player who walks on lands on the player, not on
@@ -92,6 +93,20 @@ pub enum Cue {
         /// it landed and reach each cell a moment after the one nearer it.
         /// `None` lights every anchor at once: a blow on whoever took it.
         from: Option<Anchor>,
+    },
+    /// A line held between two anchors for a moment, a pulse running along
+    /// it from the first to the second if one is given: a drain, seen to
+    /// flow from whom it takes to whom it gives. It holds the turns as any
+    /// cue does, and lands nothing: what it shows has already happened.
+    Beam {
+        /// The end the pulse leaves from.
+        from: Anchor,
+        /// The end the pulse runs to.
+        to: Anchor,
+        /// What the line is drawn with.
+        look: LookOf,
+        /// What runs along it, if anything.
+        pulse: Option<LookOf>,
     },
 }
 

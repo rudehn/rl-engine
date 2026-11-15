@@ -8,6 +8,7 @@ atglyph is not on crates.io yet, so a game depends on a release by its git tag, 
 
 ### Added
 
+- A beam cue, `Cue::Beam { from, to, look, pulse }`: a line held between two anchors, following them, with a pulse running along it from the first to the second, so a drain is seen to flow from whom it takes to whom it gives; held for `ParticleStyle::beam_secs`, by default as long as a flight over the same cells and never less than a burst.
 - A walker can pass rock or shut doors, `Passes { solid, shut_doors }` (`ActorParts::passes`): it steps into them, a shut door staying shut, squeezes past their corners, and its mind's ways are flooded through them, never off the map nor onto a cell somebody stands in; a swap never puts either walker where it cannot stand.
 - An inflicted status lasts one number of turns or a range rolled as it lands, written `turns: (1, 2)` beside `turns: 2`, and described as "paralysed for 1 to 2 turns".
 - Status immunity: `StatusImmunities` on an actor, and `ActorParts::immune_to`, refuses a status before it lands, with nothing of it installed, and reports `StatusEvent::Refused`, which the narrator tells as "The zombie is not paralysed." and "You are not paralysed.".
@@ -57,6 +58,7 @@ atglyph is not on crates.io yet, so a game depends on a release by its git tag, 
 
 ### Changed
 
+- **Breaking:** `Cue` has a `Beam` variant, and `ParticleStyle` a `beam_secs` field; a `match` on `Cue` or a `ParticleStyle` written out in full gains one.
 - **Breaking:** `Inflict::turns` is a `TurnSpan`, `TurnSpan::Fixed(n)` for a number; a game building an `Inflict` in code wraps its turns.
 - **Breaking:** `StatusEvent` has a `Refused` variant; a game matching it exhaustively adds an arm.
 - `ThrowAtRange` reaches for a missile a worn launcher looses before one thrown by hand, and rolls its chance only once it has a throw to make, so a mind with nothing to throw draws nothing from its stream.
