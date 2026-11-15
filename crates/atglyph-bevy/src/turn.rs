@@ -574,7 +574,7 @@ pub(crate) fn admit_new_actors(
 }
 
 /// The actor holding the turn, as the resolver sees it.
-type TurnHolder<'w, 's> = Query<'w, 's, (&'static mut Position, Option<&'static mut Viewshed>, Has<Blocks>), With<MyTurn>>;
+type TurnHolder<'w, 's> = Query<'w, 's, (&'static mut Position, Option<&'static mut Viewshed>, Has<Blocks>, Option<&'static Passes>), With<MyTurn>>;
 
 /// The actor holding the turn, as the cleanup sees it.
 type Holding<'w, 's> = Query<'w, 's, (Entity, Has<Player>), With<MyTurn>>;
@@ -599,13 +599,14 @@ pub(crate) fn resolve_moves(
             debug!("actor {:?} holds no turn or already acted this pass; dropped {:?}", intent.actor, intent.action);
             continue;
         }
-        let Ok((mut pos, viewshed, blocks)) = actors.get_mut(intent.actor) else {
+        let Ok((mut pos, viewshed, blocks, passes)) = actors.get_mut(intent.actor) else {
             resolution.failed(intent.actor, BASE_ACTION_COST);
             continue;
         };
         let dir = intent.action.0;
         let target = pos.0 + dir.offset();
-        if occupancy.is_occupied(target) || !corner_ok(&map, pos.0, dir) || !map.is_walkable(target) {
+        let passes = passes.copied().unwrap_or_default();
+        if occupancy.is_occupied(target) || !corner_ok(&map, pos.0, dir, passes) || !stands(&map, target, passes) {
             resolution.failed(intent.actor, BASE_ACTION_COST);
             continue;
         }
@@ -622,15 +623,66 @@ pub(crate) fn resolve_moves(
     }
 }
 
+/// What a walker steps through that stops everyone else: rock, which is
+/// every cell nobody stands on that is not a door, and shut doors, which it
+/// passes without opening.
+///
+/// The move resolver and every mind read it: a walker that has it steps
+/// where [`Passes::through`] says and squeezes past a corner beside any
+/// such cell, and a mind's ways are flooded over the same ground, so one
+/// that passes rock takes the straight line to its prey. Never off the
+/// map, and never onto a cell somebody stands in, rock or not. Absent,
+/// or all `false`, a walker walks as everyone does.
+#[derive(Component, Debug, Clone, Copy, Default, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct Passes {
+    /// Steps into rock: a cell nobody can stand on that is not a door.
+    pub solid: bool,
+    /// Steps onto a shut door, locked or not, and leaves it shut.
+    pub shut_doors: bool,
+}
+
+impl Passes {
+    /// Whether nothing is passed: a walker that walks as everyone does.
+    pub fn is_none(&self) -> bool {
+        !self.solid && !self.shut_doors
+    }
+
+    /// Whether a walker passing this can stand on `p` of the current map:
+    /// a cell on the map that anyone can stand on, or a shut door if it
+    /// passes those, or rock if it passes that.
+    pub fn through(&self, map: &WorldMap, p: Point) -> bool {
+        if !map.is_loaded(p) {
+            return false;
+        }
+        if map.is_walkable(p) {
+            return true;
+        }
+        match map.opens(p) {
+            Some(_) => self.shut_doors,
+            None => self.solid,
+        }
+    }
+}
+
 /// A diagonal step may squeeze only between two orthogonals that let it
 /// past, by [`WorldMap::lets_diagonal_past`], the rule every view a mind
-/// paths over answers too.
-pub(crate) fn corner_ok(map: &WorldMap, from: Point, dir: Direction) -> bool {
+/// paths over answers too; or, for a walker that passes something, between
+/// two it could stand on itself, since what it walks through has no
+/// corner to catch it.
+pub(crate) fn corner_ok(map: &WorldMap, from: Point, dir: Direction, passes: Passes) -> bool {
     if !dir.is_diagonal() {
         return true;
     }
     let (dx, dy) = dir.delta();
-    map.lets_diagonal_past(from.offset(dx, 0)) && map.lets_diagonal_past(from.offset(0, dy))
+    let past = |p: Point| if passes.is_none() { map.lets_diagonal_past(p) } else { passes.through(map, p) };
+    past(from.offset(dx, 0)) && past(from.offset(0, dy))
+}
+
+/// Whether a walker passing `passes` can stand on `p`: where anyone can,
+/// or, if it passes something, wherever [`Passes::through`] says.
+pub(crate) fn stands(map: &WorldMap, p: Point, passes: Passes) -> bool {
+    if passes.is_none() { map.is_walkable(p) } else { passes.through(map, p) }
 }
 
 /// Resolves a wait: the turn passes and nothing else happens.
@@ -915,5 +967,70 @@ mod tests {
         assert_eq!(quickened(100, -500), 1);
         assert_eq!(quickened(0, 0), 1, "as `scaled_cost` reads a speed of nothing");
         assert_eq!(quickened(u32::MAX, 100), u32::MAX, "and nothing wraps");
+    }
+
+    /// A player passing what `passes` says, alone on the test ground, and
+    /// the cell it starts on.
+    fn passer(passes: Option<Passes>) -> (App, Point, Entity) {
+        let mut app = headless_app();
+        let start = crate::testing::ground(&mut app);
+        let player = app.world_mut().spawn((Actor, Player, Blocks, Position(start))).id();
+        if let Some(passes) = passes {
+            app.world_mut().entity_mut(player).insert(passes);
+        }
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        app.update();
+        app.update();
+        (app, start, player)
+    }
+
+    /// Where `who` stands after it tries a step `dir`.
+    fn try_step(app: &mut App, who: Entity, dir: Direction) -> Point {
+        app.world_mut().write_message(Intent::new(who, Step(dir)));
+        app.update();
+        app.world().get::<Position>(who).unwrap().0
+    }
+
+    #[test]
+    fn a_walker_that_passes_solid_steps_into_rock_and_out() {
+        let (mut app, start, player) = passer(Some(Passes { solid: true, shut_doors: false }));
+        let rock = [start.offset(1, 0), start.offset(2, 0)];
+        crate::testing::wall_off(&mut app, &rock);
+        assert_eq!(try_step(&mut app, player, Direction::East), rock[0], "into the rock");
+        assert_eq!(try_step(&mut app, player, Direction::East), rock[1], "through it");
+        assert_eq!(try_step(&mut app, player, Direction::East), start.offset(3, 0), "and out the far side");
+
+        // Onto the map's own edge, a wall, and no further: off the map is
+        // nowhere to stand.
+        let edge = Point::new(0, start.y);
+        crate::testing::stand_on(&mut app, player, edge.offset(1, 0));
+        assert_eq!(try_step(&mut app, player, Direction::West), edge, "onto the wall at the edge");
+        assert_eq!(try_step(&mut app, player, Direction::West), edge, "but never off the map");
+        assert_eq!(try_step(&mut app, player, Direction::NorthWest), edge, "nor off it on a diagonal");
+
+        // Nor into rock somebody already stands in.
+        let other = app.world_mut().spawn((Actor, Blocks, Position(rock[0]))).id();
+        crate::testing::stand_on(&mut app, player, start);
+        assert_eq!(try_step(&mut app, player, Direction::East), start, "the rock's cell is taken");
+        assert!(app.world().get_entity(other).is_ok());
+    }
+
+    #[test]
+    fn a_walker_that_passes_nothing_is_refused_by_rock_as_ever() {
+        let (mut app, start, player) = passer(Some(Passes::default()));
+        crate::testing::wall_off(&mut app, &[start.offset(1, 0)]);
+        assert_eq!(try_step(&mut app, player, Direction::East), start);
+    }
+
+    #[test]
+    fn a_shut_door_is_passed_without_opening() {
+        let (mut app, start, player) = passer(Some(Passes { solid: false, shut_doors: true }));
+        let (door, wall) = (atglyph_grid::TileRegistry::standard().expect("door_closed"), start.offset(1, 1));
+        crate::testing::lay_tile(&mut app, &[start.offset(1, 0)], door);
+        crate::testing::wall_off(&mut app, &[wall]);
+        assert_eq!(try_step(&mut app, player, Direction::East), start.offset(1, 0), "into the doorway");
+        assert_eq!(app.world().resource::<WorldMap>().tile(start.offset(1, 0)), Some(door), "and the door is still shut");
+        crate::testing::stand_on(&mut app, player, start);
+        assert_eq!(try_step(&mut app, player, Direction::SouthEast), start, "rock is still rock to it");
     }
 }

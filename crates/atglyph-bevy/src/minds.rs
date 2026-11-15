@@ -43,7 +43,7 @@ use crate::items::{Equip, EquipFromGround, PickUp, UseItem, UseItemAt};
 use crate::lighting::{DarkSight, Lighting};
 use crate::places::{GoThrough, MapId, OnMap, Transition};
 use crate::throwing::Throw;
-use crate::turn::{Acting, Action, Intent, Occupancy, Step, Wait};
+use crate::turn::{Acting, Action, Intent, Occupancy, Passes, Step, Wait};
 use crate::world::WorldMap;
 
 /// How far a mind sees, in tiles: the range of its own [`Viewshed`], cast
@@ -242,13 +242,14 @@ fn forget_joined(mut world: DeferredWorld, ctx: HookContext) {
 /// what a closed door costs; whether it prices shown traps, which only a
 /// wary mind's does and only on a map with one, so a map with none floods
 /// once for wary and unwary alike; and whether it leads away rather than
-/// toward.
-type FieldKey = (Vec<Point>, MovementProfile, bool, bool, bool);
+/// toward; and what the class passes, rock or shut doors, which changes what
+/// those cost.
+type FieldKey = (Vec<Point>, MovementProfile, bool, bool, bool, Passes);
 
 /// What one flood is from: a single goal cell in world coordinates, the
-/// movement class it is walked by, and whether that class opens doors and
-/// prices shown traps.
-type FloodKey = (Point, MovementProfile, bool, bool);
+/// movement class it is walked by, whether that class opens doors and
+/// prices shown traps, and what it passes.
+type FloodKey = (Point, MovementProfile, bool, bool, Passes);
 
 /// What a cell under a shown trap costs a [`Wits::WARY`] mind on top of
 /// its step: as much as ten more steps, so its ways go round a trap in a
@@ -384,14 +385,14 @@ impl FlowFields {
     /// hardly ever asked twice from the same place of the same goals, and
     /// a flood over a few hundred cells costs less than finding it again.
     /// Kept apart, it never pushes out the field fifty hunters share.
-    fn near(&mut self, goals: &[Point], bound: GridRect, opens_doors: bool, wary: bool, away: bool, map: &WorldMap) -> &DijkstraMap {
+    fn near(&mut self, goals: &[Point], bound: GridRect, walker: Walker, away: bool, map: &WorldMap) -> &DijkstraMap {
+        let Walker { opens_doors, wary, passes } = walker;
         self.refresh(map);
-        if opens_doors {
-            self.footing.read_opening(map);
-        }
+        self.footing.read_for(map, opens_doors, passes);
         let view = AroundStanding {
             footing: &self.footing,
-            costs: self.footing.costs(opens_doors),
+            costs: self.footing.costs(opens_doors, passes),
+            corners: self.footing.corners(passes),
             walls: &self.walls,
             snares: wary.then_some(&self.snares),
             goals: goals.to_vec(),
@@ -414,24 +415,21 @@ impl FlowFields {
         self.refresh(map);
         let window = map.window_tiles();
         // A kept field is judged by the ground as its mind walks it, so a
-        // mind that opens doors needs the costs of opening read first.
-        if key.2 {
-            self.footing.read_opening(map);
-        }
+        // mind that opens doors or passes something needs those costs read
+        // first.
+        self.footing.read_for(map, key.2, key.5);
         let kept = self.fields.touch(&key) && self.fields.get(&key).is_some_and(|f| f.over == window || self.leads_as_flooded_now(f, &key, from, map));
         if !kept {
-            let (goals, profile, opens_doors, wary, away) = &key;
+            let (goals, profile, opens_doors, wary, away, passes) = &key;
             let goals: Vec<(Point, Point)> = goals.iter().filter_map(|g| Some((*g, map.to_local(*g)?))).collect();
             if goals.is_empty() {
                 return None;
             }
-            if *opens_doors {
-                self.footing.read_opening(map);
-            }
             let footing = &self.footing;
             let ground = |goals: &[Point]| AroundStanding {
                 footing,
-                costs: footing.costs(*opens_doors),
+                costs: footing.costs(*opens_doors, *passes),
+                corners: footing.corners(*passes),
                 walls: &self.walls,
                 snares: wary.then_some(&self.snares),
                 goals: goals.to_vec(),
@@ -439,7 +437,7 @@ impl FlowFields {
             let mut field = if goals.len() <= COMPOSED_UP_TO {
                 let mut field: Option<DijkstraMap> = None;
                 for (goal, local) in goals {
-                    let from = (goal, *profile, *opens_doors, *wary);
+                    let from = (goal, *profile, *opens_doors, *wary, *passes);
                     // A flood is composed only with floods over the same window.
                     if !(self.floods.touch(&from) && self.floods.get(&from).is_some_and(|f| f.over == window)) {
                         let view = ground(&[local]);
@@ -484,7 +482,7 @@ impl FlowFields {
     /// was found by a way inside the ground both hold, which is still
     /// there, and no way through what moved can beat it.
     fn leads_as_flooded_now(&self, field: &Flooded, key: &FieldKey, from: Point, map: &WorldMap) -> bool {
-        let (goals, _, opens_doors, _, away) = key;
+        let (goals, _, opens_doors, _, away, passes) = key;
         if *away {
             return false;
         }
@@ -517,7 +515,7 @@ impl FlowFields {
         let Some(back) = goals.iter().map(|g| out(*g)).min() else { return false };
         let tables = map.tables();
         let Some(cheapest) = tables.move_cost.iter().zip(&tables.walkable).filter(|(_, w)| **w).map(|(c, _)| i64::from(*c)).min() else { return false };
-        let costs = self.footing.costs(*opens_doors);
+        let costs = self.footing.costs(*opens_doors, *passes);
         std::iter::once(from).chain(Direction::ALL.iter().map(|d| from + d.offset())).all(|p| {
             if !both.contains(p) {
                 return !field.over.contains(p) && !window.contains(p);
@@ -577,17 +575,32 @@ impl FlowFields {
 /// floods a turn. Read once, it is an index into a list. What opens is
 /// read only once a mind that opens doors asks, since a map no such mind
 /// walks never needs it.
+///
+/// A mover that passes rock or shut doors reads a layer of its own over
+/// the plain or opening costs: each cell it could stand on that nobody
+/// else can costs it a plain step, and a diagonal squeezes past any such
+/// cell, as the move resolver lets it. Read only once such a mover asks.
 struct Footing {
     width: i32,
     height: i32,
     plain: Vec<Option<u32>>,
     opening: Option<Vec<Option<u32>>>,
     corners: BitGrid,
+    passing: Vec<Passing>,
+}
+
+/// The ground as a mover that passes something reads it: what it passes,
+/// whether it opens doors too, and the costs and corners that come to.
+struct Passing {
+    passes: Passes,
+    opens_doors: bool,
+    costs: Vec<Option<u32>>,
+    corners: BitGrid,
 }
 
 impl Default for Footing {
     fn default() -> Self {
-        Self { width: 0, height: 0, plain: Vec::new(), opening: None, corners: BitGrid::new(0, 0) }
+        Self { width: 0, height: 0, plain: Vec::new(), opening: None, corners: BitGrid::new(0, 0), passing: Vec::new() }
     }
 }
 
@@ -600,7 +613,29 @@ impl Footing {
         for idx in 0..cells {
             corners.set_idx(idx, view.lets_diagonal_past(view.idx_point(idx)));
         }
-        Self { width, height, plain: (0..cells).map(|idx| view.cost_idx(idx)).collect(), opening: None, corners }
+        Self { width, height, plain: (0..cells).map(|idx| view.cost_idx(idx)).collect(), opening: None, corners, passing: Vec::new() }
+    }
+
+    /// Reads what a mover that opens doors, or passes something, walks
+    /// over, if it was not read already.
+    fn read_for(&mut self, map: &WorldMap, opens_doors: bool, passes: Passes) {
+        if opens_doors {
+            self.read_opening(map);
+        }
+        if passes.is_none() || self.passing.iter().any(|l| l.passes == passes && l.opens_doors == opens_doors) {
+            return;
+        }
+        let origin = map.window_tiles().origin();
+        let under = self.costs(opens_doors, Passes::default());
+        let mut corners = BitGrid::new(self.width, self.height);
+        let mut costs = Vec::with_capacity(under.len());
+        for (idx, cost) in under.iter().enumerate() {
+            let p = Point::new(idx as i32 % self.width, idx as i32 / self.width) + origin;
+            let through = passes.through(map, p);
+            corners.set_idx(idx, through);
+            costs.push(if !map.is_walkable(p) && through { Some(atglyph_core::turn::BASE_ACTION_COST) } else { *cost });
+        }
+        self.passing.push(Passing { passes, opens_doors, costs, corners });
     }
 
     fn read_opening(&mut self, map: &WorldMap) {
@@ -610,14 +645,31 @@ impl Footing {
         }
     }
 
-    /// Each cell's cost for a mover that opens doors or one that does not;
-    /// the first only once [`read_opening`](Self::read_opening) has run.
-    fn costs(&self, opens_doors: bool) -> &[Option<u32>] {
+    /// Each cell's cost for a mover that opens doors or one that does not,
+    /// passing what `passes` says; any but the plain costs only once
+    /// [`read_for`](Self::read_for) has run for the mover.
+    fn costs(&self, opens_doors: bool, passes: Passes) -> &[Option<u32>] {
+        if !passes.is_none() {
+            return &self.passing(opens_doors, passes).costs;
+        }
         match &self.opening {
             Some(opening) if opens_doors => opening,
             None if opens_doors => panic!("the costs of opening are read before a flood that opens doors"),
             _ => &self.plain,
         }
+    }
+
+    /// Which cells a diagonal squeezes past for a mover passing `passes`.
+    fn corners(&self, passes: Passes) -> &BitGrid {
+        match passes.is_none() {
+            true => &self.corners,
+            // Whether it opens doors never changes which cells it passes.
+            false => &self.passing.iter().find(|l| l.passes == passes).expect("the ground a passer walks is read before a flood").corners,
+        }
+    }
+
+    fn passing(&self, opens_doors: bool, passes: Passes) -> &Passing {
+        self.passing.iter().find(|l| l.passes == passes && l.opens_doors == opens_doors).expect("the ground a passer walks is read before a flood")
     }
 }
 
@@ -638,6 +690,7 @@ struct Flooded {
 struct AroundStanding<'a> {
     footing: &'a Footing,
     costs: &'a [Option<u32>],
+    corners: &'a BitGrid,
     walls: &'a BitGrid,
     snares: Option<&'a BitGrid>,
     goals: Vec<Point>,
@@ -666,7 +719,7 @@ impl CostSource for AroundStanding<'_> {
     }
 
     fn lets_diagonal_past(&self, p: Point) -> bool {
-        self.checked_idx(p).is_some_and(|idx| self.footing.corners.get_idx(idx))
+        self.checked_idx(p).is_some_and(|idx| self.corners.get_idx(idx))
     }
 }
 
@@ -677,6 +730,16 @@ struct Walking<'a> {
     profile: MovementProfile,
     opens_doors: bool,
     wary: bool,
+    passes: Passes,
+}
+
+/// How a mind walks, as a flood near it is priced: whether it opens doors,
+/// whether it prices shown traps, and what it passes.
+#[derive(Clone, Copy)]
+struct Walker {
+    opens_doors: bool,
+    wary: bool,
+    passes: Passes,
 }
 
 impl Walking<'_> {
@@ -689,7 +752,7 @@ impl Walking<'_> {
         goals.dedup();
         self.map.to_local(from)?;
         let priced = wary && !self.fields.traps.is_empty();
-        let (field, origin) = self.fields.ensure((goals, self.profile, self.opens_doors, priced, away), from, self.map)?;
+        let (field, origin) = self.fields.ensure((goals, self.profile, self.opens_doors, priced, away, self.passes), from, self.map)?;
         Some((field, from - origin, origin))
     }
 
@@ -716,7 +779,7 @@ impl Walking<'_> {
         let spanned = goals.iter().fold(GridRect::from_corners(local, local), |rect, g| rect.union(&GridRect::from_corners(*g, *g)));
         let Some(bound) = spanned.inflate(margin).intersection(&GridRect::new(0, 0, window.width, window.height)) else { return Vec::new() };
         let priced = self.wary && !self.fields.traps.is_empty();
-        let field = self.fields.near(&goals, bound, self.opens_doors, priced, away, self.map);
+        let field = self.fields.near(&goals, bound, Walker { opens_doors: self.opens_doors, wary: priced, passes: self.passes }, away, self.map);
         field.descents(local).into_iter().map(|p| p + window.origin()).collect()
     }
 }
@@ -737,11 +800,9 @@ impl Walking<'_> {
         let square = GridRect::from_corners(local.offset(-radius, -radius), local.offset(radius, radius));
         let Some(bound) = square.intersection(&GridRect::new(0, 0, window.width, window.height)) else { return Vec::new() };
         self.fields.refresh(self.map);
-        if self.opens_doors {
-            self.fields.footing.read_opening(self.map);
-        }
+        self.fields.footing.read_for(self.map, self.opens_doors, self.passes);
         let (footing, walls) = (&self.fields.footing, &self.fields.walls);
-        let costs = footing.costs(self.opens_doors);
+        let costs = footing.costs(self.opens_doors, self.passes);
         let open = |p: Point| {
             let idx = (p.y * window.width + p.x) as usize;
             costs[idx].is_some() && !walls.get_idx(idx)
@@ -760,7 +821,7 @@ impl Walking<'_> {
         goals.sort();
         goals.dedup();
         let priced = self.wary && !self.fields.traps.is_empty();
-        let field = self.fields.near(&goals, bound, self.opens_doors, priced, true, self.map);
+        let field = self.fields.near(&goals, bound, Walker { opens_doors: self.opens_doors, wary: priced, passes: self.passes }, true, self.map);
         field.descents(local).into_iter().map(|p| p + window.origin()).collect()
     }
 }
@@ -796,9 +857,13 @@ impl atglyph_rules::Fields for Walking<'_> {
     }
 
     /// The move resolver's own corner rule, so a mind that opens doors
-    /// never picks the diagonal past a closed door it would be refused.
+    /// never picks the diagonal past a closed door it would be refused,
+    /// and one that passes rock squeezes past the rock it could stand in.
     fn lets_diagonal_past(&self, p: Point) -> bool {
-        self.map.lets_diagonal_past(p)
+        match self.passes.is_none() {
+            true => self.map.lets_diagonal_past(p),
+            false => self.passes.through(self.map, p),
+        }
     }
 }
 
@@ -1253,6 +1318,7 @@ type Deciding = (
     &'static Position,
     Option<&'static Profile>,
     Option<&'static Intelligence>,
+    Option<&'static Passes>,
     &'static mut CameFrom,
     &'static mut LastTactic,
     &'static mut Trails,
@@ -1292,7 +1358,8 @@ pub(crate) fn decide_minds(
         world.traps.iter().filter(|(_, on, triggers)| on.map_or(MapId::ZERO, |m| m.0) == here && triggers.0.iter().any(live)).map(|(at, ..)| at.0).collect();
     world.fields.see_traps(traps);
     let Some((thinker, mut snapshot)) = thinking.close() else { return };
-    let Ok((mind, my_pos, profile, intelligence, mut came_from, mut doing, mut trails)) = minds.get_mut(thinker) else { return };
+    let Ok((mind, my_pos, profile, intelligence, passes, mut came_from, mut doing, mut trails)) = minds.get_mut(thinker) else { return };
+    let passes = passes.copied().unwrap_or_default();
     let thinking = &*thinking;
     let MindWorld { fields, rng, map, occupancy, bumps, rules, sides, .. } = &mut world;
     let (fields, rng, map, occupancy) = (&mut **fields, &mut **rng, &**map, &**occupancy);
@@ -1333,9 +1400,10 @@ pub(crate) fn decide_minds(
     // into one opens it, and a wall for one that does not; a locked one is
     // a wall to every mind, as the opening view has it, so none tries a
     // lock it would be refused at every turn. Nor is a cell some
-    // contributor marked a hazard anywhere a mind will step.
+    // contributor marked a hazard anywhere a mind will step. One that
+    // passes rock or shut doors steps into them as the move resolver lets it.
     let opens = |p: Point| opens_doors && map.opens(p).is_some() && map.lock(p).is_none();
-    let can_step = |p: Point| (map.is_walkable(p) || opens(p)) && (!occupancy.is_occupied(p) || gives_way(p)) && !thinking.is_hazard(p);
+    let can_step = |p: Point| (crate::turn::stands(map, p, passes) || opens(p)) && (!occupancy.is_occupied(p) || gives_way(p)) && !thinking.is_hazard(p);
     // The predicate the ability resolver uses, so what a tactic thinks a
     // shape will cover is what it does cover: a shot flies past whoever the
     // mind spares.
@@ -1343,7 +1411,7 @@ pub(crate) fn decide_minds(
     let blocks_shot = |p: Point| map.blocks_projectiles(p) || occupancy.at(p).iter().any(|e| !spares(*e));
     let blocks_burst = |p: Point| map.blocks_projectiles(p);
     let wary = wits.has(Wits::WARY);
-    let mut walking = Walking { fields, map, profile: profile.map(|p| p.0).unwrap_or_default(), opens_doors, wary };
+    let mut walking = Walking { fields, map, profile: profile.map(|p| p.0).unwrap_or_default(), opens_doors, wary, passes };
     let mut ctx = TacticCtx {
         snapshot: &snapshot,
         fields: &mut walking,
@@ -1372,7 +1440,7 @@ pub(crate) fn decide_minds(
     match decision {
         // A step onto a shut door is the turn spent opening it: the door is
         // its own action, and the mind knows what it is walking into.
-        Decision::Step(to) => match step_as(my_pos.0, to, gives_way(to), map.opens(to).is_some()) {
+        Decision::Step(to) => match step_as(my_pos.0, to, gives_way(to), map.opens(to).is_some() && !passes.shut_doors) {
             StepAs::Swap => {
                 came_from.0 = Some(my_pos.0);
                 let other = occupancy.at(to)[0];
@@ -1801,6 +1869,79 @@ mod tests {
     /// way is through its wall, the way round out of its mouth and back.
     const CUP: [(i32, i32); 5] = [(-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 1)];
 
+    /// The player, and a mindless hunter passing `passes` east of it beyond a pane
+    /// of glass from the top of the ground to a cell short of its foot, with
+    /// a shut gate in the pane level with the player when `door`: the
+    /// hunter sees the player through the glass, and the way round is the
+    /// length of the ground.
+    fn behind_glass(passes: Option<crate::turn::Passes>, door: bool) -> (App, Entity, Entity, Point) {
+        let mut app = headless_app();
+        app.add_plugins((crate::fov::FovPlugin, CombatPlugin, MindsPlugin));
+        let mut tiles = atglyph_grid::TileRegistry::standard();
+        let glass = tiles.register(atglyph_grid::TileProps::wall("glass").opaque(false)).unwrap();
+        // A shut door that can be seen through, a gate, so the hunter keeps
+        // the player in sight all the way.
+        let shut = tiles.register(atglyph_grid::TileProps::named("gate").passable(true).blocks_projectiles(true).opens_to("door_open")).unwrap();
+        let start = crate::testing::ground_with(&mut app, tiles);
+        let sides = crate::testing::two_sides(&mut app);
+        let foot = app.world().resource::<WorldMap>().window_tiles().bottom() - 2;
+        let pane: Vec<Point> = (1..foot).map(|y| Point::new(start.x + 3, y)).collect();
+        crate::testing::lay_tile(&mut app, &pane, glass);
+        if door {
+            crate::testing::lay_tile(&mut app, &[start.offset(3, 0)], shut);
+        }
+        let player = app.world_mut().spawn((Actor, Player, Blocks, Position(start), Viewshed::new(12), Health::full(30), Faction(sides.ours))).id();
+        let at = Position(start.offset(6, 3));
+        let hunter = app
+            .world_mut()
+            .spawn((
+                Actor,
+                Blocks,
+                at,
+                Health::full(20),
+                Faction(sides.theirs),
+                Perception(12),
+                Intelligence(Wits::MINDLESS),
+                Mind(Arc::new(Brain::new().then(Hunt))),
+            ))
+            .id();
+        if let Some(passes) = passes {
+            app.world_mut().entity_mut(hunter).insert(passes);
+        }
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        (app, player, hunter, start)
+    }
+
+    #[test]
+    fn a_mind_that_passes_rock_paths_straight_through_it() {
+        let solid = crate::turn::Passes { solid: true, shut_doors: false };
+        let (mut app, player, hunter, start) = behind_glass(Some(solid), false);
+        waiting(&mut app, player, 10);
+        let at = app.world().get::<Position>(hunter).unwrap().0;
+        assert!(geometry::is_adjacent(at, start), "it came through the pane: {at:?} from {start:?}");
+
+        let (mut app, player, hunter, start) = behind_glass(None, false);
+        waiting(&mut app, player, 10);
+        let at = app.world().get::<Position>(hunter).unwrap().0;
+        assert!(geometry::chebyshev(at, start) > 5, "one that passes nothing goes the long way round: {at:?}");
+    }
+
+    #[test]
+    fn a_mind_that_passes_shut_doors_walks_through_one_and_leaves_it_shut() {
+        let doors = crate::turn::Passes { solid: false, shut_doors: true };
+        let (mut app, player, hunter, start) = behind_glass(Some(doors), true);
+        let shut = app.world().resource::<WorldMap>().tile(start.offset(3, 0));
+        waiting(&mut app, player, 10);
+        let at = app.world().get::<Position>(hunter).unwrap().0;
+        assert!(geometry::is_adjacent(at, start), "it came through the door: {at:?} from {start:?}");
+        assert_eq!(app.world().resource::<WorldMap>().tile(start.offset(3, 0)), shut, "and the door is still shut");
+
+        let (mut app, player, hunter, start) = behind_glass(None, true);
+        waiting(&mut app, player, 10);
+        let at = app.world().get::<Position>(hunter).unwrap().0;
+        assert!(geometry::chebyshev(at, start) > 5, "a mindless one that passes nothing cannot open it: {at:?}");
+    }
+
     #[test]
     fn a_hunter_cupped_in_blocking_props_walks_out_of_the_cup_and_round_to_its_prey() {
         let (mut app, player, hunter, start) = among_props(Brain::new().then(Hunt), false, &CUP);
@@ -1973,7 +2114,7 @@ mod tests {
     fn a_running_game_keeps_its_fields_while_only_actors_move_and_drops_them_when_a_prop_stands() {
         let (mut app, player, hunter, start) = among_props(Brain::new().then(Hunt), false, &[]);
         waiting(&mut app, player, 1);
-        let marked = (vec![Point::new(-99, -99)], MovementProfile::default(), false, false, false);
+        let marked = (vec![Point::new(-99, -99)], MovementProfile::default(), false, false, false, Passes::default());
         app.world_mut()
             .resource_mut::<FlowFields>()
             .fields
@@ -1992,11 +2133,11 @@ mod tests {
         let mut fields = FlowFields::default();
         fields.see_standing(vec![Point::new(3, 3)]);
         fields.fields.insert(
-            (vec![Point::ZERO], MovementProfile::default(), false, false, false),
+            (vec![Point::ZERO], MovementProfile::default(), false, false, false, Passes::default()),
             Flooded { map: DijkstraMap::new(atglyph_core::GridRect::new(0, 0, 1, 1)), over: atglyph_core::GridRect::new(0, 0, 1, 1) },
         );
         fields.see_standing(vec![Point::new(3, 3)]);
-        let held = (vec![Point::ZERO], MovementProfile::default(), false, false, false);
+        let held = (vec![Point::ZERO], MovementProfile::default(), false, false, false, Passes::default());
         assert!(fields.fields.get(&held).is_some(), "the same cells stand: the field is kept");
         fields.see_standing(Vec::new());
         assert!(fields.fields.get(&held).is_none(), "what stood is gone: the field is thrown away");
@@ -3244,7 +3385,7 @@ mod tests {
             // Whatever the hunters' wits, the one field is toward the player's cell.
             [(false, false), (false, true), (true, false), (true, true)]
                 .into_iter()
-                .filter(|(doors, wary)| fields.fields.get(&(vec![start], MovementProfile::default(), *doors, *wary, false)).is_some())
+                .filter(|(doors, wary)| fields.fields.get(&(vec![start], MovementProfile::default(), *doors, *wary, false, Passes::default())).is_some())
                 .count()
         };
         assert_eq!(held(&app), 1, "five hunters, one goal, one field they all read");
@@ -3310,19 +3451,19 @@ mod tests {
         let walker = MovementProfile::default();
         let (a, b, c) = (start.offset(2, 0), start.offset(0, 2), start.offset(-2, 0));
         let mut fields = FlowFields::default();
-        assert!(fields.ensure((vec![a, b], walker, false, false, false), start, map).is_some());
-        assert!(fields.ensure((vec![a], walker, false, false, false), start, map).is_some());
-        let flood = |g: Point| fields.floods.get(&(g, walker, false, false)).is_some();
+        assert!(fields.ensure((vec![a, b], walker, false, false, false, Passes::default()), start, map).is_some());
+        assert!(fields.ensure((vec![a], walker, false, false, false, Passes::default()), start, map).is_some());
+        let flood = |g: Point| fields.floods.get(&(g, walker, false, false, Passes::default())).is_some();
         assert!(flood(a) && flood(b) && !flood(c), "a flood for each goal either field has, and none for the goal not yet asked");
-        assert!(fields.fields.get(&(vec![a], walker, false, false, false)).is_some(), "and both fields");
-        assert!(fields.ensure((vec![a, c], walker, false, false, false), start, map).is_some());
-        let flood = |g: Point| fields.floods.get(&(g, walker, false, false)).is_some();
+        assert!(fields.fields.get(&(vec![a], walker, false, false, false, Passes::default())).is_some(), "and both fields");
+        assert!(fields.ensure((vec![a, c], walker, false, false, false, Passes::default()), start, map).is_some());
+        let flood = |g: Point| fields.floods.get(&(g, walker, false, false, Passes::default())).is_some();
         assert!(flood(a) && flood(b) && flood(c), "one flood more, for the one goal that is new");
         // A composed field is the flood from all of its goals together.
         let view = map.view();
         let mut whole = DijkstraMap::covering(&view);
         whole.build(&view, [a, b].iter().filter_map(|g| map.to_local(*g)), PathRules::default());
-        let (composed, _) = fields.ensure((vec![a, b], walker, false, false, false), start, map).unwrap();
+        let (composed, _) = fields.ensure((vec![a, b], walker, false, false, false, Passes::default()), start, map).unwrap();
         assert!(whole.iter().eq(composed.iter()), "cell for cell what one flood from both gives");
     }
 
@@ -3338,7 +3479,7 @@ mod tests {
         app.update();
         let map = app.world().resource::<WorldMap>();
         let walker = MovementProfile::default();
-        let key = |i: i32| (vec![start.offset(i % 8, i / 8)], walker, false, false, false);
+        let key = |i: i32| (vec![start.offset(i % 8, i / 8)], walker, false, false, false, Passes::default());
         let mut fields = FlowFields::default();
         fields.ensure(key(0), start, map);
         for i in 1..=40 {
@@ -3365,7 +3506,7 @@ mod tests {
         let map = app.world().resource::<WorldMap>();
         let goal = start.offset(4, 1);
         let mut fields = FlowFields::default();
-        let mut walking = Walking { fields: &mut fields, map, profile: MovementProfile::default(), opens_doors: false, wary: false };
+        let mut walking = Walking { fields: &mut fields, map, profile: MovementProfile::default(), opens_doors: false, wary: false, passes: Passes::default() };
         let near = walking.descents_toward_near(&[goal], start, 3);
         let whole = walking.descents_toward(&[goal], start);
         assert_eq!(near, whole, "over open ground a near field leads as the whole one does");
@@ -3378,8 +3519,8 @@ mod tests {
             assert_eq!(fields.near.value(local(p)).is_some(), reached, "{p:?} is {}in the box", if reached { "" } else { "not " });
         }
         let walker = MovementProfile::default();
-        assert!(fields.fields.get(&(vec![goal], walker, false, false, true)).is_none(), "no field away was kept");
-        assert!(fields.fields.get(&(vec![goal], walker, false, false, false)).is_some(), "only the whole one asked for");
+        assert!(fields.fields.get(&(vec![goal], walker, false, false, true, Passes::default())).is_none(), "no field away was kept");
+        assert!(fields.fields.get(&(vec![goal], walker, false, false, false, Passes::default())).is_some(), "only the whole one asked for");
     }
 
     /// A companion keeps up with the player and gives way when it is
@@ -3618,7 +3759,7 @@ mod tests {
         let goal = layout.entry.offset(16, 0);
         let profile = MovementProfile(0);
         let walk = |fields: &mut FlowFields, map: &WorldMap, from: Point, away: bool| {
-            let mut walking = Walking { fields, map, profile, opens_doors: false, wary: false };
+            let mut walking = Walking { fields, map, profile, opens_doors: false, wary: false, passes: Passes::default() };
             walking.descents(&[goal], from, away)
         };
         let mut kept = FlowFields::default();
@@ -3631,7 +3772,7 @@ mod tests {
         let window = map.window_tiles();
         assert_eq!(window.x, before.x + crate::testing::STREAMED_CHUNK, "the window moved a chunk east");
 
-        let key = (vec![goal], profile, false, false, false);
+        let key = (vec![goal], profile, false, false, false, Passes::default());
         let mut fresh = FlowFields::default();
         let mut cells: Vec<Point> = window.cells().collect();
         cells.sort_by_key(|p| (atglyph_core::geometry::chebyshev(*p, goal), p.y, p.x));
@@ -3644,7 +3785,10 @@ mod tests {
         assert!(kept.fields.get(&key).is_some_and(|f| f.over == window), "and the far cells by one flooded again");
         let from = goal.offset(3, 3);
         assert_eq!(walk(&mut kept, &map, from, true), walk(&mut fresh, &map, from, true), "away from the goal");
-        assert!(kept.fields.get(&(vec![goal], profile, false, false, true)).is_some_and(|f| f.over == window), "the field away is flooded again");
+        assert!(
+            kept.fields.get(&(vec![goal], profile, false, false, true, Passes::default())).is_some_and(|f| f.over == window),
+            "the field away is flooded again"
+        );
     }
 
     /// A field the move made wrong is not kept: the goal stands in a
@@ -3677,7 +3821,7 @@ mod tests {
         let below = at(21, 8);
         let profile = MovementProfile(0);
         let walk = |fields: &mut FlowFields, map: &WorldMap, from: Point| {
-            let mut walking = Walking { fields, map, profile, opens_doors: false, wary: false };
+            let mut walking = Walking { fields, map, profile, opens_doors: false, wary: false, passes: Passes::default() };
             walking.descents(&[goal], from, false)
         };
         let mut kept = FlowFields::default();
@@ -3716,7 +3860,7 @@ mod tests {
             let from = app.world().get::<Position>(runner).unwrap().0;
             app.update();
             let fields = app.world().resource::<FlowFields>();
-            let whole_away = (vec![start], MovementProfile::default(), false, false, true);
+            let whole_away = (vec![start], MovementProfile::default(), false, false, true, Passes::default());
             assert!(fields.fields.get(&whole_away).is_none(), "no away field over the window is kept");
             let reached: Vec<Point> = fields.near.iter().map(|(p, _)| p).collect();
             let (xs, ys) = (reached.iter().map(|p| p.x), reached.iter().map(|p| p.y));
@@ -3741,7 +3885,7 @@ mod tests {
         let goal = layout.entry.offset(16, 0);
         let profile = MovementProfile(0);
         let walk = |fields: &mut FlowFields, map: &WorldMap, from: Point| {
-            let mut walking = Walking { fields, map, profile, opens_doors: true, wary: false };
+            let mut walking = Walking { fields, map, profile, opens_doors: true, wary: false, passes: Passes::default() };
             walking.descents(&[goal], from, false)
         };
         let mut kept = FlowFields::default();
@@ -3767,7 +3911,7 @@ mod tests {
         assert!(map.set_tile(me.offset(5, 0), rules.0.expect("wall")), "the cell straight toward the foe on the reach's edge is wall");
         let mut fields = FlowFields::default();
         fields.see_standing(vec![me.offset(5, 1)]);
-        let mut walking = Walking { fields: &mut fields, map: &map, profile: MovementProfile(0), opens_doors: false, wary: false };
+        let mut walking = Walking { fields: &mut fields, map: &map, profile: MovementProfile(0), opens_doors: false, wary: false, passes: Passes::default() };
         let away = walking.descents_within(&[foe], me, 5);
         assert!(away.first().is_some_and(|p| p.x < me.x), "away from the foe: {away:?}");
     }

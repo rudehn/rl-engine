@@ -45,7 +45,7 @@ use crate::combat::{Attack, CombatRules, Faction, Health};
 use crate::components::{MyTurn, Position, Viewshed};
 use crate::doors::Open;
 use crate::props::{Interact, OfferedHere};
-use crate::turn::{Action, Intent, Occupancy, Resolution, Step, corner_ok};
+use crate::turn::{Action, Intent, Occupancy, Passes, Resolution, Step, corner_ok, stands};
 use crate::world::WorldMap;
 
 /// Walk this way, whatever that comes to: a step, opening a door, or a
@@ -179,6 +179,9 @@ impl BumpRules {
     }
 }
 
+/// The one bumping: where it stands, its side, and what it passes.
+type Bumper = (&'static Position, Option<&'static Faction>, Option<&'static Passes>);
+
 /// Who stands where, and how they stand to one another.
 #[derive(bevy::ecs::system::SystemParam)]
 pub(crate) struct Way<'w, 's> {
@@ -186,7 +189,7 @@ pub(crate) struct Way<'w, 's> {
     occupancy: Res<'w, Occupancy>,
     rules: Option<Res<'w, CombatRules>>,
     bumps: Option<Res<'w, BumpRules>>,
-    bumpers: Query<'w, 's, (&'static Position, Option<&'static Faction>), With<MyTurn>>,
+    bumpers: Query<'w, 's, Bumper, With<MyTurn>>,
     standing: Query<'w, 's, Option<&'static Faction>, With<Health>>,
     /// What is offered here, when props are in play at all. `None` in a
     /// game without [`PropsPlugin`](crate::props::PropsPlugin), and the
@@ -219,7 +222,7 @@ pub(crate) fn redirect_bumps(mut intents: MessageReader<Intent<Bump>>, mut resol
         if resolution.spent(actor) {
             continue;
         }
-        let Ok((pos, side)) = way.bumpers.get(actor) else { continue };
+        let Ok((pos, side, passes)) = way.bumpers.get(actor) else { continue };
         let dir = intent.action.0;
         let target = pos.0 + dir.offset();
         // Whoever stands there and can be struck, by the rule the attack
@@ -232,7 +235,9 @@ pub(crate) fn redirect_bumps(mut intents: MessageReader<Intent<Bump>>, mut resol
         // One that offers something is dealt with before it is passed, when
         // the rules say so: without the giving way, the offer is taken up.
         let gives_way = bumps.is_some_and(|r| r.gives_way(theirs.map(|f| f.0)) && !(r.offers_first && !matches!(offered, Offered::None)));
-        match resolve_bump(someone, regard, gives_way, bumps.is_some_and(|r| r.allies == OnAlly::Swap), offered, way.map.opens(target).is_some()) {
+        // A shut door is a step for one that passes it, and opened by anyone else.
+        let opens = way.map.opens(target).is_some() && !passes.is_some_and(|p| p.shut_doors);
+        match resolve_bump(someone, regard, gives_way, bumps.is_some_and(|r| r.allies == OnAlly::Swap), offered, opens) {
             BumpOutcome::Interact(offer) => {
                 out.interacts.write(Intent::new(actor, Interact { target: offer.target, verb: offer.verb, thing: None }));
             }
@@ -281,14 +286,16 @@ impl Way<'_, '_> {
     }
 }
 
-/// Whoever may change places: where they stand, what they see, and
-/// whether they block.
-type Movers<'w, 's> = Query<'w, 's, (&'static mut Position, Option<&'static mut Viewshed>, Has<crate::components::Blocks>)>;
+/// Whoever may change places: where they stand, what they see, whether
+/// they block, and what they pass.
+type Movers<'w, 's> = Query<'w, 's, (&'static mut Position, Option<&'static mut Viewshed>, Has<crate::components::Blocks>, Option<&'static Passes>)>;
 
 /// Resolves a swap: the two change places and both see anew.
 ///
 /// Refused, for free to the player, when the other is not a step away,
-/// which is also what stops a swap through a corner a step could not cut.
+/// which is also what stops a swap through a corner a step could not cut,
+/// or when either would be put where it cannot stand: one that passes rock
+/// never trades a cell in it to one that does not.
 /// The other keeps its place in the queue; it was moved, not spent.
 pub(crate) fn resolve_swaps(
     mut intents: MessageReader<Intent<Swap>>,
@@ -304,7 +311,7 @@ pub(crate) fn resolve_swaps(
         if !holding.contains(actor) || !resolution.claim(actor) {
             continue;
         }
-        let Ok([(mut here, my_sight, i_block), (mut there, their_sight, they_block)]) = movers.get_many_mut([actor, other]) else {
+        let Ok([(mut here, my_sight, i_block, mine), (mut there, their_sight, they_block, theirs)]) = movers.get_many_mut([actor, other]) else {
             resolution.failed(actor, BASE_ACTION_COST);
             continue;
         };
@@ -312,7 +319,9 @@ pub(crate) fn resolve_swaps(
         let step = to - from;
         let adjacent = step.x.abs() <= 1 && step.y.abs() <= 1 && step != Point::ZERO;
         let dir = Direction::from_delta(step.x, step.y);
-        if !adjacent || dir.is_none_or(|d| !corner_ok(&map, from, d)) {
+        let (mine, theirs) = (mine.copied().unwrap_or_default(), theirs.copied().unwrap_or_default());
+        let fits = stands(&map, to, mine) && stands(&map, from, theirs);
+        if !adjacent || !fits || dir.is_none_or(|d| !corner_ok(&map, from, d, mine) || !corner_ok(&map, from, d, theirs)) {
             resolution.failed(actor, BASE_ACTION_COST);
             continue;
         }
@@ -476,6 +485,40 @@ mod tests {
         rig.bump(Direction::South);
         assert_eq!((rig.at(), rig.now()), (start.offset(1, 0), 100), "someone of no side is in the way");
         assert_eq!(rig.app.world().resource::<Heard>().0, vec![Bumped { actor: rig.player, into: neutral, offers: false }]);
+    }
+
+    /// A walker that passes shut doors bumps into one and steps onto it,
+    /// leaving it shut, where anyone else opens it.
+    #[test]
+    fn a_bump_into_a_shut_door_steps_through_it_for_one_that_passes_doors() {
+        let mut rig = Rig::new();
+        rig.app.world_mut().entity_mut(rig.player).insert(crate::turn::Passes { solid: false, shut_doors: true });
+        let (door, shut) = (rig.start.offset(1, 0), rig.tiles.expect("door_closed"));
+        assert!(rig.app.world_mut().resource_mut::<WorldMap>().set_tile(door, shut));
+        rig.app.update();
+        rig.bump(Direction::East);
+        assert_eq!(rig.at(), door, "it stands in the doorway");
+        assert_eq!(rig.app.world().resource::<WorldMap>().tile(door), Some(shut), "and the door is still shut");
+        assert!(rig.app.world().resource::<Heard>().1.is_empty(), "nothing opened");
+    }
+
+    /// A walker standing in rock never swaps an ally into it: the ally
+    /// could not stand there. Out of the rock, the two swap as ever.
+    #[test]
+    fn a_swap_never_puts_the_other_where_it_cannot_stand() {
+        let mut rig = Rig::new();
+        rig.app.insert_resource(BumpRules::new().swap_allies());
+        rig.app.world_mut().entity_mut(rig.player).insert(crate::turn::Passes { solid: true, shut_doors: false });
+        let (start, rock) = (rig.start, rig.start.offset(1, 0));
+        crate::testing::wall_off(&mut rig.app, &[rock]);
+        rig.bump(Direction::East);
+        assert_eq!(rig.at(), rock, "into the rock");
+        let friend = rig.app.world_mut().spawn((Actor, Blocks, Position(start), Health::full(20), Faction(rig.ours))).id();
+        rig.app.update();
+        let now = rig.now();
+        rig.bump(Direction::West);
+        assert_eq!((rig.at(), rig.app.world().get::<Position>(friend).unwrap().0), (rock, start), "neither moved");
+        assert_eq!(rig.now(), now, "and the refusal cost nothing");
     }
 
     /// Without rules to call anyone a foe, nobody is one: a bump into any

@@ -56,6 +56,7 @@ use crate::shields::Shield;
 use crate::status::{ActiveStatuses, StatBlock, StatusImmunities, WhileHolding};
 use crate::stealth::Notice;
 use crate::throwing::{Launcher, Throwable};
+use crate::turn::Passes;
 
 /// What something strikes, shoots and is thrown as: the attack parts of
 /// one definition, a weapon's or a monster's, with what one blow or shot
@@ -575,6 +576,9 @@ pub struct ActorParts<I: Send + Sync + 'static> {
     /// The statuses it can never be given, as
     /// [`StatusImmunities`]; empty gives it none.
     pub immune_to: Vec<StatusId>,
+    /// What it walks through that stops everyone else, as [`Passes`];
+    /// absent, or passing nothing, it walks as everyone does.
+    pub passes: Option<Passes>,
     /// What its stats do while it holds a status, by status: the kind's
     /// rule and not the status's, a body whose mending stops while it
     /// burns. Empty changes nothing.
@@ -612,6 +616,7 @@ impl<I: Send + Sync + 'static> Default for ActorParts<I> {
             abilities: Vec::new(),
             statuses: Vec::new(),
             immune_to: Vec::new(),
+            passes: None,
             while_holding: Vec::new(),
             triggers: Triggers::default(),
             resists: Resistances::new(),
@@ -641,6 +646,7 @@ impl<I: Send + Sync + 'static> Clone for ActorParts<I> {
             abilities: self.abilities.clone(),
             statuses: self.statuses.clone(),
             immune_to: self.immune_to.clone(),
+            passes: self.passes,
             while_holding: self.while_holding.clone(),
             triggers: self.triggers.clone(),
             resists: self.resists.clone(),
@@ -672,6 +678,7 @@ impl<I: Send + Sync + 'static> std::fmt::Debug for ActorParts<I> {
             .field("abilities", &self.abilities)
             .field("statuses", &self.statuses)
             .field("immune_to", &self.immune_to)
+            .field("passes", &self.passes)
             .field("while_holding", &self.while_holding)
             .field("triggers", &self.triggers)
             .field("resists", &self.resists)
@@ -728,6 +735,7 @@ impl<I: Send + Sync + 'static> ActorParts<I> {
             abilities: both(&under.abilities, self.abilities),
             statuses: both(&under.statuses, self.statuses),
             immune_to: both(&under.immune_to, self.immune_to),
+            passes: self.passes.or(under.passes),
             while_holding,
             triggers,
             resists,
@@ -838,6 +846,9 @@ impl<I: Send + Sync + 'static> ActorParts<I> {
         }
         if !self.immune_to.is_empty() {
             e.insert(StatusImmunities(self.immune_to.clone()));
+        }
+        if let Some(passes) = self.passes.filter(|p| !p.is_none()) {
+            e.insert(passes);
         }
         if !self.while_holding.is_empty() {
             e.insert(WhileHolding(self.while_holding.clone()));
@@ -1195,6 +1206,27 @@ mod tests {
         world.flush();
         assert_eq!(world.get::<StatusImmunities>(e), Some(&StatusImmunities(vec![poisoned, bleeding])));
         assert!(world.get::<StatusImmunities>(plain).is_none(), "immune to nothing, no component");
+    }
+
+    /// What a kind passes is its own, else its defaults', and is put on
+    /// whoever is made from it; one that passes nothing gets no component.
+    #[test]
+    fn what_a_kind_passes_overrides_its_defaults_and_is_put_on_whoever_is_made() {
+        let (doors, rock) = (Passes { solid: false, shut_doors: true }, Passes { solid: true, shut_doors: true });
+        let defaults: ActorParts<()> = ActorParts { passes: Some(doors), ..ActorParts::default() };
+        let kind: ActorParts<()> = ActorParts { passes: Some(rock), ..ActorParts::default() };
+        assert_eq!(kind.clone().over(&defaults).passes, Some(rock), "the kind's own");
+        let made = ActorParts::<()>::default().over(&defaults);
+        assert_eq!(made.passes, Some(doors), "else the defaults'");
+        let mut world = World::new();
+        let registries = Registries::default();
+        let e = world.spawn_empty().id();
+        kind.insert(&mut world.commands().entity(e), &registries);
+        let plain = world.spawn_empty().id();
+        ActorParts::<()>::default().insert(&mut world.commands().entity(plain), &registries);
+        world.flush();
+        assert_eq!(world.get::<Passes>(e), Some(&rock));
+        assert!(world.get::<Passes>(plain).is_none(), "passes nothing, no component");
     }
 
     #[test]

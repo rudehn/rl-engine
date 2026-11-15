@@ -156,7 +156,7 @@ pub mod world {
     pub use atglyph_bevy::remains::{LeavesRemains, Remains, RemainsLeft, RemainsNaming, RemainsPlugin, RevivalRules, ReviveCommands, Revived};
     pub use atglyph_bevy::seed::LaunchArgs;
     pub use atglyph_bevy::state::{Ending, EngineState, Outcome, Restart, RunOver};
-    pub use atglyph_bevy::turn::{Acting, Action, ActionDone, ActionRefused, Occupancy, Resolution, Speeds, Step, Stepped, TurnEnd, TurnRules, Turns};
+    pub use atglyph_bevy::turn::{Acting, Action, ActionDone, ActionRefused, Occupancy, Passes, Resolution, Speeds, Step, Stepped, TurnEnd, TurnRules, Turns};
     pub use atglyph_bevy::work::{WorkDone, WorkKinds, WorkPace, Working};
     pub use atglyph_core::direction::Direction;
     pub use atglyph_core::grid::{Grid, Steps};

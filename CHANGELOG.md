@@ -8,6 +8,7 @@ atglyph is not on crates.io yet, so a game depends on a release by its git tag, 
 
 ### Added
 
+- A walker can pass rock or shut doors, `Passes { solid, shut_doors }` (`ActorParts::passes`): it steps into them, a shut door staying shut, squeezes past their corners, and its mind's ways are flooded through them, never off the map nor onto a cell somebody stands in; a swap never puts either walker where it cannot stand.
 - An inflicted status lasts one number of turns or a range rolled as it lands, written `turns: (1, 2)` beside `turns: 2`, and described as "paralysed for 1 to 2 turns".
 - Status immunity: `StatusImmunities` on an actor, and `ActorParts::immune_to`, refuses a status before it lands, with nothing of it installed, and reports `StatusEvent::Refused`, which the narrator tells as "The zombie is not paralysed." and "You are not paralysed.".
 - `Teller` tells a game's own line from outside the turns, a deal struck at a counter or a key answered before any turn is spent, among the rows the frame speaks, so its names wear their colours as a `Tell`'s do; a `Tell` written then waited for the next pass.
