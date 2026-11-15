@@ -53,7 +53,7 @@ use crate::noise::Hearing;
 use crate::registries::Registries;
 use crate::remains::LeavesRemains;
 use crate::shields::Shield;
-use crate::status::{ActiveStatuses, StatBlock, WhileHolding};
+use crate::status::{ActiveStatuses, StatBlock, StatusImmunities, WhileHolding};
 use crate::stealth::Notice;
 use crate::throwing::{Launcher, Throwable};
 
@@ -572,6 +572,9 @@ pub struct ActorParts<I: Send + Sync + 'static> {
     pub abilities: Vec<AbilityId>,
     /// The statuses it holds for life, on from its first turn.
     pub statuses: Vec<StatusId>,
+    /// The statuses it can never be given, as
+    /// [`StatusImmunities`]; empty gives it none.
+    pub immune_to: Vec<StatusId>,
     /// What its stats do while it holds a status, by status: the kind's
     /// rule and not the status's, a body whose mending stops while it
     /// burns. Empty changes nothing.
@@ -608,6 +611,7 @@ impl<I: Send + Sync + 'static> Default for ActorParts<I> {
             light: None,
             abilities: Vec::new(),
             statuses: Vec::new(),
+            immune_to: Vec::new(),
             while_holding: Vec::new(),
             triggers: Triggers::default(),
             resists: Resistances::new(),
@@ -636,6 +640,7 @@ impl<I: Send + Sync + 'static> Clone for ActorParts<I> {
             light: self.light,
             abilities: self.abilities.clone(),
             statuses: self.statuses.clone(),
+            immune_to: self.immune_to.clone(),
             while_holding: self.while_holding.clone(),
             triggers: self.triggers.clone(),
             resists: self.resists.clone(),
@@ -666,6 +671,7 @@ impl<I: Send + Sync + 'static> std::fmt::Debug for ActorParts<I> {
             .field("light", &self.light)
             .field("abilities", &self.abilities)
             .field("statuses", &self.statuses)
+            .field("immune_to", &self.immune_to)
             .field("while_holding", &self.while_holding)
             .field("triggers", &self.triggers)
             .field("resists", &self.resists)
@@ -721,6 +727,7 @@ impl<I: Send + Sync + 'static> ActorParts<I> {
             light: self.light.or(under.light),
             abilities: both(&under.abilities, self.abilities),
             statuses: both(&under.statuses, self.statuses),
+            immune_to: both(&under.immune_to, self.immune_to),
             while_holding,
             triggers,
             resists,
@@ -828,6 +835,9 @@ impl<I: Send + Sync + 'static> ActorParts<I> {
         }
         if !self.statuses.is_empty() {
             e.insert(innate_statuses(&self.statuses, &registries.statuses));
+        }
+        if !self.immune_to.is_empty() {
+            e.insert(StatusImmunities(self.immune_to.clone()));
         }
         if !self.while_holding.is_empty() {
             e.insert(WhileHolding(self.while_holding.clone()));
@@ -1164,6 +1174,27 @@ mod tests {
         assert_eq!(made.abilities, [a, b], "the defaults' then the kind's, each once");
         let plain: ActorParts<()> = ActorParts::default().over(&defaults);
         assert_eq!((plain.notice, plain.leaves_remains), (Some(NoticeStats::default()), Some(true)));
+    }
+
+    /// What a kind is immune to adds to what its defaults are, each once,
+    /// and is put on whoever is made from it; a kind immune to nothing
+    /// gets no component.
+    #[test]
+    fn immunities_add_to_the_defaults_and_are_put_on_whoever_is_made() {
+        let (poisoned, bleeding) = (StatusId::from_raw(0), StatusId::from_raw(1));
+        let defaults: ActorParts<()> = ActorParts { immune_to: vec![poisoned], ..ActorParts::default() };
+        let kind: ActorParts<()> = ActorParts { immune_to: vec![bleeding, poisoned], ..ActorParts::default() };
+        let made = kind.over(&defaults);
+        assert_eq!(made.immune_to, [poisoned, bleeding], "the defaults' then the kind's, each once");
+        let mut world = World::new();
+        let registries = Registries::default();
+        let e = world.spawn_empty().id();
+        made.insert(&mut world.commands().entity(e), &registries);
+        let plain = world.spawn_empty().id();
+        ActorParts::<()>::default().insert(&mut world.commands().entity(plain), &registries);
+        world.flush();
+        assert_eq!(world.get::<StatusImmunities>(e), Some(&StatusImmunities(vec![poisoned, bleeding])));
+        assert!(world.get::<StatusImmunities>(plain).is_none(), "immune to nothing, no component");
     }
 
     #[test]

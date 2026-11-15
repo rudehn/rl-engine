@@ -52,6 +52,25 @@ pub struct StatBlock(pub Stats);
 #[derive(Component, Debug, Clone, Default, Deref, DerefMut)]
 pub struct ActiveStatuses(pub Statuses);
 
+/// The statuses an actor can never be given: a put-on of one is refused
+/// before it lands, with nothing installed and nothing of its modifiers
+/// left behind, and reported as [`StatusEvent::Refused`].
+///
+/// What a creature is rather than something it wears, so a component
+/// beside its statuses rather than a resistance: a resistance takes a
+/// share off the damage a status ticks, where an immune actor never holds
+/// the status at all, its holds, its modifiers and its turning of sides
+/// included.
+#[derive(Component, Debug, Clone, Default, PartialEq, Eq)]
+pub struct StatusImmunities(pub Vec<StatusId>);
+
+impl StatusImmunities {
+    /// Whether `status` can never be put on.
+    pub fn covers(&self, status: StatusId) -> bool {
+        self.0.contains(&status)
+    }
+}
+
 /// A request to put a status on an actor. Resolved in
 /// [`TurnSet::Resolve`](crate::plugin::TurnSet::Resolve), before damage.
 #[derive(Message, Debug, Clone, Copy, PartialEq, Eq)]
@@ -128,6 +147,13 @@ pub enum StatusEvent {
         /// Which.
         status: StatusId,
     },
+    /// It was put on an actor immune to it, and did not land.
+    Refused {
+        /// Who.
+        target: Entity,
+        /// Which.
+        status: StatusId,
+    },
 }
 
 /// Who was put to sleep this pass, kept from where the sleep is put on to
@@ -149,16 +175,20 @@ pub(crate) fn resolve_afflictions(
     mut events: MessageWriter<StatusEvent>,
     mut fell: Option<ResMut<FellAsleep>>,
     registries: Option<Res<Registries>>,
-    mut actors: Query<(&mut ActiveStatuses, &mut StatBlock)>,
+    mut actors: Query<(&mut ActiveStatuses, &mut StatBlock, Option<&StatusImmunities>)>,
 ) {
     let Some(registries) = registries.as_deref() else { return };
     for a in afflicts.read() {
+        if actors.get(a.target).is_ok_and(|(_, _, immune)| immune.is_some_and(|i| i.covers(a.status))) {
+            events.write(StatusEvent::Refused { target: a.target, status: a.status });
+            continue;
+        }
         if let Some(fell) = fell.as_deref_mut()
             && registries.statuses.get(a.status).sleeps
         {
             fell.0.push(a.target);
         }
-        let Ok((mut statuses, mut stats)) = actors.get_mut(a.target) else { continue };
+        let Ok((mut statuses, mut stats, _)) = actors.get_mut(a.target) else { continue };
         let by = a.by.map(|e| e.to_bits());
         let began = !statuses.0.has(a.status);
         let changed = match a.held_by {
@@ -171,7 +201,7 @@ pub(crate) fn resolve_afflictions(
         }
     }
     for c in cures.read() {
-        let Ok((mut statuses, mut stats)) = actors.get_mut(c.target) else { continue };
+        let Ok((mut statuses, mut stats, _)) = actors.get_mut(c.target) else { continue };
         if statuses.0.cure(c.status, &mut stats.0) {
             events.write(StatusEvent::Cured { target: c.target, status: c.status });
         }
@@ -770,6 +800,44 @@ mod tests {
             ],
             "begun, refreshed longer, refreshed shorter for nothing, begun, extended"
         );
+    }
+
+    /// An actor immune to a status is never given it: no instance, none of
+    /// its modifiers, and the put-on reported as refused, so a narrator can
+    /// say it had no effect. A status it is not immune to lands as ever.
+    #[test]
+    fn an_immune_actor_refuses_the_status_and_keeps_no_modifiers() {
+        let mut app = headless_app();
+        app.add_plugins((crate::fov::FovPlugin, crate::combat::CombatPlugin));
+        let start = crate::testing::ground(&mut app);
+        crate::testing::two_sides(&mut app);
+        let stats = Registry::from_defs(vec![StatDef::new("speed", 0)]).unwrap();
+        let speed = stats.expect("speed");
+        let defs = Registry::from_defs(vec![StatusDef::new("slowed").modifies(speed, Op::Add(-50)), StatusDef::new("dazed")]).unwrap();
+        let (slowed, dazed) = (defs.expect("slowed"), defs.expect("dazed"));
+        {
+            let mut registries = app.world_mut().resource_mut::<Registries>();
+            registries.stats = stats;
+            registries.statuses = defs;
+        }
+        let player = app
+            .world_mut()
+            .spawn((Actor, Player, Blocks, Position(start), Viewshed::new(6), RevealsMap, Health::full(30), StatusImmunities(vec![slowed])))
+            .id();
+        app.init_resource::<Heard>().add_systems(PostUpdate, hear);
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        app.update();
+        app.update();
+        for status in [slowed, dazed] {
+            app.world_mut().write_message(ApplyStatus { target: player, status, turns: 5, by: None, held_by: None });
+            app.update();
+        }
+        let held = &app.world().get::<ActiveStatuses>(player).unwrap().0;
+        assert!(!held.has(slowed) && held.has(dazed), "refused the one it is immune to, took the other");
+        let registries = app.world().resource::<Registries>();
+        assert_eq!(app.world().get::<StatBlock>(player).unwrap().0.value(speed, &registries.stats), 0, "and kept none of its modifiers");
+        let target = player;
+        assert_eq!(app.world().resource::<Heard>().0, [StatusEvent::Refused { target, status: slowed }, StatusEvent::Applied { target, status: dazed }]);
     }
 
     /// A status that mends restores its amount every whole turn, to no

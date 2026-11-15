@@ -289,6 +289,10 @@ pub enum Phrase {
     YourAfflictionPasses,
     /// A status was put on someone else.
     IsAfflicted,
+    /// A status was put on you, and you are immune to it.
+    YouAreNotAfflicted,
+    /// A status was put on someone else immune to it.
+    IsNotAfflicted,
     /// Your light went out.
     YourLightGoesOut,
     /// Something else's light went out.
@@ -1218,6 +1222,10 @@ pub(crate) fn collect_narration(mut view: ResMut<NarrationView>, mut heard: Narr
             // Kept up rather than begun, as a cloud breathed again keeps its
             // status every turn: it was said when it began.
             StatusEvent::Renewed { .. } => continue,
+            // Put on someone immune to it: no hold, and said so, since a
+            // player who aimed it wants to know it did nothing.
+            StatusEvent::Refused { target, status } if witness.is_you(target) => (target, status, Phrase::YouAreNotAfflicted),
+            StatusEvent::Refused { target, status } => (target, status, Phrase::IsNotAfflicted),
             StatusEvent::Expired { target, status } if witness.is_you(target) => (target, status, Phrase::YouAreNoLonger),
             // A boon broken off, by a blow or by the worn thing that held it
             // coming off, is lost rather than cured: the player is not glad
@@ -1354,7 +1362,7 @@ pub struct Phrasebook {
 impl Default for Phrasebook {
     fn default() -> Self {
         use Phrase::*;
-        let table: [(Phrase, &str, ToneId); 102] = [
+        let table: [(Phrase, &str, ToneId); 104] = [
             (YouHit, "You hit {whom} for {n}.", Tones::HIT),
             (YouHitNothing, "You hit {whom}, to no effect.", Tones::MUTED),
             (HitsYou, "{Who} hits you for {n}.", Tones::BAD),
@@ -1465,6 +1473,8 @@ impl Default for Phrasebook {
             (YouAreNoLonger, "You are no longer {named}.", Tones::MUTED),
             (YourAfflictionPasses, "You are no longer {named}.", Tones::GOOD),
             (IsAfflicted, "{Who} is {named}.", Tones::NOTICE),
+            (YouAreNotAfflicted, "You are not {named}.", Tones::MUTED),
+            (IsNotAfflicted, "{Who} is not {named}.", Tones::MUTED),
             (YourLightGoesOut, "Your light gutters and goes out.", Tones::BAD),
             (LightGoesOut, "{What} gutters and goes out.", Tones::MUTED),
             (YouStandInFire, "You are standing in fire.", Tones::BAD),
@@ -2897,6 +2907,26 @@ mod tests {
             ("You are warded.", Tones::GOOD),
             ("You are no longer warded.", Tones::MUTED),
         ];
+        assert_eq!(said, expected.map(|(t, tone)| (t.to_string(), tone)).to_vec());
+    }
+
+    /// A status refused by an actor immune to it is told as having no
+    /// hold: "The line droid is not dazed." and "You are not dazed.", in
+    /// the muted tone, since nothing happened.
+    #[test]
+    fn a_status_refused_by_immunity_is_told_as_not_taking_hold() {
+        let mut stage = Stage::new(NarratorPlugin::default());
+        let defs = atglyph_rules::Registry::from_defs(vec![atglyph_rules::StatusDef::new("dazed")]).unwrap();
+        let dazed = defs.expect("dazed");
+        stage.app.world_mut().resource_mut::<Registries>().statuses = defs;
+        let (player, droid) = (stage.player, stage.actor("line droid", 'd', 1, 0));
+        stage.tick();
+        for target in [droid, player] {
+            stage.app.world_mut().write_message(StatusEvent::Refused { target, status: dazed });
+            stage.tick();
+        }
+        let said: Vec<(String, ToneId)> = lines(&stage).into_iter().filter(|(t, _)| t.contains("dazed")).collect();
+        let expected = [("The line droid is not dazed.", Tones::MUTED), ("You are not dazed.", Tones::MUTED)];
         assert_eq!(said, expected.map(|(t, tone)| (t.to_string(), tone)).to_vec());
     }
 

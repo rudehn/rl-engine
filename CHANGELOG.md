@@ -8,6 +8,7 @@ atglyph is not on crates.io yet, so a game depends on a release by its git tag, 
 
 ### Added
 
+- Status immunity: `StatusImmunities` on an actor, and `ActorParts::immune_to`, refuses a status before it lands, with nothing of it installed, and reports `StatusEvent::Refused`, which the narrator tells as "The zombie is not paralysed." and "You are not paralysed.".
 - `Teller` tells a game's own line from outside the turns, a deal struck at a counter or a key answered before any turn is spent, among the rows the frame speaks, so its names wear their colours as a `Tell`'s do; a `Tell` written then waited for the next pass.
 - `Tell::counting` names as many of `{what}` as the line is about, `You sell 3 arrows.`, whatever its stack holds by the time the line is read.
 - The look says what its subject wields and what else it wears: `InspectView::wields`, every worn thing it strikes or shoots with, a launcher with nothing to launch among them, and `InspectView::wears`, the rest, each as a sentence names it, `an axe` or `iron greaves`; `InspectPanel` says `o orc, wielding an axe` beside the name, or whole on the row under it when the two do not fit, and `wearing a cap` under where it stands, in its `gear` templates.
@@ -54,6 +55,7 @@ atglyph is not on crates.io yet, so a game depends on a release by its git tag, 
 
 ### Changed
 
+- **Breaking:** `StatusEvent` has a `Refused` variant; a game matching it exhaustively adds an arm.
 - `ThrowAtRange` reaches for a missile a worn launcher looses before one thrown by hand, and rolls its chance only once it has a throw to make, so a mind with nothing to throw draws nothing from its stream.
 - **Breaking:** `Missile` has a public `launched` field, whether a worn launcher looses it; a game that writes one as a struct literal adds `launched: false`.
 - `LogPanel` wraps a line too long for its strip onto the rows it needs, names keeping their colours across the break, in place of clipping it with an ellipsis; a line is shown whole or not at all, so the strip never starts partway through a sentence, and only a line taller than the whole strip is cut.
