@@ -82,8 +82,9 @@ pub enum Source {
 }
 
 impl Landing {
-    /// The ability that landed this, when an ability did.
-    pub(crate) fn ability(&self) -> Option<AbilityId> {
+    /// The ability that landed this, when an ability did: what a game's
+    /// own effect draws its look from.
+    pub fn ability(&self) -> Option<AbilityId> {
         match self.source {
             Source::Ability(id) => Some(id),
             _ => None,
@@ -92,8 +93,10 @@ impl Landing {
 
     /// How harm this lands reaches its targets, for the narrator to name
     /// what did it: by the ability, or by the thing whose trigger it was
-    /// when that thing is not its own user, as a prop's trap is.
-    pub(crate) fn reach(&self) -> crate::combat::DamageRoute {
+    /// when that thing is not its own user, as a prop's trap is. What a
+    /// game's own effect that harms hands its `DamageEvent`, so it is told
+    /// as the engine's `Harm` is.
+    pub fn reach(&self) -> crate::combat::DamageRoute {
         match self.source {
             Source::Ability(id) => crate::combat::DamageRoute::Ability(id),
             Source::Trigger { on, .. } if on != self.user => crate::combat::DamageRoute::Thing(on),

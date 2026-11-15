@@ -8,6 +8,7 @@ atglyph is not on crates.io yet, so a game depends on a release by its git tag, 
 
 ### Added
 
+- `Landing::ability` and `Landing::reach` are public, so a game's own effect draws its ability's look and lands harm told as the engine's `Harm` is.
 - An ability written `shown: false` is not drawn by the resolver, neither flying nor bursting, and lands at once: its effects show what it does, a drain's beam or a body standing up.
 - `Brain::names` lists a brain's tactics in priority order, for a game that assembles its brains from parts to check what it built.
 - Casting by predicted outcome: `Effect::predict(on, user, ctx)` says what an effect would do to whoever it lands on and to its user, as an `Impact` each (damage or a heal in hundredths, a status put on or taken off, nothing, or unknown, the default); `Harm` predicts through the game's own damage stages roll by roll, `Mend` no more than is missing, `Inflict` nothing on a holder or an immune target, `Cleanse` only on a holder. The ability contributor hands each usable ability's predictions to the mind as `Snapshot::predicted`.
