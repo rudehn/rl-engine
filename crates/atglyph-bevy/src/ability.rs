@@ -710,7 +710,7 @@ pub(crate) fn resolve_abilities(
         // The turn is spent on the cast. With something watching, a
         // projectile is seen to fly before it lands: what it does waits in
         // the air for the first pass after the flight has been seen.
-        let flights = landing.flights(&world, LookOf::Ability(id));
+        let flights = if def.shown { landing.flights(&world, LookOf::Ability(id)) } else { Vec::new() };
         let landing = if flights.is_empty() {
             landing
         } else {
@@ -759,7 +759,9 @@ pub struct Reports<'w> {
 fn land(landing: Landing, abilities: &Abilities, world: &mut EffectWorld<'_, '_>, reports: &mut Reports<'_>) {
     let user = landing.user;
     let Some(id) = landing.ability() else { return };
-    if let Some(burst) = landing.burst(world, LookOf::Ability(id)) {
+    if abilities.get(id).shown
+        && let Some(burst) = landing.burst(world, LookOf::Ability(id))
+    {
         world.cues.write(Cued { actor: user, cue: burst });
     }
     abilities.built[id.index()].land(&landing, world);
@@ -1243,6 +1245,12 @@ mod tests {
         aim: Ally,
         mode: Bolt(range: 6),
         effects: [(kind: "Mend", args: (roll: "5"))],
+    ),
+    (
+        name: "hush",
+        mode: Bolt(range: 6),
+        shown: false,
+        effects: [(kind: "Harm", args: (kind: "fire", roll: "4"))],
     ),
 ]"#;
 
@@ -2119,6 +2127,29 @@ mod tests {
         assert!(!waits_out(&mut app, me, them), "it would heal the player");
         app.world_mut().entity_mut(me).remove::<crate::combat::Resists>();
         assert!(waits_out(&mut app, me, them), "and casts once it would hurt");
+    }
+
+    /// An ability that is not shown is cued neither flying nor bursting,
+    /// what its effects draw being all that is seen of it, and lands at
+    /// once with something watching; one that is shown flies.
+    #[test]
+    fn an_ability_that_is_not_shown_cues_no_flight_or_burst_and_lands_at_once() {
+        let (mut app, start) = app();
+        app.world_mut().resource_mut::<CueWait>().watch();
+        let (hush, bolt) = (ability(&app, "hush"), ability(&app, "bolt"));
+        assert!(!app.world().resource::<Abilities>().get(hush).shown && app.world().resource::<Abilities>().get(bolt).shown);
+        let me = caster(&mut app, start, 20, &[hush, bolt]);
+        let them = foe(&mut app, start.offset(4, 0));
+        settle(&mut app);
+        cues(&mut app);
+        app.world_mut().write_message(Intent::new(me, Use { ability: hush, aim: start.offset(4, 0) }));
+        app.update();
+        assert!(cues(&mut app).is_empty(), "nothing flies and nothing bursts");
+        assert_eq!(hp(&app, them), 16, "and it landed at once");
+        settle(&mut app);
+        app.world_mut().write_message(Intent::new(me, Use { ability: bolt, aim: start.offset(4, 0) }));
+        app.update();
+        assert!(matches!(cues(&mut app).as_slice(), [Cue::Flight { .. }, ..]), "a shown one flies");
     }
 
     /// A monster is never offered an ability it could not pay for, which

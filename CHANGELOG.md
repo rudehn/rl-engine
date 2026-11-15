@@ -8,6 +8,7 @@ atglyph is not on crates.io yet, so a game depends on a release by its git tag, 
 
 ### Added
 
+- An ability written `shown: false` is not drawn by the resolver, neither flying nor bursting, and lands at once: its effects show what it does, a drain's beam or a body standing up.
 - `Brain::names` lists a brain's tactics in priority order, for a game that assembles its brains from parts to check what it built.
 - Casting by predicted outcome: `Effect::predict(on, user, ctx)` says what an effect would do to whoever it lands on and to its user, as an `Impact` each (damage or a heal in hundredths, a status put on or taken off, nothing, or unknown, the default); `Harm` predicts through the game's own damage stages roll by roll, `Mend` no more than is missing, `Inflict` nothing on a holder or an immune target, `Cleanse` only on a holder. The ability contributor hands each usable ability's predictions to the mind as `Snapshot::predicted`.
 - `Valuation` turns a predicted impact into a score by who it lands on (`Party`: foe, ally, neutral, the user), and `StandardValuation` is the engine's; a game gives a brain its own with `UseAbility::valuing` or `StandardBrain::valuing`.
@@ -62,6 +63,7 @@ atglyph is not on crates.io yet, so a game depends on a release by its git tag, 
 
 ### Changed
 
+- **Breaking:** `AbilityDef` has a public `shown` field; a game that writes one as a struct literal adds `shown: true` to keep it drawn.
 - **Breaking:** A status or an ability written with a field it does not have, `hold` for `holds` or `cooldwon` for `cooldown`, is refused at load naming the field, where it was read as nothing; a content file carrying a stray field fixes or drops it.
 - `StatusImmunities` is in the prelude beside the other status types.
 - `UseAbility` chooses by predicted outcome wherever an ability's effects foresee themselves: a bolt that would heal its foe is never loosed, and an ability aimed at anyone goes to whoever it does most good on, foe or friend. Where they cannot tell it weighs the footprint as before, so a game whose effects predict nothing chooses exactly as it did.

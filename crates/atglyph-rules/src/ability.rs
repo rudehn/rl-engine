@@ -368,6 +368,12 @@ pub struct AbilityDef {
     /// Whether the aim must be a cell the user can see. Off for a grenade
     /// over a wall.
     pub sight: bool,
+    /// Whether a use is shown by the resolver: seen to fly to where it
+    /// stopped, waiting in the air until it has been, and to burst over
+    /// what it covered. Off for one whose effects show what they do
+    /// themselves, a drain's beam or a body standing up, which lands at once
+    /// and is seen only as its effects draw it.
+    pub shown: bool,
     /// Everything that must be true of the user.
     pub requires: Vec<Requirement>,
     /// Everything a use spends.
@@ -586,6 +592,8 @@ struct Authored {
     mode: TargetMode,
     #[serde(default = "yes")]
     sight: bool,
+    #[serde(default = "yes")]
+    shown: bool,
     #[serde(default)]
     requires: Vec<RequirementRon>,
     #[serde(default)]
@@ -688,6 +696,7 @@ pub fn load(text: &str, names: &Names<'_>) -> Result<Registry<AbilityDef>, Conte
             aim: a.aim,
             mode: a.mode,
             sight: a.sight,
+            shown: a.shown,
             requires,
             costs,
             time: a.time,
