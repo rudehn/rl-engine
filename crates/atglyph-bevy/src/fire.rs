@@ -19,8 +19,8 @@
 use crate::app::EngineApp;
 use std::collections::BTreeMap;
 
-use atglyph_core::Point;
 use atglyph_core::seed::position_hash;
+use atglyph_core::{DiceRoll, Point};
 use atglyph_grid::{Rgb, TileId};
 use atglyph_rules::fire::{self, Tinder};
 use atglyph_rules::gas::GasId;
@@ -34,6 +34,7 @@ use crate::lighting::{LightSource, Lighting};
 use crate::places::{MapId, OnMap};
 use crate::registries::Registries;
 use crate::seed::Seed;
+use crate::status::ActiveStatuses;
 use crate::status::ApplyStatus;
 use crate::turn::{TurnEnd, Turns};
 use crate::world::WorldMap;
@@ -111,8 +112,15 @@ impl Burning {
 /// What fire does to what is in it, beyond burning it: the game's to say.
 #[derive(Resource, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FireRules {
-    /// A status, for some whole turns, on whoever stands in a burning cell.
-    pub inflicts: Option<(StatusId, u32)>,
+    /// A status, for dice of whole turns, on whoever stands in a burning
+    /// cell, rolled from the seed, the turn and the cell.
+    pub inflicts: Option<(StatusId, DiceRoll)>,
+    /// A status whose holder sets alight what can burn where it stands:
+    /// the ground if its tile burns, a flammable thing there, a vapour
+    /// there that burns. Never bare stone, so a burning creature lights
+    /// the door it walks through and not every cell it crosses, and fuel
+    /// burning out is what ends it.
+    pub kindled_by: Option<StatusId>,
     /// A gas, and how much a turn, that each burning cell gives off.
     pub smoke: Option<(GasId, u16)>,
     /// The light each burning cell sheds, or `None` for a fire that does not
@@ -126,12 +134,18 @@ pub(crate) const FIRE_GLOW: LightSource = LightSource::new(180, 3, Rgb::new(255,
 impl FireRules {
     /// Fire that glows and does nothing else to what stands in it.
     pub fn new() -> Self {
-        Self { inflicts: None, smoke: None, glow: Some(FIRE_GLOW) }
+        Self { inflicts: None, kindled_by: None, smoke: None, glow: Some(FIRE_GLOW) }
     }
 
-    /// Standing in fire inflicts `status` for `turns`.
-    pub fn inflicts(mut self, status: StatusId, turns: u32) -> Self {
-        self.inflicts = Some((status, turns));
+    /// Standing in fire inflicts `status` for `turns`, a number or dice.
+    pub fn inflicts(mut self, status: StatusId, turns: impl Into<DiceRoll>) -> Self {
+        self.inflicts = Some((status, turns.into()));
+        self
+    }
+
+    /// Whoever holds `status` sets alight what can burn where it stands.
+    pub fn kindled_by(mut self, status: StatusId) -> Self {
+        self.kindled_by = Some(status);
         self
     }
 
@@ -223,6 +237,8 @@ pub(crate) struct Blaze<'w> {
 
 /// Something flammable that has not caught.
 type Unlit = (Entity, &'static Position, &'static Flammable, Option<&'static OnMap>);
+/// Someone who might stand in the flames, and what it holds.
+type Standing = (Entity, &'static Position, Option<&'static OnMap>, Option<&'static ActiveStatuses>);
 /// Something alight.
 type Lit = (Entity, &'static Position, &'static mut Burning, Option<&'static OnMap>);
 
@@ -232,7 +248,7 @@ pub(crate) struct InTheFire<'w, 's> {
     commands: Commands<'w, 's>,
     unlit: Query<'w, 's, Unlit, Without<Burning>>,
     lit: Query<'w, 's, Lit>,
-    actors: Query<'w, 's, (Entity, &'static Position, Option<&'static OnMap>), With<Actor>>,
+    actors: Query<'w, 's, Standing, With<Actor>>,
     events: MessageWriter<'w, FireEvent>,
     afflict: MessageWriter<'w, ApplyStatus>,
 }
@@ -269,6 +285,25 @@ pub(crate) fn step_fire(mut ends: MessageReader<TurnEnd>, mut fire: ResMut<Fire>
                 fire.flames.update(pos.0, |t| t.max(2));
             }
         }
+        let turn = u64::from(clock.turn_number() + 1 - passed + step);
+        // Whoever holds the kindling status lights what can burn under it,
+        // for as long as that burns.
+        if let Some(kindling) = rules.kindled_by {
+            for (_, pos, on, held) in &actors {
+                // Only what is not alight already: lit once, it burns down as it
+                // would, and its burning out is what ends it, where lighting
+                // it again each turn would keep its holder burning for good.
+                if !on_here(on) || !held.is_some_and(|h| h.has(kindling)) || fire.is_burning(pos.0) {
+                    continue;
+                }
+                let ground = map.tile(pos.0).and_then(|t| map.tables().burns[t.index()]).map(|k| k.turns);
+                let thing = unlit.iter().filter(|(_, p, _, at)| p.0 == pos.0 && on_here(*at)).map(|(.., f, _)| f.turns).max();
+                let vapour = gases.as_deref().filter(|g| vapours.iter().any(|v| g.at(*v, pos.0) > 0)).map(|_| 1);
+                if let Some(turns) = [ground, thing, vapour].into_iter().flatten().max() {
+                    fire.flames.update(pos.0, |t| t.max(turns.max(1)));
+                }
+            }
+        }
         // What spent the turn in the flames, before they burn down: whatever
         // can catch does, and whoever stood there is scorched.
         for (entity, pos, flammable, on) in &unlit {
@@ -278,10 +313,11 @@ pub(crate) fn step_fire(mut ends: MessageReader<TurnEnd>, mut fire: ResMut<Fire>
                 events.write(FireEvent::Caught { entity });
             }
         }
-        for (entity, pos, on) in &actors {
+        for (entity, pos, on, _) in &actors {
             if on_here(on) && fire.is_burning(pos.0) {
                 events.write(FireEvent::Scorched { entity, at: pos.0 });
-                if let Some((status, turns)) = rules.inflicts {
+                if let Some((status, dice)) = rules.inflicts {
+                    let turns = crate::seed::hashed_roll(Some(&seed), crate::seed::FIRE_INFLICT, turn, pos.0, 0, dice).max(1) as u32;
                     afflict.write(ApplyStatus { target: entity, status, turns, by: None, held_by: None });
                 }
             }
@@ -292,7 +328,6 @@ pub(crate) fn step_fire(mut ends: MessageReader<TurnEnd>, mut fire: ResMut<Fire>
             fuel
         });
         let origin = fire.flames.origin();
-        let turn = u64::from(clock.turn_number() + 1 - passed + step);
         let salt = seed.0.derive(crate::seed::FIRE, turn);
         let burnt = {
             let (map, gases) = (&*map, gases.as_deref());
@@ -531,6 +566,57 @@ mod tests {
         let (player, burning) = (rig.player, rig.burning);
         assert!(rig.seen().contains(&FireEvent::Scorched { entity: player, at }));
         assert!(rig.app.world().get::<ActiveStatuses>(player).is_some_and(|a| a.has(burning)), "and burns");
+    }
+
+    /// Whoever holds the status fire is lit by sets alight what can burn
+    /// where it stands, grass here, which burns on to ash.
+    #[test]
+    fn a_holder_of_the_kindling_status_lights_the_grass_it_stands_on() {
+        let mut rig = Rig::new(false);
+        let rules = rig.app.world().resource::<FireRules>().kindled_by(rig.burning);
+        rig.app.insert_resource(rules);
+        let at = rig.start;
+        rig.set(at, "grass");
+        let (player, burning) = (rig.player, rig.burning);
+        rig.app.world_mut().write_message(ApplyStatus { target: player, status: burning, turns: 5, by: None, held_by: None });
+        rig.wait(1);
+        assert!(rig.app.world().resource::<Fire>().is_burning(at), "the grass under it caught");
+        rig.wait(10);
+        assert!(rig.is(at, "ash"), "and burnt away");
+    }
+
+    /// Bare stone has nothing to burn: a holder of the kindling status
+    /// standing on it lights nothing, however long it stands there.
+    #[test]
+    fn a_holder_of_the_kindling_status_never_lights_bare_stone() {
+        let mut rig = Rig::new(false);
+        let rules = rig.app.world().resource::<FireRules>().kindled_by(rig.burning);
+        rig.app.insert_resource(rules);
+        let (player, burning) = (rig.player, rig.burning);
+        rig.app.world_mut().write_message(ApplyStatus { target: player, status: burning, turns: 50, by: None, held_by: None });
+        for _ in 0..5 {
+            rig.wait(1);
+            assert_eq!(rig.app.world().resource::<Fire>().burning().count(), 0, "nothing alight on bare ground");
+        }
+    }
+
+    /// The turns fire inflicts may be dice: rolled within them, from the
+    /// seed, the turn and the cell, so the same run burns the same.
+    #[test]
+    fn fire_rules_inflict_dice_turns_the_same_for_the_same_seed() {
+        let burnt_for = || {
+            let mut rig = Rig::new(false);
+            let rules = FireRules { inflicts: Some((rig.burning, DiceRoll { num: 1, sides: 3, bonus: 20 })), ..*rig.app.world().resource::<FireRules>() };
+            rig.app.insert_resource(rules);
+            let at = rig.start;
+            rig.kindle(at, 1);
+            rig.wait(1);
+            let (player, burning) = (rig.player, rig.burning);
+            rig.app.world().get::<ActiveStatuses>(player).unwrap().iter().find(|s| s.id == burning).map(|s| s.turns).expect("burning")
+        };
+        let turns = burnt_for();
+        assert!((20..=23).contains(&turns), "{turns}: within 1d3+20, less what has ticked");
+        assert_eq!(turns, burnt_for(), "the same seed, the same burn");
     }
 
     #[test]

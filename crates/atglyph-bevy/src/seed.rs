@@ -144,6 +144,7 @@ pub(crate) const FIRE: SeedDomain = SeedDomain::engine(b"fire");
 pub(crate) const GAS_SPILL: SeedDomain = SeedDomain::engine(b"gas.spill");
 pub(crate) const GAS_SWIRL: SeedDomain = SeedDomain::engine(b"gas.swirl");
 pub(crate) const STATUS_TICK: SeedDomain = SeedDomain::engine(b"status.tick");
+pub(crate) const FIRE_INFLICT: SeedDomain = SeedDomain::engine(b"fire.inflict");
 pub(crate) const RESTART: SeedDomain = SeedDomain::engine(b"restart");
 
 /// Every domain the engine draws under, by name: its streams, a place's
@@ -170,6 +171,7 @@ pub const ENGINE_DOMAINS: &[(&str, SeedDomain)] = &[
     ("atglyph.gas.spill", GAS_SPILL),
     ("atglyph.gas.swirl", GAS_SWIRL),
     ("atglyph.status.tick", STATUS_TICK),
+    ("atglyph.fire.inflict", FIRE_INFLICT),
     ("atglyph.restart", RESTART),
     ("atglyph.place", SeedDomain::engine(b"place")),
 ];

@@ -10,6 +10,9 @@ atglyph is not on crates.io yet, so a game depends on a release by its git tag, 
 
 ### Added
 
+- `FireRules::kindled_by(status)`: whoever holds the status sets alight what can burn where it stands, the ground if its tile burns, a flammable thing there or a vapour that burns, and never bare stone; fuel already alight is left to burn down, so a burning creature lights the door it walks through once and its burning ends when the fuel does.
+- A status may `lifts` others, named from the same file: as it lands they come off, reported as cured, so a burning burns away a web whoever set it alight.
+- `FireRules::inflicts` takes dice of turns, rolled from the seed, the turn and the cell.
 - A status may have `tiers`, each `(from: n, name, color)`: it is shown by the name of the last tier its count reaches, in that tier's colour, "poisoned" then "badly poisoned" in a deadlier green. `StatusDef::shown(count)` answers it, and the UI declares a tone per tier from the status file, so a game sets no colour again; the nearby rail paints a status in its own tone beside a name in the row's, and the vitals list a tiered status by name.
 - A shove or a pull is seen: `Shove` and `Pull` write a `Cue::Slide { who, path }` over every cell the actor passed, and the particles draw it travelling them, `ParticleStyle::slide_secs` a cell, the map showing it on its way rather than on the cell it landed on, as `map_view::Sliding` says, while the turns wait. Nothing slides that did not move.
 - Shove and pull distances may be dice, `cells: "1d3"`, rolled for each target; dice that could move nobody are refused at load.
@@ -76,6 +79,7 @@ atglyph is not on crates.io yet, so a game depends on a release by its git tag, 
 
 ### Changed
 
+- **Breaking:** `FireRules::inflicts` is `Option<(StatusId, DiceRoll)>`, and `FireRules` has a `kindled_by` field a struct literal must give.
 - **Breaking:** `Shove::cells` and `Pull::cells` are `DiceRoll`s, and `Cue` has a `Slide` variant a match on it must cover.
 - **Breaking:** `StatusDef::tick_damage` is `Option<(DamageKindId, DiceRoll)>` and `tick_mend` is `Option<DiceRoll>`; the rules' `Tick` and `Mended` carry the `roll` their resolver rolls, where they carried an `amount`, and the sheet's `StatusLine` its `ticks` and `mends` as dice.
 - **Breaking:** `DamageKind` has a public `told` field; a game that writes one as a struct literal adds `told: true`, or builds it with `DamageKind::new`.

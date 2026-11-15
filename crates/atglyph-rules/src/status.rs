@@ -93,6 +93,9 @@ pub struct StatusDef {
     /// each from more than the one before; empty, it is called by its name
     /// however many are held. See [`StatusDef::shown`].
     pub tiers: Vec<StatusTier>,
+    /// The statuses it takes off as it lands: a burning that burns away a
+    /// web. Whoever puts it on need not know what it lifts.
+    pub lifts: Vec<StatusId>,
     /// Glyph for a badge, if the game wants one.
     pub badge: Option<char>,
     /// Whether nothing sees whoever holds it while it lasts. What that
@@ -160,6 +163,7 @@ impl StatusDef {
             tick_mend: None,
             lasting: false,
             tiers: Vec::new(),
+            lifts: Vec::new(),
             badge: None,
             unseen: false,
             boon: false,
@@ -291,6 +295,8 @@ struct Authored {
     #[serde(default)]
     tiers: Vec<StatusTier>,
     #[serde(default)]
+    lifts: Vec<String>,
+    #[serde(default)]
     badge: Option<char>,
     #[serde(default)]
     unseen: bool,
@@ -337,6 +343,8 @@ impl Named for Authored {
 /// - `tiers`: what it is called by how many of it are held, each
 ///   `(from: n, name: "badly poisoned", color: (r, g, b))`, the first from
 ///   1 and each from more than the last. Absent, it is called by its name.
+/// - `lifts`: the statuses, by name from this same file, it takes off as
+///   it lands. Absent, none.
 /// - `badge`: one character a panel may draw beside a health bar.
 /// - `unseen`: `true` for a status whose holder nothing can see while it
 ///   lasts; `false`, the default, otherwise.
@@ -393,6 +401,14 @@ pub fn load(text: &str, names: &Names<'_>) -> Result<Registry<StatusDef>, Conten
         if let Some(amount) = a.mends.filter(|amount| least(amount) < 1) {
             errors.push(format!("{}: `mends` of {amount} restores nothing; it is at least 1", a.name));
         }
+        // What it lifts is named in this same file, its id its place here.
+        let mut lifts = Vec::new();
+        for lifted in &a.lifts {
+            match authored.iter().position(|(_, other)| other.name == *lifted) {
+                Some(at) => lifts.push(StatusId::from_raw(at as u32)),
+                None => errors.push(format!("{}: `lifts` names {lifted:?}, which is no status in this file", a.name)),
+            }
+        }
         if a.tiers.first().is_some_and(|t| t.from != 1) {
             errors.push(format!("{}: `tiers` begin from 1, so one held is named", a.name));
         }
@@ -433,6 +449,7 @@ pub fn load(text: &str, names: &Names<'_>) -> Result<Registry<StatusDef>, Conten
             tick_mend: a.mends,
             lasting: a.lasting,
             tiers: a.tiers.clone(),
+            lifts,
             badge: a.badge,
             unseen: a.unseen,
             boon: a.boon,
@@ -994,6 +1011,18 @@ mod tests {
         assert_eq!(poisoned.shown(5).1.map(|t| t.color), Some((76, 194, 58)));
         let dazed = defs.get(defs.expect("dazed"));
         assert_eq!((dazed.shown(1).0, dazed.shown(1).1), ("dazed", None), "no tiers: its own name, no colour of its own");
+    }
+
+    /// What a status lifts is named from the same file, and a name the
+    /// file has no status for is refused naming both.
+    #[test]
+    fn lifts_are_named_from_the_same_file() {
+        let (stats, kinds) = vocabulary();
+        let names = Names::new().stats(&stats).damage_kinds(&kinds);
+        let defs = load(r#"[(name: "webbed"), (name: "burning", lifts: ["webbed"])]"#, &names).unwrap();
+        assert_eq!(defs.get(defs.expect("burning")).lifts, vec![defs.expect("webbed")]);
+        let refused = load(r#"[(name: "burning", lifts: ["wet"])]"#, &names).expect_err("no such status").to_string();
+        assert!(refused.contains("burning") && refused.contains("wet"), "{refused}");
     }
 
     /// Tiers must begin at one and rise, so every count is named and none

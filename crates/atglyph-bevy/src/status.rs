@@ -202,6 +202,14 @@ pub(crate) fn resolve_afflictions(
             let (target, status) = (a.target, a.status);
             events.write(if began { StatusEvent::Applied { target, status } } else { StatusEvent::Renewed { target, status } });
         }
+        // What it lifts comes off as it lands, whether or not it was new.
+        if statuses.0.has(a.status) {
+            for &lifted in &registries.statuses.get(a.status).lifts {
+                if lifted != a.status && statuses.0.cure(lifted, &mut stats.0) {
+                    events.write(StatusEvent::Cured { target: a.target, status: lifted });
+                }
+            }
+        }
     }
     for c in cures.read() {
         let Ok((mut statuses, mut stats, _)) = actors.get_mut(c.target) else { continue };
@@ -739,6 +747,39 @@ mod tests {
 
     fn hear(mut events: MessageReader<StatusEvent>, mut heard: ResMut<Heard>) {
         heard.0.extend(events.read().copied());
+    }
+
+    /// A status that lifts another takes it off as it lands, reported as
+    /// cured, and leaves what it does not name.
+    #[test]
+    fn a_status_that_lifts_another_takes_it_off_as_it_lands() {
+        let mut app = headless_app();
+        app.add_plugins((crate::fov::FovPlugin, crate::combat::CombatPlugin));
+        let start = crate::testing::ground(&mut app);
+        let mut defs = vec![StatusDef::new("webbed"), StatusDef::new("dazed"), StatusDef::new("burning")];
+        defs[2].lifts = vec![atglyph_rules::StatusId::from_raw(0)];
+        let defs = Registry::from_defs(defs).unwrap();
+        let (webbed, dazed, burning) = (defs.expect("webbed"), defs.expect("dazed"), defs.expect("burning"));
+        app.insert_resource(CombatRules::new());
+        app.insert_resource(DamageStages(Vec::new()));
+        app.insert_resource(crate::seed::Seed(RunSeed(5)));
+        let facs = Registry::from_defs(vec![FactionDef::new("us")]).unwrap();
+        app.insert_resource(Registries { factions: facs, statuses: defs, ..Default::default() });
+        let fly = app.world_mut().spawn((Actor, Player, Blocks, Position(start), Viewshed::new(6), RevealsMap, Health::full(20))).id();
+        app.init_resource::<Heard>().add_systems(PostUpdate, hear);
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        app.update();
+        app.update();
+        for status in [webbed, dazed] {
+            app.world_mut().write_message(ApplyStatus { target: fly, status, turns: 9, by: None, held_by: None });
+        }
+        app.update();
+        assert!(app.world().get::<ActiveStatuses>(fly).unwrap().has(webbed), "webbed to begin with");
+        app.world_mut().write_message(ApplyStatus { target: fly, status: burning, turns: 3, by: None, held_by: None });
+        app.update();
+        let held = app.world().get::<ActiveStatuses>(fly).unwrap();
+        assert!(held.has(burning) && !held.has(webbed) && held.has(dazed), "the web burnt off, the daze did not: {:?}", held.iter().collect::<Vec<_>>());
+        assert!(app.world().resource::<Heard>().0.contains(&StatusEvent::Cured { target: fly, status: webbed }));
     }
 
     /// Every actor's health each turn while two of them hold a status that
