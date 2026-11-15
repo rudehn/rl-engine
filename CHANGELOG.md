@@ -6,6 +6,8 @@ atglyph is not on crates.io yet, so a game depends on a release by its git tag, 
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-14
+
 ### Added
 
 - A damage kind written `told: false` is not told by the narrator, for a kind a game tells itself or not at all: a price paid in health, a fall worded in its own line. A death it deals is told all the same.
@@ -127,6 +129,7 @@ atglyph is not on crates.io yet, so a game depends on a release by its git tag, 
 
 ### Fixed
 
+- A dressing no longer cuts an area through a slot an earlier area laid outside its door: that slot's cell was counted as a way round the area's own things, so a cave beside a dressed house could be laid in two halves, each reached by a different opening. It now blocks as the area's own things do.
 - The look gives the chance of a shot from a worn launcher and forecasts it: a player with a bow and arrows sees the chance the shot rolls at a foe in the bow's range, and both sides' duel counts the launcher's strike to its range, rather than the wearer's own blow once it had closed, so an archer is no longer forecast as a brawler.
 - A mind that is a `Trader` no longer throws or uses its stock: what it carries and does not wear is for sale, so its `Snapshot::missiles` are empty and its `Snapshot::carried` only what it wears, and a store keeper that sees a foe across its floor no longer throws its wares there for anyone to pick up, nor eats the bread it sells when hurt.
 - A mind no longer throws what it wears: its `Snapshot::missiles` are the throwable things it carries and does not have on, so a goblin wielding a dagger strikes with it rather than throwing it away, and still throws a spare one it carries.
@@ -320,7 +323,8 @@ Full detail: [CHANGELOG.md at v0.2.0](https://github.com/rudehn/rl-engine/blob/v
 - `templates/starter`, a game to generate with `cargo generate`.
 - The guide, and three examples: the tutorial, the delve and Corsair.
 
-[Unreleased]: https://github.com/rudehn/rl-engine/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/rudehn/rl-engine/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/rudehn/rl-engine/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/rudehn/rl-engine/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/rudehn/rl-engine/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/rudehn/rl-engine/compare/v0.2.0...v0.3.0

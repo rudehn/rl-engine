@@ -11,7 +11,7 @@
             crates/atglyph-mapgen/src/secrets.rs
             crates/atglyph-core/src/seed.rs
             crates/atglyph-mapgen/src/place.rs
-     fingerprint: 2568b365 -->
+     fingerprint: f1caca1d -->
 
 # Map generation
 

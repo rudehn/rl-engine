@@ -559,9 +559,11 @@ fn dress_area(
             frame.own[i] = true;
         }
     }
+    // A held cell is no rim either: what stands there blocks, so it is no
+    // way round between the cells beside it.
     for i in 0..size {
         let p = frame.point(i);
-        frame.rim[i] = !frame.own[i] && walk(terrain, p) && Direction::CARDINALS.iter().any(|d| frame.own(p + d.offset()));
+        frame.rim[i] = !frame.own[i] && walk(terrain, p) && !held(p) && Direction::CARDINALS.iter().any(|d| frame.own(p + d.offset()));
     }
     let ground: Vec<bool> = (0..size).map(|i| walk(terrain, frame.point(i))).collect();
     let near: Vec<bool> = (0..size)
@@ -1740,6 +1742,33 @@ mod tests {
     /// what every dressing keeps: nothing but a barrel on or beside an
     /// opening or a way, and no barrel on one; every area one region with
     /// every cell of it reached; and the whole place walked from the start.
+    /// A slot an earlier area laid outside its door, on this area's floor,
+    /// stands as anything this area lays does: no way round, so what the
+    /// area lays beside it never cuts the area along it.
+    #[test]
+    fn a_slot_an_earlier_area_laid_here_is_never_a_way_round_it() {
+        let (r, ..) = tiles();
+        // A ring round a pillar, its top middle held by the earlier slot,
+        // which leaves the ring a path of seven cells.
+        let bounds = GridRect::new(3, 3, 3, 3);
+        let ring: Vec<Point> = bounds.cells().filter(|p| *p != Point::new(4, 4)).collect();
+        let held = Point::new(4, 3);
+        let area = Area { index: 1, shape: "ring".into(), district: "d".into(), cells: ring.clone(), bounds, inner: bounds, entries: None };
+        let mut place = Place::new(9, 9, std::slice::from_ref(&area), &[]);
+        place.hold(held);
+        let d = dressing("full", vec![slot('x', Spread::Walls, 100)], None);
+        for s in 0..20 {
+            let mut terrain = BaseContext::blank(9, 9, r.tiles.clone(), r.wall).terrain().clone();
+            for c in &ring {
+                terrain.set(*c, r.floor);
+            }
+            let around = Around { keep: &[], place: Some(&place) };
+            let marks = dress_area(&mut terrain, &r.tiles, &mut StdRng::seed_from_u64(s), &area, &d, around, r.floor);
+            let blocked: Vec<Point> = glyphs(&marks, 'x').into_iter().chain([held]).collect();
+            assert_eq!(pieces(&ring, &[], &blocked), 1, "seed {s}: the path was cut by {marks:?}");
+        }
+    }
+
     #[test]
     fn the_rules_a_house_is_furnished_by_keep_every_area_whole_and_its_openings_clear() {
         let (r, ..) = tiles();
