@@ -346,9 +346,9 @@ impl<A: Copy> Brain<A> {
         self.tactics.iter().any(|t| matches!(t.keeps_with(), Some(Station::Allies | Station::Leader)))
     }
 
-    /// The tactic names in priority order.
-    #[cfg(test)]
-    pub(crate) fn names(&self) -> impl Iterator<Item = &'static str> + '_ {
+    /// The tactic names in priority order: what a game that assembles its
+    /// brains from parts checks it built.
+    pub fn names(&self) -> impl Iterator<Item = &'static str> + '_ {
         self.tactics.iter().map(|t| t.name())
     }
 }

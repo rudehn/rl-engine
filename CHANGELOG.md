@@ -8,6 +8,7 @@ atglyph is not on crates.io yet, so a game depends on a release by its git tag, 
 
 ### Added
 
+- `Brain::names` lists a brain's tactics in priority order, for a game that assembles its brains from parts to check what it built.
 - Casting by predicted outcome: `Effect::predict(on, user, ctx)` says what an effect would do to whoever it lands on and to its user, as an `Impact` each (damage or a heal in hundredths, a status put on or taken off, nothing, or unknown, the default); `Harm` predicts through the game's own damage stages roll by roll, `Mend` no more than is missing, `Inflict` nothing on a holder or an immune target, `Cleanse` only on a holder. The ability contributor hands each usable ability's predictions to the mind as `Snapshot::predicted`.
 - `Valuation` turns a predicted impact into a score by who it lands on (`Party`: foe, ally, neutral, the user), and `StandardValuation` is the engine's; a game gives a brain its own with `UseAbility::valuing` or `StandardBrain::valuing`.
 - A mind's `ActorView` carries what each actor resists, its armor, the statuses it holds and the ones it can never be given, filled by combat and statuses; `ActorView::of` builds one, and `Snapshot::views` and `views_mut` walk the user and everyone it sees.
