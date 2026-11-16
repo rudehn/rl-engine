@@ -25,7 +25,7 @@
             crates/atglyph-ui/src/view/ground.rs
             crates/atglyph-ui/src/player_keys.rs
             crates/atglyph-ui/src/narrate.rs
-     fingerprint: 73490aaf -->
+     fingerprint: 803da618 -->
 
 # Items and equipment
 

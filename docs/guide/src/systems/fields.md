@@ -11,7 +11,7 @@
             crates/atglyph-bevy/src/effects/engine.rs
             crates/atglyph-bevy/src/world.rs
             crates/atglyph-bevy/src/plugin.rs
-     fingerprint: b9415dcb -->
+     fingerprint: 974ee45a -->
 
 # Fire and gas
 
@@ -26,7 +26,7 @@ Both are kept per map, so smoke left hanging in a corridor is hanging there stil
 Both of those sit inside `ResolveSet::Fields`, after the turn's actions and the triggers they set off, and before what ticks because a turn passed, so a status the flames or a cloud put on whoever stood in them lands and bites on the turn they stood there.
 Fire runs before gas, so a fire that burns a vapour away and gives off smoke has that smoke spread on the same turn.
 Each is opt-in on its own, because a game may want smoke and no fire, or fire and nothing in the air.
-`FirePlugin` declares `needs::<FireRules>`, `needs::<Registries>` for which gases burn, and `needs::<Seed>` for the rolls; `GasPlugin` declares `needs::<Registries>` for the gases themselves and `needs::<Seed>` for what its spills and swirls are hashed from.
+`FirePlugin` declares `needs::<FireRules>`, `needs::<Registries>` for which gases burn, and `needs::<Seed>` for the rolls of its spread and of what it inflicts; `GasPlugin` declares `needs::<Registries>` for the gases themselves and `needs::<Seed>` for what its spills, swirls and breaths are hashed from.
 Fire checks again as play begins that what the content asks for can happen: fire that smokes wants `GasPlugin`, refused by name rather than left to do nothing.
 Adding `FirePlugin` registers the `Ignite` effect, which writes a `Kindle` for every cell a landing covers, and `GasPlugin` registers `Emit`, which writes a `Release`, so an ability, a trap or a grenade reaches either field without knowing there is a field.
 Neither effect predicts what it would do to whoever it lands on, so a mind choosing by predicted outcome weighs an ability made of them by its footprint.
@@ -43,7 +43,10 @@ Nothing a step changes can move again within the same step, so a fire cannot run
 What a cell burns as comes from three places and the most flammable wins: the `Kindling` its tile declares through `TileProps::burns`, a `Flammable` entity standing on it, and a gas in it whose `GasDef::burns` is set.
 `fire::spread` burns every alight cell down one turn and rolls each unlit one against `catch_chance`, which compounds a chance for each of its eight neighbours that is burning.
 The rolls are a `position_hash` of a seed derived for fire over the turn number, not draws from a stream, so the same cell rolls the same whatever order the step visited it in and a save carries no generator for it.
-`FireRules` is the game's half of fire: `inflicts` a status on whoever stands in flames, `smoke` a gas each burning cell gives off, and `glow` the light it sheds, a warm flicker unless a game says otherwise.
+`FireRules` is the game's half of fire: `inflicts` a status on whoever stands in flames, `kindled_by` the status whose holder sets alight what it stands on, `smoke` a gas each burning cell gives off, and `glow` the light it sheds, a warm flicker unless a game says otherwise.
+What fire inflicts lasts a number or dice of turns, rolled under `atglyph.fire.inflict` from the seed, the turn and the cell, as the spread's rolls are, and never less than one.
+Whoever holds the `kindled_by` status lights what can burn where it stands, each turn before the flames catch and scorch: the ground if its tile burns, an unlit `Flammable` there, or a vapour there that burns, never bare stone.
+Only an unlit cell is lit, for a turn over its fuel's own, so the fuel burns down as it would have and a vapour stays alight long enough to burn away; a burning creature lights the door it walks through once, and that fire ends when its fuel does rather than being lit again every turn the creature stands there.
 `FireEvent` reports `Scorched`, `Caught`, `BurntOut` and `TileBurnt`.
 `Gases` holds one `MapFields<u8>` of concentration per registered gas, read through `at`, `densest` and `cells`.
 A `GasDef` carries `spread`, `fade`, `veils_at`, `burns` and `inflicts`, and nothing else.
@@ -57,13 +60,18 @@ A tile that stops a thrown thing stops gas too, so walls and closed doors hold a
 Each gas is its own field, so gases overlap without pushing each other aside: sight stops where any of them veils, and whoever stands in two breathes both.
 Gas at or above its `veils_at` is written into the map's veil with `set_veil`, and the window's `WorldMap::view` reads that veil beside the tile's own opacity, so sight and light both stop in thick smoke.
 `Breathed` is sent for every actor standing in any gas at the end of a turn, whether or not the gas does anything to it.
+A gas thick enough to `inflicts` puts its status on once for every whole turn the pass crossed, so a slow breather whose one wait takes two turns takes two breaths and a stacking status gathers a stack a turn.
+A breath's `turns` is a `DiceRoll`, a number or dice, rolled for each breath under `atglyph.gas.breath` from the seed, the turn, the cell and the gas, so whoever stands in it is dealt the same whatever order they are visited in.
+`gas::load` refuses dice that could come to less than a turn, and a field a gas does not have, naming it, where it was once read as nothing.
 
 ## Using it
 
 Gases are content, and a game names them in `Registries::gases` with the five fields the engine acts on: two rates, a threshold, whether it catches, and what breathing it does.
 Each is a `GasDef` built from `GasDef::new(name)`, which spreads at half speed and fades a tenth a turn, with `spread`, `fade`, `veils_at`, `inflicts(at, status, turns)` and `burns` for what differs, so a confusing gas is `GasDef::new("confusing").inflicts(25, confused, 3)` and nothing more.
+In a gas file the turns may be dice, `inflicts: Some((40, "infected", "1d3+1"))`.
 
 Fire takes one resource before play begins, saying what its flames do beyond burning, and it is one line: `FireRules::new().inflicts(scorched, 3).smoke(smoke, 30)` scorches whoever stands in a flame for three turns and has every burning cell give off thirty of a smoke gas a turn.
+`.inflicts(scorched, DiceRoll::new(1, 3))` scorches for a roll of turns instead, and `.kindled_by(burning)` has whoever is burning light the grass, the crate or the spirits under it.
 
 ## The line
 

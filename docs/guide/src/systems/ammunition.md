@@ -5,7 +5,7 @@
             crates/atglyph-bevy/src/items.rs
             crates/atglyph-ui/src/view/gear.rs
             crates/atglyph-bevy/src/throwing.rs
-     fingerprint: b071a1aa -->
+     fingerprint: ee7d8e01 -->
 
 # Ammunition
 

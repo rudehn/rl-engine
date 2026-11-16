@@ -5,7 +5,7 @@
             crates/atglyph-bevy/src/loot.rs
             crates/atglyph-bevy/src/props.rs
             crates/atglyph-bevy/src/parts.rs
-     fingerprint: fcbb1b1c -->
+     fingerprint: 9ecf074b -->
 
 # Loot
 
@@ -28,7 +28,9 @@ As play begins it refuses, by name, a container holding an item the game has no 
 `LootArea` is a place by `MapId`, and a band is the game's own number for how deep, far or dangerous that is.
 `make` is handed a `Provenance { found, band }`: `found` is why something is being made, `Scatter`, `Drop`, `Container` or `Placed` at a prefab's slot by `PrefabPlugin`, and `band` is the one the draw was asked at, a place's for its floor, a container's plus its row's offset, a prefab slot's plus its own, and for a drop the band of the place the actor died in; `make` is also handed the engine's stream for whatever it rolls on the thing, a quality or an enchant.
 `LootTable` is built by `loot::load` from a spawn file of rows, each an item, the bands it applies at, a weight and an optional group; its rows are sorted by item name, so the order they are written in draws nothing.
-`pick` draws a row that applies at a band by weight and how many are found together; `pick_tagged` draws only among items carrying a tag, and when nothing carrying it applies as deep as asked, `band_for` falls back to the nearest band above that has something, so a request past the deepest row gets the deepest thing.
+A row's group is a `DiceRoll`, written as a number, `group: 2`, or as dice, `group: "1d4+1"` for two to five, and one when left out; a group whose dice could come to none is refused at load.
+In code, `LootRow::group` takes the dice or a number, and `DiceRoll::between(2, 5)` writes a range as the one even die that deals as the range did.
+`pick` draws a row that applies at a band by weight and rolls its group, at least one, for how many are found together; `pick_tagged` draws only among items carrying a tag, and when nothing carrying it applies as deep as asked, `band_for` falls back to the nearest band above that has something, so a request past the deepest row gets the deepest thing.
 `ScatterRules` puts a count beside each place mark of a tag, a range of loose items, and more for each band; `plan_scatter` lays them on free cells over a `Layout` of marks and bounds, beside a mark and never on it, one to a cell.
 `LevelTable`, loaded with `loot::load_levels`, rolls an enchant level by band for a game's `make` to put on the things it knows are enchantable.
 A place is scattered from a stream derived from its own `PlaceSeed`, and a container from one derived from its place's seed and its cell, so what lies anywhere never depends on what happened elsewhere first.

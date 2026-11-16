@@ -201,8 +201,9 @@ impl NearbyPanel {
         self
     }
 
-    /// Says beside each actor what holds it: every status with a badge as a
-    /// facet keyed `key`, and a sleeper as doing `asleep`, a word the
+    /// Says beside each actor what holds it: every status with a badge or
+    /// tiers, once however many are held and named by the tier its count
+    /// reaches, as a facet keyed `key`, and a sleeper as doing `asleep`, a word the
     /// [activities](Self::activities) name. Off unless asked, as
     /// [`NearbyStatuses`] says.
     pub fn statuses(mut self, key: &'static str, asleep: &'static str) -> Self {

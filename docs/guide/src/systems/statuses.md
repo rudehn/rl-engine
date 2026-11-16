@@ -19,7 +19,7 @@
             crates/atglyph-rules/src/events/quest.rs
             crates/atglyph-ui/src/facet.rs
             crates/atglyph-ui/src/narrate.rs
-     fingerprint: 4e0dfce5 -->
+     fingerprint: c72be7fa -->
 
 # Statuses
 
@@ -43,7 +43,7 @@ A game that inserted neither has nothing listening and is told so, loudly, the m
 
 ## The model
 
-`StatusDef` is a `name`, a `stacking` rule, a `max` it stacks to, a list of `modifiers`, an optional `tick_damage` as a kind and an amount or a `tick_mend`, an optional `badge` of one character a panel may draw, the `resists` its holder has while it lasts, the `side` it fights for, the percent of its steps that `stumbles`, and four flags, each false unless a status file writes it `true` or its builder sets it: `unseen`, `boon`, `skips_turns` and `sleeps`.
+`StatusDef` is a `name`, a `stacking` rule, a `max` it stacks to, a list of `modifiers`, an optional `tick_damage` as a kind and a `DiceRoll` or a `tick_mend` as a `DiceRoll`, whether it is `lasting`, the `tiers` it is shown by, the statuses it `lifts`, an optional `badge` of one character a panel may draw, the `resists` its holder has while it lasts, the `side` it fights for, the percent of its steps that `stumbles`, and four flags, each false unless a status file writes it `true` or its builder sets it: `unseen`, `boon`, `skips_turns` and `sleeps`.
 A status that skips turns takes its holder's turns while it lasts: the engine claims the decision of an actor holding the turn while `Statuses::taking_turns` names a status on it, and spends the turn as a wait costs, so paralysis and a snare are each one line of a game's statuses.
 Its mind is not asked what to do, though its sight is still recast and its noticing rolled; a held player's keys come to nothing, since the turn is spent before any intent resolves; and a worker caught at its work loses those turns rather than working them.
 It ends when the status does, by its time or by a cure, so a status a blow breaks is the game's `RemoveStatus` on the blow.
@@ -61,7 +61,12 @@ The definition is never deserialized as it stands, because its ids index registr
 `Stacking` is `Refresh`, where the longer duration wins and which is the default, `Extend`, where durations add, `Stack`, where a second instance sits beside the first up to the status's `max`, and `Ignore`.
 `ActiveStatuses` is the `Statuses` an actor carries, each an `ActiveStatus` of an id, the whole turns left or `UNTIL_CURED`, an opaque source so a tick can credit whoever applied it, and an opaque `held_by`, the worn thing it lasts only while, if one holds it.
 `ApplyStatus { target, status, turns, by, held_by }` puts one on and `RemoveStatus { target, status }` takes one off, and each answers with a `StatusEvent`: `Applied` for one that began, `Renewed` for one put on again while still on, its time refreshed or extended or another instance stacked beside it, `Expired` when the time ran out, `Cured` when it was lifted, `Refused` when its target is immune to it.
-How many turns it is put on for is the sender's number, and an `Inflict` may roll it from a range as it lands, as [Effects](effects.md) says.
+How many turns it is put on for is the sender's number, and an `Inflict` may roll it from dice as it lands, as [Effects](effects.md) says.
+A status written `lasting: true`, or built with `.lasting()`, lasts until it is cured whatever that number was: every instance of it is put on for `UNTIL_CURED`, so an infection whose stacks never wear off is one line of content whoever puts it on.
+A status that `lifts` others takes them off every time it lands, new or not, though never when it is refused, each reported with `StatusEvent::Cured`, so a burning burns away a web whoever set it alight; a status file names what it lifts by name from the same file, and a name it has no status for is refused.
+`Statuses::count(id)` is how many instances of one status are held, one for a status that does not stack and nought for none.
+A status with `tiers`, each `(from: n, name, color)`, is shown by the name of the last tier its count reaches and in that tier's colour, "poisoned" then "badly poisoned" in a deadlier green; `StatusDef::shown(count)` answers both, its own name and no tier when it has none.
+Tiers are refused at load unless the first is from one and each rises from more than the one before, so every count is named and none twice.
 `StatusImmunities` on an actor names the statuses it can never be given: a put-on of one is refused before it lands, with no instance and none of its modifiers, holds, resistances or side installed, and answered with `StatusEvent::Refused { target, status, aimed }`.
 `aimed` is true when somebody put it on and no worn thing holds it, and false for a cloud breathed or a worn thing asking again every turn, so a reader can tell a use that came to nothing from a refusal repeated every pass.
 Immunity is what a body is rather than a share off what a status deals: a resistance takes part of a tick's damage, where an immune actor never holds the status at all.
@@ -70,12 +75,14 @@ A put-on that changed nothing, a refresh no longer than what is left or an ignor
 `Statuses::apply` installs the definition's modifiers under a `ModifierSource::Status` tagged with the id and the instance, which is what makes removal exact when the same status stacks three deep.
 `Statuses::apply_held` does the same held by a thing, and a refresh or an extension it makes is held by that thing from then on, while one by `apply` leaves the holder as it was.
 The statuses never act on the holder, only read it to choose `apply_held` over `apply`: the items plugin writes a `RemoveStatus` for every held status whose thing its holder is not wearing, in `ResolveSet::Effects` before statuses are applied, so it ends in the pass the thing comes off, and one landed on somebody not wearing the thing ends on the next pass.
-`Statuses::tick` collects what every status deals into a `TickReport`, then takes a turn off each and strips the modifiers of whatever ran out.
+`Statuses::tick` collects what every status deals into a `TickReport`, each `Tick` and `Mended` carrying the `roll` its resolver rolls, then takes a turn off each and strips the modifiers of whatever ran out.
+The engine rolls each instance's dice every turn from the seed, the turn and the holder's cell, as fire's rolls are, so every holder is dealt the same whatever order they are ticked in and a save keeps no generator for it; a fixed number draws nothing, and with no `Seed` in place dice come to their average.
 A status put on for `UNTIL_CURED` turns bites and mends like any other and is never counted down, so only a cure ends it.
-The engine ticks once per `TurnEnd` and only for actors on the current map, so a monster on a floor nobody is standing on does not burn down while the player is elsewhere.
+The engine ticks once per `TurnEnd`, which the turn loop writes for every whole turn crossed, and only for actors on the current map, so a monster on a floor nobody is standing on does not burn down while the player is elsewhere.
 Its damage becomes a `DamageEvent` carrying `Hit::from_status`, which names the status and credits whoever applied it but leaves `attacker` empty, so a poison tick cannot set off the riders a blow would.
 That event is built with `DamageEvent::new`, so its `DamageRoute` is `Effect` and rides through to `DamageDealt` as one: a game hanging a rule off a blow can tell a blow from a tick without reading `status` at all.
 A status that mends says `mends`, its `tick_mend`, and its tick becomes a `Heal` by whoever applied it, which is the whole of what makes regeneration a status like poison; a negative `ticks` is refused at load, since mending is not damage of any kind.
+Either may be written as a number or as dice, `ticks: ("fire", "1d3")` or `mends: "1d2+1"`, and dice that could deal less than nothing, or mend less than one, are refused at load naming the status.
 `StatBlock` is the `Stats` underneath: a per-actor base for whichever stats the game overrode, and a flat list of `Modifier`s each carrying a `ModifierSource`.
 `Stats::value` is base plus every `Add`, then every `MulPct` compounded, then `AtLeast` and `AtMost`, then the definition's own `min` and `max`.
 A `StatDef` written `lower_is_better`, or built with `.lower_is_better()`, is one less of which is better, a load or a noise made, so a screen weighing gear tells a fall in it as a gain; the rules never read it.
@@ -90,7 +97,7 @@ A `QuestDef` opens when every quest in its `after` is done and is done when ever
 
 ## Using it
 
-A status is a registry entry, `StatusDef::new(name)` and a builder for each thing it does: `.ticks(kind, 1)` burns its holder a point of `kind` a turn, `.mends(n).boon()` heals one that is glad of it, `.unseen().boon()` hides one until it strikes, and a `badge` is the glyph a health bar shows for it.
+A status is a registry entry, `StatusDef::new(name)` and a builder for each thing it does: `.ticks(kind, 1)` burns its holder a point of `kind` a turn and `.ticks(kind, DiceRoll::new(1, 3))` a roll of it, `.mends(n).boon()` heals one that is glad of it, `.unseen().boon()` hides one until it strikes, and a `badge` is the glyph a health bar shows for it.
 
 A fact is the game's reading of an engine message, which is the only translation quests and counters need: a system reading each `DeathEvent` writes `Happened(Fact::new(boss_slain).about(kind))` for one whose kind the game calls a boss, and passes the rest over.
 
@@ -99,6 +106,7 @@ A fact is the game's reading of an engine message, which is the only translation
 The status plugin acts on two things a status says: it installs and removes the stat modifiers, and it turns the tick into a hit; `unseen` is read by stealth, because who can see whom is stealth's question.
 Whether a status outlasts the thing that gave it is the game's to write, as `while_worn` on the `Inflict` that lands it, and the engine's to keep: which way it came off never matters, only whether the thing is still worn.
 A status that lasts for what a body is, or for as long as a worn thing is worn, is put on for `UNTIL_CURED` turns rather than flagged beside its count, so a save keeps it as it keeps any count and a refresh or an extension leaves it as it is.
+`lasting` is that same count written once on the status, so the blow, the cloud and the trap that put it on need not each know it never ends.
 A status that holds is the engine's to carry out and the game's to write, because a turn is the turn loop's: a game skipping a paralysed monster's mind itself would still leave the player's keys working and a worker's toil going on, and an actor that is not to act at all is held this way rather than slowed to nothing.
 Everything richer is the game's, keyed by the id: a status that silences an ability, one that walls a door, one that turns a body to stone is a system reading `StatusEvent` or `ActiveStatuses` and doing the rest.
 Which sides there are and who is hostile to whom stay the game's even for a status that turns a side: the status only names which.
@@ -108,6 +116,7 @@ The narrator tells only an aimed refusal, `The line droid is not dazed.` or `You
 Which kinds are immune to what is the game's content, and that an immune actor never holds the status at all is the engine's, so no system of a game has to undo a status that should not have landed.
 `boon` is the one thing a status says for the words alone: the rules never read it, and the narrator tells a boon landing as good news and its end as a note, so a cloak is not announced in the tone of a wound.
 What a panel shows of a status is the same division: `badge` is the one character the engine offers, and anything else is a `Facet` the game pushes onto a row in `ViewSet::Annotate`, `Facet::new("key", text)`, toned as the game likes.
+`tiers` are the one name and colour it offers beside the badge: the UI declares a tone for each tier from the status file, named for the status and the tier together, so the nearby rail, the vitals and the sheet name a tiered status by its tier and a game sets no colour for it again.
 A facet is an escape hatch and its use is a signal, so two games pushing the same key is the argument for putting that field in the view instead.
 A stat is content, which is the reason nothing in the engine names one: `CombatRules` is handed the stat it should read as armor, `TurnRules` the one it should read as speed, a worn thing names the stat it lends, and a status names the stat it moves, so haste is a status on a stat and the queue never learns what haste is.
 Facts are the same refusal one level up: nothing in the engine names a fact, a counter or a quest, and the subject and object are opaque numbers the game chose, usually a definition id.

@@ -11,7 +11,7 @@
             crates/atglyph-bevy/src/plugin.rs
             crates/atglyph-bevy/src/knowledge.rs
             crates/atglyph-bevy/src/minds.rs
-     fingerprint: bf8cbc2b -->
+     fingerprint: c077edc9 -->
 
 # Places
 

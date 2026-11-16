@@ -15,7 +15,7 @@
             crates/atglyph-bevy/src/ability.rs
             crates/atglyph-bevy/src/lighting.rs
             crates/atglyph-rules/src/damage.rs
-     fingerprint: 7707f055 -->
+     fingerprint: 433a36bd -->
 
 # Narration
 
@@ -48,6 +48,7 @@ A use a `Reflects` body turns back is told before the harm line it caused, so a 
 A status refused by an actor `StatusImmunities` makes immune to it, a `StatusEvent::Refused`, is `YouAreNotAfflicted` or `IsNotAfflicted`, `The zombie is not paralysed.`, in the muted tone, since nothing happened.
 Only a refusal marked `aimed`, a status somebody put on, is told, because whoever aimed it wants to know it did nothing; one nobody aimed, a cloud breathed or a worn thing asking for its status again every turn, is refused in silence however often it comes.
 A status landing on the player is `YouAreAfflicted`, or `YouGainABoon` for a `StatusDef` marked `boon`, the same words told as good news; one running out is `YouAreNoLonger`, and a cure is `YourAfflictionPasses`, except that a boon broken off, a cloak ended by a blow or by its plate coming off, is lost rather than cured and says `YouAreNoLonger`.
+A status that another `lifts` as it lands, a web a burning burns away, comes off as a `StatusEvent::Cured` and is told as any cure is.
 Every one of them says "you are", because a status is named as what its holder is, `warded` or `scorched`, and each is told when a status begins and never when a `StatusEvent::Renewed` keeps it up, so a cloud is told once and not every turn it is breathed.
 `called` is what `who` and `whom` were called when the row was made, and `called_thing` what `what` was, a `Called` of its name, its count and whether it takes an article, and `called_with` the same of `with`, filled in by the collector, because a row is made inside the pass and spoken after it and things change in between: what dies becomes remains and is renamed, what is thrown merges into a stack.
 A use is named as one of the thing, `You use a stim.`, since the stack already counts one fewer, and only a use of a thing with a `use` trigger is said at all: what using anything else means is the game's to say, the way a crust of bread is.

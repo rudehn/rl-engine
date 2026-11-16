@@ -16,7 +16,7 @@
             crates/atglyph-mapgen/src/place.rs
             crates/atglyph-rules/src/dressing.rs
             crates/atglyph-bevy/src/seed.rs
-     fingerprint: 57bb9545 -->
+     fingerprint: 1e46b7e3 -->
 
 # Prefabs
 

@@ -19,7 +19,7 @@
             crates/atglyph-bevy/src/cue.rs
             crates/atglyph-grid/src/targeting.rs
             crates/atglyph-ui/src/narrate.rs
-     fingerprint: abcd4a11 -->
+     fingerprint: e6f2b158 -->
 
 # Effects
 
@@ -58,6 +58,9 @@ Its sound is resolved at load against the names it is built with, and those carr
 `Inflict` also takes `while_worn`, false unless written: landed by a trigger, its `ApplyStatus` is then held by the thing the trigger is on, and the status ends when that thing is no longer worn; landed by an ability or an offer, it is not held.
 It is meant for a trigger that only ever lands on its own wearer, since a held refresh reaching an area's or a hit's bystander who already carries the status unheld takes their instance over and the very next pass cures it for not wearing the thing.
 It describes itself with ` while worn` after the turns, so the bag says so under the thing.
+`Shove` pushes each target away from the landing's origin and `Pull` draws it toward it, by `cells`, a `DiceRoll` written `cells: 2` or `cells: "1d3"` and rolled on `EffectRng` for each target; dice that could move nobody are refused at load, and the bag says `shoves 1d3 cells back` or `pulls a cell closer`.
+A target standing on the origin itself, as whoever an actor's own `hit` struck stands where that moment lands, is pushed from, or drawn toward, the landing's user instead, since its own cell is no way to push from.
+Either walks the line until the last cell the target can stand on, never through a wall, and a target that moved is written a `Cue::Slide { who, path }` over every cell it passed, from where it stood to where it landed, so it is seen to travel them rather than to jump; one that did not move is not seen to slide.
 `EffectWorld` asks the subsystem that owns a thing to do it, damage, a heal, a status on or off, a cue, and moves an actor itself, since nothing else owns that.
 `Effects::land` rolls each entry against its own chance from `EffectRng`, drawn under its own domain, `atglyph.effects`, so a trap, a stim and a spell are dealt from one deck and no other stream's draws move when one is added.
 `TriggerKinds` interns the names of moments, the engine's `use`, `land`, `fire`, `hit`, `entered`, `destroyed`, `pulse`, `struck` and `died` first so their ids are constants on the type.

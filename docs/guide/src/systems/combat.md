@@ -18,7 +18,7 @@
             crates/atglyph-bevy/src/ammo.rs
             crates/atglyph-bevy/src/effects/mod.rs
             crates/atglyph-bevy/src/effects/engine.rs
-     fingerprint: b83e1096 -->
+     fingerprint: 71788fc2 -->
 
 # Combat and loadout
 
@@ -75,6 +75,7 @@ A shaped attack strikes its target and every foe its shape reaches, each rolled 
 A blow on a target that has not noticed its attacker, as stealth's `Watchers::unaware` answers it, lands at the blow's own `unaware` percent or the house's, on every roll it carries, decided as it is rolled and before the blow wakes the target; it can still miss, its `hit` triggers land as they would on anyone, and a shot is never multiplied.
 A rolled attack that misses still writes `Struck` and the `fire` moment, since the weapon fired, and then writes `Missed` where it would have landed instead of any damage or `hit` moment; a thrown miss rests where a hit would have and reports that it struck nobody.
 For a worn item it also reports the `fire` moment at the attacker's cell, and the `hit` moment at the target's cell when the blow or shot lands, so a wand's charge is spent and its effects land through [Effects](effects.md) without combat knowing what either is.
+Since that moment lands on the cell the struck one stands on, a `Shove` or a `Pull` among the `hit` effects, a weapon's or an actor's own, pushes the struck one away from whoever struck it, or draws it towards them, rather than from the cell it stands on, which is no way at all.
 A shot takes its item's triggers with it as it is fired, so a watched shot from a thing its last charge spent still lands what its hits carry, from a remnant in its place.
 Every roll is floored at zero where it is rolled, so a weapon with a bad bonus that rolls low has missed, and `resolve` reads a hit offered below zero as nothing.
 An attack with a `look` is seen: a shot cues a `Cue::Flight` and a blow a `Cue::Burst`, and while something watches the cues a shot's hits wait in `Airborne<ShotLanding>` until the flight has been seen, and `land_shots` then drops them on a target still standing, so one killed while the shot flew is missed rather than hurt twice.

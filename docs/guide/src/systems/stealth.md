@@ -19,7 +19,7 @@
             crates/atglyph-grid/src/light.rs
             crates/atglyph-ui/src/view/nearby.rs
             crates/atglyph-ui/src/view/vitals.rs
-     fingerprint: d42b7c32 -->
+     fingerprint: 48ea2f9a -->
 
 # Stealth
 

@@ -6,14 +6,14 @@ atglyph is not on crates.io yet, so a game depends on a release by its git tag, 
 
 ## [Unreleased]
 
-## [0.6.0] - 2026-11-14
+## [0.6.0] - 2026-11-15
 
 ### Added
 
 - `ParticleStyle::instant()`: every pace nought, so nothing holds the turns, the one way to write an instant style that a pace added later cannot leave behind.
 - Spawn and loot groups are dice, `group: "1d3+1"` or `group: 2`, rolled at least one; a group that could come to none is refused at load. `DiceRoll::between(fewest, most)` reads a range as one even die, and `DiceRoll::min` is public.
 - A gas's breath may last dice of turns, `inflicts: Some((40, "infected", "1d3+1"))`, rolled from the seed, the turn and the cell; dice that could come to less than a turn are refused at load.
-- `FireRules::kindled_by(status)`: whoever holds the status sets alight what can burn where it stands, the ground if its tile burns, a flammable thing there or a vapour that burns, and never bare stone; fuel already alight is left to burn down, so a burning creature lights the door it walks through once and its burning ends when the fuel does.
+- `FireRules::kindled_by(status)`: whoever holds the status sets alight what can burn where it stands, the ground if its tile burns, a flammable thing there or a vapour that burns, and never bare stone; fuel already alight is left to burn down, so a burning creature lights the door it walks through once, and the fire it lit ends when the fuel does.
 - A status may `lifts` others, named from the same file: as it lands they come off, reported as cured, so a burning burns away a web whoever set it alight.
 - `FireRules::inflicts` takes dice of turns, rolled from the seed, the turn and the cell.
 - A status may have `tiers`, each `(from: n, name, color)`: it is shown by the name of the last tier its count reaches, in that tier's colour, "poisoned" then "badly poisoned" in a deadlier green. `StatusDef::shown(count)` answers it, and the UI declares a tone per tier from the status file, so a game sets no colour again; the nearby rail paints a status in its own tone beside a name in the row's, and the vitals list a tiered status by name.

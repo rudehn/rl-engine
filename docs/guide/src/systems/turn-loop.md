@@ -8,7 +8,7 @@
             crates/atglyph-bevy/src/world.rs
             crates/atglyph-bevy/src/title.rs
             crates/atglyph-ui/src/player_keys.rs
-     fingerprint: dbbe817f -->
+     fingerprint: 29c2c0f7 -->
 
 # The turn loop
 
@@ -38,7 +38,7 @@ A landing is not: `AbilitiesPlugin`, `CombatPlugin`, `ThrowingPlugin` and `Effec
 Entries come out earliest first, ties settling by insertion order, and `Entry` is ordered on those two fields alone so no entity's bit pattern can decide who goes first.
 `scaled_cost(base, speed_percent)` divides in integers, `reschedule_at` saturates rather than wraps, and `set_now` panics on a clock asked to run backwards.
 An actor holding `MyTurn` is out of the queue until something reports `ActionDone` or `ActionRefused` for it.
-The pass deals to the first live actor that is due and standing where play is; one on another map or outside the loaded window is requeued a full step without acting, and the clock advances at most once a pass, writing `TurnEnd` when it crosses into a new whole turn.
+The pass deals to the first live actor that is due and standing where play is; one on another map or outside the loaded window is requeued a full step without acting, and the clock advances at most once a pass, writing a `TurnEnd` for every whole turn it crosses, so a jump of two when every actor is slow is two turns to whatever counts them: a tick, a fire, a breath of gas.
 A freshly spawned actor is held out of the queue until it first stands where play is, and the player is admitted ahead of the rest so a first turn does not depend on archetype order.
 A decision is an `Intent<A>` for an `A: Action`, written by the game in `EngineSet::Input` for the player and by minds in `TurnSet::Decide` for everyone else.
 A resolver takes a `Resolution`: `claim` gives it the turn once, `done(actor, cost)` spends it, and `failed(actor, cost)` refuses for the player and charges anyone else, because a monster handed a free retry asks again forever.
@@ -47,6 +47,8 @@ That speed is what `Speeds::of` reads, the one reader, so nothing that shows a s
 The stat wants a base of nought, so an actor with nothing on it is as fast as it was spawned, and nothing takes a speed below one, since an actor that is not to act at all is held by a status rather than slowed to nothing.
 `Cued` is what a resolver writes when a turn did something worth seeing: a `Cue::Flight` between two `Anchor`s, a `Cue::Burst` on several, all at once or going out `from` one of them, or a `Cue::Beam { from, to, look, pulse }`, a line held between two anchors with an optional pulse running along it from the first to the second, where an anchor that follows an entity goes where the entity goes.
 A beam lands nothing, since what it shows has already happened, and holds the turns as any cue does: a drain is seen to flow from whom it takes to whom it gives.
+A `Cue::Slide { who, path }` is an actor moved across cells it did not step, a shove or a pull, every cell from where it stood to where it landed, so it is seen to travel them rather than vanish from one and appear on the other.
+It lands nothing either, since the actor already stands where it landed, and it plays in the moved one's own animation, so two shoves on it in one pass are seen one after the other.
 `Pace` is how fast the turns run while nobody is waited on: `Pace::unpaced()`, the default, `Pace::per_second(hundredths)` of game time for each second of the wall clock, or `Pace::stopped()`.
 A frame's share is earned once a frame, capped at a quarter of a second, and spent as the clock advances, so a pass that moves no time is free and one that jumps the clock is paid off over the frames after.
 Once it is gone nobody is dealt a turn, and the pass that finds it so changes nothing and ends the loop: a turn already dealt is always resolved, a player's intent is answered in its own frame at any pace, and a warp asked for while the turns are stopped is still answered.

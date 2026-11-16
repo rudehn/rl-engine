@@ -20,7 +20,7 @@
             crates/atglyph-ui/src/view/target.rs
             crates/atglyph-ui/src/view/inventory.rs
             crates/atglyph-save/src/engine.rs
-     fingerprint: b6b664b6 -->
+     fingerprint: 39e19968 -->
 
 # Abilities
 
@@ -73,6 +73,7 @@ An ability written `shown: false` is drawn by neither: nothing flies, nothing bu
 An `Effect` is a type with `apply(&self, &Landing, &mut EffectWorld)` and a `describe(&self, &Registries, EffectBonus)` a menu reads with that bonus added, and `FromArgs` is its constructor, kept separate so the trait a game writes stays object-safe.
 `EffectWorld` asks for what another subsystem owns rather than doing it: damage, a heal, a status on, a status off, along with the effect stream, cues, and `Commands` for whatever the engine never thought of.
 Asking is what keeps a fireball mitigated by the same armor a sword is, and moving an actor is the one exception, since no other subsystem owns it: `position`, `is_free`, `is_transition`, `place` and `slide` are methods on it, and `slide` is what keeps a shove out of a wall.
+`Shove` and `Pull` roll their `cells`, a number or dice, for each target, push from or draw toward the user when the target stands on the landing's origin, and write a `Cue::Slide` over every cell a target passed, so whoever they moved is seen to travel there, as [Effects](effects.md) says.
 `app.add_effect::<E>()` files `E` under its `KIND` in `EffectKinds`, and an `EffectSpec` is the `(kind, chance, args)` every content file that lands effects is read for, its arguments left as text for whoever registered the kind and a chance above 100 refused at load as the typo it is wherever it appears.
 `Effects` is a list of those built, and the one thing three carriers share: an ability an actor knows, an offer a prop makes, and the triggers a prop or an item carries, which [Effects](effects.md) describes.
 `Effects::build` builds every spec or reports every one that would not build, and `Abilities::build` runs it once per ability, keeps the results as a `Vec<Effects>` parallel to the ids and puts the ability's name in front of each failure.

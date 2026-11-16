@@ -5,7 +5,7 @@
             crates/atglyph-rules/src/names.rs
             crates/atglyph-core/src/id.rs
             crates/atglyph-bevy/src/noise.rs
-     fingerprint: 7295f1ac -->
+     fingerprint: a9297522 -->
 
 # Registries and content
 

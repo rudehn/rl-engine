@@ -20,7 +20,7 @@
             crates/atglyph-bevy/src/effects/mod.rs
             crates/atglyph-bevy/src/status.rs
             crates/atglyph-bevy/src/turn.rs
-     fingerprint: 5676ce0a -->
+     fingerprint: 5df36d98 -->
 
 # Minds
 

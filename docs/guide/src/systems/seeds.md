@@ -3,7 +3,7 @@
      files: crates/atglyph-bevy/src/seed.rs
             crates/atglyph-bevy/src/replay.rs
             crates/atglyph-core/src/seed.rs
-     fingerprint: d2c2ab87 -->
+     fingerprint: d3716d0f -->
 
 # Seeds and determinism
 
@@ -36,6 +36,9 @@ A name starting `atglyph.` is the engine's, made with `SeedDomain::engine`, and 
 So a stream is derived before the first frame that needs it, and derived again the moment the seed changes, which is how a game that learns its seed late, from a save it is continuing, gets streams that match the run it is resuming.
 `RunSeed::fresh` mixes the wall clock with a per-process counter, and is not compiled on wasm, which has no `SystemTime`; `from_entropy` takes a reading the host supplies instead.
 For a draw that must not depend on visiting order inside a place there are `position_hash` and `pair_hash`, which depend only on their inputs, so iterating cells in a different order cannot reroll them.
+The engine rolls its dice for whoever stands somewhere this way rather than from a stream: a status's tick or mend under `atglyph.status.tick`, the turns fire inflicts under `atglyph.fire.inflict` and the turns a gas's breath lasts under `atglyph.gas.breath`.
+Each is the run's seed derived under its domain by the turn, then a `position_hash` of the cell salted by which of the rolls made there that turn it is, so every holder is dealt the same whatever order a system visits them in, and a save keeps no generator for them.
+A fixed number draws nothing and comes to itself, and dice rolled with no `Seed` in place, as in a test that installs none, come to their average rounded down rather than to a roll from a constant.
 
 ## Using it
 
@@ -89,5 +92,5 @@ A replay is a seed plus a build, so a change to a draw order in engine code is a
 
 `atglyph-core` is tier 0: `RunSeed`, `PlaceSeed`, `SeedDomain`, `mix64`, `position_hash` and `pair_hash` are all `const fn` over plain integers, so what a derivation gives for a seed and a domain is proved by arithmetic with no `App` and no `World` anywhere near it.
 That is also why the same derivation runs on `wasm32-unknown-unknown`, where `atglyph-core` has to build and where there is no clock to fall back on.
-`atglyph-bevy` adds only the wiring: `seed.rs` is the `Seed` resource, `LaunchArgs`, the engine's domains, the `Stream` trait, `add_stream` and the one system that derives.
+`atglyph-bevy` adds only the wiring: `seed.rs` is the `Seed` resource, `LaunchArgs`, the engine's domains, the hashed roll its ticks and fields deal dice by, the `Stream` trait, `add_stream` and the one system that derives.
 Keeping the arithmetic a tier below the wiring is what lets a seeding property be tested over a range of seeds rather than over a range of frames.
