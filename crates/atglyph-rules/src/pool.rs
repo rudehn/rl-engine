@@ -759,10 +759,10 @@ impl Pool {
         // order, so a count never moves for a draw made after it.
         let mut owed: [Vec<(usize, usize)>; 2] = [Vec::new(), Vec::new()];
         for (p, place) in places.iter().enumerate() {
-            for k in 0..self.kinds.len() {
+            for (k, slot) in plan.owed[p].iter_mut().enumerate() {
                 if let Some(b) = self.budget(k, place.band) {
                     let count = rng.random_range(b.count.0..=b.count.1);
-                    plan.owed[p][k] = count;
+                    *slot = count;
                     owed[usize::from(!b.required)].extend(std::iter::repeat_n((p, k), count as usize));
                 }
             }

@@ -9,7 +9,6 @@ version = "0.6.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/rudehn/rl-engine"
-homepage = "https://github.com/rudehn/rl-engine"
 rust-version = "1.88"
 
 [workspace.dependencies]

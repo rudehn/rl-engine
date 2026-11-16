@@ -6,7 +6,6 @@ license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 description = "atglyph tier 1: procedural map generation as a chain of seeded passes, with rooms, BSP, cellular caves and prefabs. No Bevy."
-homepage.workspace = true
 readme = "README.md"
 documentation = "https://docs.rs/atglyph-mapgen"
 keywords = ["roguelike", "procgen", "dungeon", "map-generation", "cellular-automata"]
