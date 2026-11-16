@@ -226,10 +226,12 @@ pub(crate) fn draw_sheet(
                 }
                 // A status that never runs out has no turns to count: its
                 // name stands alone, where a count would read as billions.
+                // How many are held, for a status that stacks.
+                let name = if s.held > 1 { format!("{} \u{00d7}{}", s.name, s.held) } else { s.name.clone() };
                 let named = match s.turns {
-                    atglyph_rules::UNTIL_CURED => s.name.clone(),
-                    1 => format!("{} 1 turn", s.name),
-                    turns => format!("{} {turns} turns", s.name),
+                    atglyph_rules::UNTIL_CURED => name,
+                    1 => format!("{name} 1 turn"),
+                    turns => format!("{name} {turns} turns"),
                 };
                 if does.is_empty() { named } else { format!("{named}   {}", does.join(", ")) }
             })

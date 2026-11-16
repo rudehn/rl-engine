@@ -114,6 +114,12 @@ pub enum Cue {
     /// other. It holds the turns as any cue does, and lands nothing: the
     /// actor is already where it landed, and the drawer shows it along the
     /// way until it has arrived.
+    ///
+    /// Played in the moved one's own animation, so two shoves on it in one
+    /// pass are seen in turn. An actor that dies in the pass it is shoved
+    /// leaves its remains at once where it landed, and one moved again in
+    /// that pass by its own step is seen to arrive there when the slide
+    /// ends.
     Slide {
         /// Who was moved.
         who: Entity,

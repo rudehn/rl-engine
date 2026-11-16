@@ -299,8 +299,12 @@ pub(crate) fn step_fire(mut ends: MessageReader<TurnEnd>, mut fire: ResMut<Fire>
                 let ground = map.tile(pos.0).and_then(|t| map.tables().burns[t.index()]).map(|k| k.turns);
                 let thing = unlit.iter().filter(|(_, p, _, at)| p.0 == pos.0 && on_here(*at)).map(|(.., f, _)| f.turns).max();
                 let vapour = gases.as_deref().filter(|g| vapours.iter().any(|v| g.at(*v, pos.0) > 0)).map(|_| 1);
+                // A turn over the fuel's own: lit before the step, it burns
+                // down once in it, and then burns as long as fuel that
+                // caught in the step does, a vapour alight long enough to
+                // be burnt away.
                 if let Some(turns) = [ground, thing, vapour].into_iter().flatten().max() {
-                    fire.flames.update(pos.0, |t| t.max(turns.max(1)));
+                    fire.flames.update(pos.0, |t| t.max(turns.max(1).saturating_add(1)));
                 }
             }
         }
@@ -583,6 +587,33 @@ mod tests {
         assert!(rig.app.world().resource::<Fire>().is_burning(at), "the grass under it caught");
         rig.wait(10);
         assert!(rig.is(at, "ash"), "and burnt away");
+        assert!(!rig.app.world().get::<ActiveStatuses>(player).unwrap().has(burning), "and with the fuel gone its holder burns no more");
+        assert_eq!(rig.app.world().resource::<Fire>().burning().count(), 0, "and nothing is alight");
+    }
+
+    /// Whoever holds the kindling status lights a flammable thing it
+    /// stands over, and a vapour that burns where it stands.
+    #[test]
+    fn a_holder_of_the_kindling_status_lights_a_flammable_thing_and_a_vapour_under_it() {
+        let mut rig = Rig::new(true);
+        let rules = rig.app.world().resource::<FireRules>().kindled_by(rig.burning);
+        rig.app.insert_resource(rules);
+        let (player, burning, at) = (rig.player, rig.burning, rig.start);
+        let crate_ = rig.app.world_mut().spawn((Position(at), Flammable { catch_pct: 100, turns: 2 })).id();
+        rig.app.world_mut().write_message(ApplyStatus { target: player, status: burning, turns: 5, by: None, held_by: None });
+        rig.wait(1);
+        assert!(rig.seen().contains(&FireEvent::Caught { entity: crate_ }), "the crate under it caught");
+        rig.wait(12);
+        let beside = at.offset(5, 0);
+        let spirits = rig.spirits;
+        // Fire steps before gas, so the vapour lies there a turn first.
+        rig.app.world_mut().write_message(Release { gas: spirits, at: beside, amount: 40 });
+        rig.wait(1);
+        crate::testing::stand_on(&mut rig.app, player, beside);
+        rig.app.world_mut().write_message(ApplyStatus { target: player, status: burning, turns: 5, by: None, held_by: None });
+        rig.wait(1);
+        let left = rig.app.world().resource::<crate::gas::Gases>().at(spirits, beside);
+        assert!(rig.app.world().resource::<Fire>().is_burning(beside) && left == 0, "and the vapour where it stood went up, burnt away: {left} left");
     }
 
     /// Bare stone has nothing to burn: a holder of the kindling status

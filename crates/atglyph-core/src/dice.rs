@@ -13,6 +13,10 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 /// A parsed `NdS+B` dice expression.
 ///
+/// Its order compares the fields, the dice and then the sides and the
+/// bonus, not what they roll to, `1d20` before `2d1`: a structural order,
+/// for sorting and keys, never for which rolls higher.
+///
 /// A flat value parses as `num: 0, sides: 0, bonus: value` and rolls as a
 /// constant, so "flat or dice" is one type at every call site.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default, Hash)]

@@ -240,7 +240,7 @@ pub(crate) fn collect_vitals(mut view: ResMut<VitalsView>, mut me: Me) {
     for (id, count) in afflicted.map(|a| crate::view::held_counts(a)).unwrap_or_default() {
         let def = registries.statuses.get(id);
         if let (name, Some(tier)) = def.shown(count) {
-            view.facets.push(Facet::new("status", name).toned(crate::tone::tier_tone(&me.tones, tier)));
+            view.facets.push(Facet::new("status", name).toned(crate::tone::tier_tone(&me.tones, def, tier)));
         } else if let Some(glyph) = def.badge {
             view.badges.push(Facet::new("badge", glyph.to_string()).toned(Tones::NOTICE));
         }

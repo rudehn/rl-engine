@@ -183,12 +183,15 @@ pub fn readable(color: Color, palette: &Palette) -> Color {
 /// The tone a status's tier is shown in, named for the tier: declared and
 /// coloured from the status file by [`tone_status_tiers`], so content
 /// writes a tier's colour beside its name and no game sets it again.
-pub fn tier_tone(tones: &Tones, tier: &atglyph_rules::StatusTier) -> ToneId {
-    tones.get(&tier_tone_name(tier)).unwrap_or(Tones::TEXT)
+///
+/// Named for the status and the tier together, so two statuses whose tiers
+/// share a name keep their own colours.
+pub fn tier_tone(tones: &Tones, status: &atglyph_rules::StatusDef, tier: &atglyph_rules::StatusTier) -> ToneId {
+    tones.get(&tier_tone_name(status, tier)).unwrap_or(Tones::TEXT)
 }
 
-fn tier_tone_name(tier: &atglyph_rules::StatusTier) -> String {
-    format!("status: {}", tier.name)
+fn tier_tone_name(status: &atglyph_rules::StatusDef, tier: &atglyph_rules::StatusTier) -> String {
+    format!("status: {}: {}", status.name, tier.name)
 }
 
 /// Declares a tone for every tier of every status, in the tier's colour,
@@ -197,7 +200,7 @@ pub(crate) fn tone_status_tiers(registries: Option<Res<atglyph_bevy::Registries>
     let Some(registries) = registries.filter(|r| r.is_changed()) else { return };
     for (_, def) in registries.statuses.iter() {
         for tier in &def.tiers {
-            let tone = tones.declare(&tier_tone_name(tier));
+            let tone = tones.declare(&tier_tone_name(def, tier));
             let (r, g, b) = tier.color;
             palette.set(tone, Color::srgb_u8(r, g, b));
         }

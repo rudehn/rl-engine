@@ -78,15 +78,19 @@ pub struct Strike {
     pub also: Option<DiceRoll>,
 }
 
-/// One status on the player.
+/// One status on the player, however many of it are held.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StatusLine {
     /// Which.
     pub status: StatusId,
-    /// Its registered name.
+    /// What it is shown as: its registered name, or the name of the tier
+    /// how many are held reaches.
     pub name: String,
-    /// Whole turns left, or [`UNTIL_CURED`](atglyph_rules::UNTIL_CURED) for one
-    /// that never runs out, which the sheet shows with no count.
+    /// How many of it are held: one but for a status that stacks.
+    pub held: usize,
+    /// Whole turns left on the longest held, or
+    /// [`UNTIL_CURED`](atglyph_rules::UNTIL_CURED) for one that never runs
+    /// out, which the sheet shows with no count.
     pub turns: u32,
     /// What it does to which stat, by the stat's name.
     pub modifies: Vec<(String, Op)>,
@@ -246,12 +250,15 @@ pub(crate) fn collect_sheet(
         view.strikes.push(Strike { kind: kind_name(ranged.kind), dice: ranged.dice, range: Some(ranged.range), also: None });
     }
     if let Some(afflicted) = afflicted {
-        for active in afflicted.iter() {
-            let def = registries.statuses.get(active.id);
+        // Once per status, however many are stacked, named by its tier.
+        for (id, held) in crate::view::held_counts(afflicted) {
+            let def = registries.statuses.get(id);
+            let turns = afflicted.iter().filter(|a| a.id == id).map(|a| a.turns).max().unwrap_or(0);
             view.statuses.push(StatusLine {
-                status: active.id,
-                name: def.name.clone(),
-                turns: active.turns,
+                status: id,
+                name: def.shown(held).0.to_string(),
+                held,
+                turns,
                 modifies: def.modifiers.iter().map(|m| (registries.stats.name(m.stat).to_string(), m.op)).collect(),
                 ticks: def.tick_damage.map(|(kind, amount)| (kind_name(kind), amount)),
                 mends: def.tick_mend,
@@ -366,6 +373,31 @@ mod tests {
         assert_eq!((status.name.as_str(), status.turns), ("weak", 4));
         assert_eq!(status.modifies, vec![("might".to_string(), Op::Add(-3))]);
         assert_eq!(status.ticks, Some(("kinetic".to_string(), DiceRoll::flat(1))));
+    }
+
+    /// A status held three times is one line, named by the tier its count
+    /// reaches, counting how many are held and the longest time left.
+    #[test]
+    fn a_stacked_status_is_one_line_named_by_its_tier() {
+        let (mut stage, _) = stage();
+        let player = stage.player;
+        let tiers = vec![
+            atglyph_rules::StatusTier { from: 1, name: "poisoned".into(), color: (1, 1, 1) },
+            atglyph_rules::StatusTier { from: 3, name: "badly poisoned".into(), color: (2, 2, 2) },
+        ];
+        let mut defs: Vec<StatusDef> = stage.app.world().resource::<Registries>().statuses.iter().map(|(_, d)| d.clone()).collect();
+        defs.push(StatusDef { tiers, ..StatusDef::new("poisoned").stacking(atglyph_rules::Stacking::Stack) });
+        let defs = atglyph_rules::Registry::from_defs(defs).unwrap();
+        let poisoned = defs.expect("poisoned");
+        stage.app.world_mut().resource_mut::<Registries>().statuses = defs;
+        for turns in [4, 9, 2] {
+            stage.app.world_mut().write_message(ApplyStatus { target: player, status: poisoned, turns, by: None, held_by: None });
+        }
+        stage.tick();
+        stage.tick();
+        let view = stage.app.world().resource::<SheetView>();
+        let lines: Vec<(&str, usize, u32)> = view.statuses.iter().map(|s| (s.name.as_str(), s.held, s.turns)).collect();
+        assert_eq!(lines, [("badly poisoned", 3, 9)], "one line: the tier, three held, the longest left");
     }
 
     /// A worn blade is the blow the sheet lists, its armor is in the total,

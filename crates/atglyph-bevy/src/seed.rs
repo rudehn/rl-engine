@@ -186,14 +186,15 @@ pub const ENGINE_DOMAINS: &[(&str, SeedDomain)] = &[
 ///
 /// For a roll a field or a tick makes for whoever stands somewhere, where a
 /// stream's next draw would deal each actor what the query's order left it.
-/// Without a seed, as in a test that installs none, the salt is the
-/// domain's alone.
+/// Without a seed, as in a test that installs none, dice come to their
+/// average, rounded down, and nothing is rolled from a constant.
 pub(crate) fn hashed_roll(seed: Option<&Seed>, domain: SeedDomain, turn: u64, at: atglyph_core::Point, nth: u64, dice: atglyph_core::DiceRoll) -> i32 {
     use rand::SeedableRng;
-    if dice.num == 0 {
+    if dice.num == 0 || dice.sides == 0 {
         return dice.bonus;
     }
-    let salt = seed.map_or_else(|| RunSeed(0).derive(domain, turn), |s| s.0.derive(domain, turn));
+    let Some(seed) = seed else { return dice.avg().floor() as i32 };
+    let salt = seed.0.derive(domain, turn);
     let mut rng = StdRng::seed_from_u64(atglyph_core::seed::position_hash(salt ^ nth.wrapping_mul(0x9E37_79B9_7F4A_7C15), at.x, at.y));
     dice.roll(&mut rng)
 }
@@ -276,6 +277,23 @@ fn derive<S: Stream>(mut commands: Commands, seed: Res<Seed>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A fixed roll comes to itself whatever the seed, turn or cell, and
+    /// dice rolled with no seed in place come to their average, never to a
+    /// roll from a constant; with a seed they roll within themselves, the
+    /// same for the same seed, turn and cell.
+    #[test]
+    fn a_fixed_roll_draws_nothing_and_dice_with_no_seed_come_to_their_average() {
+        let at = atglyph_core::Point::new(3, 4);
+        let fixed = atglyph_core::DiceRoll::flat(5);
+        assert!((0..20).all(|t| hashed_roll(Some(&Seed(RunSeed(t))), STATUS_TICK, t, at, 0, fixed) == 5));
+        let dice = atglyph_core::DiceRoll::new(2, 6);
+        assert_eq!(hashed_roll(None, STATUS_TICK, 9, at, 0, dice), 7, "two dice of six, seven on average");
+        let seed = Seed(RunSeed(11));
+        let rolls: Vec<i32> = (0..50).map(|t| hashed_roll(Some(&seed), STATUS_TICK, t, at, 0, dice)).collect();
+        assert!(rolls.iter().all(|r| (2..=12).contains(r)), "{rolls:?}");
+        assert_eq!(rolls, (0..50).map(|t| hashed_roll(Some(&seed), STATUS_TICK, t, at, 0, dice)).collect::<Vec<_>>());
+    }
     use rand::Rng;
 
     #[derive(Resource)]

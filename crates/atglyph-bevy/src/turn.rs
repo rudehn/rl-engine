@@ -505,11 +505,14 @@ pub(crate) fn schedule(
                 }
                 advanced = true;
                 turns.progress = true;
+                // One end for every whole turn crossed, so a jump of two,
+                // when everyone is slow, is two turns to whatever counts
+                // them: a tick, a fire, a breath of gas.
                 let turn = turns.queue.now() / BASE_ACTION_COST;
-                if turn > turns.last_turn {
-                    turns.last_turn = turn;
-                    ends.write(TurnEnd { turn });
+                for ended in turns.last_turn + 1..=turn {
+                    ends.write(TurnEnd { turn: ended });
                 }
+                turns.last_turn = turns.last_turn.max(turn);
             }
         }
     }

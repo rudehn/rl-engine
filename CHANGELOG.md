@@ -10,6 +10,7 @@ atglyph is not on crates.io yet, so a game depends on a release by its git tag, 
 
 ### Added
 
+- `ParticleStyle::instant()`: every pace nought, so nothing holds the turns, the one way to write an instant style that a pace added later cannot leave behind.
 - Spawn and loot groups are dice, `group: "1d3+1"` or `group: 2`, rolled at least one; a group that could come to none is refused at load. `DiceRoll::between(fewest, most)` reads a range as one even die, and `DiceRoll::min` is public.
 - A gas's breath may last dice of turns, `inflicts: Some((40, "infected", "1d3+1"))`, rolled from the seed, the turn and the cell; dice that could come to less than a turn are refused at load.
 - `FireRules::kindled_by(status)`: whoever holds the status sets alight what can burn where it stands, the ground if its tile burns, a flammable thing there or a vapour that burns, and never bare stone; fuel already alight is left to burn down, so a burning creature lights the door it walks through once and its burning ends when the fuel does.
@@ -81,6 +82,12 @@ atglyph is not on crates.io yet, so a game depends on a release by its git tag, 
 
 ### Changed
 
+- **Breaking:** `ParticleStyle` gains `slide_secs`, so a style written out in full gains one, and a style made instant by zeroing its paces holds the turns on every shove unless it zeroes `slide_secs` too; `ParticleStyle::instant()` zeroes them all.
+- **Breaking:** `StatusDef` gains `lasting`, `tiers` and `lifts`, so a definition written out in full gains them; the sheet's `StatusLine` gains `held`, how many of it are held.
+- The sheet lists a status once, named by the tier how many are held reaches and counting them, `badly poisoned ×5`, with the longest time left, where it listed one line an instance.
+- A tier's tone is named for its status and the tier together, so two statuses whose tiers share a name keep their own colours.
+- A slide plays in the animation of whoever slides, so two shoves on one creature in one pass are seen one after the other, and an anchor that follows a creature follows where it is drawn, so a blow's flash on a creature then shoved plays where it was struck.
+- A dice roll made from the seed with no seed in place comes to its average rather than to a roll from a constant.
 - **Breaking:** `BandedEntry::min_group` and `max_group` are one `group: DiceRoll`, `BandedEntry::group` and `LootRow::group` take a number or dice, `LootRow::group` is a `DiceRoll`, and a spawn or loot file's `group: (fewest, most)` is written as dice: `(2, 4)` is `"1d3+1"`, which deals the same as the range did.
 - **Breaking:** `Breath::turns` is a `DiceRoll`, and `GasDef::inflicts` takes a number or dice.
 - A gas file refuses a field a gas does not have, naming it, where it was read as nothing.
@@ -149,6 +156,8 @@ atglyph is not on crates.io yet, so a game depends on a release by its git tag, 
 
 ### Fixed
 
+- The turn loop wrote one `TurnEnd` when the clock crossed two whole turns at once, as it does when every actor is slow, so a tick, a fire and a breath of gas counted one turn where two had passed. It writes one for every whole turn crossed.
+- A creature burning over fuel lit it a turn short of fuel that caught from a neighbour, so a vapour it lit went out before it could burn away.
 - A creature's own `hit` that shoves threw nobody: its moment lands where the struck one stands, and a shove pushed away from that very cell, which is no way at all. A shove pushes, and a pull draws, from the user when the target stands on the landing's origin.
 - A status held several times was listed once per instance: the nearby rail said "poisoned · poisoned · poisoned" and the vitals drew a badge for each. Both list a status once.
 - A dressing no longer cuts an area through a slot an earlier area laid outside its door: that slot's cell was counted as a way round the area's own things, so a cave beside a dressed house could be laid in two halves, each reached by a different opening. It now blocks as the area's own things do.

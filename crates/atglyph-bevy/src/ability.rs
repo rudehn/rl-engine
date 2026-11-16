@@ -1201,6 +1201,11 @@ mod tests {
         effects: [(kind: "Shove", args: (cells: 2))],
     ),
     (
+        name: "toss",
+        mode: Adjacent,
+        effects: [(kind: "Shove", args: (cells: "1d3"))],
+    ),
+    (
         name: "volley",
         mode: Bolt(range: 6),
         costs: [Item("powder", 1)],
@@ -1839,6 +1844,34 @@ mod tests {
         app.update();
         assert_eq!(app.world().get::<Position>(them).unwrap().0, start.offset(3, 0), "the wall took it");
         assert!(!cues(&mut app).iter().any(|c| matches!(c, Cue::Slide { .. })), "and what did not move is not seen to slide");
+    }
+
+    /// A shove of dice moves each target within them, and the dice turn up
+    /// more than one distance: foes on every side of the caster, each
+    /// tossed once.
+    #[test]
+    fn a_shove_of_dice_moves_within_them() {
+        let (mut app, start) = app();
+        let toss = ability(&app, "toss");
+        let me = caster(&mut app, start, 20, &[toss]);
+        let sides: Vec<Direction> = Direction::ALL.to_vec();
+        let foes: Vec<Entity> = sides.iter().map(|d| foe(&mut app, start + d.offset())).collect();
+        settle(&mut app);
+        let mut moved = Vec::new();
+        for (d, foe) in sides.iter().zip(&foes) {
+            app.world_mut().write_message(Intent::new(me, Use { ability: toss, aim: start + d.offset() }));
+            app.update();
+            let at = app.world().get::<Position>(*foe).unwrap().0;
+            moved.push((at.x - start.x).abs().max((at.y - start.y).abs()) - 1);
+            for _ in 0..3 {
+                app.world_mut().write_message(Intent::new(me, crate::turn::Wait));
+                app.update();
+            }
+        }
+        assert!(moved.iter().all(|m| (1..=3).contains(m)), "{moved:?}");
+        moved.sort();
+        moved.dedup();
+        assert!(moved.len() > 1, "the dice turned up more than one distance");
     }
 
     /// An effect the engine has never heard of reaches the world through

@@ -371,6 +371,29 @@ mod tests {
         assert!(rig.sees(behind), "and in sight again once it thinned");
     }
 
+    /// A gas inflicts its status once for every whole turn spent in it: a
+    /// slow breather whose one wait takes two turns takes two breaths, so a
+    /// status that stacks gathers a stack a turn.
+    #[test]
+    fn a_pass_of_two_whole_turns_in_a_gas_is_two_breaths() {
+        let mut rig = Rig::new();
+        let (fumes, player, at) = (rig.fumes, rig.player, rig.start);
+        let statuses = Registry::from_defs(vec![StatusDef::new("choking").stacking(atglyph_rules::Stacking::Stack)]).unwrap();
+        let choking = statuses.expect("choking");
+        {
+            let mut registries = rig.app.world_mut().resource_mut::<Registries>();
+            registries.statuses = statuses;
+            registries.gases = Registry::from_defs(vec![GasDef::new("smoke"), GasDef::new("fumes").spread(0).fade(1).inflicts(10, choking, 30)]).unwrap();
+        }
+        rig.app.world_mut().write_message(Release { gas: fumes, at, amount: 200 });
+        rig.wait(1);
+        let before = rig.app.world().get::<ActiveStatuses>(player).unwrap().count(choking);
+        rig.app.world_mut().entity_mut(player).insert(crate::components::Speed(50));
+        rig.wait(1);
+        let after = rig.app.world().get::<ActiveStatuses>(player).unwrap().count(choking);
+        assert_eq!(after - before, 2, "a wait of two turns, two breaths: {before} then {after}");
+    }
+
     /// A breath's turns may be dice, rolled within them from the seed, the
     /// turn and the cell, so the same run chokes the same.
     #[test]

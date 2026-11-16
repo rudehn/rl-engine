@@ -161,7 +161,7 @@ pub(crate) fn note_statuses(
                 (row.alert, row.doing) = (Some(Alert::Unaware), Some(says.asleep));
             } else if def.badge.is_some() || !def.tiers.is_empty() {
                 let (name, tier) = def.shown(count);
-                let tone = tier.map_or(crate::tone::Tones::TEXT, |t| crate::tone::tier_tone(&tones, t));
+                let tone = tier.map_or(crate::tone::Tones::TEXT, |t| crate::tone::tier_tone(&tones, def, t));
                 row.facets.push(Facet::new(says.key, name).toned(tone));
             }
         }
@@ -752,6 +752,32 @@ mod tests {
         let tone = row(&stage, spider).facets[1].tone;
         assert_eq!(stage.app.world().resource::<crate::tone::Palette>().get(tone), Color::srgb_u8(76, 194, 58));
         assert_eq!(row(&stage, spider).facets[0].tone, crate::tone::Tones::TEXT, "one with no tiers keeps the row's own");
+    }
+
+    /// Two statuses whose tiers share a name keep their own colours.
+    #[test]
+    fn two_statuses_with_a_tier_of_one_name_keep_their_own_colours() {
+        let mut stage = Stage::new_with(NearbyViewPlugin, |app| {
+            app.insert_resource(NearbyStatuses { key: "status", asleep: "asleep" });
+        });
+        let tier = |color| vec![atglyph_rules::StatusTier { from: 1, name: "sick".into(), color }];
+        let defs = atglyph_rules::Registry::from_defs(vec![
+            atglyph_rules::StatusDef { tiers: tier((200, 0, 0)), ..atglyph_rules::StatusDef::new("poisoned") },
+            atglyph_rules::StatusDef { tiers: tier((0, 200, 0)), ..atglyph_rules::StatusDef::new("infected") },
+        ])
+        .unwrap();
+        stage.app.world_mut().resource_mut::<Registries>().statuses = defs.clone();
+        let holding = |stage: &mut Stage, name: &str, dx: i32, status: &str| {
+            let e = stage.actor(name, 'x', dx, 0);
+            let (mut held, mut stats) = (atglyph_rules::Statuses::new(), atglyph_rules::Stats::new());
+            held.apply(defs.expect(status), 5, None, &defs, &mut stats);
+            stage.app.world_mut().entity_mut(e).insert(ActiveStatuses(held));
+            e
+        };
+        let (a, b) = (holding(&mut stage, "a", 1, "poisoned"), holding(&mut stage, "b", 2, "infected"));
+        stage.tick();
+        let color = |who| stage.app.world().resource::<crate::tone::Palette>().get(row(&stage, who).facets[0].tone);
+        assert_eq!((color(a), color(b)), (Color::srgb_u8(200, 0, 0), Color::srgb_u8(0, 200, 0)));
     }
 
     /// With the game's say-so, an actor in sight that a badged status
