@@ -181,7 +181,7 @@ pub fn readable(color: Color, palette: &Palette) -> Color {
 }
 
 /// The tone a status's tier is shown in, named for the tier: declared and
-/// coloured from the status file by [`tone_status_tiers`], so content
+/// coloured from the status file whenever the registries change, so content
 /// writes a tier's colour beside its name and no game sets it again.
 ///
 /// Named for the status and the tier together, so two statuses whose tiers
